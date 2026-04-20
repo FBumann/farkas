@@ -59,6 +59,16 @@ YAML files diff cleanly in code review. Colleagues without Python optimisation e
 - **Not a domain package** — no energy, transport, or any other domain assumptions. This is a general-purpose layer over linopy's API.
 - **Not a data loading layer** — users bring their own pandas/xarray objects. No CSV/Parquet/NetCDF readers.
 
+## Open design questions
+
+Decisions the project has not yet finalised. Input welcome — see the linked issues for context.
+
+### What `.yaml` covers
+
+The `.yaml` accessor currently describes only the **YAML-managed portion** of a model, not the whole model. A Python-built model extended with `m.yaml.extend(...)` has a `.yaml` covering the extension, not the Python additions.
+
+Whether to pursue a **complete** `.yaml` representation — intercepting `add_variables()` / `add_constraints()` so `.yaml` always matches the full model — is an open investigation. See [issue #3](https://github.com/FBumann/linopy-yaml/issues/3) for the trade-offs (functional vs readable round-trip) and please weigh in.
+
 ## Quick Example
 
 **`dispatch.yaml`:**
