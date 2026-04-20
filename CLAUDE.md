@@ -49,7 +49,7 @@ tests/
 
 ## API
 
-> **Note:** SPEC.md describes the target monkey-patch design (`from linopy import Model; import linopy_yaml`). The package currently ships a `linopy_yaml.Model` subclass as a temporary workaround because `linopy.Model.__slots__` does not include `__weakref__`. Once upstream linopy adds it (see `linopy_weakref_issue.md`), `linopy_yaml/model.py` can be removed and the package should switch to the spec's monkey-patch + WeakKeyDictionary design.
+> **Note:** SPEC.md describes the target monkey-patch design (`from linopy import Model; import linopy_yaml`). The package currently ships a `linopy_yaml.Model` subclass as a temporary workaround because `linopy.Model.__slots__` does not include `__weakref__`. Once upstream linopy adds it, `linopy_yaml/model.py` can be removed and the package should switch to the spec's monkey-patch + WeakKeyDictionary design.
 
 ```python
 from linopy_yaml import Model  # TEMP: subclass; spec target is monkey-patched linopy.Model
