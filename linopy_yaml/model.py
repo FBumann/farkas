@@ -4,7 +4,7 @@ This is a temporary workaround for linopy.Model not being weakref-able
 (`__weakref__` is not in `linopy.Model.__slots__`). Once upstream linopy
 adds `__weakref__` to its slots, this subclass can be removed and the
 package can monkey-patch `linopy.Model` directly with a WeakKeyDictionary-
-backed accessor. See linopy_weakref_issue.md for the upstream request.
+backed accessor.
 """
 
 from __future__ import annotations
