@@ -2,13 +2,72 @@
 
 YAML-based math definition layer for [linopy](https://github.com/PyPSA/linopy).
 
-Define optimisation problems declaratively in YAML, supply data at runtime, and get a standard `linopy.Model` ready to solve.
+Define optimisation problems declaratively in YAML, supply data at runtime, and get a `linopy.Model` ready to solve.
 
-## Why?
+## Goals
 
-- **Readable** — YAML math definitions are understandable without knowing Python.
-- **Shareable** — version-control, diff, and review optimisation models as text files.
-- **Separation of concerns** — the math definition is separate from data loading and solving.
+- **Declarative math** — problems are defined in YAML, not Python. Readable without knowing the implementation.
+- **Clean boundary** — YAML owns the math definition; Python owns data loading and solving.
+- **Pure consumer of linopy's public API** — no internals, no wrapping, no lock-in. The result of `from_yaml()` is a `linopy.Model`.
+- **Fail early, fail loud** — all validation happens at load time, with error messages that name the problem and suggest the fix.
+
+## Use cases
+
+### 1. Author a full model in YAML
+
+Small-to-medium models, teaching contexts, policy studies, reproducible research. The YAML carries the math; runtime data comes from pandas/xarray.
+
+```python
+from linopy_yaml import Model
+m = Model.from_yaml("dispatch.yaml", data={...}, coords={...})
+m.solve()
+```
+
+### 2. Add custom constraints to a Python-built model
+
+The primary use case this package optimises for. Packages like PyPSA, capacity-expansion frameworks, and dispatch models build their core math in Python for good reasons: full linopy feature access, performance control, and complexity that doesn't map cleanly to YAML.
+
+But their users regularly need to add custom constraints — a policy requirement, a pilot technology, a sensitivity scenario. Today the options are unappealing: fork the package, monkey-patch, or maintain a separate Python script that reaches into model internals. A short YAML file is cleaner:
+
+```python
+# user adds a custom ramp constraint on top of an existing model
+m.yaml.extend("ramp_constraint.yaml", data={"ramp_max": network.generators["ramp_max"]})
+```
+
+```yaml
+# ramp_constraint.yaml
+parameters:
+  ramp_max:
+    dims: [generator]
+constraints:
+  ramp_up:
+    foreach: [snapshot, generator]
+    where: "snapshot > 0 AND ramp_max"
+    equations:
+      - expression: p - roll(p, snapshot=1) <= ramp_max
+```
+
+The constraint is self-documenting, diffs cleanly, and can be shared or versioned independently from the core model.
+
+### 3. Share and version-control model math as text
+
+YAML files diff cleanly in code review. Colleagues without Python optimisation experience can read and critique the math. Research artefacts travel as files, not as code snippets buried in notebooks.
+
+## Non-goals
+
+- **Not a solver wrapper** — linopy does that.
+- **Not a domain package** — no energy, transport, or any other domain assumptions. This is a general-purpose layer over linopy's API.
+- **Not a data loading layer** — users bring their own pandas/xarray objects. No CSV/Parquet/NetCDF readers.
+
+## Open design questions
+
+Decisions the project has not yet finalised. Input welcome — see the linked issues for context.
+
+### What `.yaml` covers
+
+The `.yaml` accessor currently describes only the **YAML-managed portion** of a model, not the whole model. A Python-built model extended with `m.yaml.extend(...)` has a `.yaml` covering the extension, not the Python additions.
+
+Whether to pursue a **complete** `.yaml` representation — intercepting `add_variables()` / `add_constraints()` so `.yaml` always matches the full model — is an open investigation. See [issue #3](https://github.com/FBumann/linopy-yaml/issues/3) for the trade-offs (functional vs readable round-trip) and please weigh in.
 
 ## Quick Example
 
