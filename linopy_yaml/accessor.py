@@ -1,50 +1,24 @@
-"""YAML accessor for linopy.Model — monkey-patched as model.yaml."""
+"""YAML accessor attached to Model instances as ``model.yaml``."""
 
 from __future__ import annotations
 
-import weakref
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 import pandas as pd
 import xarray as xr
 import yaml
 
-import linopy
-
 from linopy_yaml.builder import build_model
 from linopy_yaml.loader import build_master_coords, load_parameters
 from linopy_yaml.schema import MathSchema
 
-# Store accessors keyed by model id, with weak references to models
-# so accessors are cleaned up when models are garbage collected.
-_ACCESSORS: dict[int, YamlAccessor] = {}
-_WEAK_REFS: dict[int, weakref.ref] = {}
-
-
-def _cleanup(ref: weakref.ref) -> None:
-    """Remove accessor when the model is garbage collected."""
-    for model_id, wr in list(_WEAK_REFS.items()):
-        if wr is ref:
-            _ACCESSORS.pop(model_id, None)
-            _WEAK_REFS.pop(model_id, None)
-            break
-
-
-def _register_accessor(model: linopy.Model, accessor: YamlAccessor) -> None:
-    """Associate an accessor with a model instance."""
-    model_id = id(model)
-    _ACCESSORS[model_id] = accessor
-    _WEAK_REFS[model_id] = weakref.ref(model, _cleanup)
-
-
-def _get_accessor(model: linopy.Model) -> YamlAccessor | None:
-    """Look up the accessor for a model instance."""
-    return _ACCESSORS.get(id(model))
+if TYPE_CHECKING:
+    import linopy
 
 
 class YamlAccessor:
-    """Accessor attached to a linopy.Model instance as ``model.yaml``.
+    """Accessor attached to a Model instance as ``model.yaml``.
 
     Provides access to the parsed YAML schema, loaded parameter dataset,
     master coordinates, and the ability to add more math from another YAML.
@@ -52,7 +26,7 @@ class YamlAccessor:
 
     def __init__(
         self,
-        model: linopy.Model,
+        model: "linopy.Model",
         schema: MathSchema,
         dataset: xr.Dataset,
         coords: dict[str, pd.Index],
@@ -102,6 +76,25 @@ class YamlAccessor:
 
         schema = MathSchema.model_validate(raw)
 
+        # If the extension declares values: for a dimension already resolved
+        # by the existing model, require them to match. Silent-ignore would
+        # hide real mismatches.
+        for dim_name, dim_def in schema.dimensions.items():
+            if dim_def.values is None or dim_name not in self._coords:
+                continue
+            declared = pd.Index(dim_def.values, name=dim_name)
+            existing = self._coords[dim_name]
+            if not declared.equals(existing):
+                msg = (
+                    f"Extension declares dimension '{dim_name}' with values "
+                    f"that differ from the existing model.\n"
+                    f"  Existing: {list(existing)}\n"
+                    f"  Declared: {list(declared)}\n"
+                    f"Either omit 'values:' for '{dim_name}' in the "
+                    f"extension, or make them match."
+                )
+                raise ValueError(msg)
+
         # Merge master coords: existing + any new dimensions
         merged_coords = dict(self._coords)
         new_coords = build_master_coords(schema, None)
@@ -119,79 +112,3 @@ class YamlAccessor:
         # Update stored state
         self._coords = merged_coords
         self._dataset = merged_dataset
-
-
-class _YamlDescriptor:
-    """Descriptor providing .yaml on instances, raising clearly on non-YAML models."""
-
-    def __get__(self, obj: linopy.Model | None, objtype: type | None = None) -> YamlAccessor:
-        if obj is None:
-            msg = (
-                "Access .yaml on a model instance, not the class.\n"
-                "Use Model.from_yaml('model.yaml', data={...}) to create one."
-            )
-            raise AttributeError(msg)
-        accessor = _get_accessor(obj)
-        if accessor is None:
-            msg = (
-                "This model was not built from YAML.\n"
-                "Use Model.from_yaml('model.yaml', data={...}) to "
-                "create a YAML-backed model."
-            )
-            raise AttributeError(msg)
-        return accessor
-
-
-def _from_yaml(
-    path: str | Path,
-    *,
-    data: dict[str, Any] | None = None,
-    coords: dict[str, Any] | None = None,
-) -> linopy.Model:
-    """Build a linopy.Model from a YAML math definition.
-
-    Parameters
-    ----------
-    path : str or Path
-        Path to the YAML file.
-    data : dict or None
-        Parameter data. Keys are parameter names declared in the YAML.
-    coords : dict or None
-        Dimension coordinate values. Overrides values declared in YAML.
-
-    Returns
-    -------
-    linopy.Model
-        A fully built model ready to solve. Access YAML metadata via
-        ``model.yaml.schema``, ``model.yaml.dataset``, etc.
-
-    Raises
-    ------
-    ValueError
-        For any validation failure (missing dimensions, parameters, etc.).
-    pydantic.ValidationError
-        If the YAML structure is invalid.
-    """
-    path = Path(path)
-    raw = yaml.safe_load(path.read_text())
-    if raw is None:
-        raw = {}
-
-    schema = MathSchema.model_validate(raw)
-
-    master_coords = build_master_coords(schema, coords)
-    dataset = load_parameters(schema, data, master_coords)
-
-    model = linopy.Model()
-    accessor = YamlAccessor(model, schema, dataset, master_coords)
-    _register_accessor(model, accessor)
-
-    build_model(model, schema, dataset, master_coords)
-
-    return model
-
-
-def _install() -> None:
-    """Monkey-patch linopy.Model with .yaml descriptor and .from_yaml classmethod."""
-    linopy.Model.yaml = _YamlDescriptor()  # type: ignore[attr-defined]
-    linopy.Model.from_yaml = staticmethod(_from_yaml)  # type: ignore[attr-defined]

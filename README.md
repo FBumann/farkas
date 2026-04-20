@@ -52,9 +52,10 @@ objectives:
 
 **Python:**
 
+> **Note:** `linopy_yaml` currently ships a `Model` subclass of `linopy.Model` as a temporary workaround — `linopy.Model.__slots__` does not include `__weakref__`, which blocks the monkey-patch design described in [SPEC.md](SPEC.md). Once upstream linopy adds `__weakref__`, the package will switch to the spec's design and you will be able to import `Model` directly from `linopy` again. See `linopy_weakref_issue.md`.
+
 ```python
-import linopy_yaml  # registers Model.from_yaml() and model.yaml accessor
-from linopy import Model
+from linopy_yaml import Model
 import pandas as pd
 
 m = Model.from_yaml(
