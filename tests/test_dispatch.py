@@ -2,9 +2,8 @@
 
 import pandas as pd
 import pytest
-from linopy import Model
 
-import linopy_yaml  # noqa: F401 — registers .from_yaml() and .yaml accessor
+from linopy_yaml import Model
 
 
 @pytest.mark.xfail(reason="upstream linopy bug: as_dataarray(scalar, coords=2D) fails")
@@ -74,7 +73,7 @@ def test_dispatch_solves(dispatch_yaml):
 
 
 def test_non_yaml_model_raises():
-    """Accessing .yaml on a plain model raises a clear error."""
+    """Accessing .yaml on a plain Model raises a clear error."""
     m = Model()
     with pytest.raises(AttributeError, match="not built from YAML"):
         _ = m.yaml

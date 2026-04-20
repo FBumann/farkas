@@ -29,8 +29,9 @@ mypy linopy_yaml
 
 ```
 linopy_yaml/
-├── __init__.py          # Public API: installs monkey-patch, exports register
-├── accessor.py          # YamlAccessor, _YamlDescriptor, from_yaml(), _install()
+├── __init__.py          # Public API: exports Model, MathSchema, register
+├── model.py             # Model subclass (TEMP — see below), from_yaml classmethod
+├── accessor.py          # YamlAccessor class (state + extend())
 ├── schema.py            # Pydantic models for YAML validation
 ├── loader.py            # Data coercion, validation, master coords
 ├── expression_parser.py # pyparsing grammar for math expressions
@@ -42,14 +43,16 @@ tests/
 ├── test_schema.py       # YAML schema validation tests
 ├── test_loader.py       # Data loading and coercion tests
 ├── test_parser.py       # Expression and where-string parser tests
+├── test_accessor.py     # YamlAccessor + extend() behavior
 └── test_dispatch.py     # Integration test with the dispatch example
 ```
 
 ## API
 
+> **Note:** SPEC.md describes the target monkey-patch design (`from linopy import Model; import linopy_yaml`). The package currently ships a `linopy_yaml.Model` subclass as a temporary workaround because `linopy.Model.__slots__` does not include `__weakref__`. Once upstream linopy adds it (see `linopy_weakref_issue.md`), `linopy_yaml/model.py` can be removed and the package should switch to the spec's monkey-patch + WeakKeyDictionary design.
+
 ```python
-import linopy_yaml  # monkey-patches linopy.Model
-from linopy import Model
+from linopy_yaml import Model  # TEMP: subclass; spec target is monkey-patched linopy.Model
 
 # Build from YAML
 m = Model.from_yaml("model.yaml", data={...}, coords={...})
