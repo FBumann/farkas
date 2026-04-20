@@ -2,13 +2,13 @@
 
 YAML-based math definition layer for [linopy](https://github.com/PyPSA/linopy).
 
-Define optimisation problems declaratively in YAML, supply data at runtime, and get a standard `linopy.Model` ready to solve.
+Define optimisation problems declaratively in YAML, supply data at runtime, and get a `linopy.Model` ready to solve.
 
 ## Goals
 
 - **Declarative math** — problems are defined in YAML, not Python. Readable without knowing the implementation.
 - **Clean boundary** — YAML owns the math definition; Python owns data loading and solving.
-- **Pure consumer of linopy's public API** — no internals, no wrapping, no lock-in. The result of `from_yaml()` is a standard `linopy.Model`.
+- **Pure consumer of linopy's public API** — no internals, no wrapping, no lock-in. The result of `from_yaml()` is a `linopy.Model`.
 - **Fail early, fail loud** — all validation happens at load time, with error messages that name the problem and suggest the fix.
 
 ## Use cases
