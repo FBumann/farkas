@@ -106,20 +106,22 @@ print(m.solution["p"])
 At import time, `linopy_yaml` monkey-patches `linopy.Model` with two additions:
 
 - `Model.from_yaml(path, data=..., coords=...)` — builds a model from a YAML file
-- `model.yaml` — accessor on instances built from YAML (schema, dataset, coords, add)
+- `model.yaml` — accessor available on any `linopy.Model`, lazy-initialised on first access
 
 The result of `from_yaml()` is a plain `linopy.Model`. The YAML metadata is stored externally via a descriptor and weakref-based registry, avoiding any modification to linopy's `__slots__`.
 
 This works reliably but has a minor limitation: the accessor link breaks if a model is pickled or deep-copied. A future linopy PR could add `_yaml_accessor` to `Model.__slots__` (defaulting to `None`), which would eliminate the need for the external registry and make the integration fully native.
 
+`.yaml` describes only the **YAML-managed portion** of the model, never the whole model. Python-side additions via `m.add_variables()`, `m.add_constraints()`, etc. are always outside `.yaml`. The source of truth for the full model is the linopy model itself (`m.variables`, `m.constraints`).
+
 ```
 linopy.Model                      (unchanged — all solving, variable/constraint storage, etc.)
     ├── .from_yaml()              (monkey-patched — builds model from YAML + data)
-    └── .yaml                     (monkey-patched descriptor — accessor for YAML metadata)
-         ├── .schema              (the parsed MathSchema)
-         ├── .dataset             (xr.Dataset of loaded parameters)
-         ├── .coords              (master coordinate dict)
-         └── .extend()               (extend with another YAML file)
+    └── .yaml                     (monkey-patched descriptor — lazy-initialised on any model)
+         ├── .schema              (MathSchema, or None if no YAML has been loaded)
+         ├── .dataset             (xr.Dataset of loaded parameters; empty for Python-built models)
+         ├── .coords              (master coordinate dict — live inference + declared coords)
+         └── .extend()            (extend with another YAML file; available on any model)
 ```
 
 ### Why a separate package?
@@ -755,36 +757,66 @@ m = Model.from_yaml(
 | `data`    | `dict` or `None` | Parameter data. Keys are parameter names as declared in the YAML. See [Section 4.3](#43-accepted-input-types-per-parameter) for accepted value types.                |
 | `coords`  | `dict` or `None` | Dimension coordinate values. Keys are dimension names. Values are anything accepted by `pd.Index()`. Overrides `values` declared in the YAML for the same dimension. |
 
-**Returns:** A `linopy.Model` with the `.yaml` accessor populated. Call `.solve()` as normal.
+**Returns:** A `linopy.Model` with the `.yaml` accessor eagerly populated (schema, dataset, declared coords). Call `.solve()` as normal.
 
 **Raises:** `ValueError` with descriptive message for any validation failure. `pydantic.ValidationError` if the YAML structure is invalid.
 
 ### 9.2 `model.yaml` accessor
 
-Available on models built via `Model.from_yaml()`. Raises `AttributeError` with a clear message on other models.
+Available on any `linopy.Model`. On models not built via `from_yaml()`, the accessor is lazy-initialised on first access with an empty schema and dataset; subsequent accesses return the same accessor object.
+
+`.yaml` covers only the YAML-managed portion of the model, never the whole model. The contract is consistent across all construction paths:
+
+| How the model was built          | `.yaml` covers           |
+|----------------------------------|--------------------------|
+| `from_yaml()` only               | everything               |
+| `from_yaml()` + Python additions | the YAML portion         |
+| Python only                      | nothing (empty accessor) |
+| Python + `extend()`              | the `extend()` portion   |
 
 ```python
-m.yaml.schema      # MathSchema — the parsed YAML definition
-m.yaml.dataset     # xr.Dataset — all loaded parameters
-m.yaml.coords      # dict[str, pd.Index] — master coordinates
-m.yaml.extend(path, data=...)  # extend with another YAML file
+m.yaml.schema      # MathSchema or None — None if no YAML has been loaded
+m.yaml.dataset     # xr.Dataset of loaded parameters; empty for Python-built models
+m.yaml.coords      # dict[str, pd.Index] — live inference + declared coords
+m.yaml.extend(path, data=..., coords=...)  # extend with another YAML file
 ```
 
-**`model.yaml.schema`** — Programmatic access to the YAML definition:
+**Attribute behaviour by construction path:**
+
+| Attribute    | Python-built model              | YAML-built model       |
+|--------------|---------------------------------|------------------------|
+| `.schema`    | `None` (until first `extend()`) | `MathSchema`           |
+| `.dataset`   | `xr.Dataset()` (empty)          | populated `xr.Dataset` |
+| `.coords`    | live inference from variables   | YAML + `coords=`       |
+| `.extend()`  | available                       | available              |
+
+**`model.yaml.schema`** — Programmatic access to the YAML definition. `None` until at least one YAML file has been loaded (via `from_yaml()` or `extend()`):
 
 ```python
 m.yaml.schema.variables["p"].foreach   # ['snapshot', 'generator']
 m.yaml.schema.parameters["load"].dims  # ['snapshot']
 ```
 
-**`model.yaml.dataset`** — The loaded parameter dataset:
+**`model.yaml.dataset`** — The loaded parameter dataset. Empty `xr.Dataset()` for models that have not loaded any YAML:
 
 ```python
 m.yaml.dataset["p_max"]    # xr.DataArray indexed over generator
 m.yaml.dataset["load"]     # xr.DataArray indexed over snapshot
 ```
 
-**`model.yaml.extend(path, data=...)`** — Add variables, constraints, and/or objectives from a second YAML file. The second YAML may reference dimensions and parameters already loaded. New parameters can be provided via `data=`.
+**`model.yaml.coords`** — Live computed view: every access re-unions the coordinates of all variables currently on the model (via linopy's `model.variables.indexes`) and overlays explicitly declared coords (from YAML `values:` or a `coords=` kwarg). Variables added to the model between two accesses appear immediately on the second.
+
+**`model.yaml.extend(path, *, data=None, coords=None)`** — Add variables, constraints, and/or objectives from another YAML file. Available on any model — including Python-built ones — because `.yaml` lazy-initialises on first access. The extension YAML may reference dimensions and parameters already present in the model.
+
+**Coords precedence for `extend()`** (highest first):
+
+1. `coords=` kwarg to this call
+2. Coords already declared by prior YAML or prior `coords=` kwarg
+3. Coords inferred from existing model variables
+4. `values:` declared in the extension YAML
+5. Error if none of the above resolve a referenced dim
+
+If the extension YAML declares `values:` for a dim that is already known by any of (2) or (3), the values must match. Silent override would hide real bugs.
 
 ### 9.3 `@linopy_yaml.register(name)`
 
@@ -838,3 +870,6 @@ def weighted_sum(array, weights, *, over):
 
 **Q3: Array slicing syntax.**
 Calliope supports `p[generator_bus=bus]` — selecting a subset of an array along a dimension. This is needed for network models where a generator is "at" a bus. Probably needed before this package is useful for PyPSA-style models.
+
+**Q8: Should `.yaml` ever become a complete representation of the model?**
+Currently `.yaml` covers only the YAML-managed portion. A future version could intercept `add_variables()` and `add_constraints()` calls and synthesise schema entries from their arguments. Investigation shows this is feasible on the *math* side — those calls carry all the structurally needed information (coords, bounds as DataArrays, `LinearExpression` coefficients, masks). What is lost is the **human-readable layer**: expression strings (`sum(p * cost, over=generator)`), where strings (`"p_max > 0"`), and bound parameter names become anonymous arrays. The result would be a **functional round-trip** (enough to rebuild an identical model) but not a **readable round-trip** (regenerating clean YAML); the latter would require linopy itself to carry expression provenance. Whether functional round-trip alone is worth the wrapping complexity is undecided. The clean alternative is to leave `.yaml` as "YAML-managed portion only" permanently. Tracked in [issue #3](https://github.com/FBumann/linopy-yaml/issues/3).
