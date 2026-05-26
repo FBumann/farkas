@@ -3,7 +3,8 @@
 import pandas as pd
 import pytest
 
-from linopy_yaml import Model
+import linopy_yaml  # noqa: F401 — registers .from_yaml / .yaml on linopy.Model
+from linopy import Model
 
 
 @pytest.mark.xfail(reason="upstream linopy bug: as_dataarray(scalar, coords=2D) fails")

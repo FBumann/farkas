@@ -108,9 +108,9 @@ At import time, `linopy_yaml` monkey-patches `linopy.Model` with two additions:
 - `Model.from_yaml(path, data=..., coords=...)` — builds a model from a YAML file
 - `model.yaml` — accessor available on any `linopy.Model`, lazy-initialised on first access
 
-The result of `from_yaml()` is a plain `linopy.Model`. The YAML metadata is stored externally via a descriptor and weakref-based registry, avoiding any modification to linopy's `__slots__`.
+The result of `from_yaml()` is a plain `linopy.Model`. The YAML metadata is stored externally in a `WeakKeyDictionary` keyed by model, exposed through a class-level descriptor. This relies on `Model.__weakref__` being available, which has been the case since linopy v0.7 (PyPSA/linopy#656).
 
-This works reliably but has a minor limitation: the accessor link breaks if a model is pickled or deep-copied. A future linopy PR could add `_yaml_accessor` to `Model.__slots__` (defaulting to `None`), which would eliminate the need for the external registry and make the integration fully native.
+One limitation worth flagging: the accessor link is not preserved across `pickle` or `copy.deepcopy`. A reconstructed model has no entry in the registry, so the first `.yaml` access lazily produces a fresh, empty accessor. The full model state (variables, constraints, solution) is unaffected — only the YAML schema/dataset are lost.
 
 `.yaml` describes only the **YAML-managed portion** of the model, never the whole model. Python-side additions via `m.add_variables()`, `m.add_constraints()`, etc. are always outside `.yaml`. The source of truth for the full model is the linopy model itself (`m.variables`, `m.constraints`).
 
