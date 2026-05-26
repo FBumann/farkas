@@ -112,63 +112,67 @@ class YamlAccessor:
         5. Error if none of the above provide values for a referenced dim
         """
         path = Path(path)
-        raw = yaml.safe_load(path.read_text())
-        if raw is None:
-            raw = {}
+        try:
+            raw = yaml.safe_load(path.read_text())
+            if raw is None:
+                raw = {}
 
-        schema = MathSchema.model_validate(raw)
+            schema = MathSchema.model_validate(raw)
 
-        kwarg_coords: dict[str, pd.Index] = {}
-        if coords is not None:
-            for k, v in coords.items():
-                kwarg_coords[k] = pd.Index(v, name=k)
+            kwarg_coords: dict[str, pd.Index] = {}
+            if coords is not None:
+                for k, v in coords.items():
+                    kwarg_coords[k] = pd.Index(v, name=k)
 
-        # Everything we know about coords going into this extend, in
-        # precedence order: kwarg > prior declared > inferred.
-        known = _infer_coords(self._model)
-        known.update(self._declared_coords)
-        known.update(kwarg_coords)
+            # Everything we know about coords going into this extend, in
+            # precedence order: kwarg > prior declared > inferred.
+            known = _infer_coords(self._model)
+            known.update(self._declared_coords)
+            known.update(kwarg_coords)
 
-        # Mismatch check: if the extension YAML declares values: for a dim
-        # we already know about, the values must match. Silent override
-        # would hide real bugs.
-        for dim_name, dim_def in schema.dimensions.items():
-            if dim_def.values is None or dim_name not in known:
-                continue
-            declared = pd.Index(dim_def.values, name=dim_name)
-            existing = known[dim_name]
-            if not declared.equals(existing):
-                msg = (
-                    f"Extension declares dimension '{dim_name}' with values "
-                    f"that differ from the existing model.\n"
-                    f"  Existing: {list(existing)}\n"
-                    f"  Declared: {list(declared)}\n"
-                    f"Either omit 'values:' for '{dim_name}' in the "
-                    f"extension, or make them match."
-                )
-                raise ValueError(msg)
+            # Mismatch check: if the extension YAML declares values: for a dim
+            # we already know about, the values must match. Silent override
+            # would hide real bugs.
+            for dim_name, dim_def in schema.dimensions.items():
+                if dim_def.values is None or dim_name not in known:
+                    continue
+                declared = pd.Index(dim_def.values, name=dim_name)
+                existing = known[dim_name]
+                if not declared.equals(existing):
+                    msg = (
+                        f"Extension declares dimension '{dim_name}' with values "
+                        f"that differ from the existing model.\n"
+                        f"  Existing: {list(existing)}\n"
+                        f"  Declared: {list(declared)}\n"
+                        f"Either omit 'values:' for '{dim_name}' in the "
+                        f"extension, or make them match."
+                    )
+                    raise ValueError(msg)
 
-        # ``known`` is passed as the override to build_master_coords, so any
-        # dim it covers takes precedence over the extension's ``values:``.
-        # Dims still missing fall through to ``values:`` or raise.
-        master_coords = build_master_coords(schema, known)
+            # ``known`` is passed as the override to build_master_coords, so any
+            # dim it covers takes precedence over the extension's ``values:``.
+            # Dims still missing fall through to ``values:`` or raise.
+            master_coords = build_master_coords(schema, known)
 
-        new_dataset = load_parameters(schema, data, master_coords)
-        merged_dataset = self._dataset.merge(new_dataset, compat="override")
+            new_dataset = load_parameters(schema, data, master_coords)
+            merged_dataset = self._dataset.merge(new_dataset, compat="override")
 
-        build_model(self._model, schema, merged_dataset, master_coords)
+            build_model(self._model, schema, merged_dataset, master_coords)
 
-        # Persist explicit user statements about coords. Inferred dims are
-        # deliberately left unstored so ``self.coords`` keeps reflecting
-        # whatever the model currently has.
-        for dim_name, dim_def in schema.dimensions.items():
-            if dim_def.values is not None:
-                self._declared_coords[dim_name] = pd.Index(
-                    dim_def.values, name=dim_name
-                )
-        for dim, idx in kwarg_coords.items():
-            self._declared_coords[dim] = idx
+            # Persist explicit user statements about coords. Inferred dims are
+            # deliberately left unstored so ``self.coords`` keeps reflecting
+            # whatever the model currently has.
+            for dim_name, dim_def in schema.dimensions.items():
+                if dim_def.values is not None:
+                    self._declared_coords[dim_name] = pd.Index(
+                        dim_def.values, name=dim_name
+                    )
+            for dim, idx in kwarg_coords.items():
+                self._declared_coords[dim] = idx
 
-        self._dataset = merged_dataset
-        if self._schema is None:
-            self._schema = schema
+            self._dataset = merged_dataset
+            if self._schema is None:
+                self._schema = schema
+        except Exception as exc:
+            exc.add_note(f"while extending with YAML '{path}'")
+            raise
