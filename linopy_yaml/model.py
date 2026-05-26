@@ -34,18 +34,24 @@ class Model(linopy.Model):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self._yaml = None
+        self._yaml: YamlAccessor | None = None
 
     @property
     def yaml(self) -> YamlAccessor:
-        """Return the YAML accessor, or raise if this model has none."""
+        """Return the YAML accessor, lazy-initialising one if needed.
+
+        On models not built via ``from_yaml()``, this returns an empty-but-
+        valid accessor (``schema=None``, empty dataset) whose ``.coords``
+        falls back to live inference from ``model.variables``. The same
+        accessor object is returned on subsequent accesses.
+        """
         if self._yaml is None:
-            msg = (
-                "This model was not built from YAML.\n"
-                "Use Model.from_yaml('model.yaml', data={...}) to "
-                "create a YAML-backed model."
+            self._yaml = YamlAccessor(
+                self,
+                schema=None,
+                dataset=xr.Dataset(),
+                coords={},
             )
-            raise AttributeError(msg)
         return self._yaml
 
     @classmethod

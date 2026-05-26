@@ -72,8 +72,3 @@ def test_dispatch_solves(dispatch_yaml):
         assert abs(gen_sum - load_t) < 1e-4, f"Balance violated at t={t}"
 
 
-def test_non_yaml_model_raises():
-    """Accessing .yaml on a plain Model raises a clear error."""
-    m = Model()
-    with pytest.raises(AttributeError, match="not built from YAML"):
-        _ = m.yaml
