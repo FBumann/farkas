@@ -6,7 +6,9 @@ import pandas as pd
 import pytest
 import xarray as xr
 
-from linopy_yaml import Model
+import linopy_yaml  # noqa: F401 — registers .from_yaml / .yaml on linopy.Model
+from linopy import Model
+from linopy_yaml._patch import _ACCESSOR_REGISTRY
 from linopy_yaml.accessor import YamlAccessor, _infer_coords
 from linopy_yaml.schema import MathSchema
 
@@ -15,7 +17,7 @@ def _model_with_coords(coords: dict[str, pd.Index]) -> Model:
     """Build a fresh Model with a bare YamlAccessor carrying the given coords."""
     model = Model()
     schema = MathSchema.model_validate({})
-    model._yaml = YamlAccessor(model, schema, xr.Dataset(), coords)
+    _ACCESSOR_REGISTRY[model] = YamlAccessor(model, schema, xr.Dataset(), coords)
     return model
 
 

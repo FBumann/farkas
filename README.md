@@ -18,7 +18,9 @@ Define optimisation problems declaratively in YAML, supply data at runtime, and 
 Small-to-medium models, teaching contexts, policy studies, reproducible research. The YAML carries the math; runtime data comes from pandas/xarray.
 
 ```python
-from linopy_yaml import Model
+from linopy import Model
+import linopy_yaml  # registers .from_yaml and .yaml on linopy.Model
+
 m = Model.from_yaml("dispatch.yaml", data={...}, coords={...})
 m.solve()
 ```
@@ -117,10 +119,9 @@ objectives:
 
 **Python:**
 
-> **Note:** `linopy_yaml` currently ships a `Model` subclass of `linopy.Model` as a temporary workaround — `linopy.Model.__slots__` does not include `__weakref__`, which blocks the monkey-patch design described in [SPEC.md](SPEC.md). Once upstream linopy adds `__weakref__`, the package will switch to the spec's design and you will be able to import `Model` directly from `linopy` again.
-
 ```python
-from linopy_yaml import Model
+from linopy import Model
+import linopy_yaml  # registers .from_yaml and .yaml on linopy.Model
 import pandas as pd
 
 m = Model.from_yaml(
@@ -184,7 +185,7 @@ See [SPEC.md](SPEC.md) for the full design specification.
 
 ## Status
 
-**v0.0.1** — early prototype. The core pipeline works (schema → loader → parser → builder → linopy.Model). See [SPEC.md](SPEC.md) for the full design and open questions.
+**v0.0.2** — early prototype. The core pipeline works (schema → loader → parser → builder → linopy.Model). See [SPEC.md](SPEC.md) for the full design and open questions.
 
 ## License
 
