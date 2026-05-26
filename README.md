@@ -27,7 +27,15 @@ m.solve()
 
 The primary use case this package optimises for. Packages like PyPSA, capacity-expansion frameworks, and dispatch models build their core math in Python for good reasons: full linopy feature access, performance control, and complexity that doesn't map cleanly to YAML.
 
-But their users regularly need to add custom constraints — a policy requirement, a pilot technology, a sensitivity scenario. Today the options are unappealing: fork the package, monkey-patch, or maintain a separate Python script that reaches into model internals. A short YAML file is cleaner:
+Their users still need to modify the model at runtime — a policy requirement, a pilot technology, a sensitivity scenario. The standard answer today is a **callback**: PyPSA's `extra_functionality`, for example, accepts a Python function that runs after the core model is built and adds whatever it wants. That gives you a clean entry point and, because the callback is arbitrary Python, it is also the most flexible option available — anything you can compute, you can use to shape the constraint.
+
+Where callbacks fall short is everything *around* the math:
+
+- **Silent from a results perspective.** PyPSA-style packages treat named components and parameters as the model's own documentation. A callback that calls `model.add_constraints(...)` doesn't show up there — six months later, when you re-read the run, the modification is invisible unless you also go read the Python.
+- **Math hidden inside wiring code.** A callback constructs the constraint in Python — index alignment, `.loc[]` lookups, knowing how the host package mapped its components onto linopy variables. The YAML expresses the same constraint as the inequality itself (`p - roll(p, snapshot=1) <= ramp_max`), using only names the model already exposes. The reader sees the math, not the machinery that produced it.
+- **Not a sharable artefact.** A callback is a Python function — it lives inside a notebook, a helper module, or a config-loader script. It does not diff cleanly on its own, and it cannot be handed to a colleague without the surrounding code.
+
+A YAML file is strictly less powerful — it can only express math. But when the modification *is just math*, which covers most policy requirements, pilot technologies, and sensitivity scenarios, the YAML addresses all three problems above: it sits next to the parameters and named entities of the model, stays in the user's working vocabulary, and is a self-contained text artefact that travels independently. If your modification needs arbitrary Python in the loop, stay with the callback.
 
 ```python
 # user adds a custom ramp constraint on top of an existing model
@@ -46,8 +54,6 @@ constraints:
     equations:
       - expression: p - roll(p, snapshot=1) <= ramp_max
 ```
-
-The constraint is self-documenting, diffs cleanly, and can be shared or versioned independently from the core model.
 
 ### 3. Share and version-control model math as text
 
