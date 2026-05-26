@@ -17,7 +17,7 @@ classifiers = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "linopy>=0.7",
+    "linopy>=0.7.0,<0.8",
     "xarray>=2024.2.0",
     "pandas",
     "numpy",
