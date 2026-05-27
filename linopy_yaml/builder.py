@@ -10,6 +10,7 @@ import xarray as xr
 
 import linopy
 
+from linopy_yaml._notes import note
 from linopy_yaml.expression_parser import (
     ArithNode,
     BinOpNode,
@@ -55,7 +56,7 @@ def _build_variables(
     master_coords: dict[str, pd.Index],
 ) -> None:
     for vname, vdef in schema.variables.items():
-        try:
+        with note(f"while building variable '{vname}'"):
             coords = {d: master_coords[d] for d in vdef.foreach}
 
             # Resolve bounds
@@ -76,9 +77,6 @@ def _build_variables(
                 binary=vdef.binary,
                 integer=vdef.integer,
             )
-        except Exception as exc:
-            exc.add_note(f"while building variable '{vname}'")
-            raise
 
 
 def _resolve_bound(
@@ -108,7 +106,7 @@ def _build_constraints(
     master_coords: dict[str, pd.Index],
 ) -> None:
     for cname, cdef in schema.constraints.items():
-        try:
+        with note(f"while building constraint '{cname}'"):
             # Evaluate constraint-level where mask
             constraint_mask = evaluate_where(cdef.where, dataset, master_coords)
 
@@ -148,9 +146,6 @@ def _build_constraints(
                 mask_da = None if isinstance(mask, bool) and mask else mask
 
                 model.add_constraints(lhs, sign, rhs, name=eq_name, mask=mask_da)
-        except Exception as exc:
-            exc.add_note(f"while building constraint '{cname}'")
-            raise
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +159,7 @@ def _build_objectives(
     master_coords: dict[str, pd.Index],
 ) -> None:
     for oname, odef in schema.objectives.items():
-        try:
+        with note(f"while building objective '{oname}'"):
             eq = odef.equations[0]
             ast = parse_expression(eq.expression)
 
@@ -179,9 +174,6 @@ def _build_objectives(
 
             sense = "min" if odef.sense == "minimize" else "max"
             model.add_objective(expr, overwrite=True, sense=sense)
-        except Exception as exc:
-            exc.add_note(f"while building objective '{oname}'")
-            raise
 
 
 # ---------------------------------------------------------------------------

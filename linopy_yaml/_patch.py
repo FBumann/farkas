@@ -14,6 +14,7 @@ import linopy
 import xarray as xr
 import yaml
 
+from linopy_yaml._notes import note
 from linopy_yaml.accessor import YamlAccessor
 from linopy_yaml.builder import build_model
 from linopy_yaml.loader import build_master_coords, load_parameters
@@ -76,7 +77,7 @@ def _from_yaml(
         If the YAML structure is invalid.
     """
     path = Path(path)
-    try:
+    with note(f"while loading YAML '{path}'"):
         raw = yaml.safe_load(path.read_text())
         if raw is None:
             raw = {}
@@ -90,9 +91,6 @@ def _from_yaml(
         _ACCESSOR_REGISTRY[model] = YamlAccessor(model, schema, dataset, master_coords)
 
         build_model(model, schema, dataset, master_coords)
-    except Exception as exc:
-        exc.add_note(f"while loading YAML '{path}'")
-        raise
 
     return model
 

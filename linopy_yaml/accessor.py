@@ -10,6 +10,7 @@ import pandas as pd
 import xarray as xr
 import yaml
 
+from linopy_yaml._notes import note
 from linopy_yaml.builder import build_model
 from linopy_yaml.loader import build_master_coords, load_parameters
 from linopy_yaml.schema import MathSchema
@@ -112,7 +113,7 @@ class YamlAccessor:
         5. Error if none of the above provide values for a referenced dim
         """
         path = Path(path)
-        try:
+        with note(f"while extending with YAML '{path}'"):
             raw = yaml.safe_load(path.read_text())
             if raw is None:
                 raw = {}
@@ -173,6 +174,3 @@ class YamlAccessor:
             self._dataset = merged_dataset
             if self._schema is None:
                 self._schema = schema
-        except Exception as exc:
-            exc.add_note(f"while extending with YAML '{path}'")
-            raise
