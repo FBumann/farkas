@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, assert_never
 
 import numpy as np
 import pandas as pd
@@ -10,7 +10,9 @@ import xarray as xr
 
 import linopy
 
+from linopy_yaml._notes import note
 from linopy_yaml.expression_parser import (
+    ArithNode,
     BinOpNode,
     CompareNode,
     FuncCallNode,
@@ -54,26 +56,27 @@ def _build_variables(
     master_coords: dict[str, pd.Index],
 ) -> None:
     for vname, vdef in schema.variables.items():
-        coords = {d: master_coords[d] for d in vdef.foreach}
+        with note(f"while building variable '{vname}'"):
+            coords = {d: master_coords[d] for d in vdef.foreach}
 
-        # Resolve bounds
-        lower = _resolve_bound(vdef.bounds.lower, dataset)
-        upper = _resolve_bound(vdef.bounds.upper, dataset)
+            # Resolve bounds
+            lower = _resolve_bound(vdef.bounds.lower, dataset)
+            upper = _resolve_bound(vdef.bounds.upper, dataset)
 
-        # Evaluate where mask
-        mask = evaluate_where(vdef.where, dataset, master_coords)
-        if isinstance(mask, bool):
-            mask = None if mask else xr.DataArray(False)
+            # Evaluate where mask
+            mask = evaluate_where(vdef.where, dataset, master_coords)
+            if isinstance(mask, bool):
+                mask = None if mask else xr.DataArray(False)
 
-        model.add_variables(
-            lower=lower,
-            upper=upper,
-            coords=coords,
-            name=vname,
-            mask=mask,
-            binary=vdef.binary,
-            integer=vdef.integer,
-        )
+            model.add_variables(
+                lower=lower,
+                upper=upper,
+                coords=coords,
+                name=vname,
+                mask=mask,
+                binary=vdef.binary,
+                integer=vdef.integer,
+            )
 
 
 def _resolve_bound(
@@ -103,45 +106,46 @@ def _build_constraints(
     master_coords: dict[str, pd.Index],
 ) -> None:
     for cname, cdef in schema.constraints.items():
-        # Evaluate constraint-level where mask
-        constraint_mask = evaluate_where(cdef.where, dataset, master_coords)
+        with note(f"while building constraint '{cname}'"):
+            # Evaluate constraint-level where mask
+            constraint_mask = evaluate_where(cdef.where, dataset, master_coords)
 
-        n_eqs = len(cdef.equations)
+            n_eqs = len(cdef.equations)
 
-        for i, eq in enumerate(cdef.equations):
-            # Per-equation where mask (ANDed with constraint mask)
-            eq_mask = evaluate_where(eq.where, dataset, master_coords)
+            for i, eq in enumerate(cdef.equations):
+                # Per-equation where mask (ANDed with constraint mask)
+                eq_mask = evaluate_where(eq.where, dataset, master_coords)
 
-            if isinstance(constraint_mask, bool) and isinstance(eq_mask, bool):
-                mask = constraint_mask and eq_mask
-            elif isinstance(constraint_mask, bool):
-                mask = eq_mask if constraint_mask else xr.DataArray(False)
-            elif isinstance(eq_mask, bool):
-                mask = constraint_mask if eq_mask else xr.DataArray(False)
-            else:
-                mask = constraint_mask & eq_mask
+                if isinstance(constraint_mask, bool) and isinstance(eq_mask, bool):
+                    mask = constraint_mask and eq_mask
+                elif isinstance(constraint_mask, bool):
+                    mask = eq_mask if constraint_mask else xr.DataArray(False)
+                elif isinstance(eq_mask, bool):
+                    mask = constraint_mask if eq_mask else xr.DataArray(False)
+                else:
+                    mask = constraint_mask & eq_mask
 
-            # Parse expression
-            ast = parse_expression(eq.expression)
-            if not isinstance(ast, CompareNode):
-                msg = (
-                    f"Constraint '{cname}' equation {i}: expression must "
-                    f"contain exactly one comparison operator (<=, >=, ==).\n"
-                    f"Got: {eq.expression!r}"
-                )
-                raise ValueError(msg)
+                # Parse expression
+                ast = parse_expression(eq.expression)
+                if not isinstance(ast, CompareNode):
+                    msg = (
+                        f"Equation {i}: expression must contain exactly one "
+                        f"comparison operator (<=, >=, ==).\n"
+                        f"Got: {eq.expression!r}"
+                    )
+                    raise ValueError(msg)
 
-            # Evaluate both sides
-            lhs = _eval_ast(ast.left, model, dataset, master_coords)
-            rhs = _eval_ast(ast.right, model, dataset, master_coords)
-            sign = _SIGN_MAP[ast.op]
+                # Evaluate both sides
+                lhs = _eval_ast(ast.left, model, dataset, master_coords)
+                rhs = _eval_ast(ast.right, model, dataset, master_coords)
+                sign = _SIGN_MAP[ast.op]
 
-            # Name: single equation uses constraint name directly
-            eq_name = cname if n_eqs == 1 else f"{cname}_{i}"
+                # Name: single equation uses constraint name directly
+                eq_name = cname if n_eqs == 1 else f"{cname}_{i}"
 
-            mask_da = None if isinstance(mask, bool) and mask else mask
+                mask_da = None if isinstance(mask, bool) and mask else mask
 
-            model.add_constraints(lhs, sign, rhs, name=eq_name, mask=mask_da)
+                model.add_constraints(lhs, sign, rhs, name=eq_name, mask=mask_da)
 
 
 # ---------------------------------------------------------------------------
@@ -155,20 +159,21 @@ def _build_objectives(
     master_coords: dict[str, pd.Index],
 ) -> None:
     for oname, odef in schema.objectives.items():
-        eq = odef.equations[0]
-        ast = parse_expression(eq.expression)
+        with note(f"while building objective '{oname}'"):
+            eq = odef.equations[0]
+            ast = parse_expression(eq.expression)
 
-        if isinstance(ast, CompareNode):
-            msg = (
-                f"Objective '{oname}': expression must not contain a "
-                f"comparison operator. Got: {eq.expression!r}"
-            )
-            raise ValueError(msg)
+            if isinstance(ast, CompareNode):
+                msg = (
+                    f"Expression must not contain a comparison operator. "
+                    f"Got: {eq.expression!r}"
+                )
+                raise ValueError(msg)
 
-        expr = _eval_ast(ast, model, dataset, master_coords)
+            expr = _eval_ast(ast, model, dataset, master_coords)
 
-        sense = "min" if odef.sense == "minimize" else "max"
-        model.add_objective(expr, overwrite=True, sense=sense)
+            sense = "min" if odef.sense == "minimize" else "max"
+            model.add_objective(expr, overwrite=True, sense=sense)
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +181,7 @@ def _build_objectives(
 # ---------------------------------------------------------------------------
 
 def _eval_ast(
-    node: Any,
+    node: ArithNode,
     model: linopy.Model,
     dataset: xr.Dataset,
     master_coords: dict[str, pd.Index],
@@ -219,8 +224,7 @@ def _eval_ast(
                 kwargs[k] = _eval_ast(v, model, dataset, master_coords)
         return helper(*args, **kwargs)
 
-    msg = f"Unknown AST node type: {type(node)}"
-    raise TypeError(msg)
+    assert_never(node)
 
 
 def _resolve_name(

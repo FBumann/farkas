@@ -9,16 +9,15 @@ description = "YAML-based math definition layer for linopy"
 readme = "README.md"
 license = { text = "MIT" }
 classifiers = [
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: MIT License",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
-    "linopy>=0.7",
+    "linopy>=0.7.0,<0.8",
     "xarray>=2024.2.0",
     "pandas",
     "numpy",

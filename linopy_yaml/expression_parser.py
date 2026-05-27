@@ -30,28 +30,41 @@ class NameNode:
 @dataclass
 class UnaryOpNode:
     op: str
-    operand: Any
+    operand: ArithNode
 
 
 @dataclass
 class BinOpNode:
     op: str
-    left: Any
-    right: Any
-
-
-@dataclass
-class CompareNode:
-    op: str  # "<=", ">=", "=="
-    left: Any
-    right: Any
+    left: ArithNode
+    right: ArithNode
 
 
 @dataclass
 class FuncCallNode:
     name: str
-    args: list[Any] = field(default_factory=list)
-    kwargs: dict[str, Any] = field(default_factory=dict)
+    args: list[ArithNode] = field(default_factory=list)
+    kwargs: dict[str, ArithNode] = field(default_factory=dict)
+
+
+# An arithmetic-only AST node — no comparison. Nested expression positions
+# (operands, args, kwargs) only accept this; CompareNode appears only at the
+# top of a parsed expression.
+# NOTE: the dataclasses above reference `ArithNode` in their annotations
+# before this line — that works only because `from __future__ import
+# annotations` makes annotations strings. Don't remove that future-import
+# unless you also reorder these definitions.
+ArithNode = NumberNode | NameNode | UnaryOpNode | BinOpNode | FuncCallNode
+
+
+@dataclass
+class CompareNode:
+    op: str  # "<=", ">=", "=="
+    left: ArithNode
+    right: ArithNode
+
+
+ExprNode = ArithNode | CompareNode
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +181,7 @@ def _make_right_assoc(tokens: pp.ParseResults) -> Any:
 _GRAMMAR = _build_grammar()
 
 
-def parse_expression(text: str) -> Any:
+def parse_expression(text: str) -> ExprNode:
     """Parse a math expression string into an AST.
 
     Returns one of: NumberNode, NameNode, UnaryOpNode, BinOpNode,

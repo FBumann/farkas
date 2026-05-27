@@ -7,7 +7,7 @@ that can be evaluated against an xr.Dataset to produce boolean masks.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, assert_never
 
 import numpy as np
 import pandas as pd
@@ -40,19 +40,26 @@ class Comparison:
 
 @dataclass
 class NotNode:
-    operand: Any
+    operand: WhereNode
 
 
 @dataclass
 class AndNode:
-    left: Any
-    right: Any
+    left: WhereNode
+    right: WhereNode
 
 
 @dataclass
 class OrNode:
-    left: Any
-    right: Any
+    left: WhereNode
+    right: WhereNode
+
+
+# NOTE: NotNode / AndNode / OrNode reference `WhereNode` in their annotations
+# before this line — that works only because `from __future__ import
+# annotations` makes annotations strings. Don't remove that future-import
+# unless you also reorder these definitions.
+WhereNode = BoolLiteral | ExistenceCheck | Comparison | NotNode | AndNode | OrNode
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +137,7 @@ def _fold_or(tokens: pp.ParseResults) -> Any:
 _WHERE_GRAMMAR = _build_where_grammar()
 
 
-def parse_where(text: str) -> Any:
+def parse_where(text: str) -> WhereNode:
     """Parse a where string into an AST."""
     try:
         result = _WHERE_GRAMMAR.parseString(text, parseAll=True)
@@ -161,7 +168,7 @@ def evaluate_where(
 
 
 def _eval_node(
-    node: Any,
+    node: WhereNode,
     dataset: xr.Dataset,
     master_coords: dict[str, pd.Index],
 ) -> xr.DataArray | bool:
@@ -245,5 +252,4 @@ def _eval_node(
             return xr.DataArray(True) if right else left
         return left | right
 
-    msg = f"Unknown where AST node: {type(node)}"
-    raise TypeError(msg)
+    assert_never(node)
