@@ -55,6 +55,10 @@ class OrNode:
     right: WhereNode
 
 
+# NOTE: NotNode / AndNode / OrNode reference `WhereNode` in their annotations
+# before this line — that works only because `from __future__ import
+# annotations` makes annotations strings. Don't remove that future-import
+# unless you also reorder these definitions.
 WhereNode = BoolLiteral | ExistenceCheck | Comparison | NotNode | AndNode | OrNode
 
 

@@ -50,6 +50,10 @@ class FuncCallNode:
 # An arithmetic-only AST node — no comparison. Nested expression positions
 # (operands, args, kwargs) only accept this; CompareNode appears only at the
 # top of a parsed expression.
+# NOTE: the dataclasses above reference `ArithNode` in their annotations
+# before this line — that works only because `from __future__ import
+# annotations` makes annotations strings. Don't remove that future-import
+# unless you also reorder these definitions.
 ArithNode = NumberNode | NameNode | UnaryOpNode | BinOpNode | FuncCallNode
 
 
