@@ -131,8 +131,8 @@ def _build_constraints(
                 ast = parse_expression(eq.expression)
                 if not isinstance(ast, CompareNode):
                     msg = (
-                        f"Constraint '{cname}' equation {i}: expression must "
-                        f"contain exactly one comparison operator (<=, >=, ==).\n"
+                        f"Equation {i}: expression must contain exactly one "
+                        f"comparison operator (<=, >=, ==).\n"
                         f"Got: {eq.expression!r}"
                     )
                     raise ValueError(msg)
@@ -170,8 +170,8 @@ def _build_objectives(
 
             if isinstance(ast, CompareNode):
                 msg = (
-                    f"Objective '{oname}': expression must not contain a "
-                    f"comparison operator. Got: {eq.expression!r}"
+                    f"Expression must not contain a comparison operator. "
+                    f"Got: {eq.expression!r}"
                 )
                 raise ValueError(msg)
 
