@@ -68,5 +68,3 @@ def test_dispatch_solves(dispatch_yaml):
         load_t = [80, 120, 150, 180, 140, 100][t]
         gen_sum = float(p_sol.sel(snapshot=t).sum())
         assert abs(gen_sum - load_t) < 1e-4, f"Balance violated at t={t}"
-
-

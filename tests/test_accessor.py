@@ -26,11 +26,7 @@ def test_extend_rejects_mismatched_dim_values(tmp_path):
     model = _model_with_coords({"time": pd.Index([0, 1, 2, 3], name="time")})
 
     ext = tmp_path / "ext.yaml"
-    ext.write_text(
-        "dimensions:\n"
-        "  time:\n"
-        "    values: [a, b]\n"
-    )
+    ext.write_text("dimensions:\n  time:\n    values: [a, b]\n")
 
     with pytest.raises(ValueError, match="differ from the existing model"):
         model.yaml.extend(ext)
@@ -43,11 +39,7 @@ def test_extend_accepts_matching_dim_values(tmp_path):
     )
 
     ext = tmp_path / "ext.yaml"
-    ext.write_text(
-        "dimensions:\n"
-        "  generator:\n"
-        "    values: [wind, solar]\n"
-    )
+    ext.write_text("dimensions:\n  generator:\n    values: [wind, solar]\n")
 
     # Should not raise from our coords check. It may still raise later from
     # the build step, but not with the mismatch message.
@@ -87,12 +79,8 @@ def test_coords_is_live_view_of_model_variables():
 def test_infer_coords_unions_across_variables():
     """_infer_coords unions per-dim coordinates across all model variables."""
     m = Model()
-    m.add_variables(
-        name="a", coords=[pd.Index(["wind", "solar"], name="generator")]
-    )
-    m.add_variables(
-        name="b", coords=[pd.Index(["wind", "gas"], name="generator")]
-    )
+    m.add_variables(name="a", coords=[pd.Index(["wind", "solar"], name="generator")])
+    m.add_variables(name="b", coords=[pd.Index(["wind", "gas"], name="generator")])
 
     inferred = _infer_coords(m)
     assert "generator" in inferred
@@ -102,17 +90,11 @@ def test_infer_coords_unions_across_variables():
 def test_extend_uses_inferred_coords_when_yaml_omits_values(tmp_path):
     """Extension YAML may omit values: for dims already on the model."""
     m = Model()
-    m.add_variables(
-        name="p", coords=[pd.Index(["wind", "solar"], name="generator")]
-    )
+    m.add_variables(name="p", coords=[pd.Index(["wind", "solar"], name="generator")])
 
     ext = tmp_path / "ext.yaml"
     ext.write_text(
-        "dimensions:\n"
-        "  generator: {}\n"
-        "parameters:\n"
-        "  cap:\n"
-        "    dims: [generator]\n"
+        "dimensions:\n  generator: {}\nparameters:\n  cap:\n    dims: [generator]\n"
     )
 
     m.yaml.extend(ext, data={"cap": pd.Series({"wind": 1.0, "solar": 2.0})})
@@ -124,16 +106,10 @@ def test_extend_uses_inferred_coords_when_yaml_omits_values(tmp_path):
 def test_extend_rejects_yaml_values_that_disagree_with_inferred(tmp_path):
     """Extension values: must match inferred coords too, not just declared."""
     m = Model()
-    m.add_variables(
-        name="p", coords=[pd.Index(["wind", "solar"], name="generator")]
-    )
+    m.add_variables(name="p", coords=[pd.Index(["wind", "solar"], name="generator")])
 
     ext = tmp_path / "ext.yaml"
-    ext.write_text(
-        "dimensions:\n"
-        "  generator:\n"
-        "    values: [wind, gas]\n"
-    )
+    ext.write_text("dimensions:\n  generator:\n    values: [wind, gas]\n")
 
     with pytest.raises(ValueError, match="differ from the existing model"):
         m.yaml.extend(ext)
@@ -142,17 +118,11 @@ def test_extend_rejects_yaml_values_that_disagree_with_inferred(tmp_path):
 def test_extend_coords_kwarg_overrides_inferred(tmp_path):
     """coords= kwarg to extend() wins over inference from model variables."""
     m = Model()
-    m.add_variables(
-        name="p", coords=[pd.Index(["wind", "solar"], name="generator")]
-    )
+    m.add_variables(name="p", coords=[pd.Index(["wind", "solar"], name="generator")])
 
     ext = tmp_path / "ext.yaml"
     ext.write_text(
-        "dimensions:\n"
-        "  generator: {}\n"
-        "parameters:\n"
-        "  cap:\n"
-        "    dims: [generator]\n"
+        "dimensions:\n  generator: {}\nparameters:\n  cap:\n    dims: [generator]\n"
     )
 
     # Override: declare a different generator set just for this extend.

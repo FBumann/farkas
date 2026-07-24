@@ -71,6 +71,7 @@ ExprNode = ArithNode | CompareNode
 # Grammar
 # ---------------------------------------------------------------------------
 
+
 def _build_grammar() -> pp.ParserElement:
     """Build and return the pyparsing grammar for math expressions."""
     # Forward reference for recursive arithmetic
@@ -93,16 +94,16 @@ def _build_grammar() -> pp.ParserElement:
         lambda t: (t[0], t[1])
     )
     pos_arg = arith
-    arg_list = pp.Optional(
-        pp.delimitedList(kwarg | pos_arg)
-    )
+    arg_list = pp.Optional(pp.delimitedList(kwarg | pos_arg))
     func_call = (name + pp.Suppress("(") + arg_list + pp.Suppress(")")).setParseAction(
         _make_func_call
     )
 
     # Atom: function call, number, name, or parenthesized expression
     name_node = name.copy().setParseAction(lambda t: NameNode(t[0]))
-    atom = func_call | number | name_node | (pp.Suppress("(") + arith + pp.Suppress(")"))
+    atom = (
+        func_call | number | name_node | (pp.Suppress("(") + arith + pp.Suppress(")"))
+    )
 
     # Unary
     unary = (pp.oneOf("+ -") + atom).setParseAction(
@@ -141,7 +142,11 @@ def _make_func_call(tokens: pp.ParseResults) -> FuncCallNode:
         if isinstance(item, tuple) and len(item) == 2:
             k, v = item
             if isinstance(v, str):
-                v = NameNode(v) if not v.replace(".", "").isdigit() else NumberNode(float(v))
+                v = (
+                    NameNode(v)
+                    if not v.replace(".", "").isdigit()
+                    else NumberNode(float(v))
+                )
             kwargs[k] = v
         else:
             args.append(item)

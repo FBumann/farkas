@@ -88,18 +88,21 @@ class TestExpressionParser:
 class TestWhereParser:
     def test_bool_literal_true(self):
         from linopy_yaml.where_parser import BoolLiteral
+
         node = parse_where("True")
         assert isinstance(node, BoolLiteral)
         assert node.value is True
 
     def test_existence_check(self):
         from linopy_yaml.where_parser import ExistenceCheck
+
         node = parse_where("p_max")
         assert isinstance(node, ExistenceCheck)
         assert node.name == "p_max"
 
     def test_comparison(self):
         from linopy_yaml.where_parser import Comparison
+
         node = parse_where("p_max > 0")
         assert isinstance(node, Comparison)
         assert node.op == ">"
@@ -107,21 +110,25 @@ class TestWhereParser:
 
     def test_and(self):
         from linopy_yaml.where_parser import AndNode
+
         node = parse_where("a AND b")
         assert isinstance(node, AndNode)
 
     def test_or(self):
         from linopy_yaml.where_parser import OrNode
+
         node = parse_where("a OR b")
         assert isinstance(node, OrNode)
 
     def test_not(self):
         from linopy_yaml.where_parser import NotNode
+
         node = parse_where("NOT a")
         assert isinstance(node, NotNode)
 
     def test_precedence_and_over_or(self):
         from linopy_yaml.where_parser import AndNode, OrNode
+
         node = parse_where("a OR b AND c")
         assert isinstance(node, OrNode)
         assert isinstance(node.right, AndNode)
@@ -129,13 +136,15 @@ class TestWhereParser:
 
 class TestWhereEvaluation:
     def _ds(self):
-        return xr.Dataset({
-            "p_max": xr.DataArray(
-                [100, 0, 50],
-                dims=["g"],
-                coords={"g": ["wind", "solar", "gas"]},
-            ),
-        })
+        return xr.Dataset(
+            {
+                "p_max": xr.DataArray(
+                    [100, 0, 50],
+                    dims=["g"],
+                    coords={"g": ["wind", "solar", "gas"]},
+                ),
+            }
+        )
 
     def _mc(self):
         return {"g": pd.Index(["wind", "solar", "gas"], name="g")}
