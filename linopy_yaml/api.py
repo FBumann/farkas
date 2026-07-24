@@ -62,7 +62,7 @@ def build(
     sources: Mapping[str, Any],
     *,
     coords: dict[str, Any] | None = None,
-    memory_limit: str = "1GB",
+    memory_limit: str = '1GB',
     chunk_rows: int = 2_000_000,
     threads: int | None = None,
     workdir: str | Path | None = None,

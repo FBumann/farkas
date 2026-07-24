@@ -24,28 +24,28 @@ COPY_OPTS = "(FORMAT csv, HEADER false, QUOTE '', ESCAPE '')"
 def build_and_write(
     data_dir: Path,
     out: Path,
-    memory_limit: str = "1GB",
+    memory_limit: str = '1GB',
     threads: int | None = None,
     chunk_snapshots: int = 25_000,
 ) -> None:
     import duckdb
 
-    workdir = out.parent / f"{out.stem}_work"
+    workdir = out.parent / f'{out.stem}_work'
     if workdir.exists():
         shutil.rmtree(workdir)
     workdir.mkdir(parents=True)
 
-    con = duckdb.connect(str(workdir / "spike.duckdb"))
+    con = duckdb.connect(str(workdir / 'spike.duckdb'))
     con.execute(f"SET memory_limit='{memory_limit}'")
     con.execute(f"SET temp_directory='{workdir / 'tmp'}'")
     # LP line order is irrelevant to the solver (labels live in the text), so
     # don't pay for insertion-order preservation in COPY.
-    con.execute("SET preserve_insertion_order=false")
+    con.execute('SET preserve_insertion_order=false')
     if threads:
-        con.execute(f"SET threads={threads}")
+        con.execute(f'SET threads={threads}')
 
-    gens_pq = str(data_dir / "generators.parquet")
-    loads_pq = str(data_dir / "load.parquet")
+    gens_pq = str(data_dir / 'generators.parquet')
+    loads_pq = str(data_dir / 'load.parquet')
 
     # mask -> row absence; dense per-dim index for the active set
     con.execute(
@@ -57,17 +57,15 @@ def build_and_write(
         WHERE p_max > 0
         """
     )
-    con.execute(
-        f"CREATE TABLE loads AS SELECT snapshot, load FROM read_parquet('{loads_pq}')"
-    )
+    con.execute(f"CREATE TABLE loads AS SELECT snapshot, load FROM read_parquet('{loads_pq}')")
 
     # variables: masked coord product, labels via ROW_NUMBER.
     # Partition-wise: a global window materializes all rows (OOMs at ~35M rows
     # under tight limits), so assign labels per snapshot-chunk with a running
     # offset — same result, bounded memory.
-    lo, hi = con.execute("SELECT min(snapshot), max(snapshot) FROM loads").fetchone()
-    n_active = con.execute("SELECT count(*) FROM gens").fetchone()[0]
-    con.execute("CREATE TABLE vars (snapshot BIGINT, gidx BIGINT, var_label BIGINT)")
+    lo, hi = con.execute('SELECT min(snapshot), max(snapshot) FROM loads').fetchone()
+    n_active = con.execute('SELECT count(*) FROM gens').fetchone()[0]
+    con.execute('CREATE TABLE vars (snapshot BIGINT, gidx BIGINT, var_label BIGINT)')
     offset = 0
     for start in range(lo, hi + 1, chunk_snapshots):
         con.execute(
@@ -81,7 +79,7 @@ def build_and_write(
         )
         offset += (
             con.execute(
-                f"SELECT count(*) FROM loads WHERE snapshot >= {start} AND snapshot < {start + chunk_snapshots}"
+                f'SELECT count(*) FROM loads WHERE snapshot >= {start} AND snapshot < {start + chunk_snapshots}'
             ).fetchone()[0]
             * n_active
         )
@@ -95,9 +93,9 @@ def build_and_write(
         """
     )
 
-    obj_part = str(workdir / "obj.part")
-    cons_part = str(workdir / "cons.part")
-    bounds_part = str(workdir / "bounds.part")
+    obj_part = str(workdir / 'obj.part')
+    cons_part = str(workdir / 'cons.part')
+    bounds_part = str(workdir / 'bounds.part')
 
     # objective: sum(p * cost) -> one term row per variable
     con.execute(
@@ -114,10 +112,10 @@ def build_and_write(
     # aggregate never exceeds chunk_snapshots groups regardless of model size.
     # (An unchunked aggregate or a global sorted-rows rewrite both OOM below
     # ~1GB — duckdb can't spill either shape well at this row count.)
-    lo, hi = con.execute("SELECT min(snapshot), max(snapshot) FROM cons").fetchone()
+    lo, hi = con.execute('SELECT min(snapshot), max(snapshot) FROM cons').fetchone()
     cons_chunks = []
     for i, start in enumerate(range(lo, hi + 1, chunk_snapshots)):
-        chunk_part = f"{cons_part}.{i}"
+        chunk_part = f'{cons_part}.{i}'
         cons_chunks.append(chunk_part)
         con.execute(
             f"""
@@ -143,41 +141,39 @@ def build_and_write(
     )
     con.close()
 
-    with open(out, "wb") as f:
-        f.write(b"min\n\nobj:\n")
-        with open(obj_part, "rb") as part:
+    with open(out, 'wb') as f:
+        f.write(b'min\n\nobj:\n')
+        with open(obj_part, 'rb') as part:
             shutil.copyfileobj(part, f)
-        f.write(b"\ns.t.\n\n")
+        f.write(b'\ns.t.\n\n')
         for chunk_part in cons_chunks:
-            with open(chunk_part, "rb") as part:
+            with open(chunk_part, 'rb') as part:
                 shutil.copyfileobj(part, f)
-        f.write(b"\nbounds\n")
-        with open(bounds_part, "rb") as part:
+        f.write(b'\nbounds\n')
+        with open(bounds_part, 'rb') as part:
             shutil.copyfileobj(part, f)
-        f.write(b"\nend\n")
+        f.write(b'\nend\n')
 
     shutil.rmtree(workdir)
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data", type=Path, required=True)
-    ap.add_argument("--out", type=Path, required=True)
-    ap.add_argument("--memory-limit", default="1GB")
-    ap.add_argument("--threads", type=int, default=None)
-    ap.add_argument("--chunk-snapshots", type=int, default=25_000)
+    ap.add_argument('--data', type=Path, required=True)
+    ap.add_argument('--out', type=Path, required=True)
+    ap.add_argument('--memory-limit', default='1GB')
+    ap.add_argument('--threads', type=int, default=None)
+    ap.add_argument('--chunk-snapshots', type=int, default=25_000)
     args = ap.parse_args()
 
     t0 = time.perf_counter()
-    build_and_write(
-        args.data, args.out, args.memory_limit, args.threads, args.chunk_snapshots
-    )
+    build_and_write(args.data, args.out, args.memory_limit, args.threads, args.chunk_snapshots)
     dt = time.perf_counter() - t0
     print(
-        f"duckdb (memory_limit={args.memory_limit}): wrote {args.out} "
-        f"({args.out.stat().st_size / 1e6:.1f} MB) in {dt:.2f}s"
+        f'duckdb (memory_limit={args.memory_limit}): wrote {args.out} '
+        f'({args.out.stat().st_size / 1e6:.1f} MB) in {dt:.2f}s'
     )
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

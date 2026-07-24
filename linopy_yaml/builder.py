@@ -3,11 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, assert_never
-
-import linopy
-import pandas as pd
-import xarray as xr
+from typing import TYPE_CHECKING, Any, assert_never
 
 from linopy_yaml._notes import note
 from linopy_yaml.expansion import parse_and_expand
@@ -21,11 +17,17 @@ from linopy_yaml.expression_parser import (
     UnaryOpNode,
 )
 from linopy_yaml.helpers import get_helper
-from linopy_yaml.schema import MathSchema
 from linopy_yaml.where_parser import evaluate_where
 
+if TYPE_CHECKING:
+    import linopy
+    import pandas as pd
+    import xarray as xr
+
+    from linopy_yaml.schema import MathSchema
+
 # Mapping from YAML comparison operators to linopy sign strings
-_SIGN_MAP = {"==": "=", "<=": "<=", ">=": ">="}
+_SIGN_MAP = {'==': '=', '<=': '<=', '>=': '>='}
 
 
 @dataclass(frozen=True)
@@ -100,7 +102,7 @@ def _resolve_bound(
         if value not in dataset:
             msg = (
                 f"Bound references parameter '{value}' which is not in the "
-                f"loaded dataset. Available: {sorted(dataset.data_vars)}"
+                f'loaded dataset. Available: {sorted(dataset.data_vars)}'
             )
             raise ValueError(msg)
         return dataset[value]
@@ -146,9 +148,9 @@ def _build_constraints(
                 ast = parse_and_expand(eq.expression, schema, f"constraint '{cname}'")
                 if not isinstance(ast, CompareNode):
                     msg = (
-                        f"Equation {i}: expression must contain exactly one "
-                        f"comparison operator (<=, >=, ==).\n"
-                        f"Got: {eq.expression!r}"
+                        f'Equation {i}: expression must contain exactly one '
+                        f'comparison operator (<=, >=, ==).\n'
+                        f'Got: {eq.expression!r}'
                     )
                     raise ValueError(msg)
 
@@ -158,11 +160,9 @@ def _build_constraints(
                 sign = _SIGN_MAP[ast.op]
 
                 # Name: single equation uses constraint name directly
-                eq_name = cname if n_eqs == 1 else f"{cname}_{i}"
+                eq_name = cname if n_eqs == 1 else f'{cname}_{i}'
 
-                model.add_constraints(
-                    lhs, sign, rhs, name=eq_name, mask=_as_linopy_mask(mask)
-                )
+                model.add_constraints(lhs, sign, rhs, name=eq_name, mask=_as_linopy_mask(mask))
 
 
 # ---------------------------------------------------------------------------
@@ -183,15 +183,12 @@ def _build_objectives(
             ast = parse_and_expand(eq.expression, schema, f"objective '{oname}'")
 
             if isinstance(ast, CompareNode):
-                msg = (
-                    f"Expression must not contain a comparison operator. "
-                    f"Got: {eq.expression!r}"
-                )
+                msg = f'Expression must not contain a comparison operator. Got: {eq.expression!r}'
                 raise ValueError(msg)
 
             expr = _eval_ast(ast, ctx)
 
-            sense = "min" if odef.sense == "minimize" else "max"
+            sense = 'min' if odef.sense == 'minimize' else 'max'
             model.add_objective(expr, overwrite=True, sense=sense)
 
 
@@ -213,7 +210,7 @@ def _eval_ast(
 
     if isinstance(node, UnaryOpNode):
         operand = _eval_ast(node.operand, ctx)
-        if node.op == "-":
+        if node.op == '-':
             return -operand
         return operand  # unary +
 
@@ -221,11 +218,11 @@ def _eval_ast(
         left = _eval_ast(node.left, ctx)
         right = _eval_ast(node.right, ctx)
         ops = {
-            "+": lambda a, b: a + b,
-            "-": lambda a, b: a - b,
-            "*": lambda a, b: a * b,
-            "/": lambda a, b: a / b,
-            "**": lambda a, b: a**b,
+            '+': lambda a, b: a + b,
+            '-': lambda a, b: a - b,
+            '*': lambda a, b: a * b,
+            '/': lambda a, b: a / b,
+            '**': lambda a, b: a**b,
         }
         return ops[node.op](left, right)
 
@@ -263,9 +260,9 @@ def _resolve_name(
     param_names = sorted(ctx.dataset.data_vars)
     msg = (
         f"'{name}' not found.\n"
-        f"  Variables:  {var_names}\n"
-        f"  Parameters: {param_names}\n"
+        f'  Variables:  {var_names}\n'
+        f'  Parameters: {param_names}\n'
         f"Check for typos, or ensure '{name}' is declared as a variable "
-        f"or parameter."
+        f'or parameter.'
     )
     raise NameError(msg)

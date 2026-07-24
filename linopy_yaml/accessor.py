@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
-import xarray as xr
 import yaml
 
 from linopy_yaml._notes import note
@@ -18,6 +17,7 @@ from linopy_yaml.validation import validate_expressions
 
 if TYPE_CHECKING:
     import linopy
+    import xarray as xr
 
 
 def _infer_coords(model: linopy.Model) -> dict[str, pd.Index]:
@@ -35,8 +35,8 @@ def _infer_coords(model: linopy.Model) -> dict[str, pd.Index]:
         # and performs an outer join. That outer join is exactly the union
         # semantics we want here, so silence the noise for this call.
         warnings.filterwarnings(
-            "ignore",
-            message="Coordinates across variables not equal",
+            'ignore',
+            message='Coordinates across variables not equal',
             category=UserWarning,
         )
         return dict(model.variables.indexes)
@@ -148,11 +148,11 @@ class YamlAccessor:
                 if not declared.equals(existing):
                     msg = (
                         f"Extension declares dimension '{dim_name}' with values "
-                        f"that differ from the existing model.\n"
-                        f"  Existing: {list(existing)}\n"
-                        f"  Declared: {list(declared)}\n"
+                        f'that differ from the existing model.\n'
+                        f'  Existing: {list(existing)}\n'
+                        f'  Declared: {list(declared)}\n'
                         f"Either omit 'values:' for '{dim_name}' in the "
-                        f"extension, or make them match."
+                        f'extension, or make them match.'
                     )
                     raise ValueError(msg)
 
@@ -162,7 +162,7 @@ class YamlAccessor:
             master_coords = build_master_coords(schema, known)
 
             new_dataset = load_parameters(schema, data, master_coords)
-            merged_dataset = self._dataset.merge(new_dataset, compat="override")
+            merged_dataset = self._dataset.merge(new_dataset, compat='override')
 
             build_model(self._model, schema, merged_dataset, master_coords)
 
@@ -171,9 +171,7 @@ class YamlAccessor:
             # whatever the model currently has.
             for dim_name, dim_def in schema.dimensions.items():
                 if dim_def.values is not None:
-                    self._declared_coords[dim_name] = pd.Index(
-                        dim_def.values, name=dim_name
-                    )
+                    self._declared_coords[dim_name] = pd.Index(dim_def.values, name=dim_name)
             for dim, idx in kwarg_coords.items():
                 self._declared_coords[dim] = idx
 

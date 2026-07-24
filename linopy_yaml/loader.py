@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
 import xarray as xr
 
-from linopy_yaml.schema import MathSchema
+if TYPE_CHECKING:
+    from linopy_yaml.schema import MathSchema
 
 
 def build_master_coords(
@@ -57,10 +58,7 @@ def load_parameters(
     # Step 2: check all declared parameters are provided
     for pname in schema.parameters:
         if pname not in data:
-            msg = (
-                f"Parameter '{pname}' is required but was not provided in data.\n"
-                f"Add '{pname}' to the data= argument."
-            )
+            msg = f"Parameter '{pname}' is required but was not provided in data.\nAdd '{pname}' to the data= argument."
             raise ValueError(msg)
 
     # Step 5: reject unknown data keys
@@ -68,10 +66,10 @@ def load_parameters(
     unknown = set(data) - declared
     if unknown:
         msg = (
-            f"The following data keys are not declared as parameters: "
-            f"{sorted(unknown)}.\n"
+            f'The following data keys are not declared as parameters: '
+            f'{sorted(unknown)}.\n'
             f"Declare them under 'parameters:' in the YAML or remove "
-            f"them from data=."
+            f'them from data=.'
         )
         raise ValueError(msg)
 
@@ -114,10 +112,7 @@ def _coerce_to_dataarray(
     # dict → pd.Series → DataArray
     if isinstance(raw, dict):
         if len(dims) != 1:
-            msg = (
-                f"Parameter '{name}': dict input is only supported for "
-                f"1-D parameters, but declared dims are {dims}."
-            )
+            msg = f"Parameter '{name}': dict input is only supported for 1-D parameters, but declared dims are {dims}."
             raise ValueError(msg)
         series = pd.Series(raw)
         series.index.name = dims[0]
@@ -128,7 +123,7 @@ def _coerce_to_dataarray(
         if len(dims) != 1:
             msg = (
                 f"Parameter '{name}': pd.Series input is only supported for "
-                f"1-D parameters, but declared dims are {dims}."
+                f'1-D parameters, but declared dims are {dims}.'
             )
             raise ValueError(msg)
         if raw.index.name is None:
@@ -144,7 +139,7 @@ def _coerce_to_dataarray(
         if len(dims) != 2:
             msg = (
                 f"Parameter '{name}': pd.DataFrame input is only supported for "
-                f"2-D parameters, but declared dims are {dims}."
+                f'2-D parameters, but declared dims are {dims}.'
             )
             raise ValueError(msg)
         if raw.index.name is None:
@@ -176,15 +171,15 @@ def _coerce_to_dataarray(
                 msg = (
                     f"Parameter '{name}': array length {len(arr_np)} does not "
                     f"match master coordinate '{dim}' length "
-                    f"{len(master_coords[dim])}."
+                    f'{len(master_coords[dim])}.'
                 )
                 raise ValueError(msg)
             return xr.DataArray(arr_np, dims=[dim], coords={dim: master_coords[dim]})
         msg = (
             f"Parameter '{name}': unsupported type ndarray.\n"
-            f"For multi-dimensional arrays without named axes, provide a "
-            f"pandas DataFrame or xr.DataArray with named dimensions.\n"
-            f"Declared dims: {dims}."
+            f'For multi-dimensional arrays without named axes, provide a '
+            f'pandas DataFrame or xr.DataArray with named dimensions.\n'
+            f'Declared dims: {dims}.'
         )
         raise ValueError(msg)
 
@@ -203,8 +198,8 @@ def _validate_dims(
     if unexpected:
         msg = (
             f"Parameter '{name}' has unexpected dimensions {unexpected}.\n"
-            f"Declared dims: {declared_dims}.\n"
-            f"Either update the declaration or reshape your data."
+            f'Declared dims: {declared_dims}.\n'
+            f'Either update the declaration or reshape your data.'
         )
         raise ValueError(msg)
 
@@ -224,7 +219,7 @@ def _validate_coords(
         if unknown:
             msg = (
                 f"Parameter '{name}' has values in dimension '{dim}' "
-                f"that are not in the master coordinate: {sorted(unknown)}.\n"
+                f'that are not in the master coordinate: {sorted(unknown)}.\n'
                 f"Master '{dim}' coords: {list(master_coords[dim])}"
             )
             raise ValueError(msg)

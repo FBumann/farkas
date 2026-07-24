@@ -22,17 +22,13 @@ from linopy_yaml.piecewise import expand_piecewise, validate_piecewise_data
 from linopy_yaml.schema import MathSchema
 from linopy_yaml.validation import validate_expressions
 
-_ACCESSOR_REGISTRY: weakref.WeakKeyDictionary[linopy.Model, YamlAccessor] = (
-    weakref.WeakKeyDictionary()
-)
+_ACCESSOR_REGISTRY: weakref.WeakKeyDictionary[linopy.Model, YamlAccessor] = weakref.WeakKeyDictionary()
 
 
 class _YamlDescriptor:
     """Returns the model's ``YamlAccessor``, lazy-initialised on first access."""
 
-    def __get__(
-        self, instance: linopy.Model | None, owner: type | None = None
-    ) -> YamlAccessor | _YamlDescriptor:
+    def __get__(self, instance: linopy.Model | None, owner: type | None = None) -> YamlAccessor | _YamlDescriptor:
         if instance is None:
             return self
         accessor = _ACCESSOR_REGISTRY.get(instance)

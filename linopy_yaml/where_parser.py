@@ -10,10 +10,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, assert_never
 
 import numpy as np
-import pandas as pd
 import pyparsing as pp
 
 if TYPE_CHECKING:
+    import pandas as pd
     import xarray as xr
 
 # ---------------------------------------------------------------------------
@@ -74,46 +74,38 @@ def _build_where_grammar() -> pp.ParserElement:
     where_expr = pp.Forward()
 
     # Literals
-    true_lit = pp.CaselessKeyword("True").setParseAction(lambda: BoolLiteral(True))
-    false_lit = pp.CaselessKeyword("False").setParseAction(lambda: BoolLiteral(False))
+    true_lit = pp.CaselessKeyword('True').setParseAction(lambda: BoolLiteral(True))
+    false_lit = pp.CaselessKeyword('False').setParseAction(lambda: BoolLiteral(False))
 
     # Numbers
-    real = pp.Regex(r"-?\d+\.\d*([eE][+-]?\d+)?").setParseAction(lambda t: float(t[0]))
-    integer = pp.Regex(r"-?\d+").setParseAction(lambda t: int(t[0]))
+    real = pp.Regex(r'-?\d+\.\d*([eE][+-]?\d+)?').setParseAction(lambda t: float(t[0]))
+    integer = pp.Regex(r'-?\d+').setParseAction(lambda t: int(t[0]))
     number = real | integer
 
     # Names
-    name = pp.Regex(r"[a-zA-Z_][a-zA-Z0-9_]*")
+    name = pp.Regex(r'[a-zA-Z_][a-zA-Z0-9_]*')
 
     # Comparisons
-    comparator = pp.oneOf("<= >= == != < >")
-    comparison = (name + comparator + (number | name)).setParseAction(
-        lambda t: Comparison(t[0], t[1], t[2])
-    )
+    comparator = pp.oneOf('<= >= == != < >')
+    comparison = (name + comparator + (number | name)).setParseAction(lambda t: Comparison(t[0], t[1], t[2]))
 
     # Existence check (bare name)
     existence = name.copy().setParseAction(lambda t: ExistenceCheck(t[0]))
 
     # Atoms
-    atom = (
-        true_lit
-        | false_lit
-        | comparison
-        | existence
-        | (pp.Suppress("(") + where_expr + pp.Suppress(")"))
-    )
+    atom = true_lit | false_lit | comparison | existence | (pp.Suppress('(') + where_expr + pp.Suppress(')'))
 
     # NOT (highest precedence)
-    NOT = pp.CaselessKeyword("NOT").suppress()
+    NOT = pp.CaselessKeyword('NOT').suppress()
     not_expr = (NOT + atom).setParseAction(lambda t: NotNode(t[0])) | atom
 
     # AND
-    AND = pp.CaselessKeyword("AND").suppress()
+    AND = pp.CaselessKeyword('AND').suppress()
     and_expr = not_expr + pp.ZeroOrMore(AND + not_expr)
     and_expr.setParseAction(_fold_and)
 
     # OR (lowest precedence)
-    OR = pp.CaselessKeyword("OR").suppress()
+    OR = pp.CaselessKeyword('OR').suppress()
     or_expr = and_expr + pp.ZeroOrMore(OR + and_expr)
     or_expr.setParseAction(_fold_or)
 
@@ -145,7 +137,7 @@ def parse_where(text: str) -> WhereNode:
     try:
         result = _WHERE_GRAMMAR.parseString(text, parseAll=True)
     except pp.ParseException as e:
-        msg = f"Failed to parse where string: {text!r}\n{e}"
+        msg = f'Failed to parse where string: {text!r}\n{e}'
         raise ValueError(msg) from e
     return result[0]
 
@@ -215,18 +207,17 @@ def _eval_node(
 
         val = node.value
         # If val is a string, try to resolve as parameter or keep as string
-        if isinstance(val, str):
-            if val in dataset:
-                val = dataset[val]
+        if isinstance(val, str) and val in dataset:
+            val = dataset[val]
             # else keep as string for coordinate comparison
 
         ops = {
-            "==": lambda a, b: a == b,
-            "!=": lambda a, b: a != b,
-            "<": lambda a, b: a < b,
-            ">": lambda a, b: a > b,
-            "<=": lambda a, b: a <= b,
-            ">=": lambda a, b: a >= b,
+            '==': lambda a, b: a == b,
+            '!=': lambda a, b: a != b,
+            '<': lambda a, b: a < b,
+            '>': lambda a, b: a > b,
+            '<=': lambda a, b: a <= b,
+            '>=': lambda a, b: a >= b,
         }
         result = ops[node.op](arr, val)
         # NaN propagates as False

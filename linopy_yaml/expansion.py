@@ -36,7 +36,7 @@ cannot be compiled by the relational backend.
 from __future__ import annotations
 
 import copy
-from typing import assert_never
+from typing import TYPE_CHECKING, assert_never
 
 from linopy_yaml.expression_parser import (
     ArithNode,
@@ -49,20 +49,20 @@ from linopy_yaml.expression_parser import (
     UnaryOpNode,
     parse_expression,
 )
-from linopy_yaml.schema import MacroDef, MathSchema
+
+if TYPE_CHECKING:
+    from linopy_yaml.schema import MacroDef, MathSchema
 
 #: Backstop against pathological nesting the cycle check cannot see.
 _MAX_DEPTH = 50
 
 
-def parse_and_expand(
-    text: str, schema: MathSchema, context: str = "expression"
-) -> ExprNode:
+def parse_and_expand(text: str, schema: MathSchema, context: str = 'expression') -> ExprNode:
     """Parse *text* and expand named sub-expressions and macros to core AST."""
     return expand(parse_expression(text), schema, context)
 
 
-def expand(node: ExprNode, schema: MathSchema, context: str = "expression") -> ExprNode:
+def expand(node: ExprNode, schema: MathSchema, context: str = 'expression') -> ExprNode:
     """Expand all named sub-expressions and macro calls under *node*."""
     if isinstance(node, CompareNode):
         return CompareNode(
@@ -75,18 +75,15 @@ def expand(node: ExprNode, schema: MathSchema, context: str = "expression") -> E
 
 def macro_signature(name: str, macro: MacroDef) -> str:
     """Human-readable call signature, for error messages."""
-    parts = [*macro.args, *(f"{k}=..." for k in macro.kwargs)]
-    return f"{name}({', '.join(parts)})"
+    parts = [*macro.args, *(f'{k}=...' for k in macro.kwargs)]
+    return f'{name}({", ".join(parts)})'
 
 
 def parse_template(name: str, macro: MacroDef, context: str) -> ArithNode:
     """Parse a macro template, rejecting comparisons."""
     body = parse_expression(macro.template)
     if isinstance(body, CompareNode):
-        msg = (
-            f"{context}: macro '{name}' template must not contain a comparison "
-            f"operator. Got: {macro.template!r}"
-        )
+        msg = f"{context}: macro '{name}' template must not contain a comparison operator. Got: {macro.template!r}"
         raise ValueError(msg)
     return body
 
@@ -98,8 +95,8 @@ def _expand(
     stack: tuple[str, ...],
 ) -> ArithNode:
     if len(stack) > _MAX_DEPTH:
-        chain = " -> ".join(stack)
-        msg = f"{context}: expansion exceeds depth {_MAX_DEPTH} (via {chain})"
+        chain = ' -> '.join(stack)
+        msg = f'{context}: expansion exceeds depth {_MAX_DEPTH} (via {chain})'
         raise ValueError(msg)
 
     if isinstance(node, NumberNode):
@@ -108,8 +105,8 @@ def _expand(
     if isinstance(node, NameNode):
         if node.name in schema.expressions:
             if node.name in stack:
-                chain = " -> ".join([*stack, node.name])
-                msg = f"{context}: circular expression reference: {chain}"
+                chain = ' -> '.join([*stack, node.name])
+                msg = f'{context}: circular expression reference: {chain}'
                 raise ValueError(msg)
             body = _parse_named(node.name, schema, context)
             return _expand(body, schema, context, (*stack, node.name))
@@ -128,8 +125,8 @@ def _expand(
     if isinstance(node, FuncCallNode):
         if node.name in schema.macros:
             if node.name in stack:
-                chain = " -> ".join([*stack, node.name])
-                msg = f"{context}: circular macro reference: {chain}"
+                chain = ' -> '.join([*stack, node.name])
+                msg = f'{context}: circular macro reference: {chain}'
                 raise ValueError(msg)
             return _expand_macro(node, schema, context, stack)
         # ordinary helper call — expand its arguments
@@ -147,7 +144,7 @@ def _parse_named(name: str, schema: MathSchema, context: str) -> ArithNode:
     if isinstance(body, CompareNode):
         msg = (
             f"{context}: named expression '{name}' must not contain a "
-            f"comparison operator. Got: {schema.expressions[name]!r}"
+            f'comparison operator. Got: {schema.expressions[name]!r}'
         )
         raise ValueError(msg)
     return body
@@ -164,28 +161,22 @@ def _expand_macro(
     if len(call.args) != len(macro.args):
         msg = (
             f"{context}: macro '{call.name}' expects {len(macro.args)} "
-            f"positional argument(s), got {len(call.args)}. Signature: {signature}"
+            f'positional argument(s), got {len(call.args)}. Signature: {signature}'
         )
         raise ValueError(msg)
     if set(call.kwargs) != set(macro.kwargs):
         msg = (
             f"{context}: macro '{call.name}' expects keyword argument(s) "
-            f"{sorted(macro.kwargs)}, got {sorted(call.kwargs)}. "
-            f"Signature: {signature}"
+            f'{sorted(macro.kwargs)}, got {sorted(call.kwargs)}. '
+            f'Signature: {signature}'
         )
         raise ValueError(msg)
 
     # call-by-value: arguments are expanded before substitution, so they may
     # themselves use named expressions and macros
     bindings = {
-        **{
-            formal: _expand(arg, schema, context, stack)
-            for formal, arg in zip(macro.args, call.args)
-        },
-        **{
-            formal: _expand(call.kwargs[formal], schema, context, stack)
-            for formal in macro.kwargs
-        },
+        **{formal: _expand(arg, schema, context, stack) for formal, arg in zip(macro.args, call.args, strict=False)},
+        **{formal: _expand(call.kwargs[formal], schema, context, stack) for formal in macro.kwargs},
     }
     body = parse_template(call.name, macro, context)
     substituted = _substitute(body, bindings)

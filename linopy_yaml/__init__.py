@@ -17,11 +17,11 @@ from linopy_yaml.helpers import register
 from linopy_yaml.schema import MathSchema
 
 __all__ = [
-    "MathSchema",
-    "build",
-    "load_schema",
-    "register",
-    "solve",
-    "write_lp",
+    'MathSchema',
+    'build',
+    'load_schema',
+    'register',
+    'solve',
+    'write_lp',
 ]
-__version__ = "0.0.2"
+__version__ = '0.0.2'

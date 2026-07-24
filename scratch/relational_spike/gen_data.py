@@ -16,16 +16,16 @@ import pandas as pd
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--snapshots", type=int, default=1000)
-    ap.add_argument("--generators", type=int, default=10)
+    ap.add_argument('--snapshots', type=int, default=1000)
+    ap.add_argument('--generators', type=int, default=10)
     ap.add_argument(
-        "--masked-frac",
+        '--masked-frac',
         type=float,
         default=0.1,
-        help="fraction of generators with p_max == 0",
+        help='fraction of generators with p_max == 0',
     )
-    ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument('--seed', type=int, default=0)
+    ap.add_argument('--out', type=Path, required=True)
     args = ap.parse_args()
 
     rng = np.random.default_rng(args.seed)
@@ -36,30 +36,28 @@ def main() -> None:
     cost = rng.uniform(5.0, 100.0, n_gen).round(4)
     generators = pd.DataFrame(
         {
-            "generator": [f"g{i:05d}" for i in range(n_gen)],
-            "p_max": p_max.round(4),
-            "cost": cost,
+            'generator': [f'g{i:05d}' for i in range(n_gen)],
+            'p_max': p_max.round(4),
+            'cost': cost,
         }
     )
 
     # keep the problem feasible: load stays below total active capacity
-    capacity = generators["p_max"].sum()
+    capacity = generators['p_max'].sum()
     load = (rng.uniform(0.2, 0.8, args.snapshots) * capacity).round(4)
-    loads = pd.DataFrame(
-        {"snapshot": np.arange(args.snapshots, dtype=np.int64), "load": load}
-    )
+    loads = pd.DataFrame({'snapshot': np.arange(args.snapshots, dtype=np.int64), 'load': load})
 
     args.out.mkdir(parents=True, exist_ok=True)
-    generators.to_parquet(args.out / "generators.parquet", index=False)
-    loads.to_parquet(args.out / "load.parquet", index=False)
+    generators.to_parquet(args.out / 'generators.parquet', index=False)
+    loads.to_parquet(args.out / 'load.parquet', index=False)
 
-    n_masked = int((generators["p_max"] == 0).sum())
+    n_masked = int((generators['p_max'] == 0).sum())
     n_vars = (n_gen - n_masked) * args.snapshots
     print(
-        f"wrote {n_gen} generators ({n_masked} masked), {args.snapshots} snapshots "
-        f"-> {n_vars:,} variables, {args.snapshots:,} constraints ({args.out})"
+        f'wrote {n_gen} generators ({n_masked} masked), {args.snapshots} snapshots '
+        f'-> {n_vars:,} variables, {args.snapshots:,} constraints ({args.out})'
     )
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

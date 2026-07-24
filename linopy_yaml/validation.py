@@ -11,7 +11,7 @@ name-checked here.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 from linopy_yaml.expansion import expand, parse_and_expand, parse_template
 from linopy_yaml.expression_parser import (
@@ -24,8 +24,12 @@ from linopy_yaml.expression_parser import (
     UnaryOpNode,
 )
 from linopy_yaml.helpers import get_helper
-from linopy_yaml.schema import MathSchema
 from linopy_yaml.where_parser import parse_where
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from linopy_yaml.schema import MathSchema
 
 
 def validate_expressions(
@@ -70,14 +74,12 @@ def validate_expressions(
         except NameError:
             pass
         else:
-            errors.append(
-                f"{context}: collides with a helper function of the same name."
-            )
+            errors.append(f'{context}: collides with a helper function of the same name.')
         try:
             body_ast = parse_template(mname, macro, context)
             body_ast = expand(body_ast, schema, context)
         except ValueError as e:
-            errors.append(str(e) if str(e).startswith(context) else f"{context}: {e}")
+            errors.append(str(e) if str(e).startswith(context) else f'{context}: {e}')
             continue
         # macros are schema-local, so every free name in the template must be
         # a formal or a name declared in *this* schema — checkable even for
@@ -98,9 +100,7 @@ def validate_expressions(
         if ast is None:
             continue
         if isinstance(ast, CompareNode):
-            errors.append(
-                f"{context}: must not contain a comparison operator.\nGot: {body!r}"
-            )
+            errors.append(f'{context}: must not contain a comparison operator.\nGot: {body!r}')
             continue
         _check_names(ast, body, context, variables, parameters, errors)
 
@@ -117,9 +117,9 @@ def validate_expressions(
                 continue
             if not isinstance(ast, CompareNode):
                 errors.append(
-                    f"{where}: expression must contain exactly one "
-                    f"comparison operator (<=, >=, ==).\n"
-                    f"Got: {eq.expression!r}"
+                    f'{where}: expression must contain exactly one '
+                    f'comparison operator (<=, >=, ==).\n'
+                    f'Got: {eq.expression!r}'
                 )
                 continue
             _check_names(ast.left, eq.expression, where, variables, parameters, errors)
@@ -133,16 +133,12 @@ def validate_expressions(
             if ast is None:
                 continue
             if isinstance(ast, CompareNode):
-                errors.append(
-                    f"{where}: expression must not contain a comparison "
-                    f"operator.\n"
-                    f"Got: {eq.expression!r}"
-                )
+                errors.append(f'{where}: expression must not contain a comparison operator.\nGot: {eq.expression!r}')
                 continue
             _check_names(ast, eq.expression, where, variables, parameters, errors)
 
     if errors:
-        raise ValueError("\n".join(errors))
+        raise ValueError('\n'.join(errors))
 
 
 def _check_parse(
@@ -154,7 +150,7 @@ def _check_parse(
     try:
         return parse_and_expand(expression, schema, context)
     except ValueError as e:
-        errors.append(f"{context}: {e}")
+        errors.append(f'{context}: {e}')
         return None
 
 
@@ -168,7 +164,7 @@ def _check_where(
     try:
         parse_where(text)
     except ValueError as e:
-        errors.append(f"{context}: {e}")
+        errors.append(f'{context}: {e}')
 
 
 def _check_names(
@@ -187,11 +183,11 @@ def _check_names(
         if node.name not in variables and node.name not in parameters:
             errors.append(
                 f"{context}: '{node.name}' not found in expression "
-                f"{expression!r}.\n"
-                f"  Variables:  {sorted(variables)}\n"
-                f"  Parameters: {sorted(parameters)}\n"
+                f'{expression!r}.\n'
+                f'  Variables:  {sorted(variables)}\n'
+                f'  Parameters: {sorted(parameters)}\n'
                 f"Check for typos, or ensure '{node.name}' is declared as "
-                f"a variable or parameter."
+                f'a variable or parameter.'
             )
         return
 
@@ -208,7 +204,7 @@ def _check_names(
         try:
             get_helper(node.name)
         except NameError as e:
-            errors.append(f"{context}: {e}")
+            errors.append(f'{context}: {e}')
         for arg in node.args:
             _check_names(arg, expression, context, variables, parameters, errors)
         # Keyword-arg NameNodes are dimension names, not data references —

@@ -10,19 +10,22 @@ See `ARCHITECTURE.md` for the architecture (brief, kept current — update it in
 ## Common Commands
 
 ```bash
-# Install in dev mode
-pip install -e .[dev]
+# Install (uv-managed venv; oracle extra = linopy/xarray for differential tests)
+uv sync  # dev group (tools + oracle deps) is default
 
 # Run tests
-pytest
+uv run pytest
 
 # Lint and format
-ruff check .
-ruff check --fix .
-ruff format .
+uv run ruff check .
+uv run ruff check --fix .
+uv run ruff format .
 
 # Type check
-mypy linopy_yaml
+uv run mypy linopy_yaml
+
+# Hooks (once per clone)
+uv run pre-commit install
 ```
 
 ## Package Structure

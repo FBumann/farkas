@@ -10,16 +10,14 @@ oracle the streaming engine is differentially tested against
 (ARCHITECTURE.md). New code should use the native API::
 
     import linopy_yaml as ly
-    sol = ly.solve("model.yaml", sources={...})
+
+    sol = ly.solve('model.yaml', sources={...})
 """
 
 try:
     from linopy_yaml._patch import apply_patches
 except ModuleNotFoundError as exc:  # linopy / xarray absent
-    msg = (
-        "The linopy compatibility layer requires the [oracle] extra: "
-        'pip install "linopy-yaml[oracle]"'
-    )
+    msg = 'The linopy compatibility layer requires the [oracle] extra: pip install "linopy-yaml[oracle]"'
     raise ModuleNotFoundError(msg) from exc
 
 apply_patches()
