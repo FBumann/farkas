@@ -33,7 +33,7 @@ flowchart TB
         DIRECT --> SOL["solution tables<br/>(label join, never dense)"]
     end
 
-    subgraph EAGER["Eager lane — feature-complete · correctness oracle · the ONLY lane with linopy"]
+    subgraph EAGER["Eager lane — compatibility layer · correctness oracle · the ONLY lane with linopy"]
         direction TB
         DE[("data<br/>parquet paths / pandas")] --> LOAD["loader.py<br/>coerce data → xr.Dataset"]
         LOAD --> BUILD["builder.py<br/>evaluate AST"]
@@ -58,10 +58,11 @@ from what the backend actually supports.
    neither the eager builder nor linopy itself — the lane goes duckdb →
    highspy → solver with linopy's semantics as a spec to match, not code to
    share. Engine-internal naming encodes neither "duckdb" nor "yaml".
-3. **The eager builder is the correctness oracle and the fallback.** The
-   relational backend is an optimization lane: eligibility is decided by
-   *attempting the lowering*, and anything outside the subset routes eager
-   with a stated reason. Differential tests (same YAML + data through both
+3. **linopy is kept for exactly two roles: compatibility and validation.**
+   The eager builder is the fallback/compat layer (Python-built models,
+   `.yaml.extend`, features outside the streaming subset — routed there by
+   *attempting the lowering*, with the stated reason) and the correctness
+   oracle. Differential tests (same YAML + data through both
    backends, matching solves) guard every language feature on both.
 4. **The full model never resides in this process's memory** on the
    relational path — not as dense arrays, not as a full CSR. Build under a

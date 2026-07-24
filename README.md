@@ -1,21 +1,21 @@
 # linopy-yaml
 
-YAML-based math definition layer for [linopy](https://github.com/PyPSA/linopy).
+Declarative optimisation: define the math in YAML, supply data at runtime, solve.
 
-Define optimisation problems declaratively in YAML, supply data at runtime, and solve — through one of two backends: the **eager** backend builds a regular `linopy.Model`, and the **relational** backend streams the same model through duckdb under a fixed memory budget, for models too big to build densely.
+Models build on a **relational/streaming engine** (tidy tables in duckdb under a hard `memory_limit`, streamed straight to the solver — the full model never exists in process memory). [linopy](https://github.com/PyPSA/linopy) is kept in two roles: the **compatibility layer** — YAML extends Python-built `linopy.Model`s, and anything outside the streaming subset falls back to the eager linopy builder with a stated reason — and the **validation oracle** every language feature is differentially tested against.
 
 ## Goals
 
-- **Declarative math** — problems are defined in YAML, not Python. Readable without knowing the implementation.
-- **Clean boundary** — YAML owns the math definition; Python owns data loading and solving.
-- **Pure consumer of linopy's public API** on the eager path — no internals, no wrapping, no lock-in. The result of `from_yaml()` is a `linopy.Model`. (The relational path matches linopy's semantics without sharing its code — see below.)
-- **Fail early, fail loud** — all validation happens at load time, with error messages that name the problem and suggest the fix.
+- **Declarative math** — defined in YAML, readable without knowing the implementation. Files are self-contained: no Python state changes what a file means.
+- **Clean boundary** — YAML owns the math; Python owns data and solving.
+- **Memory as a config knob** — build peak RAM is set by `memory_limit`, not by model size.
+- **Fail early, fail loud** — everything validates at load time, with errors that name the problem and the fix.
 
 ## Use cases
 
 ### 1. Author a full model in YAML
 
-Small-to-medium models, teaching contexts, policy studies, reproducible research. The YAML carries the math; runtime data comes from pandas/xarray.
+Small-to-medium models, teaching, policy studies, reproducible research.
 
 ```python
 from linopy import Model
@@ -27,28 +27,16 @@ m.solve()
 
 ### 2. Add custom constraints to a Python-built model
 
-The primary use case this package optimises for. Packages like PyPSA, capacity-expansion frameworks, and dispatch models build their core math in Python for good reasons: full linopy feature access, performance control, and complexity that doesn't map cleanly to YAML.
-
-Their users still need to modify the model at runtime — a policy requirement, a pilot technology, a sensitivity scenario. The standard answer today is a **callback**: PyPSA's `extra_functionality`, for example, accepts a Python function that runs after the core model is built and adds whatever it wants. That gives you a clean entry point and, because the callback is arbitrary Python, it is also the most flexible option available — anything you can compute, you can use to shape the constraint.
-
-Where callbacks fall short is everything *around* the math:
-
-- **Silent from a results perspective.** PyPSA-style packages treat named components and parameters as the model's own documentation. A callback that calls `model.add_constraints(...)` doesn't show up there — six months later, when you re-read the run, the modification is invisible unless you also go read the Python.
-- **Math hidden inside wiring code.** A callback constructs the constraint in Python — index alignment, `.loc[]` lookups, knowing how the host package mapped its components onto linopy variables. The YAML expresses the same constraint as the inequality itself (`p - roll(p, snapshot=1) <= ramp_max`), using only names the model already exposes. The reader sees the math, not the machinery that produced it.
-- **Not a sharable artefact.** A callback is a Python function — it lives inside a notebook, a helper module, or a config-loader script. It does not diff cleanly on its own, and it cannot be handed to a colleague without the surrounding code.
-
-A YAML file is strictly less powerful — it can only express math. But when the modification *is just math*, which covers most policy requirements, pilot technologies, and sensitivity scenarios, the YAML addresses all three problems above: it sits next to the parameters and named entities of the model, stays in the user's working vocabulary, and is a self-contained text artefact that travels independently. If your modification needs arbitrary Python in the loop, stay with the callback.
+Packages like PyPSA build their core math in Python, and their users modify it at runtime through **callbacks** (`extra_functionality`). Callbacks are maximally flexible — but the modification is invisible in the results, the math hides inside indexing/wiring code, and a Python function is not a sharable artefact. When the modification *is just math* (most policy requirements, pilot technologies, sensitivity scenarios), a YAML file fixes all three: it reads as the inequality itself, in the model's own vocabulary, and travels as a diffable text file. If you need arbitrary Python in the loop, stay with the callback.
 
 ```python
-# user adds a custom ramp constraint on top of an existing model
 m.yaml.extend("ramp_constraint.yaml", data={"ramp_max": network.generators["ramp_max"]})
 ```
 
 ```yaml
 # ramp_constraint.yaml
 parameters:
-  ramp_max:
-    dims: [generator]
+  ramp_max: {dims: [generator]}
 constraints:
   ramp_up:
     foreach: [snapshot, generator]
@@ -59,65 +47,33 @@ constraints:
 
 ### 3. Share and version-control model math as text
 
-YAML files diff cleanly in code review. Colleagues without Python optimisation experience can read and critique the math. Research artefacts travel as files, not as code snippets buried in notebooks.
+YAML diffs cleanly in review; colleagues without optimisation-Python experience can read and critique the math; research artefacts travel as files.
 
 ### 4. Build models that don't fit in memory
 
-The same YAML runs on the **relational backend**: expressions become tidy tables in a file-backed duckdb database under a hard `memory_limit`, and the model streams straight to the solver (batched HiGHS calls) or to an LP file — the full model never exists in process memory. Peak build RAM becomes a configuration knob instead of scaling with model size: a 107-million-variable dispatch model builds in ~0.6 GB.
+The streaming engine's home turf: a 107-million-variable dispatch model builds in ~0.6 GB. Expressions become tidy tables, masks become row absence, and the model streams to the solver in batches or to an LP file. Routing is automatic — schemas inside the streaming subset stream, everything else runs on the eager linopy fallback. See [ARCHITECTURE.md](ARCHITECTURE.md).
 
-Backend selection is automatic: if the YAML lowers to the relational subset, it streams; anything outside the subset falls back to the feature-complete eager builder with a stated reason. Every language feature is differentially tested — same YAML, same data, both backends, matching solves.
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for how the two lanes fit together.
-
-## Non-goals
-
-- **Not a solver wrapper** — linopy does that.
-- **Not a domain package** — no energy, transport, or any other domain assumptions. This is a general-purpose layer over linopy's API.
-- **Not a data loading layer** — users bring their own pandas/xarray objects. No CSV/Parquet/NetCDF readers.
-
-## Open design questions
-
-Decisions the project has not yet finalised. Input welcome — see the linked issues for context.
-
-### What `.yaml` covers
-
-The `.yaml` accessor currently describes only the **YAML-managed portion** of a model, not the whole model. A Python-built model extended with `m.yaml.extend(...)` has a `.yaml` covering the extension, not the Python additions.
-
-Whether to pursue a **complete** `.yaml` representation — intercepting `add_variables()` / `add_constraints()` so `.yaml` always matches the full model — is an open investigation. See [issue #3](https://github.com/FBumann/linopy-yaml/issues/3) for the trade-offs (functional vs readable round-trip) and please weigh in.
-
-## Quick Example
-
-**`dispatch.yaml`:**
+## Quick example
 
 ```yaml
+# dispatch.yaml
 dimensions:
-  snapshot:
-    dtype: int
-  generator:
-    values: [wind, solar, gas]
-
+  snapshot: {dtype: int}
+  generator: {values: [wind, solar, gas]}
 parameters:
-  p_max:
-    dims: [generator]
-  load:
-    dims: [snapshot]
-  cost:
-    dims: [generator]
-
+  p_max: {dims: [generator]}
+  load: {dims: [snapshot]}
+  cost: {dims: [generator]}
 variables:
   p:
     foreach: [snapshot, generator]
     where: "p_max > 0"
-    bounds:
-      lower: 0
-      upper: p_max
-
+    bounds: {lower: 0, upper: p_max}
 constraints:
   power_balance:
     foreach: [snapshot]
     equations:
       - expression: sum(p, over=generator) == load
-
 objectives:
   total_cost:
     sense: minimize
@@ -125,11 +81,9 @@ objectives:
       - expression: sum(p * cost, over=generator)
 ```
 
-**Python:**
-
 ```python
 from linopy import Model
-import linopy_yaml  # registers .from_yaml and .yaml on linopy.Model
+import linopy_yaml
 import pandas as pd
 
 m = Model.from_yaml(
@@ -139,67 +93,33 @@ m = Model.from_yaml(
         "load":  pd.Series([80, 120, 150, 180, 140, 100], name="snapshot"),
         "cost":  pd.Series({"wind": 0, "solar": 0, "gas": 50}),
     },
-    coords={
-        "snapshot": pd.RangeIndex(6, name="snapshot"),
-    },
+    coords={"snapshot": pd.RangeIndex(6, name="snapshot")},
 )
-
 m.solve()
-print(m.solution["p"])
-
-# Inspect the YAML definition
-m.yaml.schema      # parsed MathSchema
-m.yaml.dataset     # xr.Dataset of loaded parameters
-m.yaml.coords      # master coordinate dict
 ```
+
+## The language
+
+YAML sections: `dimensions` · `parameters` · `variables` (incl. binary/integer) · `constraints` · `objectives` · `expressions` (named sub-expressions) · `macros` (parameterised templates) · `piecewise` (λ-formulation).
+
+Expressions: arithmetic, comparisons, `where` masks, `sum` / `group_sum` / `roll` / `shift`. Custom Python helpers via `@linopy_yaml.register` run on the eager fallback only — prefer `macros:` for anything expressible as a composition.
+
+[ARCHITECTURE.md](ARCHITECTURE.md) for how it fits together · [SPEC.md](SPEC.md) for the full specification.
 
 ## Installation
 
 ```bash
-pip install linopy-yaml                # eager backend
-pip install "linopy-yaml[relational]"  # + streaming backend (duckdb, highspy)
+pip install "linopy-yaml[relational]"  # streaming engine (duckdb, highspy)
+pip install linopy-yaml                # eager/compatibility layer only
 ```
 
-Or for development:
+## Non-goals
 
-```bash
-git clone https://github.com/FBumann/linopy-yaml.git
-cd linopy-yaml
-pip install -e ".[dev]"
-```
-
-## YAML Schema
-
-A YAML file has five top-level sections:
-
-| Section        | Purpose                                                  |
-|----------------|----------------------------------------------------------|
-| `dimensions`   | Master coordinate definitions                            |
-| `parameters`   | Named input data with declared shapes                    |
-| `variables`    | Decision variables (incl. binary/integer)                |
-| `constraints`  | Linear constraints                                       |
-| `objectives`   | Objective function(s)                                    |
-| `expressions`  | Named sub-expressions, spliced in by name                |
-| `macros`       | Parameterised expression templates (language, not code)  |
-| `piecewise`    | Piecewise-linear relations (λ-formulation)               |
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the architecture and [SPEC.md](SPEC.md) for the full design specification.
-
-## Key Features
-
-- **Pydantic validation** — YAML structure is validated at load time with clear error messages.
-- **Expression parser** — pyparsing-based parser for math expressions (`p * cost`, `sum(p, over=generator)`).
-- **Where strings** — boolean masks to selectively create variables and constraints (`"p_max > 0"`).
-- **Built-in helpers** — `sum(expr, over=dim)`, `group_sum(expr, mapping, into=dim)` for network topologies, and `roll`/`shift` for time-coupling.
-- **Named expressions and macros** — reusable math defined in the YAML itself; expanded before either backend runs, so files stay self-contained.
-- **Two backends, one meaning** — automatic routing between the eager linopy builder and the memory-bounded relational/streaming backend, guarded by differential tests.
-- **Custom helpers** — register your own with `@linopy_yaml.register("name")` (eager backend only; prefer `macros:` for anything expressible as a composition).
-- **Composable models** — use `m.yaml.extend("extra.yaml", data={...})` to build models from multiple YAML files.
-- **Introspection** — access `m.yaml.schema` (parsed schema) and `m.yaml.dataset` (loaded parameters).
+Not a solver wrapper, not a domain package, not a data-loading layer — bring pandas/xarray objects or parquet paths.
 
 ## Status
 
-**v0.0.2** — early but moving fast. Both backends round-trip real models through solve with differentially verified results; the language covers foreach/where/arithmetic, `sum`/`group_sum`/`roll`/`shift`, named expressions, macros, binary/integer variables, and `piecewise:` blocks. See [ARCHITECTURE.md](ARCHITECTURE.md) and [SPEC.md](SPEC.md).
+**v0.0.2** — early but moving fast. Both backends round-trip real models through solve with differentially verified results. Open questions live in [SPEC.md](SPEC.md) §11.
 
 ## License
 
