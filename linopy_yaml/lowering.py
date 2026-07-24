@@ -55,6 +55,9 @@ _SENSES = {"==", "<=", ">="}
 
 def lower_program(schema: MathSchema) -> ir.Program:
     """Compile a validated :class:`MathSchema` into an IR :class:`Program`."""
+    from linopy_yaml.piecewise import expand_piecewise
+
+    schema = expand_piecewise(schema)
     parameters = tuple(
         ir.ParameterDecl(name, tuple(pdef.dims))
         for name, pdef in schema.parameters.items()

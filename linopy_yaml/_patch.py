@@ -18,6 +18,7 @@ from linopy_yaml._notes import note
 from linopy_yaml.accessor import YamlAccessor
 from linopy_yaml.builder import build_model
 from linopy_yaml.loader import build_master_coords, load_parameters
+from linopy_yaml.piecewise import expand_piecewise
 from linopy_yaml.schema import MathSchema
 from linopy_yaml.validation import validate_expressions
 
@@ -84,6 +85,7 @@ def _from_yaml(
             raw = {}
 
         schema = MathSchema.model_validate(raw)
+        schema = expand_piecewise(schema)
         validate_expressions(schema)
 
         master_coords = build_master_coords(schema, coords)

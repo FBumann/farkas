@@ -383,6 +383,38 @@ Semantics:
 
 -----
 
+### 3.6 `piecewise`
+
+N expressions jointly pinned to a breakpoint-indexed piecewise-linear curve,
+mirroring `linopy.Model.add_piecewise_formulation`:
+
+```yaml
+piecewise:
+  chp:
+    over: bp                        # breakpoint dimension
+    links:
+      - [power, power_bp]           # [expression, values-parameter]
+      - [fuel, fuel_bp, "<="]       # optional sign: bounded by the curve
+      - [heat, heat_bp]
+    convex: false                   # true: pure-LP convex hull, no binaries
+```
+
+Each link is `[expression, values, sign?]`: *expression* is any affine
+expression string (a bare variable name being the simplest), *values* names a
+parameter carrying the `over` dim (this link's breakpoint coordinates —
+because they are parameters, curves may vary along other dims, e.g.
+per-generator), and *sign* (`<=`/`>=`, at most one, only with exactly two
+links) bounds the link instead of pinning it.
+
+Blocks are **expanded before building** (`linopy_yaml.piecewise`) into plain
+variables and constraints via the λ convex-combination method — λ weights in
+`[0,1]` with a convexity row, one link row per tuple, and (unless `convex:
+true`) segment binaries with an adjacency row `lam <= seg + shift(seg,
+bp=1)`. Both backends receive the identical expanded schema; nonconvex
+blocks make the model MILP (still relational-eligible via vtype).
+
+-----
+
 ## 4. Data Loading Contract
 
 ### 4.1 Design rationale: why explicit is better than inferred
@@ -1116,14 +1148,14 @@ Variable *types* are not formulations: binary/integer are supported (a
 integrality), which makes basic MILP relational-eligible. Semi-continuous is
 the remaining planned vtype extension.
 
-Convex piecewise costs need no machinery at all — the epigraph formulation
-is ordinary affine YAML (see ``examples/piecewise_convex.yaml``), pure LP,
-relational-eligible today. Nonconvex piecewise is planned as *schema-level
-expansion*: a ``piecewise:`` block expands into ordinary variable/constraint
-declarations (λ or incremental method over a breakpoint dimension, binaries
-via vtype, ordering via ``shift``) so **both backends receive identical
-affine declarations** and stay differential-testable. Formulations never
-enter as IR expression nodes.
+Piecewise is implemented as *schema-level expansion* (§3.6): a
+``piecewise:`` block expands into ordinary variable/constraint declarations
+(λ convex-combination over a breakpoint dimension, binaries via vtype,
+adjacency via ``shift``) so **both backends receive identical affine
+declarations** and stay differential-testable. Formulations never enter as
+IR expression nodes. Convex piecewise costs are also expressible with no
+machinery at all — the epigraph pattern in ordinary affine YAML (see
+``examples/piecewise_convex.yaml``).
 
 ### 12.5 Execution requirements (phase-1 spike, corrected after phase 3)
 

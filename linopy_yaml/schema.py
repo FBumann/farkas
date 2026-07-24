@@ -131,6 +131,54 @@ class MacroDef(BaseModel):
         return self
 
 
+class PiecewiseDef(BaseModel):
+    """N expressions jointly pinned to a breakpoint-indexed piecewise curve.
+
+    Mirrors ``linopy.Model.add_piecewise_formulation``: each link is a tuple
+    ``[expression, values_parameter]`` or ``[expression, values_parameter,
+    sign]``, where *expression* is any affine expression string (a bare
+    variable name being the simplest), *values_parameter* names a parameter
+    carrying the ``over`` dim (the breakpoint coordinates of this link), and
+    *sign* bounds the link by the curve instead of pinning it (at most one
+    non-``"=="``, and only with exactly two links).
+
+    Expanded (before building) into plain variables and constraints via the
+    λ convex-combination method — see ``linopy_yaml.piecewise``.
+    """
+
+    over: str  # breakpoint dimension
+    links: list[list[str]]
+    convex: bool = False  # True: pure-LP convex hull (no binaries)
+
+    @field_validator("links")
+    @classmethod
+    def _check_links(cls, v: list[list[str]]) -> list[list[str]]:
+        if len(v) < 2:
+            msg = "piecewise needs at least two links ([expression, values, sign?])."
+            raise ValueError(msg)
+        signs = []
+        for link in v:
+            if not 2 <= len(link) <= 3:
+                msg = (
+                    f"each link must be [expression, values] or "
+                    f"[expression, values, sign], got {link!r}"
+                )
+                raise ValueError(msg)
+            sign = link[2] if len(link) == 3 else "=="
+            if sign not in ("==", "<=", ">="):
+                msg = f"link sign must be '==', '<=' or '>=', got {sign!r}"
+                raise ValueError(msg)
+            signs.append(sign)
+        non_eq = [s for s in signs if s != "=="]
+        if len(non_eq) > 1:
+            msg = "at most one link may carry a non-'==' sign."
+            raise ValueError(msg)
+        if non_eq and len(v) != 2:
+            msg = "a non-'==' sign is only supported with exactly two links."
+            raise ValueError(msg)
+        return v
+
+
 class MathSchema(BaseModel):
     """Top-level schema for a linopy_yaml YAML file."""
 
@@ -141,6 +189,7 @@ class MathSchema(BaseModel):
     objectives: dict[str, ObjectiveDef] = {}
     expressions: dict[str, str] = {}
     macros: dict[str, MacroDef] = {}
+    piecewise: dict[str, PiecewiseDef] = {}
 
     @model_validator(mode="after")
     def _validate_references(self) -> MathSchema:
