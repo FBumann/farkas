@@ -129,7 +129,9 @@ class DuckdbExecutor:
             self._create_param_table(p, sources)
         self._create_dim_tables(program, sources)
 
-        self._con.execute("CREATE TABLE cols (col BIGINT, lb DOUBLE, ub DOUBLE)")
+        self._con.execute(
+            "CREATE TABLE cols (col BIGINT, lb DOUBLE, ub DOUBLE, vtype VARCHAR)"
+        )
         self._con.execute("CREATE TABLE obj (col BIGINT, coeff DOUBLE)")
         self._con.execute("CREATE TABLE rows (row BIGINT, sense VARCHAR, rhs DOUBLE)")
         self._con.execute("CREATE TABLE A (row BIGINT, col BIGINT, coeff DOUBLE)")
@@ -208,9 +210,11 @@ class DuckdbExecutor:
             dims.update(p.dims)
 
         for d in sorted(dims):
-            if d in sources:  # explicit index table with column <d>
-                rel = self._source_relation(f"dim_{d}", sources[d])
-                select = f"SELECT DISTINCT {d} AS val FROM {rel}"
+            if d in sources:
+                # explicit index: ordinals follow declared/coords order, so
+                # Shift's positional semantics match xarray/linopy exactly
+                # even for non-monotonic or string coordinates
+                self._create_explicit_dim_table(d, sources[d])
             else:
                 params = [p for p in program.parameters if d in p.dims]
                 if not params:
@@ -218,14 +222,39 @@ class DuckdbExecutor:
                         f"dimension '{d}' has no source: no parameter carries it and "
                         f"no explicit index was provided under key '{d}'"
                     )
+                # derived dims carry no declared order — sorted values are the
+                # deterministic fallback (pass an explicit index to control it)
                 select = " UNION ".join(
                     f"SELECT DISTINCT {d} AS val FROM p_{p.name}" for p in params
                 )
+                self._con.execute(
+                    f"CREATE TABLE dim_{d} AS "
+                    f"SELECT val, ROW_NUMBER() OVER (ORDER BY val) - 1 AS ord "
+                    f"FROM ({select})"
+                )
+            self._dim_card[d] = self._scalar(f"SELECT count(*) FROM dim_{d}")
+
+    def _create_explicit_dim_table(self, d: str, source: Any) -> None:
+        import pandas as pd
+
+        if isinstance(source, (str, Path)):
             self._con.execute(
                 f"CREATE TABLE dim_{d} AS "
-                f"SELECT val, ROW_NUMBER() OVER (ORDER BY val) - 1 AS ord FROM ({select})"
+                f"SELECT val, ROW_NUMBER() OVER (ORDER BY pos) - 1 AS ord FROM ("
+                f"SELECT {d} AS val, MIN(file_row_number) AS pos "
+                f"FROM read_parquet('{source}', file_row_number=true) GROUP BY {d})"
             )
-            self._dim_card[d] = self._scalar(f"SELECT count(*) FROM dim_{d}")
+            return
+        if not isinstance(source, pd.DataFrame) or d not in source.columns:
+            raise RelationalBuildError(
+                f"explicit index for dimension '{d}' must be a DataFrame with a "
+                f"'{d}' column or a parquet path (got {type(source).__name__})"
+            )
+        vals = pd.unique(source[d])  # first occurrence = positional order
+        frame = pd.DataFrame({"val": vals, "ord": range(len(vals))})
+        self._con.register(f"dimsrc_{d}", frame)
+        self._con.execute(f"CREATE TABLE dim_{d} AS SELECT val, ord FROM dimsrc_{d}")
+        self._con.unregister(f"dimsrc_{d}")
 
     # ------------------------------------------------------------------
     # frames (masked coord products with partition-wise labels)
@@ -343,7 +372,8 @@ class DuckdbExecutor:
         ub_sql, ub_joins = self._bound_sql(v.upper, v)
         joins = " ".join(dict.fromkeys(lb_joins + ub_joins))
         self._con.execute(
-            f"INSERT INTO cols SELECT f.var_label, {lb_sql}, {ub_sql} FROM var_{v.name} f {joins}"
+            f"INSERT INTO cols SELECT f.var_label, {lb_sql}, {ub_sql}, '{v.vtype}' "
+            f"FROM var_{v.name} f {joins}"
         )
         bad = self._scalar("SELECT count(*) FROM cols WHERE lb IS NULL OR ub IS NULL")
         if bad:
@@ -532,11 +562,15 @@ class DuckdbExecutor:
         cols = ", ".join(
             [*(f"t.{d}" for d in others), f"d_out.val AS {s.dim}", valcols]
         )
+        if s.wrap:
+            on = f"d_out.ord = ((d_in.ord + {s.n}) % {card} + {card}) % {card}"
+        else:
+            # acyclic: out-of-range rows simply don't join — zero contribution
+            on = f"d_out.ord = d_in.ord + {s.n}"
         sql = (
             f"SELECT {cols} FROM ({p.sql}) t "
             f"JOIN dim_{s.dim} d_in ON d_in.val = t.{s.dim} "
-            f"JOIN dim_{s.dim} d_out "
-            f"ON d_out.ord = ((d_in.ord + {s.n}) % {card} + {card}) % {card}"
+            f"JOIN dim_{s.dim} d_out ON {on}"
         )
         return _Piece(p.dims, sql, p.is_term)
 
@@ -685,6 +719,17 @@ class DuckdbExecutor:
             """
         )
 
+        integrality_sections = []
+        for vtype, keyword in (("binary", "binary"), ("integer", "general")):
+            n = self._scalar(f"SELECT count(*) FROM cols WHERE vtype = '{vtype}'")
+            if n:
+                part = parts / keyword
+                integrality_sections.append((keyword, part))
+                self._con.execute(
+                    f"COPY (SELECT printf('x%d', col) FROM cols WHERE vtype = '{vtype}') "
+                    f"TO '{part}' {_COPY_OPTS}"
+                )
+
         sense = b"min" if self._obj_sense == "min" else b"max"
         with open(path, "wb") as f:
             f.write(sense + b"\n\nobj:\n")
@@ -696,6 +741,9 @@ class DuckdbExecutor:
                 _cat(f, part)
             f.write(b"\nbounds\n")
             _cat(f, parts / "bounds")
+            for keyword, part in integrality_sections:
+                f.write(f"\n{keyword}\n".encode())
+                _cat(f, part)
             f.write(b"\nend\n")
         shutil.rmtree(parts)
 
@@ -714,7 +762,7 @@ class DuckdbExecutor:
         empty_i = np.empty(0, dtype=np.int32)
         empty_f = np.empty(0, dtype=np.float64)
         reader = self._con.execute(
-            "SELECT c.col, c.lb, c.ub, COALESCE(o.coeff, 0) AS cost "
+            "SELECT c.col, c.lb, c.ub, c.vtype, COALESCE(o.coeff, 0) AS cost "
             "FROM cols c LEFT JOIN obj o USING (col) ORDER BY c.col"
         ).to_arrow_reader(batch_rows)
         for batch in reader:
@@ -727,6 +775,14 @@ class DuckdbExecutor:
             )
             cost = np.asarray(d["cost"], dtype=np.float64)
             h.addCols(len(cost), cost, lb, ub, 0, empty_i, empty_i, empty_f)
+            vtype = np.asarray(d["vtype"])
+            noncont = np.flatnonzero(vtype != "continuous")
+            if len(noncont):
+                cols_idx = np.asarray(d["col"], dtype=np.int32)[noncont]
+                integrality = np.full(
+                    len(noncont), int(highspy.HighsVarType.kInteger), dtype=np.uint8
+                )
+                h.changeColsIntegrality(len(noncont), cols_idx, integrality)
 
         for lo in range(0, max(self._n_rows, 1), batch_rows):
             hi = min(lo + batch_rows, self._n_rows)

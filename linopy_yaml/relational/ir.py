@@ -17,6 +17,7 @@ from typing import Literal
 Sense = Literal["==", "<=", ">="]
 ObjSense = Literal["min", "max"]
 CmpOp = Literal["==", "!=", "<=", ">=", "<", ">"]
+VType = Literal["continuous", "binary", "integer"]
 
 
 # --------------------------------------------------------------------------
@@ -134,12 +135,16 @@ class GroupSum(Expr):
 
 @dataclass(frozen=True)
 class Shift(Expr):
-    """Circular shift along ``dim``: the result at coord *t* is ``x`` at
-    coord *t−n* (periodic wrap, matching ``xarray.roll``)."""
+    """Shift along ``dim``: the result at coord *t* is ``x`` at coord *t−n*.
+
+    ``wrap=True`` is periodic (matching ``xarray.roll``); ``wrap=False`` is
+    acyclic — positions shifted past the edge contribute zero (row absence).
+    """
 
     x: Expr
     dim: str
     n: int
+    wrap: bool = True
 
 
 # --------------------------------------------------------------------------
@@ -210,6 +215,7 @@ class VariableDecl:
     where: Pred | None = None
     lower: Expr = field(default_factory=lambda: Const(float("-inf")))
     upper: Expr = field(default_factory=lambda: Const(float("inf")))
+    vtype: VType = "continuous"
 
 
 @dataclass(frozen=True)

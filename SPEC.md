@@ -383,6 +383,38 @@ Semantics:
 
 -----
 
+### 3.6 `piecewise`
+
+N expressions jointly pinned to a breakpoint-indexed piecewise-linear curve,
+mirroring `linopy.Model.add_piecewise_formulation`:
+
+```yaml
+piecewise:
+  chp:
+    over: bp                        # breakpoint dimension
+    links:
+      - [power, power_bp]           # [expression, values-parameter]
+      - [fuel, fuel_bp, "<="]       # optional sign: bounded by the curve
+      - [heat, heat_bp]
+    convex: false                   # true: pure-LP convex hull, no binaries
+```
+
+Each link is `[expression, values, sign?]`: *expression* is any affine
+expression string (a bare variable name being the simplest), *values* names a
+parameter carrying the `over` dim (this link's breakpoint coordinates —
+because they are parameters, curves may vary along other dims, e.g.
+per-generator), and *sign* (`<=`/`>=`, at most one, only with exactly two
+links) bounds the link instead of pinning it.
+
+Blocks are **expanded before building** (`linopy_yaml.piecewise`) into plain
+variables and constraints via the λ convex-combination method — λ weights in
+`[0,1]` with a convexity row, one link row per tuple, and (unless `convex:
+true`) segment binaries with an adjacency row `lam <= seg + shift(seg,
+bp=1)`. Both backends receive the identical expanded schema; nonconvex
+blocks make the model MILP (still relational-eligible via vtype).
+
+-----
+
 ## 4. Data Loading Contract
 
 ### 4.1 Design rationale: why explicit is better than inferred
@@ -692,7 +724,21 @@ constraints:
         where: "snapshot == 0"
 ```
 
-### 7.3 `group_sum(array, mapping, into=dim)`
+### 7.3 `shift(array, dim=n)`
+
+Non-cyclic counterpart of `roll`: the value at *t−n*, with vacated positions
+contributing **zero** instead of wrapping. Use for acyclic recurrences —
+e.g. storage that starts empty:
+
+```yaml
+expression: soc == shift(soc, snapshot=1) + charge - discharge
+```
+
+On the eager backend this is linopy/xarray `.shift()` (zero fill); on the
+relational backend it is the same ord-join as `roll` without the modulo —
+out-of-range rows simply don't join (row absence = zero contribution).
+
+### 7.4 `group_sum(array, mapping, into=dim)`
 
 Sums an array or expression through a **mapping parameter**, replacing the
 mapping's dimension with a group dimension. This is the membership-sum needed
@@ -718,7 +764,7 @@ constraint's `foreach` should be covered by the mapping — groups absent from
 the mapping produce no output rows. The relational backend treats absent
 groups as zero contribution.
 
-### 7.4 Custom helper functions
+### 7.5 Custom helper functions
 
 > **Prefer `macros:` (§3.7) for anything expressible as a composition of built-ins** — macros keep the YAML self-contained and work on both backends. Python helpers execute arbitrary code against xarray/linopy objects and are therefore **eager-only**: the relational backend rejects them and the router falls back with that reason.
 
@@ -983,6 +1029,18 @@ memory at any point** — not as dense arrays, not as a full CSR. Every stage
 streams under a configured memory budget. The solver's own internal copy is
 the only irreducible full-model residency.
 
+**Scope (decided 2026-07-24): a streaming compiler for large pure-affine
+models — not a general replacement for the eager builder.** linopy's
+trajectory is toward mutable, transformable models with solver-native
+constructs (piecewise formulations, SOS and indicator constraints,
+dualization, in-place updates). The eager builder, as a pure consumer of
+linopy's public API, inherits all of that for free; a flat
+``(col, row, coeff)`` streamer inherits none of it. The two backends are not
+fast-vs-slow versions of the same thing: the eager builder is the
+feature-complete default, and the relational backend is an optimization lane
+for the models where it wins (large, pure-affine), selected automatically
+with fallback (§12.8).
+
 ### 12.2 Architecture
 
 ```
@@ -1074,7 +1132,32 @@ Affine expressions:
 Predicates (for `where`): `Cmp(param, op, value)`, `And`, `Or`, `Not`.
 
 This covers the v0 language subset (foreach, where, arithmetic, sum,
-group_sum, comparison). Quadratic and piecewise are out of scope.
+group_sum, roll, shift, comparison). Quadratic is out of scope.
+
+**The IR is affine-by-design — decided, not provisional.** No node introduces
+variables or constraints as a side effect of an expression. Formulations
+are model *transformations*, not expressions: piecewise enters via
+schema-level expansion (§3.6); SOS and indicator remain eager-only. If they ever come to the streaming path, they enter as a
+distinct expansion stage that emits new variable/constraint declarations
+*before* affine compilation — never as expression nodes — and only once the
+sink has the corresponding native streams (§12.6). Reimplementing linopy's
+reformulation passes (e.g. SOS big-M linearization) inside the IR is
+explicitly rejected: that would duplicate the library this package consumes.
+Variable *types* are not formulations: binary/integer are supported (a
+``vtype`` column on ``cols``, LP ``binary``/``general`` sections, HiGHS
+integrality), which makes basic MILP relational-eligible. Semi-continuous is
+the remaining planned vtype extension.
+
+Piecewise is implemented as *schema-level expansion* (§3.6): a
+``piecewise:`` block expands into ordinary variable/constraint declarations
+(λ convex-combination over a breakpoint dimension, binaries via vtype,
+adjacency via ``shift``) so **both backends receive identical affine
+declarations** and stay differential-testable. Formulations never enter as
+IR expression nodes. See ``examples/piecewise.yaml`` for per-generator
+curves. Convex piecewise costs are also expressible with no machinery at
+all — the epigraph pattern in ordinary affine YAML (kept as a tested
+pattern in ``tests/test_piecewise_convex.py``; automating it is issue #23's
+``method: lp``).
 
 ### 12.5 Execution requirements (phase-1 spike, corrected after phase 3)
 
@@ -1118,6 +1201,15 @@ group_sum, comparison). Quadratic and piecewise are out of scope.
   the solver's own model; float→text→parse disappears entirely. Full-CSR
   fallbacks violate the primary invariant and are last resorts.
 
+**The sink is capped, explicitly.** Today it expresses columns with bounds,
+objective coefficients, and integrality (continuous / binary / integer
+vtypes), affine rows, and COO coefficients — nothing else. SOS sets and
+indicator/general constraints have no stream. The documented upgrade path is
+five streams — ``cols`` (gaining a semi-continuous threshold), ``rows``,
+``A``, ``sos_sets``, ``genconstr`` — recorded here so the gap is a stated
+design bound, not a surprise at implementation time. Anything a stream cannot carry routes to
+the eager builder (§12.8).
+
 ### 12.7 Phase gates
 
 1. ✅ Spike: hand-written SQL, dispatch model — peak RSS flat at the budget
@@ -1129,3 +1221,20 @@ group_sum, comparison). Quadratic and piecewise are out of scope.
 3. YAML → IR lowering behind the `_eval_ast` seam, v0 subset only.
 4. In-memory executor for the same IR (folding in the CSR deferred-groupby
    prototype) so small models skip duckdb.
+
+### 12.8 Backend eligibility and automatic fallback
+
+Backend selection is the router's job, not the user's. A schema is
+**relational-eligible** iff it lowers to the IR:
+``linopy_yaml.router.relational_eligibility(schema)`` returns ``None`` on
+success or the first lowering error — verbatim, with its context — as the
+ineligibility reason. ``select_backend(schema)`` wraps this in an explicit
+choice object.
+
+Everything outside the streaming subset (custom helpers, ``**``,
+where-comparisons on dimensions — and formulations like SOS if they enter
+the YAML language) automatically routes to the eager builder with a stated
+reason. The relational backend is an
+optimization that must fall back; it is never a constraint on what the
+language can express. The differential oracle (same YAML through both
+backends must agree) is what keeps the fast lane honest.

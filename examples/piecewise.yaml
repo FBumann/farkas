@@ -1,0 +1,58 @@
+# Dispatch with piecewise-linear generation costs via the piecewise: block.
+#
+# Each generator has its own convex cost curve: the breakpoint parameters
+# carry [generator, bp], so curves vary per generator — something flat
+# breakpoint lists cannot express. With convex: true the expansion emits no
+# binaries (pure-LP convex hull, exact for convex curves under minimisation)
+# and the model stays relational-eligible as an LP. Drop convex: true for
+# nonconvex curves — the expansion then adds segment binaries + adjacency,
+# and the model becomes a (still relational-eligible) MILP.
+
+dimensions:
+  snapshot:
+    dtype: int
+  generator:
+    dtype: str
+  bp:
+    dtype: int
+
+parameters:
+  p_max:
+    dims: [generator]
+  load:
+    dims: [snapshot]
+  bp_x:
+    dims: [generator, bp]   # per-generator breakpoint positions
+  bp_y:
+    dims: [generator, bp]   # per-generator cost at each breakpoint
+
+variables:
+  p:
+    foreach: [snapshot, generator]
+    bounds:
+      lower: 0
+      upper: p_max
+  op_cost:
+    foreach: [snapshot, generator]
+    bounds:
+      lower: 0
+
+piecewise:
+  cost_curve:
+    over: bp
+    links:
+      - [p, bp_x]
+      - [op_cost, bp_y]
+    convex: true
+
+constraints:
+  balance:
+    foreach: [snapshot]
+    equations:
+      - expression: sum(p, over=generator) == load
+
+objectives:
+  total_cost:
+    sense: minimize
+    equations:
+      - expression: sum(op_cost, over=generator)
