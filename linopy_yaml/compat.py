@@ -13,6 +13,13 @@ oracle the streaming engine is differentially tested against
     sol = ly.solve("model.yaml", sources={...})
 """
 
-from linopy_yaml._patch import apply_patches
+try:
+    from linopy_yaml._patch import apply_patches
+except ModuleNotFoundError as exc:  # linopy / xarray absent
+    msg = (
+        "The linopy compatibility layer requires the [oracle] extra: "
+        'pip install "linopy-yaml[oracle]"'
+    )
+    raise ModuleNotFoundError(msg) from exc
 
 apply_patches()
