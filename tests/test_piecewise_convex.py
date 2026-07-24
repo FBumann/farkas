@@ -1,4 +1,4 @@
-"""Convex piecewise cost via epigraph — pure LP, both backends, no new constructs.
+"""The epigraph pattern: convex piecewise in plain affine YAML, no piecewise: block.
 
 Demonstrates SPEC §12's claim: convex piecewise needs no formulation
 machinery at all. The epigraph constraints are ordinary affine YAML, so the
@@ -26,7 +26,44 @@ from linopy_yaml.schema import MathSchema  # noqa: E402
 
 RTOL = 1e-9
 
-PWL_YAML = "examples/piecewise_convex.yaml"
+EPIGRAPH_YAML = """
+# The epigraph pattern: convex piecewise costs in ordinary affine YAML,
+# no piecewise: block needed (the seed of issue #23's method: lp).
+dimensions:
+  snapshot: {dtype: int}
+  generator: {dtype: str}
+  segment: {dtype: str}
+
+parameters:
+  p_max: {dims: [generator]}
+  load: {dims: [snapshot]}
+  seg_slope: {dims: [generator, segment]}
+  seg_intercept: {dims: [generator, segment]}
+
+variables:
+  p:
+    foreach: [snapshot, generator]
+    bounds: {lower: 0, upper: p_max}
+  gen_cost:
+    foreach: [snapshot, generator]
+    bounds: {lower: 0}
+
+constraints:
+  balance:
+    foreach: [snapshot]
+    equations:
+      - expression: sum(p, over=generator) == load
+  pwl:
+    foreach: [snapshot, generator, segment]
+    equations:
+      - expression: gen_cost >= p * seg_slope + seg_intercept
+
+objectives:
+  total_cost:
+    sense: minimize
+    equations:
+      - expression: sum(gen_cost, over=generator)
+"""
 
 
 @pytest.fixture
@@ -81,10 +118,12 @@ def pwl_cost(p: float, slopes, icepts) -> float:
 def test_pwl_convex_differential(pwl_inputs, tmp_path):
     data, coords = pwl_inputs
 
-    schema = MathSchema(**pyyaml.safe_load(open(PWL_YAML)))
+    schema = MathSchema(**pyyaml.safe_load(EPIGRAPH_YAML))
     assert select_backend(schema).backend == "relational"  # eligible, pure LP
 
-    m = Model.from_yaml(PWL_YAML, data=data, coords=coords)
+    yaml_path = tmp_path / "epigraph.yaml"
+    yaml_path.write_text(EPIGRAPH_YAML)
+    m = Model.from_yaml(yaml_path, data=data, coords=coords)
     m.solve(solver_name="highs", output_flag=False)
     oracle = float(m.objective.value)
     assert np.isfinite(oracle)

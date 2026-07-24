@@ -374,3 +374,56 @@ def test_convex_requires_two_links():
     raw["piecewise"]["chp"]["convex"] = True
     with pytest.raises(ValueError, match="exactly two links"):
         MathSchema(**raw)
+
+
+def test_example_per_generator_curves(tmp_path):
+    """examples/piecewise.yaml: convex per-generator curves (breakpoints vary
+    along the generator dim — the thing flat breakpoint lists can't do)."""
+    import xarray as xr
+
+    from linopy_yaml.router import select_backend
+
+    example = "examples/piecewise.yaml"
+    rng = np.random.default_rng(31)
+    n_s = 24
+    gens = pd.Index(["cheap", "mid"], name="generator")
+    bps = pd.RangeIndex(3, name="bp")
+    p_max = pd.Series({"cheap": 100.0, "mid": 120.0})
+    # convex per-generator curves: increasing marginal cost, different shapes
+    bp_x = xr.DataArray(
+        [[0.0, 40.0, 100.0], [0.0, 60.0, 120.0]],
+        coords={"generator": gens, "bp": bps},
+    )
+    bp_y = xr.DataArray(
+        [[0.0, 200.0, 800.0], [0.0, 900.0, 2700.0]],
+        coords={"generator": gens, "bp": bps},
+    )
+    load = pd.Series(
+        (rng.uniform(0.3, 0.9, n_s) * p_max.sum()).round(1),
+        index=pd.RangeIndex(n_s, name="snapshot"),
+    )
+    data = {"p_max": p_max, "load": load, "bp_x": bp_x, "bp_y": bp_y}
+    coords = {"snapshot": load.index, "generator": gens, "bp": bps}
+
+    schema = MathSchema(**pyyaml.safe_load(open(example)))
+    assert select_backend(schema).backend == "relational"  # convex: pure LP
+
+    m = Model.from_yaml(example, data=data, coords=coords)
+    m.solve(solver_name="highs", output_flag=False)
+    oracle = float(m.objective.value)
+    assert np.isfinite(oracle)
+
+    with DuckdbExecutor(memory_limit="256MB") as ex:
+        ex.build(lower_program(schema), tidy_sources(schema, data, coords))
+        sol = ex.solve()
+        assert sol.status == "Optimal"
+        assert sol.objective == pytest.approx(oracle, rel=RTOL)
+
+        # each generator's cost sits on its own curve (hull is exact: convex + min)
+        p = sol.primal("p").set_index(["snapshot", "generator"])["value"]
+        cost = sol.primal("op_cost").set_index(["snapshot", "generator"])["value"]
+        for (s, g), pv in p.items():
+            expected = curve(
+                pv, bp_x.sel(generator=g).to_series(), bp_y.sel(generator=g).to_series()
+            )
+            assert cost[(s, g)] == pytest.approx(expected, abs=1e-5)

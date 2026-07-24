@@ -1153,9 +1153,11 @@ Piecewise is implemented as *schema-level expansion* (§3.6): a
 (λ convex-combination over a breakpoint dimension, binaries via vtype,
 adjacency via ``shift``) so **both backends receive identical affine
 declarations** and stay differential-testable. Formulations never enter as
-IR expression nodes. Convex piecewise costs are also expressible with no
-machinery at all — the epigraph pattern in ordinary affine YAML (see
-``examples/piecewise_convex.yaml``).
+IR expression nodes. See ``examples/piecewise.yaml`` for per-generator
+curves. Convex piecewise costs are also expressible with no machinery at
+all — the epigraph pattern in ordinary affine YAML (kept as a tested
+pattern in ``tests/test_piecewise_convex.py``; automating it is issue #23's
+``method: lp``).
 
 ### 12.5 Execution requirements (phase-1 spike, corrected after phase 3)
 
