@@ -17,7 +17,7 @@ classifiers = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "linopy>=0.7.0,<0.8",
+    "linopy>=0.9.0,<0.10",
     "xarray>=2024.2.0",
     "pandas",
     "numpy",
@@ -32,6 +32,16 @@ dev = [
     "pytest-cov",
     "ruff",
     "mypy",
+]
+
+[dependency-groups]
+spike = [
+    "duckdb",
+    "pyarrow",
+    "memray",
+    "pytest-benchmem",
+    "highspy",
+    "polars",
 ]
 
 [tool.setuptools.packages.find]

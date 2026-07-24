@@ -1,13 +1,11 @@
 """Integration test: the dispatch example from the spec."""
 
 import pandas as pd
-import pytest
-
-import linopy_yaml  # noqa: F401 — registers .from_yaml / .yaml on linopy.Model
 from linopy import Model
 
+import linopy_yaml  # noqa: F401 — registers .from_yaml / .yaml on linopy.Model
 
-@pytest.mark.xfail(reason="upstream linopy bug: as_dataarray(scalar, coords=2D) fails")
+
 def test_dispatch_builds(dispatch_yaml):
     """Build the dispatch model from YAML and verify structure."""
     m = Model.from_yaml(
@@ -41,7 +39,6 @@ def test_dispatch_builds(dispatch_yaml):
     assert "load" in m.yaml.dataset
 
 
-@pytest.mark.xfail(reason="upstream linopy bug: as_dataarray(scalar, coords=2D) fails")
 def test_dispatch_solves(dispatch_yaml):
     """Build and solve the dispatch model, check solution is feasible."""
     m = Model.from_yaml(
