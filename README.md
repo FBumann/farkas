@@ -2,21 +2,24 @@
 
 Declarative optimisation: define the math in YAML, supply data at runtime, solve.
 
-Models build on a **relational/streaming engine** (tidy tables in duckdb under a hard `memory_limit`, streamed straight to the solver — the full model never exists in process memory). [linopy](https://github.com/PyPSA/linopy) is kept in two roles: the **compatibility layer** — YAML extends Python-built `linopy.Model`s, and anything outside the streaming subset falls back to the eager linopy builder with a stated reason — and the **validation oracle** every language feature is differentially tested against.
+Models build on a **relational/streaming engine** (tidy tables in duckdb under a hard `memory_limit`, streamed straight to the solver — the full model never exists in process memory). [linopy](https://github.com/PyPSA/linopy) is kept in two roles: the opt-in **compatibility shim** — YAML math onto a Python-built `linopy.Model`, which is structurally eager because that model is already in memory — and the **validation oracle** every language feature is differentially tested against. There is no fallback: both accept exactly the same language, and a construct outside it is a load error naming its rewrite.
 
 ```mermaid
 flowchart LR
     Y["YAML + data"] --> AST["core AST"]
-    AST --> R{"lowers to the<br/>streaming subset?"}
+    AST --> R{"inside the<br/>language?"}
     R -->|"yes"| S["streaming engine<br/>duckdb · fixed memory_limit"]
     S --> OUT["solver (batched) / LP file"]
-    R -->|"no — with the reason"| E["eager fallback<br/>linopy: compat layer & oracle"]
+    R -->|"no"| ERR["load error<br/>naming the construct + rewrite"]
+    AST -.->|"opt-in shim: same language,<br/>for models already in memory"| E["linopy_yaml.compat"]
     E --> LS["linopy.Model → solve"]
 
     classDef stream fill:#f0f7f0,stroke:#3a7d44,stroke-width:2px,color:#111
     classDef compat fill:#eef1fb,stroke:#4a5fc1,stroke-width:2px,color:#111
     class S,OUT stream
     class E,LS compat
+    class ERR err
+    classDef err fill:#fdf3e7,stroke:#b7791f,color:#111
 ```
 
 ## Goals
@@ -123,8 +126,8 @@ Expressions: arithmetic, comparisons, `where` masks, `sum` / `group_sum` / `roll
 ## Installation
 
 ```bash
-pip install "linopy-yaml[relational]"  # streaming engine (duckdb, highspy)
-pip install linopy-yaml                # eager/compatibility layer only
+pip install linopy-yaml            # the streaming engine (duckdb, highspy) — the product path
+pip install "linopy-yaml[compat]"  # adds linopy + xarray for the compat shim and the oracle
 ```
 
 ## Non-goals
