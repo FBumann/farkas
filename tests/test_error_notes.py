@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import pandas as pd
 import pytest
-from linopy import Model
 
-from linopy_yaml import compat
+from tests.oracle import compat, linopy
 
 
 def _has_note(exc: BaseException, substring: str) -> bool:
@@ -102,7 +101,7 @@ def test_build_failure_attaches_constraint_note(tmp_path):
 
 def test_extend_attaches_path_note(tmp_path):
     """A failure inside extend() carries the extension YAML path."""
-    model = Model()
+    model = linopy.Model()
     model.add_variables(name='p', coords=[pd.Index([0, 1, 2, 3], name='time')])
 
     ext = tmp_path / 'ext.yaml'

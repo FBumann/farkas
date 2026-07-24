@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import pandas as pd
 import pytest
-from linopy import Model
 
-from linopy_yaml import compat
 from linopy_yaml.schema import MathSchema
 from linopy_yaml.validation import validate_expressions
+from tests.oracle import compat, linopy
 
 
 def _schema(**overrides) -> MathSchema:
@@ -146,7 +145,7 @@ class TestLoadTimeIntegration:
 
     def test_extend_sees_existing_model_variables(self, tmp_path):
         """An extension may reference variables already on the model."""
-        model = Model()
+        model = linopy.Model()
         model.add_variables(coords={'g': pd.Index(['wind', 'solar'], name='g')}, name='p')
 
         f = tmp_path / 'ext.yaml'
@@ -164,7 +163,7 @@ class TestLoadTimeIntegration:
         assert 'cap' in model.constraints
 
     def test_extend_flags_unknown_variable(self, tmp_path):
-        model = Model()
+        model = linopy.Model()
         f = tmp_path / 'ext.yaml'
         f.write_text(
             'dimensions:\n'

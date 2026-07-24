@@ -3,7 +3,7 @@
 import pandas as pd
 
 import linopy_yaml as ly
-from linopy_yaml import compat
+from tests.oracle import compat
 
 
 def test_dispatch_builds(dispatch_yaml):

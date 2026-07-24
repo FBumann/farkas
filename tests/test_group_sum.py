@@ -10,28 +10,24 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import highspy
 import numpy as np
 import pandas as pd
 import pytest
-import xarray as xr
+import yaml as pyyaml
 
-duckdb = pytest.importorskip('duckdb')
-highspy = pytest.importorskip('highspy')
-
-import yaml as pyyaml  # noqa: E402
-
-from linopy_yaml import compat  # noqa: E402
-from linopy_yaml.lowering import lower_program, tidy_sources  # noqa: E402
-from linopy_yaml.relational import (  # noqa: E402
+from linopy_yaml.lowering import lower_program, tidy_sources
+from linopy_yaml.relational import (
     DuckdbExecutor,
     RelationalBuildError,
 )
-from linopy_yaml.relational.ir import (  # noqa: E402
+from linopy_yaml.relational.ir import (
     GroupSum,
     Var,
 )
-from linopy_yaml.schema import MathSchema  # noqa: E402
-from tests.test_relational import (  # noqa: E402
+from linopy_yaml.schema import MathSchema
+from tests.oracle import compat, xr
+from tests.test_relational import (
     transport_data,  # noqa: F401 — fixture
     transport_eager_objective,
 )

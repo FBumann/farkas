@@ -8,21 +8,16 @@ Each model is built three ways and must agree on the objective:
 
 from __future__ import annotations
 
+import highspy
 import numpy as np
 import pandas as pd
 import pytest
-import xarray as xr
 
-duckdb = pytest.importorskip('duckdb')
-highspy = pytest.importorskip('highspy')
-
-import linopy  # noqa: E402
-
-from linopy_yaml.relational import (  # noqa: E402
+from linopy_yaml.relational import (
     DuckdbExecutor,
     RelationalBuildError,
 )
-from linopy_yaml.relational.ir import (  # noqa: E402
+from linopy_yaml.relational.ir import (
     Cmp,
     Const,
     ConstraintDecl,
@@ -35,6 +30,7 @@ from linopy_yaml.relational.ir import (  # noqa: E402
     Var,
     VariableDecl,
 )
+from tests.oracle import linopy, xr
 
 RTOL = 1e-9
 

@@ -9,22 +9,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import highspy
 import numpy as np
 import pandas as pd
 import pytest
+import yaml as pyyaml
 
-duckdb = pytest.importorskip('duckdb')
-highspy = pytest.importorskip('highspy')
-
-import yaml as pyyaml  # noqa: E402
-
-from linopy_yaml import compat  # noqa: E402
-from linopy_yaml.lowering import lower_program, tidy_sources  # noqa: E402
-from linopy_yaml.relational import (  # noqa: E402
+from linopy_yaml.lowering import lower_program, tidy_sources
+from linopy_yaml.relational import (
     DuckdbExecutor,
     RelationalBuildError,
 )
-from linopy_yaml.relational.ir import (  # noqa: E402
+from linopy_yaml.relational.ir import (
     Bool,
     Cmp,
     Defined,
@@ -33,7 +29,8 @@ from linopy_yaml.relational.ir import (  # noqa: E402
     Sum,
     Var,
 )
-from linopy_yaml.schema import MathSchema  # noqa: E402
+from linopy_yaml.schema import MathSchema
+from tests.oracle import compat
 
 RTOL = 1e-9
 

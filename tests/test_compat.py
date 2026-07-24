@@ -8,21 +8,19 @@ from __future__ import annotations
 
 import pandas as pd
 import pytest
-from linopy import Model
 
-from linopy_yaml import compat
-from linopy_yaml.compat import _infer_coords
+from tests.oracle import compat, linopy
 
 
 def test_nothing_is_patched_onto_linopy_model():
     """Importing compat must not touch linopy.Model."""
-    assert not hasattr(Model, 'from_yaml')
-    assert not hasattr(Model, 'yaml')
+    assert not hasattr(linopy.Model, 'from_yaml')
+    assert not hasattr(linopy.Model, 'yaml')
 
 
 def test_extend_rejects_mismatched_dim_values(tmp_path):
     """Extension declaring values: for an existing dim must match exactly."""
-    m = Model()
+    m = linopy.Model()
     m.add_variables(name='p', coords=[pd.Index([0, 1, 2, 3], name='time')])
 
     ext = tmp_path / 'ext.yaml'
@@ -34,7 +32,7 @@ def test_extend_rejects_mismatched_dim_values(tmp_path):
 
 def test_extend_accepts_matching_dim_values(tmp_path):
     """Extension may redeclare values: as long as they match exactly."""
-    m = Model()
+    m = linopy.Model()
     m.add_variables(name='p', coords=[pd.Index(['wind', 'solar'], name='generator')])
 
     ext = tmp_path / 'ext.yaml'
@@ -45,18 +43,18 @@ def test_extend_accepts_matching_dim_values(tmp_path):
 
 def test_infer_coords_unions_across_variables():
     """_infer_coords unions per-dim coordinates across all model variables."""
-    m = Model()
+    m = linopy.Model()
     m.add_variables(name='a', coords=[pd.Index(['wind', 'solar'], name='generator')])
     m.add_variables(name='b', coords=[pd.Index(['wind', 'gas'], name='generator')])
 
-    inferred = _infer_coords(m)
+    inferred = compat._infer_coords(m)
     assert 'generator' in inferred
     assert set(inferred['generator']) == {'wind', 'solar', 'gas'}
 
 
 def test_extend_uses_inferred_coords_when_yaml_omits_values(tmp_path):
     """Extension YAML may omit values: for dims already on the model."""
-    m = Model()
+    m = linopy.Model()
     m.add_variables(name='p', coords=[pd.Index(['wind', 'solar'], name='generator')])
 
     ext = tmp_path / 'ext.yaml'
@@ -80,7 +78,7 @@ def test_extend_uses_inferred_coords_when_yaml_omits_values(tmp_path):
 
 def test_extend_rejects_yaml_values_that_disagree_with_inferred(tmp_path):
     """Extension values: must match inferred coords, not just declared ones."""
-    m = Model()
+    m = linopy.Model()
     m.add_variables(name='p', coords=[pd.Index(['wind', 'solar'], name='generator')])
 
     ext = tmp_path / 'ext.yaml'
@@ -92,7 +90,7 @@ def test_extend_rejects_yaml_values_that_disagree_with_inferred(tmp_path):
 
 def test_extend_coords_kwarg_overrides_inferred(tmp_path):
     """coords= kwarg to extend() wins over inference from model variables."""
-    m = Model()
+    m = linopy.Model()
     m.add_variables(name='p', coords=[pd.Index(['wind', 'solar'], name='generator')])
 
     ext = tmp_path / 'ext.yaml'
@@ -111,7 +109,7 @@ def test_extend_is_stateless(tmp_path):
 
     This is hard rule 5 — no Python-side state may change what a file means.
     """
-    m = Model()
+    m = linopy.Model()
 
     first = tmp_path / 'first.yaml'
     first.write_text(

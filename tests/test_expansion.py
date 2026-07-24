@@ -11,11 +11,11 @@ import pandas as pd
 import pytest
 import yaml as pyyaml
 
-from linopy_yaml import compat
 from linopy_yaml.expansion import parse_and_expand
 from linopy_yaml.expression_parser import parse_expression
 from linopy_yaml.schema import MathSchema
 from linopy_yaml.validation import validate_expressions
+from tests.oracle import compat
 
 WEIGHTED_SUM = {
     'args': ['array', 'weights'],
@@ -209,8 +209,6 @@ def test_macro_templates_validated_even_when_unused():
 
 
 def test_differential_named_expression_and_macro(tmp_path):
-    duckdb = pytest.importorskip('duckdb')  # noqa: F841
-    highspy = pytest.importorskip('highspy')  # noqa: F841
 
     from linopy_yaml.lowering import lower_program, tidy_sources
     from linopy_yaml.relational import DuckdbExecutor
