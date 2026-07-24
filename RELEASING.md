@@ -60,6 +60,49 @@ landing a commit.
 `prerelease: true` also marks the GitHub releases as prereleases, so they never
 show up as "Latest".
 
+### The subject that lands on main
+
+`main` takes squash merges only, so one PR is one commit and its subject is what
+release-please parses. A subject it cannot parse does not fail anything — the entry
+is just silently missing from the changelog. [`pr-title.yaml`](.github/workflows/pr-title.yaml)
+is what catches that, and it is a required check:
+
+```
+<type>[(scope)][!]: <subject>
+
+feat: streaming executor for indexed constraints
+fix(parser): where clauses with a trailing comma
+refactor!: closed helper set, no monkey-patch
+```
+
+Types are the ones in `changelog-sections`, plus `revert`. Because
+`squash_merge_commit_title` is `COMMIT_OR_PR_TITLE`, GitHub uses the PR title on a
+multi-commit PR and the commit's own title on a single-commit one — the check
+validates both, so whichever GitHub picks has been vetted. Fixing a title is an edit
+to the PR, not a branch rewrite; the check re-runs on edit.
+
+## Branch protection
+
+`main` is covered by a repository ruleset (Settings → Rules): no deletion, no
+force-push, squash-only merges through a PR, and these required checks:
+
+| check | comes from |
+| --- | --- |
+| `CI ok` | [`ci.yml`](.github/workflows/ci.yml) — aggregates `native` and the `full` matrix |
+| `Conventional commit subject` | [`pr-title.yaml`](.github/workflows/pr-title.yaml) |
+
+`CI ok` exists so the ruleset never names the matrix legs directly. Requiring
+`full (3.11)` would mean adding a Python version leaves it unrequired, and dropping
+one blocks every PR on a check that can no longer report. Change the matrix freely;
+the ruleset only knows about `CI ok`.
+
+Approvals are not required — it is a solo repo, and a review count of 0 still forces
+the PR, the squash and the checks. Raise `required_approving_review_count` when that
+changes.
+
+A required check must exist on `main` before it is required, or every PR waits on a
+check that never reports. Land the workflow first, then add it to the ruleset.
+
 ## Overriding the version
 
 Three levers, in ascending order of force:
