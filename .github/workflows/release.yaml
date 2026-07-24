@@ -1,0 +1,52 @@
+name: Release
+
+# Opens/maintains a release PR from conventional commits. Merging it tags the
+# release, which is what publish.yaml reacts to. See RELEASING.md.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target-branch:
+        description: 'Release line to run against (e.g. a 0.1.x maintenance branch). Defaults to main.'
+        required: false
+        default: main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-${{ inputs.target-branch || github.ref_name }}
+  cancel-in-progress: false
+
+# secrets are not readable from a step-level `if`, so hoist the check here
+env:
+  HAS_RELEASE_APP: ${{ secrets.APP_CLIENT_ID != '' }}
+
+jobs:
+  release-please:
+    name: Release Please
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # a GITHUB_TOKEN-authored PR does not trigger CI, so prefer the app
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        if: env.HAS_RELEASE_APP == 'true'
+        with:
+          client-id: ${{ secrets.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Warn when falling back to GITHUB_TOKEN
+        if: env.HAS_RELEASE_APP != 'true'
+        run: |
+          echo "::warning::APP_CLIENT_ID is unset — using GITHUB_TOKEN. The release PR will not run CI. See RELEASING.md."
+
+      - uses: googleapis/release-please-action@v5
+        with:
+          token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          config-file: .release-please-config.json
+          manifest-file: .release-please-manifest.json
+          target-branch: ${{ inputs.target-branch || 'main' }}

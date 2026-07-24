@@ -1,0 +1,110 @@
+name: Prerelease
+
+# Cut an alpha/beta/rc from any branch. Tests, computes the next counter, pushes
+# the tag — publish.yaml takes it from there. See RELEASING.md.
+#
+# Pre-1.0 the defaults give a plain alpha stream: v0.0.0-alpha.1, -alpha.2, …
+# (dist versions 0.0.0a1, 0.0.0a2). No semantic promise, just a pinnable build.
+#
+# Deliberately not release-please's `prerelease` mode: that is sticky per branch
+# (every release stays an rc until the config changes back). This is per-cut.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release this prerelease leads to, e.g. 0.2.0 (no leading v). 0.0.0 = the pre-1.0 alpha stream.'
+        required: false
+        default: '0.0.0'
+      channel:
+        description: 'Prerelease channel'
+        type: choice
+        options: [alpha, beta, rc]
+        default: alpha
+      dry-run:
+        description: 'Compute and print the tag without pushing it'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# secrets are not readable from a step-level `if`, so hoist the check here
+env:
+  HAS_RELEASE_APP: ${{ secrets.APP_CLIENT_ID != '' }}
+
+jobs:
+  prerelease:
+    name: Tag ${{ inputs.version }}-${{ inputs.channel }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Require the release app
+        if: env.HAS_RELEASE_APP != 'true' && inputs.dry-run != true
+        run: |
+          echo "::error::APP_CLIENT_ID is unset. A tag pushed with GITHUB_TOKEN does not trigger"
+          echo "::error::publish.yaml, so the prerelease would be tagged but never built."
+          echo "::error::Install the release app, or tag locally: git tag v… && git push origin v…"
+          exit 1
+
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        if: env.HAS_RELEASE_APP == 'true'
+        with:
+          client-id: ${{ secrets.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+          # push the tag as the app so the tag-push event triggers publish.yaml
+          token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+
+      - name: Compute the tag
+        id: tag
+        env:
+          V: ${{ inputs.version }}
+          C: ${{ inputs.channel }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version must be X.Y.Z without a leading v (got '$V')"
+            exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/v$V" >/dev/null; then
+            echo "::error::v$V is already released — prereleases must precede their release"
+            exit 1
+          fi
+          last=$(git tag --list "v$V-$C.*" | sed "s|^v$V-$C\.||" | sort -n | tail -1)
+          n=$(( ${last:-0} + 1 ))
+          echo "tag=v$V-$C.$n" >>"$GITHUB_OUTPUT"
+          echo "Next prerelease tag: v$V-$C.$n (branch ${GITHUB_REF_NAME})"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - run: uv sync --group dev
+
+      - run: uv run --no-sync ruff check .
+      - run: uv run --no-sync ruff format --check .
+      - run: uv run --no-sync pytest -q
+
+      - name: Push the tag
+        if: inputs.dry-run != true
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git tag -a "$TAG" -m "$TAG"
+          git push origin "$TAG"
+          echo "::notice::Pushed $TAG from ${GITHUB_REF_NAME}; publish.yaml will build it."
+
+      - name: Dry run summary
+        if: inputs.dry-run == true
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: echo "::notice::Dry run — would have pushed $TAG from ${GITHUB_REF_NAME}."

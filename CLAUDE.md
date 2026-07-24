@@ -74,3 +74,5 @@ m.yaml.extend(...)  # extend with another YAML file
 - All validation should happen at load time with clear, actionable error messages.
 - Use `ruff` for linting/formatting, `mypy` for type checking, `pytest` for tests.
 - Keep the dependency footprint minimal.
+- Releasing: the git tag *is* the version (hatch-vcs derives it at build time) — never
+  hardcode one in `pyproject.toml`. Conventional commits drive the changelog. See `RELEASING.md`.
