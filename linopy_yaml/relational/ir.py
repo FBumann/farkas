@@ -165,6 +165,19 @@ class Cmp(Pred):
 
 
 @dataclass(frozen=True)
+class DimCmp(Pred):
+    """Compare a *dimension coordinate* to a literal — ``where: "snapshot > 0"``.
+
+    Unlike :class:`Cmp`, no parameter is involved: the dim table is already in
+    the frame, so this is a filter on its own column.
+    """
+
+    dim: str
+    op: CmpOp
+    value: float | str
+
+
+@dataclass(frozen=True)
 class Defined(Pred):
     """True where the parameter has a non-null, finite value."""
 

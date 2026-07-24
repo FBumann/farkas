@@ -543,12 +543,17 @@ Standard mathematical precedence, highest to lowest:
 
 | Priority    | Operators         | Associativity |
 |-------------|-------------------|---------------|
-| 1 (highest) | `**`              | Right         |
+| 1 (highest) | `**` — *parses, but rejected at load time (see below)* | Right |
 | 2           | `*`, `/`          | Left          |
 | 3           | `+`, `-` (binary) | Left          |
 | 4 (lowest)  | `+`, `-` (unary)  | Right         |
 
 Parentheses override precedence in the usual way.
+
+`**` is in the grammar but **not in the language**: both lanes reject it at
+load time. A variable base would break the degree-1 rule (ARCHITECTURE, "The
+expressive ceiling"), and a parameters-only power belongs in data prep —
+multiply the term out, or precompute it as a parameter.
 
 ### 5.3 Name resolution
 
@@ -1091,8 +1096,10 @@ Affine expressions:
 - `Shift(x, dim, n, wrap)` — the value at *t−n* along `dim`; `wrap=True` is
   periodic (`roll`), `wrap=False` acyclic (`shift`, vacated rows absent)
 
-Predicates (for `where`): `Cmp(param, op, value)`, `Defined(param)`,
-`Bool(value)`, `And`, `Or`, `Not`.
+Predicates (for `where`): `Cmp(param, op, value)`,
+`DimCmp(dim, op, value)` — comparison against a dimension coordinate, a filter
+on the frame's own column — `Defined(param)`, `Bool(value)`, `And`, `Or`,
+`Not`.
 
 This covers the v0 language subset (foreach, where, arithmetic, sum,
 group_sum, roll, shift, comparison). Quadratic is out of scope.
