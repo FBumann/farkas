@@ -134,26 +134,27 @@ knob**, not the dense grid.
       <div class="box built">relational → duckdb → lp · mps · HiGHS · Gurobi</div>
     </div>
     <div class="ccol">
-      <span class="tlab">analyzers · AST only</span>
-      <div class="box road">shape / dim inference</div>
-      <div class="box road">size estimator → router</div>
+      <span class="tlab">transformers · AST→AST</span>
+      <div class="box built">macros / named expressions</div>
+      <div class="box built">piecewise → aux vars <small>both backends inherit it</small></div>
+      <div class="box road">SOS / indicator · presolve</div>
     </div>
     <div class="ccol">
-      <span class="tlab">renderers · AST only</span>
+      <span class="tlab">analyzers · AST</span>
+      <div class="box built">router <small>attempt-the-lowering</small></div>
+      <div class="box road">size estimator · shape inference</div>
+    </div>
+    <div class="ccol">
+      <span class="tlab">renderers · AST</span>
       <div class="box road">LaTeX / MathML</div>
       <div class="box road">AMPL / GAMS / Pyomo</div>
-    </div>
-    <div class="ccol">
-      <span class="tlab">transformers · AST→AST</span>
-      <div class="box road">piecewise / SOS → aux vars</div>
-      <div class="box road">presolve / const-fold</div>
     </div>
   </div>
 
   <div class="legend2">
-    <span><i class="sw b"></i> built today (MVP)</span>
+    <span><i class="sw b"></i> built today — already spans <strong>3 of the 4</strong> consumer families</span>
     <span><i class="sw r"></i> unlocked by the waist — a consumer, not a rewrite</span>
   </div>
 </div>
 
-<!-- _footer: The two backends are just the first two consumers. Everything downstream reads the same AST. — issue #21 -->
+<!-- _footer: The two backends are just the first two consumers — macros, piecewise expansion and the router already read the same AST. — issue #21 -->
