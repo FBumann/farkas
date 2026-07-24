@@ -11,11 +11,11 @@ import argparse
 import time
 from pathlib import Path
 
-from linopy_yaml.relational import (
+from linopy_yaml.relational import DuckdbExecutor
+from linopy_yaml.relational.ir import (
     Cmp,
     Const,
     ConstraintDecl,
-    DuckdbExecutor,
     ObjectiveDecl,
     Param,
     ParameterDecl,

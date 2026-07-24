@@ -3,7 +3,7 @@
 Math is defined in YAML only — there is no Python API for constructing
 models, and the relational IR is internal (a stable IR-construction API may
 come later). This module's job is exactly three verbs: ``build`` (YAML +
-sources → live executor), ``solve``, and ``write_lp``.
+sources → live executor), ``solve``, and ``write``.
 
 This is the product path (ARCHITECTURE.md). The language is validated at load
 time, lowered to the IR — anything outside the streaming subset raises
@@ -160,13 +160,3 @@ def write(
         raise NotImplementedError(msg)
     msg = f"unsupported output format '{suffix}' — supported: .lp (planned: .mps)"
     raise ValueError(msg)
-
-
-def write_lp(
-    model: str | Path | dict | MathSchema,
-    sources: Mapping[str, Any],
-    out: str | Path,
-    **build_kwargs: Any,
-) -> Path:
-    """Alias for :func:`write` with an ``.lp`` target."""
-    return write(model, sources, out, **build_kwargs)

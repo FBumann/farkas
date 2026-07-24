@@ -21,13 +21,15 @@ import yaml as pyyaml  # noqa: E402
 from linopy_yaml import compat  # noqa: E402
 from linopy_yaml.lowering import lower_program, tidy_sources  # noqa: E402
 from linopy_yaml.relational import (  # noqa: E402
+    DuckdbExecutor,
+    RelationalBuildError,
+)
+from linopy_yaml.relational.ir import (  # noqa: E402
     Bool,
     Cmp,
     Defined,
     DimCmp,
-    DuckdbExecutor,
     Param,
-    RelationalBuildError,
     Sum,
     Var,
 )

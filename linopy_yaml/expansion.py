@@ -52,6 +52,8 @@ from linopy_yaml.expression_parser import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from linopy_yaml.schema import MacroDef, MathSchema
 
 #: Backstop against pathological nesting the cycle check cannot see.
@@ -89,6 +91,28 @@ def parse_template(name: str, macro: MacroDef, context: str) -> ArithNode:
     return body
 
 
+def _descend(node: ArithNode, recurse: Callable[[ArithNode], ArithNode]) -> ArithNode:
+    """Rebuild *node* with *recurse* applied to each child.
+
+    The structural half of a tree walk, shared by the two walks below: they
+    differ only in what they do at NameNode and FuncCallNode, and duplicating
+    the other four cases is how the two drift apart.
+    """
+    if isinstance(node, NumberNode | NameNode):
+        return node
+    if isinstance(node, UnaryOpNode):
+        return UnaryOpNode(node.op, recurse(node.operand))
+    if isinstance(node, BinOpNode):
+        return BinOpNode(node.op, recurse(node.left), recurse(node.right))
+    if isinstance(node, FuncCallNode):
+        return FuncCallNode(
+            node.name,
+            [recurse(a) for a in node.args],
+            {k: recurse(v) for k, v in node.kwargs.items()},
+        )
+    assert_never(node)
+
+
 def _expand(
     node: ArithNode,
     schema: MathSchema,
@@ -100,44 +124,23 @@ def _expand(
         msg = f'{context}: expansion exceeds depth {_MAX_DEPTH} (via {chain})'
         raise ValueError(msg)
 
-    if isinstance(node, NumberNode):
-        return node
+    def _cycle(name: str, kind: str) -> None:
+        if name in stack:
+            chain = ' -> '.join([*stack, name])
+            msg = f'{context}: circular {kind} reference: {chain}'
+            raise ValueError(msg)
 
-    if isinstance(node, NameNode):
-        if node.name in schema.expressions:
-            if node.name in stack:
-                chain = ' -> '.join([*stack, node.name])
-                msg = f'{context}: circular expression reference: {chain}'
-                raise ValueError(msg)
-            body = _parse_named(node.name, schema, context)
-            return _expand(body, schema, context, (*stack, node.name))
-        return node
+    if isinstance(node, NameNode) and node.name in schema.expressions:
+        _cycle(node.name, 'expression')
+        body = _parse_named(node.name, schema, context)
+        return _expand(body, schema, context, (*stack, node.name))
 
-    if isinstance(node, UnaryOpNode):
-        return UnaryOpNode(node.op, _expand(node.operand, schema, context, stack))
+    if isinstance(node, FuncCallNode) and node.name in schema.macros:
+        _cycle(node.name, 'macro')
+        return _expand_macro(node, schema, context, stack)
 
-    if isinstance(node, BinOpNode):
-        return BinOpNode(
-            node.op,
-            _expand(node.left, schema, context, stack),
-            _expand(node.right, schema, context, stack),
-        )
-
-    if isinstance(node, FuncCallNode):
-        if node.name in schema.macros:
-            if node.name in stack:
-                chain = ' -> '.join([*stack, node.name])
-                msg = f'{context}: circular macro reference: {chain}'
-                raise ValueError(msg)
-            return _expand_macro(node, schema, context, stack)
-        # ordinary helper call — expand its arguments
-        return FuncCallNode(
-            node.name,
-            [_expand(a, schema, context, stack) for a in node.args],
-            {k: _expand(v, schema, context, stack) for k, v in node.kwargs.items()},
-        )
-
-    assert_never(node)
+    # a plain name or an ordinary helper call — only the children can expand
+    return _descend(node, lambda child: _expand(child, schema, context, stack))
 
 
 def _parse_named(name: str, schema: MathSchema, context: str) -> ArithNode:
@@ -187,29 +190,6 @@ def _expand_macro(
 
 def _substitute(node: ArithNode, bindings: dict[str, ArithNode]) -> ArithNode:
     """Replace formal-name NameNodes in *node* with their bound subtrees."""
-    if isinstance(node, NumberNode):
-        return node
-
-    if isinstance(node, NameNode):
-        if node.name in bindings:
-            return copy.deepcopy(bindings[node.name])
-        return node
-
-    if isinstance(node, UnaryOpNode):
-        return UnaryOpNode(node.op, _substitute(node.operand, bindings))
-
-    if isinstance(node, BinOpNode):
-        return BinOpNode(
-            node.op,
-            _substitute(node.left, bindings),
-            _substitute(node.right, bindings),
-        )
-
-    if isinstance(node, FuncCallNode):
-        return FuncCallNode(
-            node.name,
-            [_substitute(a, bindings) for a in node.args],
-            {k: _substitute(v, bindings) for k, v in node.kwargs.items()},
-        )
-
-    assert_never(node)
+    if isinstance(node, NameNode) and node.name in bindings:
+        return copy.deepcopy(bindings[node.name])
+    return _descend(node, lambda child: _substitute(child, bindings))

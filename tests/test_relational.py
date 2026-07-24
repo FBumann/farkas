@@ -19,16 +19,18 @@ highspy = pytest.importorskip('highspy')
 import linopy  # noqa: E402
 
 from linopy_yaml.relational import (  # noqa: E402
+    DuckdbExecutor,
+    RelationalBuildError,
+)
+from linopy_yaml.relational.ir import (  # noqa: E402
     Cmp,
     Const,
     ConstraintDecl,
-    DuckdbExecutor,
     GroupSum,
     ObjectiveDecl,
     Param,
     ParameterDecl,
     Program,
-    RelationalBuildError,
     Sum,
     Var,
     VariableDecl,

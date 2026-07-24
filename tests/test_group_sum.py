@@ -24,8 +24,10 @@ from linopy_yaml import compat  # noqa: E402
 from linopy_yaml.lowering import lower_program, tidy_sources  # noqa: E402
 from linopy_yaml.relational import (  # noqa: E402
     DuckdbExecutor,
-    GroupSum,
     RelationalBuildError,
+)
+from linopy_yaml.relational.ir import (  # noqa: E402
+    GroupSum,
     Var,
 )
 from linopy_yaml.schema import MathSchema  # noqa: E402
@@ -100,7 +102,10 @@ def test_group_sum_lowering_structure():
 
 
 def _flatten(expr):
-    from linopy_yaml.relational import Add, Neg
+    from linopy_yaml.relational.ir import (
+        Add,
+        Neg,
+    )
 
     if isinstance(expr, Add):
         return _flatten(expr.a) + _flatten(expr.b)

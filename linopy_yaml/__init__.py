@@ -15,7 +15,7 @@ serves as the differential-test oracle and as an opt-in compatibility shim
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _installed_version
 
-from linopy_yaml.api import LanguageError, build, check, load_schema, solve, write, write_lp
+from linopy_yaml.api import LanguageError, build, check, load_schema, solve, write
 from linopy_yaml.schema import MathSchema
 
 __all__ = [
@@ -26,7 +26,6 @@ __all__ = [
     'load_schema',
     'solve',
     'write',
-    'write_lp',
 ]
 
 try:
