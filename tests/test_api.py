@@ -188,3 +188,13 @@ def test_no_helper_registry_anywhere():
 
     assert not hasattr(ly, 'register')
     assert not hasattr(helpers, 'register')
+
+
+def test_check_rejects_degree_two_without_data(dispatch_yaml):
+    """The CI verb enforces degree 1 with no data bound (ROADMAP, degree axis)."""
+    import yaml as pyyaml
+
+    raw = pyyaml.safe_load(Path(dispatch_yaml).read_text())
+    raw['objectives']['total_cost']['equations'] = [{'expression': 'sum(p * p, over=generator)'}]
+    with pytest.raises(ly.LanguageError, match='degree 2'):
+        ly.check(raw)

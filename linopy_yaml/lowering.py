@@ -221,12 +221,26 @@ def _lower_expr(node: ArithNode, schema: MathSchema, context: str) -> ir.Expr:
             case '-':
                 return ir.Add(left, ir.Neg(right))
             case '*':
+                if _has_var(left) and _has_var(right):
+                    raise RelationalBuildError(
+                        f'{context}: both factors of a product contain variables, which '
+                        f'is degree 2. Multiply the variable by a parameter instead, or '
+                        f'model the curve with a piecewise: block — see ROADMAP, '
+                        f'"The degree axis".'
+                    )
                 return ir.Mul(left, right)
             case '/':
+                if _has_var(right):
+                    raise RelationalBuildError(
+                        f'{context}: the divisor contains variables, which is not affine. '
+                        f'Divide by a parameter, or precompute the reciprocal as one.'
+                    )
                 return ir.Div(left, right)
             case _:
                 raise RelationalBuildError(
-                    f"{context}: operator '{node.op}' is not supported by the relational backend (v0)"
+                    f"{context}: operator '{node.op}' is not in the language. Multiply the "
+                    f'term out, or precompute it as a parameter — a variable base would '
+                    f'make the model nonlinear (see ROADMAP, "The degree axis").'
                 )
 
     if isinstance(node, FuncCallNode):
@@ -294,6 +308,26 @@ def _lower_expr(node: ArithNode, schema: MathSchema, context: str) -> ir.Expr:
         )
 
     assert_never(node)
+
+
+def _has_var(expr: ir.Expr) -> bool:
+    """Whether *expr* contains a decision variable.
+
+    Degree 1 is the first clause of the expressive ceiling, so it has to be
+    decidable without data — that is what makes ``ly.check()`` a real gate.
+    The executor repeats the check when it compiles terms, for hand-built IR.
+    """
+    if isinstance(expr, ir.Var):
+        return True
+    if isinstance(expr, (ir.Const, ir.Param)):
+        return False
+    if isinstance(expr, ir.Neg):
+        return _has_var(expr.x)
+    if isinstance(expr, (ir.Add, ir.Mul, ir.Div)):
+        return _has_var(expr.a) or _has_var(expr.b)
+    if isinstance(expr, (ir.Sum, ir.Shift, ir.GroupSum)):
+        return _has_var(expr.x)
+    raise RelationalBuildError(f'cannot decide degree of {type(expr).__name__}')
 
 
 def _dims_of(expr: ir.Expr, schema: MathSchema) -> frozenset[str]:
