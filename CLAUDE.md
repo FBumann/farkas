@@ -12,7 +12,7 @@ See `ARCHITECTURE.md` for the architecture (brief, kept current — update it in
 ## Common Commands
 
 ```bash
-# Install (uv-managed venv; oracle extra = linopy/xarray for differential tests)
+# Install (uv-managed venv; [compat] extra = linopy/xarray for the shim + oracle)
 uv sync  # dev group (tools + oracle deps) is default
 
 # Run tests
