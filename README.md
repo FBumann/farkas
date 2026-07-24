@@ -2,13 +2,13 @@
 
 YAML-based math definition layer for [linopy](https://github.com/PyPSA/linopy).
 
-Define optimisation problems declaratively in YAML, supply data at runtime, and get a `linopy.Model` ready to solve.
+Define optimisation problems declaratively in YAML, supply data at runtime, and solve — through one of two backends: the **eager** backend builds a regular `linopy.Model`, and the **relational** backend streams the same model through duckdb under a fixed memory budget, for models too big to build densely.
 
 ## Goals
 
 - **Declarative math** — problems are defined in YAML, not Python. Readable without knowing the implementation.
 - **Clean boundary** — YAML owns the math definition; Python owns data loading and solving.
-- **Pure consumer of linopy's public API** — no internals, no wrapping, no lock-in. The result of `from_yaml()` is a `linopy.Model`.
+- **Pure consumer of linopy's public API** on the eager path — no internals, no wrapping, no lock-in. The result of `from_yaml()` is a `linopy.Model`. (The relational path matches linopy's semantics without sharing its code — see below.)
 - **Fail early, fail loud** — all validation happens at load time, with error messages that name the problem and suggest the fix.
 
 ## Use cases
@@ -60,6 +60,14 @@ constraints:
 ### 3. Share and version-control model math as text
 
 YAML files diff cleanly in code review. Colleagues without Python optimisation experience can read and critique the math. Research artefacts travel as files, not as code snippets buried in notebooks.
+
+### 4. Build models that don't fit in memory
+
+The same YAML runs on the **relational backend**: expressions become tidy tables in a file-backed duckdb database under a hard `memory_limit`, and the model streams straight to the solver (batched HiGHS calls) or to an LP file — the full model never exists in process memory. Peak build RAM becomes a configuration knob instead of scaling with model size: a 107-million-variable dispatch model builds in ~0.6 GB.
+
+Backend selection is automatic: if the YAML lowers to the relational subset, it streams; anything outside the subset falls back to the feature-complete eager builder with a stated reason. Every language feature is differentially tested — same YAML, same data, both backends, matching solves.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for how the two lanes fit together.
 
 ## Non-goals
 
@@ -148,7 +156,8 @@ m.yaml.coords      # master coordinate dict
 ## Installation
 
 ```bash
-pip install linopy-yaml
+pip install linopy-yaml                # eager backend
+pip install "linopy-yaml[relational]"  # + streaming backend (duckdb, highspy)
 ```
 
 Or for development:
@@ -163,29 +172,34 @@ pip install -e ".[dev]"
 
 A YAML file has five top-level sections:
 
-| Section        | Purpose                              |
-|----------------|--------------------------------------|
-| `dimensions`   | Master coordinate definitions        |
-| `parameters`   | Named input data with declared shapes|
-| `variables`    | Decision variables                   |
-| `constraints`  | Linear constraints                   |
-| `objectives`   | Objective function(s)                |
+| Section        | Purpose                                                  |
+|----------------|----------------------------------------------------------|
+| `dimensions`   | Master coordinate definitions                            |
+| `parameters`   | Named input data with declared shapes                    |
+| `variables`    | Decision variables (incl. binary/integer)                |
+| `constraints`  | Linear constraints                                       |
+| `objectives`   | Objective function(s)                                    |
+| `expressions`  | Named sub-expressions, spliced in by name                |
+| `macros`       | Parameterised expression templates (language, not code)  |
+| `piecewise`    | Piecewise-linear relations (λ-formulation)               |
 
-See [SPEC.md](SPEC.md) for the full design specification.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the architecture and [SPEC.md](SPEC.md) for the full design specification.
 
 ## Key Features
 
 - **Pydantic validation** — YAML structure is validated at load time with clear error messages.
 - **Expression parser** — pyparsing-based parser for math expressions (`p * cost`, `sum(p, over=generator)`).
 - **Where strings** — boolean masks to selectively create variables and constraints (`"p_max > 0"`).
-- **Built-in helpers** — `sum(expr, over=dim)` and `roll(array, dim=n)` for aggregation and time-coupling.
-- **Custom helpers** — register your own with `@linopy_yaml.register("name")`.
-- **Composable models** — use `model.extend("extra.yaml", data={...})` to build models from multiple YAML files.
-- **Introspection** — access `model.math` (parsed schema) and `model.dataset` (loaded parameters).
+- **Built-in helpers** — `sum(expr, over=dim)`, `group_sum(expr, mapping, into=dim)` for network topologies, and `roll`/`shift` for time-coupling.
+- **Named expressions and macros** — reusable math defined in the YAML itself; expanded before either backend runs, so files stay self-contained.
+- **Two backends, one meaning** — automatic routing between the eager linopy builder and the memory-bounded relational/streaming backend, guarded by differential tests.
+- **Custom helpers** — register your own with `@linopy_yaml.register("name")` (eager backend only; prefer `macros:` for anything expressible as a composition).
+- **Composable models** — use `m.yaml.extend("extra.yaml", data={...})` to build models from multiple YAML files.
+- **Introspection** — access `m.yaml.schema` (parsed schema) and `m.yaml.dataset` (loaded parameters).
 
 ## Status
 
-**v0.0.2** — early prototype. The core pipeline works (schema → loader → parser → builder → linopy.Model). See [SPEC.md](SPEC.md) for the full design and open questions.
+**v0.0.2** — early but moving fast. Both backends round-trip real models through solve with differentially verified results; the language covers foreach/where/arithmetic, `sum`/`group_sum`/`roll`/`shift`, named expressions, macros, binary/integer variables, and `piecewise:` blocks. See [ARCHITECTURE.md](ARCHITECTURE.md) and [SPEC.md](SPEC.md).
 
 ## License
 
