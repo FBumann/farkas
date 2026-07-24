@@ -1014,13 +1014,26 @@ Predicates (for `where`): `Cmp(param, op, value)`, `And`, `Or`, `Not`.
 This covers the v0 language subset (foreach, where, arithmetic, sum,
 group_sum, comparison). Quadratic and piecewise are out of scope.
 
-### 12.5 Execution requirements (from the phase-1 spike)
+### 12.5 Execution requirements (phase-1 spike, corrected after phase 3)
 
-1. **Partition-wise execution is mandatory, not an optimisation.** Global
-   windows and ordered aggregates do not spill; every operator must be bounded
-   by chunking on the leading `foreach` dim (labels = per-chunk `ROW_NUMBER`
-   + running offset; per-chunk `GROUP BY` + sink writes). Chunk size × memory
-   limit trade off directly.
+1. **Chunk only what cannot spill.** duckdb's joins and plain numeric hash
+   aggregates spill under `memory_limit` on their own — coefficient assembly
+   needs no chunking (verified: a single-shot `GROUP BY` over 35.6M term rows
+   runs at a 256 MB cap). Exactly two operations need hand-managed
+   partitioning: *label assignment* (a global `ROW_NUMBER` window
+   materialises its input — use per-chunk `ROW_NUMBER` + a running offset,
+   one generic mechanism every operator inherits) and the *LP-text
+   `string_agg`* (string aggregates don't spill; a fixed conservative chunk
+   size lives only in the debugging/portability sink). Future IR operators
+   are classified by **coordinate locality**: pointwise (joins, scaling,
+   masks, group_sum) and bounded-halo (roll: t±k — safe because terms join
+   the global variable table, so a chunk referencing t−1 from the previous
+   chunk just works) compose freely under the label partitioner; genuinely
+   global operators (running sums, normalisations) are rejected at lowering
+   with a rewrite hint (running sum → state-variable recurrence, which is
+   bounded-halo). duckdb's spill coverage widens every release — remaining
+   workarounds sit behind the executor interface and can be deleted as the
+   engine catches up.
 2. The duckdb database must be **file-backed** with a temp directory, so the
    buffer pool spills under `memory_limit`.
 3. Output line/row order inside a sink section is free — labels are carried in

@@ -6,10 +6,22 @@ model out through a sink: ``write_lp`` (portability / differential oracle) or
 ``solve`` (solver_direct — batched HiGHS ``addCols``/``addRows``; the full
 model never exists in this process's memory).
 
-Execution is partition-wise throughout: labels are assigned with per-chunk
-``ROW_NUMBER`` plus a running offset, and coefficient assembly and sink writes
-run per chunk of the leading ``foreach`` dim — global windows and ordered
-aggregates do not spill (phase-1 spike finding).
+Hand-managed chunking exists in exactly two places, both forced by operators
+duckdb cannot spill:
+
+1. Label assignment — a global ``ROW_NUMBER`` window materialises its whole
+   input, so labels are assigned per-chunk of the leading dim with a running
+   offset. This is one generic mechanism; every operator inherits it.
+2. LP-text ``string_agg`` in ``write_lp`` — string aggregates don't spill,
+   and a fixed conservative chunk size costs nothing in the debugging sink.
+
+Everything else — joins, scaling, masks, and the numeric hash aggregates that
+assemble ``A`` — delegates to duckdb's own spilling under ``memory_limit``.
+Future IR operators should be classified by coordinate locality: pointwise
+(joins/masks/group_sum) and bounded-halo (roll: t±k, which still works under
+label chunking because terms join the *global* variable table) compose freely;
+genuinely global operators (running sums, normalisations) must be rejected at
+lowering with a rewrite hint (e.g. running sum → state-variable recurrence).
 
 duckdb, pyarrow, and highspy are imported lazily; pandas is a core dep.
 """
@@ -44,14 +56,12 @@ class _Piece:
     """One additive piece of a compiled affine expression.
 
     ``sql`` is a full SELECT. Term pieces yield ``(dims…, var_label, coeff)``;
-    const pieces yield ``(dims…, cval)``. ``mult`` estimates rows per distinct
-    dim-key (multiplicity introduced by Sum/GroupSum) for chunk sizing.
+    const pieces yield ``(dims…, cval)``.
     """
 
     dims: tuple[str, ...]
     sql: str
     is_term: bool
-    mult: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -477,8 +487,7 @@ class DuckdbExecutor:
                 else f"cval * {scale} AS cval"
             )
         cols = ", ".join([*keep, valcols]) if keep else valcols
-        mult = p.mult * math.prod(self._dim_card[d] for d in over if d in p.dims)
-        return _Piece(keep, f"SELECT {cols} FROM ({p.sql})", p.is_term, mult)
+        return _Piece(keep, f"SELECT {cols} FROM ({p.sql})", p.is_term)
 
     def _group_piece(self, p: _Piece, g: ir.GroupSum, context: str) -> _Piece:
         assert self._program is not None
@@ -501,10 +510,7 @@ class DuckdbExecutor:
         sql = (
             f"SELECT {keepcols} FROM ({p.sql}) t JOIN p_{g.mapping} m ON m.{d} = t.{d}"
         )
-        mult = p.mult * max(
-            1.0, self._dim_card[d] / max(1, self._dim_card.get(g.into, 1))
-        )
-        return _Piece((*keep, g.into), sql, p.is_term, mult)
+        return _Piece((*keep, g.into), sql, p.is_term)
 
     # ------------------------------------------------------------------
     # constraints and objective
@@ -532,13 +538,13 @@ class DuckdbExecutor:
             f"CREATE TABLE con_{c.name} AS SELECT {collist}, 0::BIGINT AS row FROM {from_clause} WHERE FALSE"
         )
 
-        total_mult = sum(p.mult for p, _ in terms) or 1.0
+        # label assignment is the one step that needs the partition loop
+        # (a global ROW_NUMBER window materialises its whole input)
         other = (
             math.prod(self._dim_card[d] for d in c.dims[1:]) if len(c.dims) > 1 else 1
         )
         lead = c.dims[0]
-        row_start = self._n_rows
-        for lo, hi in self._chunk_starts(lead, other * total_mult):
+        for lo, hi in self._chunk_starts(lead, other):
             self._n_rows += self._scalar(
                 f"""
                 INSERT INTO con_{c.name}
@@ -548,7 +554,6 @@ class DuckdbExecutor:
                 WHERE t_{lead}.ord >= {lo} AND t_{lead}.ord < {hi} AND {where_clause}
                 """
             )
-        row_end = self._n_rows
 
         rhs_sql = (
             " + ".join(
@@ -567,21 +572,19 @@ class DuckdbExecutor:
             )
         union = " UNION ALL ".join(term_selects)
 
-        per_chunk = max(1, int(self.chunk_rows // total_mult))
-        for lo in range(row_start, max(row_end, row_start + 1), per_chunk):
-            hi = min(lo + per_chunk, row_end)
-            if hi <= lo:
-                break
-            frame = f"SELECT * FROM con_{c.name} WHERE row >= {lo} AND row < {hi}"
-            if term_selects:
-                self._con.execute(
-                    f"INSERT INTO A WITH f AS ({frame}) "
-                    f"SELECT row, col, SUM(coeff) FROM ({union}) GROUP BY row, col"
-                )
+        # single-shot assembly: joins and the plain numeric hash aggregate
+        # spill under memory_limit on their own — no chunking needed (only
+        # ordered/string aggregates and global windows can't spill)
+        frame = f"SELECT * FROM con_{c.name}"
+        if term_selects:
             self._con.execute(
-                f"INSERT INTO rows WITH f AS ({frame}) "
-                f"SELECT f.row, '{c.sense}', {rhs_sql} FROM f"
+                f"INSERT INTO A WITH f AS ({frame}) "
+                f"SELECT row, col, SUM(coeff) FROM ({union}) GROUP BY row, col"
             )
+        self._con.execute(
+            f"INSERT INTO rows WITH f AS ({frame}) "
+            f"SELECT f.row, '{c.sense}', {rhs_sql} FROM f"
+        )
 
     def _agg_const_join(self, p: _Piece, frame_dims: tuple[str, ...]) -> str:
         """Correlated scalar: the summed const piece value for frame row ``f``."""
@@ -777,7 +780,7 @@ def _lit(v: float) -> str:
 def _negate(p: _Piece) -> _Piece:
     cols = "var_label, -coeff AS coeff" if p.is_term else "-cval AS cval"
     sel = ", ".join([*p.dims, cols]) if p.dims else cols
-    return _Piece(p.dims, f"SELECT {sel} FROM ({p.sql})", p.is_term, p.mult)
+    return _Piece(p.dims, f"SELECT {sel} FROM ({p.sql})", p.is_term)
 
 
 def _join_mul(a: _Piece, c: _Piece, is_term: bool, op: str = "*") -> _Piece:
@@ -799,7 +802,6 @@ def _join_mul(a: _Piece, c: _Piece, is_term: bool, op: str = "*") -> _Piece:
         out_dims,
         f"SELECT {sel} FROM ({a.sql}) a JOIN ({c.sql}) c ON {on}",
         is_term,
-        a.mult * c.mult,
     )
 
 
