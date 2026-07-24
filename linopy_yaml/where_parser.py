@@ -155,13 +155,15 @@ def evaluate_where(
     text: str | None,
     dataset: xr.Dataset,
     master_coords: dict[str, pd.Index],
-) -> xr.DataArray | bool:
+) -> xr.DataArray:
     """Evaluate a where string against a parameter dataset.
 
-    Returns a boolean DataArray mask, or True if text is None.
+    Always returns a boolean DataArray mask. Degenerate cases (no where
+    string, unknown names, literals) come back 0-dimensional, so callers
+    can combine masks with ``&``/``|`` without case analysis.
     """
     if text is None:
-        return True
+        return xr.DataArray(True)
 
     ast = parse_where(text)
     return _eval_node(ast, dataset, master_coords)
@@ -171,9 +173,9 @@ def _eval_node(
     node: WhereNode,
     dataset: xr.Dataset,
     master_coords: dict[str, pd.Index],
-) -> xr.DataArray | bool:
+) -> xr.DataArray:
     if isinstance(node, BoolLiteral):
-        return node.value
+        return xr.DataArray(node.value)
 
     if isinstance(node, ExistenceCheck):
         # Check parameters first
@@ -187,7 +189,7 @@ def _eval_node(
                 coords={node.name: master_coords[node.name]},
                 dims=[node.name],
             )
-        return False
+        return xr.DataArray(False)
 
     if isinstance(node, Comparison):
         # Get the array to compare
@@ -201,7 +203,7 @@ def _eval_node(
                 dims=[node.name],
             )
         else:
-            return False
+            return xr.DataArray(False)
 
         val = node.value
         # If val is a string, try to resolve as parameter or keep as string
@@ -220,36 +222,19 @@ def _eval_node(
         }
         result = ops[node.op](arr, val)
         # NaN propagates as False
-        if isinstance(result, xr.DataArray):
-            return result.fillna(False).astype(bool)
-        return bool(result)
+        return result.fillna(False).astype(bool)
 
     if isinstance(node, NotNode):
-        operand = _eval_node(node.operand, dataset, master_coords)
-        if isinstance(operand, bool):
-            return not operand
-        return ~operand
+        return ~_eval_node(node.operand, dataset, master_coords)
 
     if isinstance(node, AndNode):
         left = _eval_node(node.left, dataset, master_coords)
         right = _eval_node(node.right, dataset, master_coords)
-        if isinstance(left, bool) and isinstance(right, bool):
-            return left and right
-        if isinstance(left, bool):
-            return right if left else xr.DataArray(False)
-        if isinstance(right, bool):
-            return left if right else xr.DataArray(False)
         return left & right
 
     if isinstance(node, OrNode):
         left = _eval_node(node.left, dataset, master_coords)
         right = _eval_node(node.right, dataset, master_coords)
-        if isinstance(left, bool) and isinstance(right, bool):
-            return left or right
-        if isinstance(left, bool):
-            return xr.DataArray(True) if left else right
-        if isinstance(right, bool):
-            return xr.DataArray(True) if right else left
         return left | right
 
     assert_never(node)

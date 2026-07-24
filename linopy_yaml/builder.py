@@ -80,15 +80,13 @@ def _build_variables(
 
             # Evaluate where mask
             mask = evaluate_where(vdef.where, dataset, master_coords)
-            if isinstance(mask, bool):
-                mask = None if mask else xr.DataArray(False)
 
             model.add_variables(
                 lower=lower,
                 upper=upper,
                 coords=coords,
                 name=vname,
-                mask=mask,
+                mask=_as_linopy_mask(mask),
                 binary=vdef.binary,
                 integer=vdef.integer,
             )
@@ -108,6 +106,17 @@ def _resolve_bound(
             raise ValueError(msg)
         return dataset[value]
     return value
+
+
+def _as_linopy_mask(mask: xr.DataArray) -> xr.DataArray | None:
+    """Convert an evaluated where mask to linopy's ``mask=`` argument.
+
+    linopy expects ``None`` for "no mask"; a 0-d True mask means exactly
+    that. Everything else (including 0-d False) passes through.
+    """
+    if mask.ndim == 0 and bool(mask):
+        return None
+    return mask
 
 
 # ---------------------------------------------------------------------------
@@ -131,15 +140,7 @@ def _build_constraints(
             for i, eq in enumerate(cdef.equations):
                 # Per-equation where mask (ANDed with constraint mask)
                 eq_mask = evaluate_where(eq.where, dataset, master_coords)
-
-                if isinstance(constraint_mask, bool) and isinstance(eq_mask, bool):
-                    mask = constraint_mask and eq_mask
-                elif isinstance(constraint_mask, bool):
-                    mask = eq_mask if constraint_mask else xr.DataArray(False)
-                elif isinstance(eq_mask, bool):
-                    mask = constraint_mask if eq_mask else xr.DataArray(False)
-                else:
-                    mask = constraint_mask & eq_mask
+                mask = constraint_mask & eq_mask
 
                 # Parse expression
                 ast = parse_expression(eq.expression)
@@ -159,9 +160,9 @@ def _build_constraints(
                 # Name: single equation uses constraint name directly
                 eq_name = cname if n_eqs == 1 else f"{cname}_{i}"
 
-                mask_da = None if isinstance(mask, bool) and mask else mask
-
-                model.add_constraints(lhs, sign, rhs, name=eq_name, mask=mask_da)
+                model.add_constraints(
+                    lhs, sign, rhs, name=eq_name, mask=_as_linopy_mask(mask)
+                )
 
 
 # ---------------------------------------------------------------------------

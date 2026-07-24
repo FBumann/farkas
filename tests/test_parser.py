@@ -141,8 +141,11 @@ class TestWhereEvaluation:
     def _mc(self):
         return {"g": pd.Index(["wind", "solar", "gas"], name="g")}
 
-    def test_none_returns_true(self):
-        assert evaluate_where(None, self._ds(), self._mc()) is True
+    def test_none_returns_scalar_true(self):
+        mask = evaluate_where(None, self._ds(), self._mc())
+        assert isinstance(mask, xr.DataArray)
+        assert mask.ndim == 0
+        assert bool(mask) is True
 
     def test_existence_check(self):
         mask = evaluate_where("p_max", self._ds(), self._mc())
@@ -155,9 +158,11 @@ class TestWhereEvaluation:
         assert bool(mask.sel(g="solar")) is False
         assert bool(mask.sel(g="gas")) is True
 
-    def test_missing_param_returns_false(self):
+    def test_missing_param_returns_scalar_false(self):
         mask = evaluate_where("nonexistent", self._ds(), self._mc())
-        assert mask is False
+        assert isinstance(mask, xr.DataArray)
+        assert mask.ndim == 0
+        assert bool(mask) is False
 
     def test_dimension_comparison(self):
         ds = xr.Dataset()
