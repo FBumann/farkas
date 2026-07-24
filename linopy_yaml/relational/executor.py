@@ -314,6 +314,15 @@ class DuckdbExecutor:
                 val = f"'{p.value}'" if isinstance(p.value, str) else repr(float(p.value))
                 op = '=' if p.op == '==' else p.op
                 return f'({alias}.value {op} {val})'
+            if isinstance(p, ir.DimCmp):
+                if p.dim not in dims:
+                    raise RelationalBuildError(
+                        f"where-comparison on dimension '{p.dim}' is outside the foreach dims "
+                        f'{list(dims)} — reducing a mask over an unlisted dim is not supported'
+                    )
+                val = f"'{p.value}'" if isinstance(p.value, str) else repr(float(p.value))
+                op = '=' if p.op == '==' else p.op
+                return f'(t_{p.dim}.val {op} {val})'
             if isinstance(p, ir.Defined):
                 decl = self._program.parameter(p.param)  # type: ignore[union-attr]
                 extra = set(decl.dims) - set(dims)

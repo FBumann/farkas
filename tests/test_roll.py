@@ -197,3 +197,78 @@ def test_roll_unsorted_string_coords_differential(tmp_path):
         sol = ex.solve()
         assert sol.status == 'Optimal'
         assert sol.objective == pytest.approx(oracle, rel=RTOL)
+
+
+def test_differential_where_on_dimension_coordinates(tmp_path):
+    """ROADMAP 5b: `where: "snapshot > 0"` must mean the same on both lanes.
+
+    The README's ramp example uses exactly this — a time-coupling constraint
+    that skips the first snapshot. It used to be eager-only: lowering refused
+    dimension comparisons, so the same file built two different models.
+    """
+    duckdb = pytest.importorskip('duckdb')  # noqa: F841
+    highspy = pytest.importorskip('highspy')  # noqa: F841
+
+    from linopy_yaml.lowering import lower_program, tidy_sources
+    from linopy_yaml.relational import DuckdbExecutor
+
+    yaml_text = """
+dimensions:
+  snapshot: {dtype: int}
+  generator: {values: [wind, gas]}
+parameters:
+  p_max: {dims: [generator]}
+  cost: {dims: [generator]}
+  load: {dims: [snapshot]}
+  ramp_max: {dims: [generator]}
+variables:
+  p:
+    foreach: [snapshot, generator]
+    bounds: {lower: 0, upper: p_max}
+constraints:
+  balance:
+    foreach: [snapshot]
+    equations:
+      - expression: sum(p, over=generator) == load
+  ramp_up:
+    foreach: [snapshot, generator]
+    where: "snapshot > 0"
+    equations:
+      - expression: p - shift(p, snapshot=1) <= ramp_max
+objectives:
+  total_cost:
+    sense: minimize
+    equations:
+      - expression: sum(p * cost, over=generator)
+"""
+    yaml_file = tmp_path / 'ramp.yaml'
+    yaml_file.write_text(yaml_text)
+
+    n_s = 12
+    rng = np.random.default_rng(11)
+    data = {
+        'p_max': pd.Series({'wind': 80.0, 'gas': 200.0}),
+        'cost': pd.Series({'wind': 1.0, 'gas': 40.0}),
+        'ramp_max': pd.Series({'wind': 100.0, 'gas': 25.0}),  # binding on gas
+        'load': pd.Series(
+            (rng.uniform(0.3, 0.9, n_s) * 200.0).round(3),
+            index=pd.RangeIndex(n_s, name='snapshot'),
+        ),
+    }
+    coords = {'snapshot': pd.RangeIndex(n_s, name='snapshot')}
+
+    m = compat.build(yaml_file, data=data, coords=coords)
+    m.solve(solver_name='highs', output_flag=False)
+    oracle = float(m.objective.value)
+    assert np.isfinite(oracle)
+    # the mask must actually bite: the first snapshot is dropped per generator
+    # (masked rows carry label -1 on the eager lane)
+    active = int((m.constraints['ramp_up'].labels != -1).sum())
+    assert active == (n_s - 1) * 2
+
+    schema = MathSchema(**pyyaml.safe_load(yaml_text))
+    with DuckdbExecutor(memory_limit='256MB') as ex:
+        ex.build(lower_program(schema), tidy_sources(schema, data, coords))
+        sol = ex.solve()
+        assert sol.status == 'Optimal'
+        assert sol.objective == pytest.approx(oracle, rel=1e-9)

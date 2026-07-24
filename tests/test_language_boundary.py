@@ -60,7 +60,6 @@ def test_unknown_helper_is_a_load_error_with_context():
     assert 'eager' not in reason.lower()
 
 
-def test_dimension_where_comparison_is_a_load_error():
-    schema = _schema(**{'variables.p.where': 'snapshot > 2'})
-    with pytest.raises(RelationalBuildError, match="dimension 'snapshot'"):
-        lower_program(schema)
+def test_dimension_where_comparison_is_inside_the_language():
+    """ROADMAP 5b: both lanes accept `where: "snapshot > 2"`."""
+    lower_program(_schema(**{'variables.p.where': 'snapshot > 2'}))  # must not raise

@@ -24,6 +24,7 @@ from linopy_yaml.relational import (  # noqa: E402
     Bool,
     Cmp,
     Defined,
+    DimCmp,
     DuckdbExecutor,
     Param,
     RelationalBuildError,
@@ -128,8 +129,8 @@ def test_where_lowering(dispatch_schema):
     pred = _lower_where('p_max > 0 AND NOT load == 0', schema, 't')
     assert pred is not None
 
-    with pytest.raises(RelationalBuildError, match="dimension 'snapshot'"):
-        _lower_where('snapshot > 5', schema, 't')
+    # dimension coordinates compare like parameters (ROADMAP 5b)
+    assert _lower_where('snapshot > 5', schema, 't') == DimCmp('snapshot', '>', 5)
 
 
 def test_sum_over_absent_dim_is_noop(dispatch_schema):

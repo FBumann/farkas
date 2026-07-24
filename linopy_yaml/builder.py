@@ -222,8 +222,17 @@ def _eval_ast(
             '-': lambda a, b: a - b,
             '*': lambda a, b: a * b,
             '/': lambda a, b: a / b,
-            '**': lambda a, b: a**b,
         }
+        if node.op not in ops:
+            # `**` parses but is not in the language: a variable base breaks
+            # degree 1, and a parameters-only power belongs in data prep. The
+            # streaming lane rejects it at lowering; this lane must agree.
+            msg = (
+                f"operator '{node.op}' is not in the language. Multiply the term out, "
+                f'or precompute it as a parameter — a variable base would make the '
+                f'model nonlinear (see ROADMAP, "The degree axis").'
+            )
+            raise ValueError(msg)
         return ops[node.op](left, right)
 
     if isinstance(node, FuncCallNode):

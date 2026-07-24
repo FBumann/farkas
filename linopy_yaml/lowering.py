@@ -351,12 +351,7 @@ def _lower_where_node(node: WhereNode, schema: MathSchema, context: str) -> ir.P
         if node.name in schema.parameters:
             return ir.Cmp(node.name, node.op, node.value)  # type: ignore[arg-type]
         if node.name in schema.dimensions:
-            raise RelationalBuildError(
-                f"{context}: where-comparisons on dimension '{node.name}' have no "
-                f'lowering yet. Rewrite the condition as data: declare a boolean '
-                f"parameter over '{node.name}' (e.g. is_first / in_window) and test "
-                f'that instead. Tracked as a language-parity gap in ROADMAP.md.'
-            )
+            return ir.DimCmp(node.name, node.op, node.value)  # type: ignore[arg-type]
         raise RelationalBuildError(f"{context}: where references '{node.name}', which is not a declared parameter")
 
     if isinstance(node, NotNode):
