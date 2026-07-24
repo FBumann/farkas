@@ -31,12 +31,16 @@ from typing import TYPE_CHECKING, Any
 import yaml as _yaml
 
 from linopy_yaml.lowering import lower_program, tidy_sources
-from linopy_yaml.relational.executor import DuckdbExecutor, Solution
+from linopy_yaml.relational.executor import DuckdbExecutor, RelationalBuildError, Solution
 from linopy_yaml.schema import MathSchema
 from linopy_yaml.validation import validate_expressions
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+#: Public name for "this model is outside the streaming language". The
+#: exception class is shared with the engine; callers should catch this alias.
+LanguageError = RelationalBuildError
 
 
 def load_schema(model: str | Path | dict | MathSchema) -> MathSchema:
@@ -46,6 +50,12 @@ def load_schema(model: str | Path | dict | MathSchema) -> MathSchema:
     Validation is complete at this point: schema shape, every expression and
     where string, every named expression and macro template.
     """
+    if isinstance(model, (list, tuple)):
+        msg = (
+            'composing multiple YAML files into one program is not implemented '
+            'yet — track https://github.com/FBumann/linopy-yaml/issues/30'
+        )
+        raise NotImplementedError(msg)
     if isinstance(model, MathSchema):
         schema = model
     elif isinstance(model, dict):
@@ -54,6 +64,19 @@ def load_schema(model: str | Path | dict | MathSchema) -> MathSchema:
         raw = _yaml.safe_load(Path(model).read_text())
         schema = MathSchema(**(raw or {}))
     validate_expressions(schema)
+    return schema
+
+
+def check(model: str | Path | dict | MathSchema) -> MathSchema:
+    """Compile-check a model without data: parse, validate, expand, lower.
+
+    Lowering needs no sources, so this works on a bare YAML file — the CI
+    verb for model repositories. Raises :class:`LanguageError` when the model
+    uses a construct outside the streaming language, ``ValueError`` for
+    schema/expression problems. Returns the validated schema.
+    """
+    schema = load_schema(model)
+    lower_program(schema)
     return schema
 
 
@@ -115,13 +138,35 @@ def solve(
         raise
 
 
+def write(
+    model: str | Path | dict | MathSchema,
+    sources: Mapping[str, Any],
+    out: str | Path,
+    **build_kwargs: Any,
+) -> Path:
+    """Build and stream the model to a file; format from the suffix.
+
+    ``.lp`` is supported today; ``.mps`` is planned (same streaming
+    mechanics, see ARCHITECTURE.md sinks).
+    """
+    out = Path(out)
+    suffix = out.suffix.lower()
+    if suffix == '.lp':
+        with build(model, sources, **build_kwargs) as ex:
+            ex.write_lp(out)
+        return out
+    if suffix == '.mps':
+        msg = 'the mps sink is planned but not implemented yet (ARCHITECTURE.md, sinks)'
+        raise NotImplementedError(msg)
+    msg = f"unsupported output format '{suffix}' — supported: .lp (planned: .mps)"
+    raise ValueError(msg)
+
+
 def write_lp(
     model: str | Path | dict | MathSchema,
     sources: Mapping[str, Any],
     out: str | Path,
     **build_kwargs: Any,
 ) -> Path:
-    """Build and stream an LP file in one call."""
-    with build(model, sources, **build_kwargs) as ex:
-        ex.write_lp(out)
-    return Path(out)
+    """Alias for :func:`write` with an ``.lp`` target."""
+    return write(model, sources, out, **build_kwargs)

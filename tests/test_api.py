@@ -129,3 +129,58 @@ def test_runtime_is_linopy_free(dispatch_yaml):
     out = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, timeout=300)
     assert out.returncode == 0, out.stderr
     assert 'LINOPY_FREE_OK' in out.stdout
+
+
+def test_check_needs_no_data(dispatch_yaml):
+    schema = ly.check(dispatch_yaml)
+    assert 'p' in schema.variables
+
+
+def test_check_reports_language_errors(dispatch_yaml):
+    import yaml as pyyaml
+
+    raw = pyyaml.safe_load(Path(dispatch_yaml).read_text())
+    raw['objectives']['total_cost']['equations'] = [{'expression': 'sum(p ** 2, over=generator)'}]
+    with pytest.raises(ly.LanguageError, match=r"operator '\*\*'"):
+        ly.check(raw)
+
+
+def test_language_error_is_public_name():
+    from linopy_yaml.relational import RelationalBuildError
+
+    assert ly.LanguageError is RelationalBuildError
+
+
+def test_multi_file_composition_reserved(dispatch_yaml):
+    with pytest.raises(NotImplementedError, match='issues/30'):
+        ly.check([dispatch_yaml, dispatch_yaml])
+
+
+def test_write_suffix_dispatch(dispatch_yaml, dispatch_inputs, tmp_path):
+    sources, coords = dispatch_inputs
+    out = ly.write(dispatch_yaml, sources, tmp_path / 'm.lp', coords=coords)
+    assert out.stat().st_size > 0
+    with pytest.raises(NotImplementedError, match='mps'):
+        ly.write(dispatch_yaml, sources, tmp_path / 'm.mps', coords=coords)
+    with pytest.raises(ValueError, match='unsupported output format'):
+        ly.write(dispatch_yaml, sources, tmp_path / 'm.nc', coords=coords)
+
+
+def test_solution_context_manager_and_to_parquet(dispatch_yaml, dispatch_inputs, tmp_path):
+    import pyarrow.parquet as pq
+
+    sources, coords = dispatch_inputs
+    with ly.solve(dispatch_yaml, sources, coords=coords) as sol:
+        assert sol.status == 'Optimal'
+        written = sol.to_parquet(tmp_path / 'solution')
+        assert set(written) == {'p'}
+        table = pq.read_table(written['p'])
+        assert set(table.column_names) == {'snapshot', 'generator', 'value'}
+        assert table.num_rows == sol.primal('p').shape[0]
+    # closed by the with-block: the workdir is gone
+    with pytest.raises(Exception):  # noqa: B017 — any error is fine, it must not silently work
+        sol.primal('p')
+
+
+def test_register_moved_to_compat():
+    assert not hasattr(ly, 'register')

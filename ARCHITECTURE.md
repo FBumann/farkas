@@ -170,7 +170,7 @@ Rules that follow:
 | `expansion.py` | named-expression / macro substitution (pre-dispatch) |
 | `validation.py` | load-time: parse, expand, name-check everything |
 | `piecewise.py` | `piecewise:` → λ-formulation declarations (schema-level expansion) + data-time curvature guard |
-| `api.py` | native entry point: `build` / `solve` / `write_lp`, linopy-free |
+| `api.py` | native entry point: `check` / `build` / `solve` / `write`, linopy-free |
 | `compat.py` | opt-in linopy patching (`[oracle]` extra) |
 | `loader.py` | compat/oracle lane: data coercion to xr.Dataset, master coords |
 | `builder.py` | eager backend: core AST → linopy.Model |

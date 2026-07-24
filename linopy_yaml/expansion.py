@@ -28,7 +28,7 @@ meaning never depends on Python-side registration state. This also makes
 load-time validation complete — every template can be name-checked against
 this schema (see ``validation.py``), used or not.
 
-Arbitrary-Python helpers (``@linopy_yaml.register``) remain supported but are
+Arbitrary-Python helpers (``@linopy_yaml.compat.register``) remain supported but are
 eager-only: they execute against xarray/linopy objects at build time and
 cannot be compiled by the relational backend.
 """

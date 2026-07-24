@@ -11,7 +11,6 @@ import pandas as pd
 import pytest
 import yaml as pyyaml
 
-import linopy_yaml
 from linopy_yaml.expansion import parse_and_expand
 from linopy_yaml.expression_parser import parse_expression
 from linopy_yaml.schema import MathSchema
@@ -278,10 +277,11 @@ objectives:
 def test_python_helper_still_eager_only():
     # arbitrary-Python helpers keep working on the eager path and are
     # rejected with a clear message by the relational backend
+    from linopy_yaml.compat import register  # eager-only registry lives in the compat lane
     from linopy_yaml.lowering import _lower_expr
     from linopy_yaml.relational import RelationalBuildError
 
-    @linopy_yaml.register('my_python_helper')
+    @register('my_python_helper')
     def my_python_helper(array):  # pragma: no cover - never executed here
         return array
 

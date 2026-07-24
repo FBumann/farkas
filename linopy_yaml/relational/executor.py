@@ -32,6 +32,7 @@ import math
 import re
 import shutil
 import tempfile
+import weakref
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -73,7 +74,13 @@ class _Compiled:
 
 @dataclass
 class Solution:
-    """Solve result. ``primal(name)`` joins labels back to coords."""
+    """Solve result. ``primal(name)`` joins labels back to coords.
+
+    Tethered to its executor's label tables — use it as a context manager
+    (``with ly.solve(...) as sol:``) or call :meth:`close`. For big models,
+    :meth:`to_parquet` streams every variable's tidy solution table to disk
+    without materialising any of them in memory.
+    """
 
     status: str
     objective: float
@@ -82,9 +89,26 @@ class Solution:
     def primal(self, name: str) -> pd.DataFrame:
         return self._executor._primal(name)
 
+    def to_parquet(self, directory: str | Path) -> dict[str, Path]:
+        """Stream per-variable solution tables to ``directory`` (one parquet
+        file per variable, columns ``(dims..., value)``). Returns name → path.
+
+        The sink runs inside duckdb (COPY), so the full solution never passes
+        through this process's memory. Other formats may follow the same
+        shape (``to_csv``, ...) — parquet is the canonical one.
+        """
+        return self._executor._solution_to_parquet(Path(directory))
+
     def close(self) -> None:
         """Release the executor backing this solution's label tables."""
         self._executor.close()
+
+    def __enter__(self) -> Solution:
+        return self
+
+    def __exit__(self, *exc: object) -> Literal[False]:
+        self.close()
+        return False
 
 
 class DuckdbExecutor:
@@ -111,6 +135,9 @@ class DuckdbExecutor:
         self._con.execute('SET preserve_insertion_order=false')
         if threads:
             self._con.execute(f'SET threads={threads}')
+
+        # safety net: temp state is released even if the caller forgets close()
+        self._finalizer = weakref.finalize(self, _release, self._con, self.workdir if self._own_workdir else None)
 
         self._program: ir.Program | None = None
         self._dim_card: dict[str, int] = {}
@@ -746,12 +773,24 @@ class DuckdbExecutor:
         collist = ', '.join([*(f'v.{d}' for d in dims), 's.value'])
         return self._con.execute(f'SELECT {collist} FROM var_{name} v JOIN sol s ON s.col = v.var_label').df()
 
+    def _solution_to_parquet(self, directory: Path) -> dict[str, Path]:
+        assert self._program is not None
+        directory.mkdir(parents=True, exist_ok=True)
+        written: dict[str, Path] = {}
+        for v in self._program.variables:
+            out = directory / f'{v.name}.parquet'
+            collist = ', '.join([*(f'v.{d}' for d in v.dims), 's.value'])
+            self._con.execute(
+                f'COPY (SELECT {collist} FROM var_{v.name} v JOIN sol s ON s.col = v.var_label) '
+                f"TO '{out}' (FORMAT parquet)"
+            )
+            written[v.name] = out
+        return written
+
     # ------------------------------------------------------------------
 
     def close(self) -> None:
-        self._con.close()
-        if self._own_workdir:
-            shutil.rmtree(self.workdir, ignore_errors=True)
+        self._finalizer()
 
     def __enter__(self) -> DuckdbExecutor:
         return self
@@ -759,6 +798,15 @@ class DuckdbExecutor:
     def __exit__(self, *exc: object) -> Literal[False]:
         self.close()
         return False
+
+
+def _release(con: Any, workdir: Path | None) -> None:
+    try:
+        con.close()
+    except Exception:
+        pass
+    if workdir is not None:
+        shutil.rmtree(workdir, ignore_errors=True)
 
 
 def _lit(v: float) -> str:
