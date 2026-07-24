@@ -10,7 +10,7 @@ import xarray as xr
 # Global registry of helper functions
 _REGISTRY: dict[str, Callable[..., Any]] = {}
 
-BUILTIN_NAMES = frozenset({"sum", "roll", "group_sum"})
+BUILTIN_NAMES = frozenset({"sum", "roll", "shift", "group_sum"})
 
 
 def register(name: str) -> Callable:
@@ -52,6 +52,8 @@ def get_helper(name: str) -> Callable:
         return _helper_sum
     if name == "roll":
         return _helper_roll
+    if name == "shift":
+        return _helper_shift
     if name == "group_sum":
         return _helper_group_sum
     if name in _REGISTRY:
@@ -110,6 +112,33 @@ def _helper_group_sum(array: Any, mapping: Any, *, into: str) -> Any:
         return array.groupby(group).sum()
     type_name = type(array).__name__
     msg = f"group_sum() does not support type '{type_name}'."
+    raise TypeError(msg)
+
+
+def _helper_shift(array: Any, **kwargs: int) -> Any:
+    """Non-cyclic shift along a dimension; vacated positions contribute zero.
+
+    Usage in YAML: ``shift(soc, snapshot=1)`` — the value at *t−1*, with the
+    first position empty (an acyclic recurrence, e.g. storage starting empty).
+    """
+    if len(kwargs) != 1:
+        msg = (
+            f"shift() expects exactly one keyword argument (dim=n), "
+            f"got {len(kwargs)}: {kwargs}"
+        )
+        raise TypeError(msg)
+
+    dim, n = next(iter(kwargs.items()))
+    n = int(n)
+
+    if isinstance(array, xr.DataArray):
+        return array.shift({dim: n}, fill_value=0)
+
+    if hasattr(array, "shift"):  # linopy Variable / LinearExpression
+        return array.shift({dim: n})
+
+    type_name = type(array).__name__
+    msg = f"shift() does not support type '{type_name}'."
     raise TypeError(msg)
 
 

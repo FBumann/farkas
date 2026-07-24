@@ -62,18 +62,27 @@ def lower_program(schema: MathSchema) -> ir.Program:
 
     variables = []
     for vname, vdef in schema.variables.items():
-        if vdef.binary or vdef.integer:
-            raise RelationalBuildError(
-                f"variable '{vname}': binary/integer variables are not supported "
-                f"by the relational backend (v0) — use the eager backend"
-            )
+        lower: ir.Expr
+        upper: ir.Expr
+        if vdef.binary:
+            # binary implies fixed 0/1 bounds, matching linopy's binary=True
+            vtype, lower, upper = "binary", ir.Const(0.0), ir.Const(1.0)
+        elif vdef.integer:
+            vtype = "integer"
+            lower = _lower_bound(vdef.bounds.lower)
+            upper = _lower_bound(vdef.bounds.upper)
+        else:
+            vtype = "continuous"
+            lower = _lower_bound(vdef.bounds.lower)
+            upper = _lower_bound(vdef.bounds.upper)
         variables.append(
             ir.VariableDecl(
                 vname,
                 tuple(vdef.foreach),
                 where=_lower_where(vdef.where, schema, f"variable '{vname}'"),
-                lower=_lower_bound(vdef.bounds.lower),
-                upper=_lower_bound(vdef.bounds.upper),
+                lower=lower,
+                upper=upper,
+                vtype=vtype,  # type: ignore[arg-type]
             )
         )
 
@@ -263,15 +272,16 @@ def _lower_expr(node: ArithNode, schema: MathSchema, context: str) -> ir.Expr:
                 )
             return ir.GroupSum(inner, mapping=mapping_node.name, into=into_node.name)
 
-        if node.name == "roll":
+        if node.name in ("roll", "shift"):
+            wrap = node.name == "roll"
             if len(node.args) != 1 or len(node.kwargs) != 1:
                 raise RelationalBuildError(
-                    f"{context}: roll() expects roll(<expr>, <dim>=<n>)"
+                    f"{context}: {node.name}() expects {node.name}(<expr>, <dim>=<n>)"
                 )
             ((dim, shift_node),) = node.kwargs.items()
             if dim not in schema.dimensions:
                 raise RelationalBuildError(
-                    f"{context}: roll() dimension '{dim}' is not declared"
+                    f"{context}: {node.name}() dimension '{dim}' is not declared"
                 )
             sign = 1
             if isinstance(shift_node, UnaryOpNode) and shift_node.op == "-":
@@ -281,15 +291,15 @@ def _lower_expr(node: ArithNode, schema: MathSchema, context: str) -> ir.Expr:
                 or int(shift_node.value) != shift_node.value
             ):
                 raise RelationalBuildError(
-                    f"{context}: roll() shift must be an integer literal"
+                    f"{context}: {node.name}() shift must be an integer literal"
                 )
             inner = _lower_expr(node.args[0], schema, context)
             if dim not in _dims_of(inner, schema):
                 raise RelationalBuildError(
-                    f"{context}: roll() along '{dim}' but the expression has dims "
-                    f"{sorted(_dims_of(inner, schema))}"
+                    f"{context}: {node.name}() along '{dim}' but the expression "
+                    f"has dims {sorted(_dims_of(inner, schema))}"
                 )
-            return ir.Shift(inner, dim, sign * int(shift_node.value))
+            return ir.Shift(inner, dim, sign * int(shift_node.value), wrap=wrap)
 
         raise RelationalBuildError(
             f"{context}: helper '{node.name}' is not supported by the relational "

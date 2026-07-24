@@ -692,7 +692,21 @@ constraints:
         where: "snapshot == 0"
 ```
 
-### 7.3 `group_sum(array, mapping, into=dim)`
+### 7.3 `shift(array, dim=n)`
+
+Non-cyclic counterpart of `roll`: the value at *t−n*, with vacated positions
+contributing **zero** instead of wrapping. Use for acyclic recurrences —
+e.g. storage that starts empty:
+
+```yaml
+expression: soc == shift(soc, snapshot=1) + charge - discharge
+```
+
+On the eager backend this is linopy/xarray `.shift()` (zero fill); on the
+relational backend it is the same ord-join as `roll` without the modulo —
+out-of-range rows simply don't join (row absence = zero contribution).
+
+### 7.4 `group_sum(array, mapping, into=dim)`
 
 Sums an array or expression through a **mapping parameter**, replacing the
 mapping's dimension with a group dimension. This is the membership-sum needed
@@ -718,7 +732,7 @@ constraint's `foreach` should be covered by the mapping — groups absent from
 the mapping produce no output rows. The relational backend treats absent
 groups as zero contribution.
 
-### 7.4 Custom helper functions
+### 7.5 Custom helper functions
 
 > **Prefer `macros:` (§3.7) for anything expressible as a composition of built-ins** — macros keep the YAML self-contained and work on both backends. Python helpers execute arbitrary code against xarray/linopy objects and are therefore **eager-only**: the relational backend rejects them and the router falls back with that reason.
 
@@ -1097,8 +1111,19 @@ distinct expansion stage that emits new variable/constraint declarations
 sink has the corresponding native streams (§12.6). Reimplementing linopy's
 reformulation passes (e.g. SOS big-M linearization) inside the IR is
 explicitly rejected: that would duplicate the library this package consumes.
-The one planned extension is semi-continuous variables, which are a variable
-*type* (a vtype + threshold column on ``cols``), not a formulation.
+Variable *types* are not formulations: binary/integer are supported (a
+``vtype`` column on ``cols``, LP ``binary``/``general`` sections, HiGHS
+integrality), which makes basic MILP relational-eligible. Semi-continuous is
+the remaining planned vtype extension.
+
+Convex piecewise costs need no machinery at all — the epigraph formulation
+is ordinary affine YAML (see ``examples/piecewise_convex.yaml``), pure LP,
+relational-eligible today. Nonconvex piecewise is planned as *schema-level
+expansion*: a ``piecewise:`` block expands into ordinary variable/constraint
+declarations (λ or incremental method over a breakpoint dimension, binaries
+via vtype, ordering via ``shift``) so **both backends receive identical
+affine declarations** and stay differential-testable. Formulations never
+enter as IR expression nodes.
 
 ### 12.5 Execution requirements (phase-1 spike, corrected after phase 3)
 

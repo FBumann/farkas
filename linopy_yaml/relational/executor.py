@@ -129,7 +129,9 @@ class DuckdbExecutor:
             self._create_param_table(p, sources)
         self._create_dim_tables(program, sources)
 
-        self._con.execute("CREATE TABLE cols (col BIGINT, lb DOUBLE, ub DOUBLE)")
+        self._con.execute(
+            "CREATE TABLE cols (col BIGINT, lb DOUBLE, ub DOUBLE, vtype VARCHAR)"
+        )
         self._con.execute("CREATE TABLE obj (col BIGINT, coeff DOUBLE)")
         self._con.execute("CREATE TABLE rows (row BIGINT, sense VARCHAR, rhs DOUBLE)")
         self._con.execute("CREATE TABLE A (row BIGINT, col BIGINT, coeff DOUBLE)")
@@ -343,7 +345,8 @@ class DuckdbExecutor:
         ub_sql, ub_joins = self._bound_sql(v.upper, v)
         joins = " ".join(dict.fromkeys(lb_joins + ub_joins))
         self._con.execute(
-            f"INSERT INTO cols SELECT f.var_label, {lb_sql}, {ub_sql} FROM var_{v.name} f {joins}"
+            f"INSERT INTO cols SELECT f.var_label, {lb_sql}, {ub_sql}, '{v.vtype}' "
+            f"FROM var_{v.name} f {joins}"
         )
         bad = self._scalar("SELECT count(*) FROM cols WHERE lb IS NULL OR ub IS NULL")
         if bad:
@@ -532,11 +535,15 @@ class DuckdbExecutor:
         cols = ", ".join(
             [*(f"t.{d}" for d in others), f"d_out.val AS {s.dim}", valcols]
         )
+        if s.wrap:
+            on = f"d_out.ord = ((d_in.ord + {s.n}) % {card} + {card}) % {card}"
+        else:
+            # acyclic: out-of-range rows simply don't join — zero contribution
+            on = f"d_out.ord = d_in.ord + {s.n}"
         sql = (
             f"SELECT {cols} FROM ({p.sql}) t "
             f"JOIN dim_{s.dim} d_in ON d_in.val = t.{s.dim} "
-            f"JOIN dim_{s.dim} d_out "
-            f"ON d_out.ord = ((d_in.ord + {s.n}) % {card} + {card}) % {card}"
+            f"JOIN dim_{s.dim} d_out ON {on}"
         )
         return _Piece(p.dims, sql, p.is_term)
 
@@ -685,6 +692,17 @@ class DuckdbExecutor:
             """
         )
 
+        integrality_sections = []
+        for vtype, keyword in (("binary", "binary"), ("integer", "general")):
+            n = self._scalar(f"SELECT count(*) FROM cols WHERE vtype = '{vtype}'")
+            if n:
+                part = parts / keyword
+                integrality_sections.append((keyword, part))
+                self._con.execute(
+                    f"COPY (SELECT printf('x%d', col) FROM cols WHERE vtype = '{vtype}') "
+                    f"TO '{part}' {_COPY_OPTS}"
+                )
+
         sense = b"min" if self._obj_sense == "min" else b"max"
         with open(path, "wb") as f:
             f.write(sense + b"\n\nobj:\n")
@@ -696,6 +714,9 @@ class DuckdbExecutor:
                 _cat(f, part)
             f.write(b"\nbounds\n")
             _cat(f, parts / "bounds")
+            for keyword, part in integrality_sections:
+                f.write(f"\n{keyword}\n".encode())
+                _cat(f, part)
             f.write(b"\nend\n")
         shutil.rmtree(parts)
 
@@ -714,7 +735,7 @@ class DuckdbExecutor:
         empty_i = np.empty(0, dtype=np.int32)
         empty_f = np.empty(0, dtype=np.float64)
         reader = self._con.execute(
-            "SELECT c.col, c.lb, c.ub, COALESCE(o.coeff, 0) AS cost "
+            "SELECT c.col, c.lb, c.ub, c.vtype, COALESCE(o.coeff, 0) AS cost "
             "FROM cols c LEFT JOIN obj o USING (col) ORDER BY c.col"
         ).to_arrow_reader(batch_rows)
         for batch in reader:
@@ -727,6 +748,14 @@ class DuckdbExecutor:
             )
             cost = np.asarray(d["cost"], dtype=np.float64)
             h.addCols(len(cost), cost, lb, ub, 0, empty_i, empty_i, empty_f)
+            vtype = np.asarray(d["vtype"])
+            noncont = np.flatnonzero(vtype != "continuous")
+            if len(noncont):
+                cols_idx = np.asarray(d["col"], dtype=np.int32)[noncont]
+                integrality = np.full(
+                    len(noncont), int(highspy.HighsVarType.kInteger), dtype=np.uint8
+                )
+                h.changeColsIntegrality(len(noncont), cols_idx, integrality)
 
         for lo in range(0, max(self._n_rows, 1), batch_rows):
             hi = min(lo + batch_rows, self._n_rows)

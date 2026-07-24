@@ -29,11 +29,23 @@ def test_examples_are_relational_eligible(path):
     assert select_backend(_schema(path)) == BackendChoice("relational")
 
 
-def test_binary_variable_falls_back():
+def test_binary_variable_is_eligible():
+    # vtype support: binary/integer models route to the relational backend
     schema = _schema(**{"variables.p.binary": True, "variables.p.bounds": {}})
+    assert select_backend(schema) == BackendChoice("relational")
+
+
+def test_power_operator_falls_back():
+    schema = _schema(
+        **{
+            "constraints.power_balance.equations": [
+                {"expression": "sum(p ** 2, over=generator) == load"}
+            ]
+        }
+    )
     choice = select_backend(schema)
     assert choice.backend == "eager"
-    assert "binary" in choice.reason
+    assert "operator '**'" in choice.reason
 
 
 def test_custom_helper_falls_back():

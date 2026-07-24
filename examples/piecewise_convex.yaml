@@ -1,0 +1,51 @@
+# Convex piecewise-linear generation cost via the epigraph formulation —
+# expressed entirely with existing constructs (no piecewise: block needed).
+#
+# gen_cost[s, g] is an auxiliary variable pushed onto the maximum of the
+# cost segments' tangent lines by the pwl constraint; minimisation makes it
+# equal the piecewise cost. Pure LP: relational-eligible, no binaries.
+
+dimensions:
+  snapshot:
+    dtype: int
+  generator:
+    dtype: str
+  segment:
+    dtype: str
+
+parameters:
+  p_max:
+    dims: [generator]
+  load:
+    dims: [snapshot]
+  seg_slope:
+    dims: [generator, segment]
+  seg_intercept:
+    dims: [generator, segment]
+
+variables:
+  p:
+    foreach: [snapshot, generator]
+    bounds:
+      lower: 0
+      upper: p_max
+  gen_cost:
+    foreach: [snapshot, generator]
+    bounds:
+      lower: 0
+
+constraints:
+  balance:
+    foreach: [snapshot]
+    equations:
+      - expression: sum(p, over=generator) == load
+  pwl:
+    foreach: [snapshot, generator, segment]
+    equations:
+      - expression: gen_cost >= p * seg_slope + seg_intercept
+
+objectives:
+  total_cost:
+    sense: minimize
+    equations:
+      - expression: sum(gen_cost, over=generator)
