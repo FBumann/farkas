@@ -6,8 +6,8 @@ a :class:`~linopy_yaml.relational.ir.Program`. It lives on the language side —
 the engine subpackage stays free of YAML knowledge, and this module never
 imports the eager builder.
 
-v0 language subset: foreach, where, arithmetic (+ - * /), sum, comparison.
-`roll`, custom helpers, `**`, and binary/integer variables raise
+v0 language subset: foreach, where, arithmetic (+ - * /), sum, group_sum,
+comparison. `roll`, custom helpers, `**`, and binary/integer variables raise
 :class:`~linopy_yaml.relational.executor.RelationalBuildError` with a pointer
 to the eager backend.
 
@@ -137,12 +137,15 @@ def tidy_sources(
     inference from parameter tables.
     """
     import pandas as pd
+    import xarray as xr
 
     sources: dict[str, object] = {}
     for pname, pdef in schema.parameters.items():
         if pname not in data:
             raise RelationalBuildError(f"no data provided for parameter '{pname}'")
         obj = data[pname]
+        if isinstance(obj, xr.DataArray):
+            obj = obj.to_series()
         if isinstance(obj, pd.Series):
             df = obj.rename("value").rename_axis(pdef.dims).reset_index()
         elif isinstance(obj, pd.DataFrame):
@@ -208,25 +211,62 @@ def _lower_expr(node: ArithNode, schema: MathSchema, context: str) -> ir.Expr:
                 )
 
     if isinstance(node, FuncCallNode):
-        if node.name != "sum":
-            raise RelationalBuildError(
-                f"{context}: helper '{node.name}' is not supported by the relational "
-                f"backend (v0 supports only 'sum') — use the eager backend"
-            )
-        if len(node.args) != 1 or set(node.kwargs) != {"over"}:
-            raise RelationalBuildError(
-                f"{context}: sum() expects sum(<expr>, over=<dim>)"
-            )
-        over_node = node.kwargs["over"]
-        if not isinstance(over_node, NameNode):
-            raise RelationalBuildError(
-                f"{context}: sum(over=...) must name a dimension"
-            )
-        inner = _lower_expr(node.args[0], schema, context)
-        # eager parity: summing over a dim the operand does not carry is a no-op
-        if over_node.name not in _dims_of(inner, schema):
-            return inner
-        return ir.Sum(inner, (over_node.name,))
+        if node.name == "sum":
+            if len(node.args) != 1 or set(node.kwargs) != {"over"}:
+                raise RelationalBuildError(
+                    f"{context}: sum() expects sum(<expr>, over=<dim>)"
+                )
+            over_node = node.kwargs["over"]
+            if not isinstance(over_node, NameNode):
+                raise RelationalBuildError(
+                    f"{context}: sum(over=...) must name a dimension"
+                )
+            inner = _lower_expr(node.args[0], schema, context)
+            # eager parity: summing over a dim the operand does not carry is a no-op
+            if over_node.name not in _dims_of(inner, schema):
+                return inner
+            return ir.Sum(inner, (over_node.name,))
+
+        if node.name == "group_sum":
+            if len(node.args) != 2 or set(node.kwargs) != {"into"}:
+                raise RelationalBuildError(
+                    f"{context}: group_sum() expects "
+                    f"group_sum(<expr>, <mapping-parameter>, into=<dim>)"
+                )
+            mapping_node = node.args[1]
+            into_node = node.kwargs["into"]
+            if (
+                not isinstance(mapping_node, NameNode)
+                or mapping_node.name not in schema.parameters
+            ):
+                raise RelationalBuildError(
+                    f"{context}: group_sum() mapping must name a declared parameter"
+                )
+            mdims = schema.parameters[mapping_node.name].dims
+            if len(mdims) != 1:
+                raise RelationalBuildError(
+                    f"{context}: group_sum() mapping '{mapping_node.name}' must have "
+                    f"exactly one dim (has {mdims})"
+                )
+            if (
+                not isinstance(into_node, NameNode)
+                or into_node.name not in schema.dimensions
+            ):
+                raise RelationalBuildError(
+                    f"{context}: group_sum(into=...) must name a declared dimension"
+                )
+            inner = _lower_expr(node.args[0], schema, context)
+            if mdims[0] not in _dims_of(inner, schema):
+                raise RelationalBuildError(
+                    f"{context}: group_sum() over '{mdims[0]}' but the expression "
+                    f"has dims {sorted(_dims_of(inner, schema))}"
+                )
+            return ir.GroupSum(inner, mapping=mapping_node.name, into=into_node.name)
+
+        raise RelationalBuildError(
+            f"{context}: helper '{node.name}' is not supported by the relational "
+            f"backend (v0 supports 'sum' and 'group_sum') — use the eager backend"
+        )
 
     assert_never(node)
 

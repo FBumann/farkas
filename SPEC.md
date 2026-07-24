@@ -632,7 +632,33 @@ constraints:
         where: "snapshot == 0"
 ```
 
-### 7.3 Custom helper functions
+### 7.3 `group_sum(array, mapping, into=dim)`
+
+Sums an array or expression through a **mapping parameter**, replacing the
+mapping's dimension with a group dimension. This is the membership-sum needed
+for network models: "sum the generators at each bus".
+
+```yaml
+# gen_bus: dims [generator], dtype str — maps each generator to its bus
+expression: group_sum(p, gen_bus, into=bus) == load
+```
+
+| Argument  | Type                  | Description                                          |
+|-----------|-----------------------|------------------------------------------------------|
+| `array`   | arithmetic expression | The expression to sum. Must carry the mapping's dim. |
+| `mapping` | parameter name        | 1-D parameter whose values are the group labels.     |
+| `into`    | dimension name        | The resulting group dimension.                       |
+
+The mapping's dimension is summed out; the result has dimension `into` with
+the mapping's values as coordinates. On the eager backend this is linopy's
+`.groupby()`; on the relational backend it is a join + GROUP BY.
+
+Note: for the eager backend, every value of `into` that appears in the
+constraint's `foreach` should be covered by the mapping — groups absent from
+the mapping produce no output rows. The relational backend treats absent
+groups as zero contribution.
+
+### 7.4 Custom helper functions
 
 Register additional helpers at module load time using the `@linopy_yaml.register` decorator:
 

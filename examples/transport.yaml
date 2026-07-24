@@ -1,0 +1,54 @@
+dimensions:
+  snapshot:
+    dtype: int
+  generator:
+    dtype: str
+  bus:
+    dtype: str
+  line:
+    dtype: str
+
+parameters:
+  p_max:
+    dims: [generator]
+  cost:
+    dims: [generator]
+  gen_bus:
+    dims: [generator]
+    dtype: str
+  cap:
+    dims: [line]
+  neg_cap:
+    dims: [line]
+  line_from:
+    dims: [line]
+    dtype: str
+  line_to:
+    dims: [line]
+    dtype: str
+  load:
+    dims: [snapshot, bus]
+
+variables:
+  p:
+    foreach: [snapshot, generator]
+    bounds:
+      lower: 0
+      upper: p_max
+  f:
+    foreach: [snapshot, line]
+    bounds:
+      lower: neg_cap
+      upper: cap
+
+constraints:
+  balance:
+    foreach: [snapshot, bus]
+    equations:
+      - expression: group_sum(p, gen_bus, into=bus) + group_sum(f, line_to, into=bus) - group_sum(f, line_from, into=bus) == load
+
+objectives:
+  total_cost:
+    sense: minimize
+    equations:
+      - expression: sum(p * cost, over=generator)
