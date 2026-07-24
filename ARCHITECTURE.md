@@ -18,27 +18,32 @@ thing. Every architectural rule below exists to protect that property.
 flowchart TB
     Y[YAML file] -->|"parse + validate<br/>(schema.py, validation.py)"| MS[MathSchema]
     MS -->|"expand macros: / expressions: (expansion.py)<br/>expand piecewise: blocks (piecewise.py)<br/>— backends never see any of them"| AST["core AST<br/>= the only contract between layers"]
-    D[("data<br/>(parquet paths / pandas)")]
-
     AST --> ROUTE{"backend selection (router.py):<br/>attempt the lowering"}
 
-    subgraph EAGER["Eager lane — feature-complete, correctness oracle. linopy lives ONLY here."]
-        LOAD["loader.py<br/>coerce data → xr.Dataset"] --> BUILD["builder.py<br/>evaluate AST"]
-        BUILD --> MODEL["linopy.Model"] --> SOLVE["linopy solve / writers"]
-    end
+    ROUTE -->|"lowers"| LOWER
+    ROUTE -->|"RelationalBuildError →<br/>eager, with that reason"| BUILD
 
-    subgraph REL["Relational lane — streaming, memory-bounded, linopy-free"]
+    subgraph REL["Relational lane — streaming · memory-bounded · linopy-free"]
+        direction TB
         LOWER["lowering.py"] --> IR["IR<br/>(relational/ir.py)"]
+        DR[("data<br/>parquet paths / pandas")] --> EXEC
         IR --> EXEC["executor.py<br/>tidy tables in file-backed duckdb<br/>under memory_limit"]
         EXEC --> LPS["lp_file sink<br/>portability, debugging<br/>(mps planned)"]
         EXEC --> DIRECT["solver_direct sink<br/>COO batches → highspy → HiGHS"]
         DIRECT --> SOL["solution tables<br/>(label join, never dense)"]
     end
 
-    ROUTE -->|"lowers"| LOWER
-    ROUTE -->|"RelationalBuildError<br/>→ eager, with that reason"| LOAD
-    D --> LOAD
-    D --> EXEC
+    subgraph EAGER["Eager lane — feature-complete · correctness oracle · the ONLY lane with linopy"]
+        direction TB
+        DE[("data<br/>parquet paths / pandas")] --> LOAD["loader.py<br/>coerce data → xr.Dataset"]
+        LOAD --> BUILD["builder.py<br/>evaluate AST"]
+        BUILD --> MODEL[linopy.Model] --> SOLVE["linopy solve / writers"]
+    end
+
+    classDef laneR fill:#f0f7f0,stroke:#3a7d44,stroke-width:2px,color:#111
+    classDef laneE fill:#eef1fb,stroke:#4a5fc1,stroke-width:2px,color:#111
+    class REL laneR
+    class EAGER laneE
 ```
 
 Eligibility is decided by *attempting the lowering*, so it can never drift
@@ -78,6 +83,26 @@ composition**:
   YAML) are pure AST substitution — every composition of primitives, at zero
   marginal cost and zero divergence risk, because neither backend ever sees
   them.
+
+```mermaid
+flowchart TB
+    T2["<b>Tier 2 — free composition</b><br/>macros: · expressions:<br/>(edit YAML, nothing else)"]
+    T1["<b>Tier 1 — taxed primitives</b><br/>operators · sum · group_sum · roll/shift · where · piecewise:<br/>(the expressive ceiling)"]
+    BOTH["both backends, one meaning"]
+    ESC["@register Python helpers"]
+
+    T2 -->|"AST substitution before dispatch:<br/>zero marginal cost, zero divergence risk"| T1
+    T1 -->|"per new primitive: eager impl + IR node (+ locality class)<br/>+ executor + lowering + differential tests"| BOTH
+    ESC -.->|"escape hatch —<br/>router falls back with that reason"| EO["eager backend only"]
+
+    classDef free fill:#f0f7f0,stroke:#3a7d44,stroke-width:2px,color:#111
+    classDef taxed fill:#eef1fb,stroke:#4a5fc1,stroke-width:2px,color:#111
+    classDef esc fill:#fdf3e7,stroke:#b7791f,color:#111,stroke-dasharray: 4 3
+    class T2 free
+    class T1 taxed
+    class ESC esc
+    class EO esc
+```
 
 Policy that keeps the economy healthy:
 
