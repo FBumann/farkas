@@ -19,6 +19,7 @@ from linopy_yaml.accessor import YamlAccessor
 from linopy_yaml.builder import build_model
 from linopy_yaml.loader import build_master_coords, load_parameters
 from linopy_yaml.schema import MathSchema
+from linopy_yaml.validation import validate_expressions
 
 _ACCESSOR_REGISTRY: weakref.WeakKeyDictionary[linopy.Model, YamlAccessor] = (
     weakref.WeakKeyDictionary()
@@ -83,6 +84,7 @@ def _from_yaml(
             raw = {}
 
         schema = MathSchema.model_validate(raw)
+        validate_expressions(schema)
 
         master_coords = build_master_coords(schema, coords)
         dataset = load_parameters(schema, data, master_coords)

@@ -14,6 +14,7 @@ from linopy_yaml._notes import note
 from linopy_yaml.builder import build_model
 from linopy_yaml.loader import build_master_coords, load_parameters
 from linopy_yaml.schema import MathSchema
+from linopy_yaml.validation import validate_expressions
 
 if TYPE_CHECKING:
     import linopy
@@ -119,6 +120,11 @@ class YamlAccessor:
                 raw = {}
 
             schema = MathSchema.model_validate(raw)
+            validate_expressions(
+                schema,
+                known_variables=list(self._model.variables),
+                known_parameters=[str(name) for name in self._dataset.data_vars],
+            )
 
             kwarg_coords: dict[str, pd.Index] = {}
             if coords is not None:
