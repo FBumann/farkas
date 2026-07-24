@@ -17,8 +17,8 @@ def _has_note(exc: BaseException, substring: str) -> bool:
     return any(substring in n for n in getattr(exc, "__notes__", []))
 
 
-def test_from_yaml_attaches_path_and_variable_notes(tmp_path):
-    """A failure inside _build_variables stacks the variable name and YAML path."""
+def test_from_yaml_malformed_where_fails_at_load(tmp_path):
+    """A malformed where string is caught by load-time validation."""
     bad = tmp_path / "bad.yaml"
     bad.write_text(
         "dimensions:\n"
@@ -26,18 +26,18 @@ def test_from_yaml_attaches_path_and_variable_notes(tmp_path):
         "variables:\n"
         "  p:\n"
         "    foreach: [g]\n"
-        "    where: '<<<'\n"  # malformed where string -> parse error at build time
+        "    where: '<<<'\n"  # malformed where string
     )
 
-    with pytest.raises(ValueError) as ei:
+    with pytest.raises(ValueError, match="Failed to parse where string") as ei:
         Model.from_yaml(bad)
 
-    assert _has_note(ei.value, "while building variable 'p'")
+    assert "Variable 'p'" in str(ei.value)
     assert _has_note(ei.value, f"while loading YAML '{bad}'")
 
 
-def test_from_yaml_attaches_constraint_note(tmp_path):
-    """A failure inside _build_constraints carries the constraint name."""
+def test_from_yaml_missing_comparison_fails_at_load(tmp_path):
+    """A constraint expression without a comparison is caught at load time."""
     bad = tmp_path / "bad.yaml"
     bad.write_text(
         "dimensions:\n"
@@ -52,14 +52,15 @@ def test_from_yaml_attaches_constraint_note(tmp_path):
         "      - expression: 'p + 1'\n"  # no comparison operator
     )
 
-    with pytest.raises(ValueError) as ei:
+    with pytest.raises(ValueError, match="exactly one comparison") as ei:
         Model.from_yaml(bad)
 
-    assert _has_note(ei.value, "while building constraint 'c'")
+    assert "Constraint 'c'" in str(ei.value)
+    assert _has_note(ei.value, f"while loading YAML '{bad}'")
 
 
-def test_from_yaml_attaches_objective_note(tmp_path):
-    """A failure inside _build_objectives carries the objective name."""
+def test_from_yaml_objective_comparison_fails_at_load(tmp_path):
+    """An objective expression with a comparison is caught at load time."""
     bad = tmp_path / "bad.yaml"
     bad.write_text(
         "dimensions:\n"
@@ -73,10 +74,34 @@ def test_from_yaml_attaches_objective_note(tmp_path):
         "      - expression: 'p == 1'\n"  # objectives forbid comparison operators
     )
 
-    with pytest.raises(ValueError) as ei:
+    with pytest.raises(ValueError, match="must not contain a comparison") as ei:
         Model.from_yaml(bad)
 
-    assert _has_note(ei.value, "while building objective 'obj'")
+    assert "Objective 'obj'" in str(ei.value)
+    assert _has_note(ei.value, f"while loading YAML '{bad}'")
+
+
+def test_build_failure_attaches_constraint_note(tmp_path):
+    """Errors validation cannot catch still carry build-phase notes."""
+    bad = tmp_path / "bad.yaml"
+    bad.write_text(
+        "dimensions:\n"
+        "  g: {values: [a]}\n"
+        "variables:\n"
+        "  p:\n"
+        "    foreach: [g]\n"
+        "constraints:\n"
+        "  c:\n"
+        "    foreach: [g]\n"
+        "    equations:\n"
+        "      - expression: '1 <= 2'\n"  # valid syntax, but no variable on the LHS
+    )
+
+    with pytest.raises(TypeError) as ei:
+        Model.from_yaml(bad)
+
+    assert _has_note(ei.value, "while building constraint 'c'")
+    assert _has_note(ei.value, f"while loading YAML '{bad}'")
 
 
 def test_extend_attaches_path_note(tmp_path):
