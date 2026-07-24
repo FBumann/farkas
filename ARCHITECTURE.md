@@ -18,10 +18,9 @@ thing. Every architectural rule below exists to protect that property.
 flowchart TB
     Y[YAML file] -->|"parse + validate<br/>(schema.py, validation.py)"| MS[MathSchema]
     MS -->|"expand macros: / expressions: (expansion.py)<br/>expand piecewise: blocks (piecewise.py)<br/>— backends never see any of them"| AST["core AST<br/>= the only contract between layers"]
-    AST --> ROUTE{"backend selection (router.py):<br/>attempt the lowering"}
-
-    ROUTE -->|"lowers"| LOWER
-    ROUTE -->|"RelationalBuildError →<br/>eager, with that reason"| BUILD
+    AST -->|"api.py: build / solve / write_lp"| LOWER
+    AST -.->|"import linopy_yaml.compat<br/>(opt-in: Model.from_yaml, .yaml.extend)"| BUILD
+    LOWER -->|"outside the language:<br/>RelationalBuildError naming the construct"| ERR["load error<br/>(no fallback)"]
 
     subgraph REL["Relational lane — streaming · memory-bounded · linopy-free"]
         direction TB
@@ -33,7 +32,7 @@ flowchart TB
         DIRECT --> SOL["solution tables<br/>(label join, never dense)"]
     end
 
-    subgraph EAGER["Eager lane — compatibility layer · correctness oracle · the ONLY lane with linopy"]
+    subgraph EAGER["Compat/oracle lane — opt-in via linopy_yaml.compat · the ONLY lane with linopy · not a runtime dependency"]
         direction TB
         DE[("data<br/>parquet paths / pandas")] --> LOAD["loader.py<br/>coerce data → xr.Dataset"]
         LOAD --> BUILD["builder.py<br/>evaluate AST"]
@@ -58,11 +57,12 @@ from what the backend actually supports.
    neither the eager builder nor linopy itself — the lane goes duckdb →
    highspy → solver with linopy's semantics as a spec to match, not code to
    share. Engine-internal naming encodes neither "duckdb" nor "yaml".
-3. **linopy is kept for exactly two roles: compatibility and validation.**
-   The eager builder is the fallback/compat layer (Python-built models,
-   `.yaml.extend`, features outside the streaming subset — routed there by
-   *attempting the lowering*, with the stated reason) and the correctness
-   oracle. Differential tests (same YAML + data through both
+3. **linopy is kept for exactly two roles: compatibility and validation —
+   never runtime.** The streaming engine is the only product lane; constructs
+   outside its language are load errors naming the construct, not fallbacks.
+   The eager builder lives behind the opt-in `[oracle]` extra
+   (`import linopy_yaml.compat`) as the compatibility surface for
+   Python-built linopy models and as the correctness oracle. Differential tests (same YAML + data through both
    backends, matching solves) guard every language feature on both.
 4. **The full model never resides in this process's memory** on the
    relational path — not as dense arrays, not as a full CSR. Build under a
@@ -70,6 +70,10 @@ from what the backend actually supports.
    solver's internal copy is the only irreducible full-model residency.
 5. **Backend-visible YAML files are self-contained.** No Python-side state
    (registries, session objects) may change what a YAML file means.
+6. **The public interface is YAML, full stop.** Python surface is limited to
+   the runner (`api.py`: bind sources, build, solve, write) — there is no
+   Python modeling API. The IR is internal; a stable IR-construction API is
+   a possible later addition, not a current contract.
 
 ## The two-tier language
 
@@ -136,8 +140,9 @@ producing a parameter. `@register` Python helpers remain as an explicitly
 | `expansion.py` | named-expression / macro substitution (pre-dispatch) |
 | `validation.py` | load-time: parse, expand, name-check everything |
 | `piecewise.py` | `piecewise:` → λ-formulation declarations (schema-level expansion) + data-time curvature guard |
-| `router.py` | backend selection: relational iff the schema lowers, else eager with the verbatim reason |
-| `loader.py` | eager lane: data coercion to xr.Dataset, master coords |
+| `api.py` | native entry point: `build` / `solve` / `write_lp`, linopy-free |
+| `compat.py` | opt-in linopy patching (`[oracle]` extra) |
+| `loader.py` | compat/oracle lane: data coercion to xr.Dataset, master coords |
 | `builder.py` | eager backend: core AST → linopy.Model |
 | `lowering.py` | core AST → IR (defines the relational subset) |
 | `relational/ir.py` | frozen logical-plan dataclasses |

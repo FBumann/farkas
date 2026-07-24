@@ -5,8 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-import xarray as xr
-
 # Global registry of helper functions
 _REGISTRY: dict[str, Callable[..., Any]] = {}
 
@@ -73,6 +71,8 @@ def _helper_sum(array: Any, *, over: str) -> Any:
     Works with xr.DataArray, linopy Variable, and LinearExpression.
     If the array does not have the named dimension, it is returned unchanged.
     """
+    import xarray as xr
+
     if isinstance(array, xr.DataArray):
         if over in array.dims:
             return array.sum(dim=over)
@@ -92,6 +92,8 @@ def _helper_group_sum(array: Any, mapping: Any, *, into: str) -> Any:
     labels (e.g. ``gen_bus``: generator → bus). The mapping's dimension is
     summed out; a new dimension named *into* holds the group labels.
     """
+    import xarray as xr
+
     if not isinstance(mapping, xr.DataArray):
         msg = (
             f"group_sum() mapping must be a parameter (got "
@@ -121,6 +123,8 @@ def _helper_shift(array: Any, **kwargs: int) -> Any:
     Usage in YAML: ``shift(soc, snapshot=1)`` — the value at *t−1*, with the
     first position empty (an acyclic recurrence, e.g. storage starting empty).
     """
+    import xarray as xr
+
     if len(kwargs) != 1:
         msg = (
             f"shift() expects exactly one keyword argument (dim=n), "
@@ -157,6 +161,8 @@ def _helper_roll(array: Any, **kwargs: int) -> Any:
     **kwargs : int
         Exactly one keyword argument: ``dim_name=shift_amount``.
     """
+    import xarray as xr
+
     if len(kwargs) != 1:
         msg = (
             f"roll() expects exactly one keyword argument (dim=n), "

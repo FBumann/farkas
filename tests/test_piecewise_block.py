@@ -123,10 +123,7 @@ def test_convex_flag_gives_hull(nonconvex_inputs, tmp_path):
     yaml_path.write_text(yaml_text)
 
     schema = MathSchema(**pyyaml.safe_load(yaml_text))
-    from linopy_yaml.router import select_backend
-
-    assert select_backend(schema).backend == "relational"  # pure LP now
-    program = lower_program(schema)
+    program = lower_program(schema)  # inside the streaming language (pure LP)
     assert all(v.vtype == "continuous" for v in program.variables)
 
     m = Model.from_yaml(yaml_path, data=data, coords=coords)
@@ -381,8 +378,6 @@ def test_example_per_generator_curves(tmp_path):
     along the generator dim — the thing flat breakpoint lists can't do)."""
     import xarray as xr
 
-    from linopy_yaml.router import select_backend
-
     example = "examples/piecewise.yaml"
     rng = np.random.default_rng(31)
     n_s = 24
@@ -406,7 +401,7 @@ def test_example_per_generator_curves(tmp_path):
     coords = {"snapshot": load.index, "generator": gens, "bp": bps}
 
     schema = MathSchema(**pyyaml.safe_load(open(example)))
-    assert select_backend(schema).backend == "relational"  # convex: pure LP
+    lower_program(schema)  # inside the streaming language (convex: pure LP)
 
     m = Model.from_yaml(example, data=data, coords=coords)
     m.solve(solver_name="highs", output_flag=False)

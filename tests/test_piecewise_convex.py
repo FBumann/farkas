@@ -21,7 +21,6 @@ from linopy import Model  # noqa: E402
 import linopy_yaml  # noqa: F401, E402 — registers .from_yaml on linopy.Model
 from linopy_yaml.lowering import lower_program, tidy_sources  # noqa: E402
 from linopy_yaml.relational import DuckdbExecutor  # noqa: E402
-from linopy_yaml.router import select_backend  # noqa: E402
 from linopy_yaml.schema import MathSchema  # noqa: E402
 
 RTOL = 1e-9
@@ -119,7 +118,7 @@ def test_pwl_convex_differential(pwl_inputs, tmp_path):
     data, coords = pwl_inputs
 
     schema = MathSchema(**pyyaml.safe_load(EPIGRAPH_YAML))
-    assert select_backend(schema).backend == "relational"  # eligible, pure LP
+    lower_program(schema)  # inside the streaming language (pure LP)
 
     yaml_path = tmp_path / "epigraph.yaml"
     yaml_path.write_text(EPIGRAPH_YAML)
