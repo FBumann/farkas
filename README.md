@@ -25,6 +25,7 @@ flowchart LR
 - **Clean boundary** — YAML owns the math; Python owns data and solving.
 - **Memory as a config knob** — build peak RAM is set by `memory_limit`, not by model size.
 - **Fail early, fail loud** — everything validates at load time, with errors that name the problem and the fix.
+- **A finite language, with a priced way out** — the expressive ceiling is a closure (affine, relational, local), not a feature race; where the math is genuinely unsayable, an `escape:` island runs Python on a declared slice, visible in the file and billed before it runs. What is in, what is out, and why: [ROADMAP.md](ROADMAP.md).
 
 ## Use cases
 
@@ -33,11 +34,10 @@ flowchart LR
 Small-to-medium models, teaching, policy studies, reproducible research.
 
 ```python
-from linopy import Model
-import linopy_yaml  # registers .from_yaml and .yaml on linopy.Model
+import linopy_yaml as ly
 
-m = Model.from_yaml("dispatch.yaml", data={...}, coords={...})
-m.solve()
+sol = ly.solve("dispatch.yaml", sources={...})
+sol.objective
 ```
 
 ### 2. Add custom constraints to a Python-built model
@@ -45,7 +45,7 @@ m.solve()
 Packages like PyPSA build their core math in Python, and their users modify it at runtime through **callbacks** (`extra_functionality`). Callbacks are maximally flexible — but the modification is invisible in the results, the math hides inside indexing/wiring code, and a Python function is not a sharable artefact. When the modification *is just math* (most policy requirements, pilot technologies, sensitivity scenarios), a YAML file fixes all three: it reads as the inequality itself, in the model's own vocabulary, and travels as a diffable text file. If you need arbitrary Python in the loop, stay with the callback.
 
 ```python
-m.yaml.extend("ramp_constraint.yaml", data={"ramp_max": network.generators["ramp_max"]})
+compat.extend(m, "ramp_constraint.yaml", data={"ramp_max": network.generators["ramp_max"]})
 ```
 
 ```yaml
@@ -66,7 +66,7 @@ YAML diffs cleanly in review; colleagues without optimisation-Python experience 
 
 ### 4. Build models that don't fit in memory
 
-The streaming engine's home turf: a 107-million-variable dispatch model builds in ~0.6 GB. Expressions become tidy tables, masks become row absence, and the model streams to the solver in batches or to an LP file. Routing is automatic — schemas inside the streaming subset stream, everything else runs on the eager linopy fallback. See [ARCHITECTURE.md](ARCHITECTURE.md).
+The streaming engine's home turf: a 107-million-variable dispatch model builds in ~0.6 GB. Expressions become tidy tables, masks become row absence, and the model streams to the solver in batches or to an LP file. There is no routing and no fallback: the streaming subset *is* the language, and a construct outside it is a load error naming its rewrite. See [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Quick example
 
@@ -97,27 +97,26 @@ objectives:
 ```
 
 ```python
-from linopy import Model
-import linopy_yaml
+import linopy_yaml as ly
 import pandas as pd
 
-m = Model.from_yaml(
+sol = ly.solve(
     "dispatch.yaml",
-    data={
+    sources={
         "p_max": pd.Series({"wind": 100, "solar": 60, "gas": 200}),
         "load":  pd.Series([80, 120, 150, 180, 140, 100], name="snapshot"),
         "cost":  pd.Series({"wind": 0, "solar": 0, "gas": 50}),
+        "snapshot": pd.RangeIndex(6, name="snapshot"),
     },
-    coords={"snapshot": pd.RangeIndex(6, name="snapshot")},
 )
-m.solve()
+sol.objective
 ```
 
 ## The language
 
 YAML sections: `dimensions` · `parameters` · `variables` (incl. binary/integer) · `constraints` · `objectives` · `expressions` (named sub-expressions) · `macros` (parameterised templates) · `piecewise` (λ-formulation).
 
-Expressions: arithmetic, comparisons, `where` masks, `sum` / `group_sum` / `roll` / `shift`. Custom Python helpers via `@linopy_yaml.register` run on the eager fallback only — prefer `macros:` for anything expressible as a composition.
+Expressions: arithmetic, comparisons, `where` masks, `sum` / `group_sum` / `roll` / `shift`. The helper set is closed — there is no Python registry, so both lanes accept the same language. Compositions go in `macros:`; math the language cannot say goes in a declared, budgeted `escape:` island.
 
 [ARCHITECTURE.md](ARCHITECTURE.md) for how it fits together · [SPEC.md](SPEC.md) for the full specification.
 

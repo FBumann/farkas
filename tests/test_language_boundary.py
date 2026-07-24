@@ -48,19 +48,16 @@ def test_power_operator_is_a_load_error():
         lower_program(schema)
 
 
-def test_custom_helper_is_a_load_error_with_context():
-    from linopy_yaml.helpers import _REGISTRY
-
-    _REGISTRY['my_helper'] = lambda x, **kw: x
-    try:
-        schema = _schema(
-            **{'constraints.power_balance.equations': [{'expression': 'my_helper(p, over=generator) == load'}]}
-        )
-        with pytest.raises(RelationalBuildError, match='my_helper') as exc:
-            lower_program(schema)
-        assert 'power_balance' in str(exc.value)  # reason carries context
-    finally:
-        del _REGISTRY['my_helper']
+def test_unknown_helper_is_a_load_error_with_context():
+    schema = _schema(
+        **{'constraints.power_balance.equations': [{'expression': 'my_helper(p, over=generator) == load'}]}
+    )
+    with pytest.raises(RelationalBuildError, match='my_helper') as exc:
+        lower_program(schema)
+    reason = str(exc.value)
+    assert 'power_balance' in reason  # reason carries context
+    assert 'escape' in reason  # ...and the rewrite, not a pointer to another lane
+    assert 'eager' not in reason.lower()
 
 
 def test_dimension_where_comparison_is_a_load_error():

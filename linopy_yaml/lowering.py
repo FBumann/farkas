@@ -6,10 +6,12 @@ a :class:`~linopy_yaml.relational.ir.Program`. It lives on the language side —
 the engine subpackage stays free of YAML knowledge, and this module never
 imports the eager builder.
 
-v0 language subset: foreach, where, arithmetic (+ - * /), sum, group_sum,
-comparison. `roll`, custom helpers, `**`, and binary/integer variables raise
-:class:`~linopy_yaml.relational.executor.RelationalBuildError` with a pointer
-to the eager backend.
+Covered: foreach, where, arithmetic (+ - * /), sum, group_sum, roll, shift,
+comparison, and binary/integer variables (vtype). Constructs with no lowering
+raise :class:`~linopy_yaml.relational.executor.RelationalBuildError` naming
+the construct and its rewrite — never a pointer to another backend: the two
+lanes accept the same language, and a rejection here is a language gap
+(ROADMAP.md), not a routing decision.
 
 Semantics mirror the eager builder exactly:
 - ``sum(x, over=d)`` where ``x`` does not carry dim ``d`` is a no-op;
@@ -33,6 +35,7 @@ from linopy_yaml.expression_parser import (
     NumberNode,
     UnaryOpNode,
 )
+from linopy_yaml.helpers import BUILTIN_NAMES
 from linopy_yaml.relational import ir
 from linopy_yaml.relational.executor import RelationalBuildError
 from linopy_yaml.where_parser import (
@@ -284,9 +287,10 @@ def _lower_expr(node: ArithNode, schema: MathSchema, context: str) -> ir.Expr:
             return ir.Shift(inner, dim, sign * int(shift_node.value), wrap=wrap)
 
         raise RelationalBuildError(
-            f"{context}: helper '{node.name}' is not supported by the relational "
-            f"backend (v0 supports 'sum', 'group_sum', and 'roll') — use the "
-            f'eager backend'
+            f"{context}: helper '{node.name}' has no lowering. The language's "
+            f'helpers are {sorted(BUILTIN_NAMES)}; compositions of them '
+            f"belong in 'macros:'. Math outside the language belongs in a "
+            f"declared 'escape:' island, not in a helper."
         )
 
     assert_never(node)
@@ -348,8 +352,10 @@ def _lower_where_node(node: WhereNode, schema: MathSchema, context: str) -> ir.P
             return ir.Cmp(node.name, node.op, node.value)  # type: ignore[arg-type]
         if node.name in schema.dimensions:
             raise RelationalBuildError(
-                f"{context}: where-comparisons on dimension '{node.name}' are not "
-                f'supported by the relational backend (v0) — use the eager backend'
+                f"{context}: where-comparisons on dimension '{node.name}' have no "
+                f'lowering yet. Rewrite the condition as data: declare a boolean '
+                f"parameter over '{node.name}' (e.g. is_first / in_window) and test "
+                f'that instead. Tracked as a language-parity gap in ROADMAP.md.'
             )
         raise RelationalBuildError(f"{context}: where references '{node.name}', which is not a declared parameter")
 

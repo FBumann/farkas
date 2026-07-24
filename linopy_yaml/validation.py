@@ -36,7 +36,6 @@ def validate_expressions(
     schema: MathSchema,
     *,
     known_variables: Iterable[str] = (),
-    known_parameters: Iterable[str] = (),
 ) -> None:
     """Validate all expression and where strings in *schema*.
 
@@ -45,17 +44,18 @@ def validate_expressions(
     - the expression parses;
     - constraints contain exactly one comparison, objectives none;
     - every referenced name is a declared variable or parameter;
-    - every helper function is registered;
+    - every helper function is a built-in;
     - where strings (constraint-, equation-, and variable-level) parse.
 
     Parameters
     ----------
     schema : MathSchema
         The schema to validate.
-    known_variables, known_parameters : Iterable[str]
+    known_variables : Iterable[str]
         Names valid in addition to those declared in *schema* — used by
-        ``extend()``, where expressions may reference variables and
-        parameters already present on the model.
+        ``compat.extend()``, where expressions may reference variables
+        already present on the model. Parameters get no such widening: a
+        YAML file declares every parameter it uses (hard rule 5).
 
     Raises
     ------
@@ -63,7 +63,7 @@ def validate_expressions(
         Listing every problem found, one per line.
     """
     variables = set(schema.variables) | set(known_variables)
-    parameters = set(schema.parameters) | set(known_parameters)
+    parameters = set(schema.parameters)
 
     errors: list[str] = []
 
@@ -175,7 +175,7 @@ def _check_names(
     parameters: set[str],
     errors: list[str],
 ) -> None:
-    """Collect unknown names and unregistered helpers under *node*."""
+    """Collect unknown names and unknown helpers under *node*."""
     if isinstance(node, NumberNode):
         return
 

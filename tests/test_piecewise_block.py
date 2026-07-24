@@ -18,9 +18,8 @@ duckdb = pytest.importorskip('duckdb')
 highspy = pytest.importorskip('highspy')
 
 import yaml as pyyaml  # noqa: E402
-from linopy import Model  # noqa: E402
 
-import linopy_yaml  # noqa: F401, E402 — registers .from_yaml on linopy.Model
+from linopy_yaml import compat  # noqa: E402
 from linopy_yaml.lowering import lower_program, tidy_sources  # noqa: E402
 from linopy_yaml.piecewise import (  # noqa: E402
     PiecewiseExpansionError,
@@ -94,7 +93,7 @@ def test_nonconvex_on_curve_differential(nonconvex_inputs, tmp_path):
     yaml_path = tmp_path / 'pw.yaml'
     yaml_path.write_text(NONCONVEX_YAML)
 
-    m = Model.from_yaml(yaml_path, data=data, coords=coords)
+    m = compat.build(yaml_path, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     oracle = float(m.objective.value)
     expected = sum(curve(v, data['bp_x'], data['bp_y']) for v in data['load'])
@@ -124,7 +123,7 @@ def test_convex_flag_gives_hull(nonconvex_inputs, tmp_path):
     program = lower_program(schema)  # inside the streaming language (pure LP)
     assert all(v.vtype == 'continuous' for v in program.variables)
 
-    m = Model.from_yaml(yaml_path, data=data, coords=coords)
+    m = compat.build(yaml_path, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     on_curve = sum(curve(v, data['bp_x'], data['bp_y']) for v in data['load'])
     chord = sum(0.55 * v for v in data['load'])  # (100, 55) chord from origin
@@ -188,7 +187,7 @@ def test_chp_three_links(tmp_path):
 
     yaml_path = tmp_path / 'chp.yaml'
     yaml_path.write_text(CHP_YAML)
-    m = Model.from_yaml(yaml_path, data=data, coords=coords)
+    m = compat.build(yaml_path, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     oracle = float(m.objective.value)
     assert np.isfinite(oracle)
@@ -298,7 +297,7 @@ def test_active_gating(nonconvex_inputs, tmp_path):
 
     yaml_path = tmp_path / 'gated.yaml'
     yaml_path.write_text(GATED_YAML)
-    m = Model.from_yaml(yaml_path, data=data, coords=coords)
+    m = compat.build(yaml_path, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     oracle = float(m.objective.value)
     assert np.isfinite(oracle)
@@ -397,7 +396,7 @@ def test_example_per_generator_curves(tmp_path):
     schema = MathSchema(**pyyaml.safe_load(Path(example).read_text()))
     lower_program(schema)  # inside the streaming language (convex: pure LP)
 
-    m = Model.from_yaml(example, data=data, coords=coords)
+    m = compat.build(example, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     oracle = float(m.objective.value)
     assert np.isfinite(oracle)

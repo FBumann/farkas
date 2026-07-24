@@ -1,7 +1,7 @@
 """Phase-3 gate: YAML lowers to the IR and matches the eager backend.
 
 The dispatch example YAML runs through both backends with the same data:
-eager `Model.from_yaml(...).solve()` is the oracle; the lowered Program
+eager `compat.build(...).solve()` is the oracle; the lowered Program
 executes on DuckdbExecutor via solver_direct and the lp_file sink.
 """
 
@@ -17,9 +17,8 @@ duckdb = pytest.importorskip('duckdb')
 highspy = pytest.importorskip('highspy')
 
 import yaml as pyyaml  # noqa: E402
-from linopy import Model  # noqa: E402
 
-import linopy_yaml  # noqa: F401, E402 — registers .from_yaml on linopy.Model
+from linopy_yaml import compat  # noqa: E402
 from linopy_yaml.lowering import lower_program, tidy_sources  # noqa: E402
 from linopy_yaml.relational import (  # noqa: E402
     Bool,
@@ -64,7 +63,7 @@ def test_dispatch_yaml_differential(dispatch_schema, dispatch_inputs, tmp_path):
     data, coords = dispatch_inputs
 
     # oracle: the eager backend
-    m = Model.from_yaml(DISPATCH_YAML, data=data, coords=coords)
+    m = compat.build(DISPATCH_YAML, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     oracle = float(m.objective.value)
     assert np.isfinite(oracle)

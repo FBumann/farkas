@@ -11,6 +11,7 @@ import pandas as pd
 import pytest
 import yaml as pyyaml
 
+from linopy_yaml import compat
 from linopy_yaml.expansion import parse_and_expand
 from linopy_yaml.expression_parser import parse_expression
 from linopy_yaml.schema import MathSchema
@@ -210,7 +211,6 @@ def test_macro_templates_validated_even_when_unused():
 def test_differential_named_expression_and_macro(tmp_path):
     duckdb = pytest.importorskip('duckdb')  # noqa: F841
     highspy = pytest.importorskip('highspy')  # noqa: F841
-    from linopy import Model
 
     from linopy_yaml.lowering import lower_program, tidy_sources
     from linopy_yaml.relational import DuckdbExecutor
@@ -261,7 +261,7 @@ objectives:
     }
     coords = {'snapshot': pd.RangeIndex(n_s, name='snapshot')}
 
-    m = Model.from_yaml(yaml_file, data=data, coords=coords)
+    m = compat.build(yaml_file, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     oracle = float(m.objective.value)
     assert np.isfinite(oracle)
@@ -274,23 +274,37 @@ objectives:
         assert sol.objective == pytest.approx(oracle, rel=1e-9)
 
 
-def test_python_helper_still_eager_only():
-    # arbitrary-Python helpers keep working on the eager path and are
-    # rejected with a clear message by the relational backend
-    from linopy_yaml.compat import register  # eager-only registry lives in the compat lane
-    from linopy_yaml.lowering import _lower_expr
-    from linopy_yaml.relational import RelationalBuildError
+def test_no_python_helper_registry():
+    """The helper set is closed — there is no way to register more.
 
-    @register('my_python_helper')
-    def my_python_helper(array):  # pragma: no cover - never executed here
-        return array
+    This is what makes the two lanes accept the same language, and hence what
+    makes the differential tests an oracle rather than a comparison of
+    dialects (ARCHITECTURE.md, "The expressive ceiling").
+    """
+    import linopy_yaml
+    import linopy_yaml.helpers as helpers
 
-    try:
-        schema = make_schema()
-        ast = parse_and_expand('my_python_helper(p)', schema)
-        with pytest.raises(RelationalBuildError, match='my_python_helper'):
-            _lower_expr(ast, schema, 't')
-    finally:
-        from linopy_yaml.helpers import _REGISTRY
+    assert not hasattr(helpers, 'register')
+    assert not hasattr(helpers, '_REGISTRY')
+    assert not hasattr(linopy_yaml, 'register')
 
-        _REGISTRY.pop('my_python_helper', None)
+
+def test_unknown_helper_rejected_at_load_time_with_the_rewrite():
+    """An unknown helper fails validation, before either backend is chosen."""
+    schema = make_schema(
+        constraints={
+            'c': {
+                'foreach': ['snapshot'],
+                'equations': [{'expression': 'my_python_helper(p) <= load'}],
+            }
+        }
+    )
+    with pytest.raises(ValueError) as exc:
+        validate_expressions(schema)
+
+    message = str(exc.value)
+    assert 'my_python_helper' in message
+    # the rejection teaches the rewrite instead of pointing at another backend
+    assert 'macros:' in message
+    assert 'escape' in message
+    assert 'eager' not in message.lower()

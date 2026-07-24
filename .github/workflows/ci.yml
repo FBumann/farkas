@@ -28,7 +28,7 @@ jobs:
       - run: uv run --no-sync pytest -q
 
   full:
-    # dev group (incl. oracle deps): lint, format, differential tests.
+    # dev group (incl. linopy/xarray for the oracle): lint, format, differential tests.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:

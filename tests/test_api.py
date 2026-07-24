@@ -182,5 +182,9 @@ def test_solution_context_manager_and_to_parquet(dispatch_yaml, dispatch_inputs,
         sol.primal('p')
 
 
-def test_register_moved_to_compat():
+def test_no_helper_registry_anywhere():
+    """The Python helper registry is gone from every surface (#38 replaces it)."""
+    import linopy_yaml.helpers as helpers
+
     assert not hasattr(ly, 'register')
+    assert not hasattr(helpers, 'register')

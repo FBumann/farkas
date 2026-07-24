@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 from linopy import Model
 
-import linopy_yaml  # noqa: F401 — registers .from_yaml / .yaml on linopy.Model
+from linopy_yaml import compat
 from linopy_yaml.schema import MathSchema
 from linopy_yaml.validation import validate_expressions
 
@@ -110,6 +110,7 @@ class TestValidateExpressions:
         schema = MathSchema.model_validate(
             {
                 'dimensions': {'g': {'values': ['wind', 'solar']}},
+                'parameters': {'p_max': {'dims': ['g']}},
                 'constraints': {
                     'cap': {
                         'foreach': ['g'],
@@ -120,7 +121,7 @@ class TestValidateExpressions:
         )
         with pytest.raises(ValueError, match="'p' not found"):
             validate_expressions(schema)
-        validate_expressions(schema, known_variables=['p'], known_parameters=['p_max'])
+        validate_expressions(schema, known_variables=['p'])
 
 
 class TestLoadTimeIntegration:
@@ -141,7 +142,7 @@ class TestLoadTimeIntegration:
             '      - expression: pp <= 100\n'
         )
         with pytest.raises(ValueError, match="'pp' not found"):
-            Model.from_yaml(f)
+            compat.build(f)
 
     def test_extend_sees_existing_model_variables(self, tmp_path):
         """An extension may reference variables already on the model."""
@@ -159,7 +160,7 @@ class TestLoadTimeIntegration:
             '    equations:\n'
             '      - expression: p <= 100\n'
         )
-        model.yaml.extend(f)
+        compat.extend(model, f)
         assert 'cap' in model.constraints
 
     def test_extend_flags_unknown_variable(self, tmp_path):
@@ -176,4 +177,4 @@ class TestLoadTimeIntegration:
             '      - expression: p <= 100\n'
         )
         with pytest.raises(ValueError, match="'p' not found"):
-            model.yaml.extend(f)
+            compat.extend(model, f)

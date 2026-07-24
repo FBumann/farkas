@@ -4,13 +4,9 @@ from __future__ import annotations
 
 import pandas as pd
 import pytest
-import xarray as xr
 from linopy import Model
 
-import linopy_yaml  # noqa: F401 — registers .from_yaml / .yaml on linopy.Model
-from linopy_yaml._patch import _ACCESSOR_REGISTRY
-from linopy_yaml.accessor import YamlAccessor
-from linopy_yaml.schema import MathSchema
+from linopy_yaml import compat
 
 
 def _has_note(exc: BaseException, substring: str) -> bool:
@@ -30,7 +26,7 @@ def test_from_yaml_malformed_where_fails_at_load(tmp_path):
     )
 
     with pytest.raises(ValueError, match='Failed to parse where string') as ei:
-        Model.from_yaml(bad)
+        compat.build(bad)
 
     assert "Variable 'p'" in str(ei.value)
     assert _has_note(ei.value, f"while loading YAML '{bad}'")
@@ -53,7 +49,7 @@ def test_from_yaml_missing_comparison_fails_at_load(tmp_path):
     )
 
     with pytest.raises(ValueError, match='exactly one comparison') as ei:
-        Model.from_yaml(bad)
+        compat.build(bad)
 
     assert "Constraint 'c'" in str(ei.value)
     assert _has_note(ei.value, f"while loading YAML '{bad}'")
@@ -75,7 +71,7 @@ def test_from_yaml_objective_comparison_fails_at_load(tmp_path):
     )
 
     with pytest.raises(ValueError, match='must not contain a comparison') as ei:
-        Model.from_yaml(bad)
+        compat.build(bad)
 
     assert "Objective 'obj'" in str(ei.value)
     assert _has_note(ei.value, f"while loading YAML '{bad}'")
@@ -98,7 +94,7 @@ def test_build_failure_attaches_constraint_note(tmp_path):
     )
 
     with pytest.raises(TypeError) as ei:
-        Model.from_yaml(bad)
+        compat.build(bad)
 
     assert _has_note(ei.value, "while building constraint 'c'")
     assert _has_note(ei.value, f"while loading YAML '{bad}'")
@@ -107,12 +103,7 @@ def test_build_failure_attaches_constraint_note(tmp_path):
 def test_extend_attaches_path_note(tmp_path):
     """A failure inside extend() carries the extension YAML path."""
     model = Model()
-    _ACCESSOR_REGISTRY[model] = YamlAccessor(
-        model,
-        schema=MathSchema.model_validate({}),
-        dataset=xr.Dataset(),
-        coords={'time': pd.Index([0, 1, 2, 3], name='time')},
-    )
+    model.add_variables(name='p', coords=[pd.Index([0, 1, 2, 3], name='time')])
 
     ext = tmp_path / 'ext.yaml'
     ext.write_text(
@@ -120,6 +111,6 @@ def test_extend_attaches_path_note(tmp_path):
     )
 
     with pytest.raises(ValueError) as ei:
-        model.yaml.extend(ext)
+        compat.extend(model, ext)
 
     assert _has_note(ei.value, f"while extending with YAML '{ext}'")

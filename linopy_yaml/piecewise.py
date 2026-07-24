@@ -181,7 +181,7 @@ def validate_piecewise_data(schema: MathSchema, values: Mapping[str, Any] | Any)
         except ImportError as exc:
             msg = (
                 f"piecewise '{name}': convex curvature validation currently "
-                f'requires xarray — pip install "linopy-yaml[oracle]" '
+                f'requires xarray — pip install "linopy-yaml[compat]" '
                 f'(see issue #27: make this check numpy-only)'
             )
             raise ModuleNotFoundError(msg) from exc

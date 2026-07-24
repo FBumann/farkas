@@ -19,9 +19,8 @@ duckdb = pytest.importorskip('duckdb')
 highspy = pytest.importorskip('highspy')
 
 import yaml as pyyaml  # noqa: E402
-from linopy import Model  # noqa: E402
 
-import linopy_yaml  # noqa: F401, E402 — registers .from_yaml on linopy.Model
+from linopy_yaml import compat  # noqa: E402
 from linopy_yaml.lowering import lower_program, tidy_sources  # noqa: E402
 from linopy_yaml.relational import (  # noqa: E402
     DuckdbExecutor,
@@ -69,7 +68,7 @@ def test_transport_yaml_differential(transport_data, tmp_path):  # noqa: F811
     assert np.isfinite(oracle)
 
     # eager backend through the YAML group_sum helper
-    m = Model.from_yaml(TRANSPORT_YAML, data=data, coords=coords)
+    m = compat.build(TRANSPORT_YAML, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     assert float(m.objective.value) == pytest.approx(oracle, rel=RTOL)
 

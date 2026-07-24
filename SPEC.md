@@ -71,24 +71,21 @@ objectives:
 Python call site:
 
 ```python
-import linopy_yaml
-from linopy import Model
+import linopy_yaml as ly
 import pandas as pd
 
-m = Model.from_yaml(
+sol = ly.solve(
     "dispatch.yaml",
-    data={
+    sources={
         "p_max": pd.Series({"wind": 100, "solar": 60, "gas": 200}),
         "load":  pd.Series([80, 120, 150, 180, 140, 100], name="snapshot"),
         "cost":  pd.Series({"wind": 0, "solar": 0, "gas": 50}),
-    },
-    coords={
         "snapshot": pd.RangeIndex(6, name="snapshot"),
     },
 )
 
-m.solve()
-print(m.solution["p"])
+print(sol.objective)
+print(sol.primal("p"))
 ```
 
 ### Design principles
@@ -102,28 +99,25 @@ print(m.solution["p"])
 
 ## 2. Relationship to linopy
 
-`linopy_yaml` is a **pure consumer of linopy's public API**. It calls `model.add_variables()`, `model.add_constraints()`, and `model.add_objective()` — nothing else. It does not subclass or depend on linopy internals.
+`linopy_yaml` does not need linopy to build or solve a model: the product path is YAML → AST → streaming engine → solver. linopy is reached only through the opt-in shim `linopy_yaml.compat` (the `[compat]` extra), which serves two narrow jobs:
 
-At import time, `linopy_yaml` monkey-patches `linopy.Model` with two additions:
+1. **Python math the language cannot say** — build or extend a model in linopy, where arbitrary Python is available.
+2. **Parity checking** — every language feature is differentially tested by running the same YAML + data through both the shim and the streaming engine. That is only meaningful because both accept *exactly* the same language.
 
-- `Model.from_yaml(path, data=..., coords=...)` — builds a model from a YAML file
-- `model.yaml` — accessor available on any `linopy.Model`, lazy-initialised on first access
+Where it is used, it is a **pure consumer of linopy's public API**: it calls `model.add_variables()`, `model.add_constraints()`, and `model.add_objective()` — nothing else. It does not subclass linopy, patch it, or depend on its internals.
 
-The result of `from_yaml()` is a plain `linopy.Model`. The YAML metadata is stored externally in a `WeakKeyDictionary` keyed by model, exposed through a class-level descriptor. This relies on `Model.__weakref__` being available, which has been the case since linopy v0.7 (PyPSA/linopy#656).
+```python
+from linopy_yaml import compat
 
-One limitation worth flagging: the accessor link is not preserved across `pickle` or `copy.deepcopy`. A reconstructed model has no entry in the registry, so the first `.yaml` access lazily produces a fresh, empty accessor. The full model state (variables, constraints, solution) is unaffected — only the YAML schema/dataset are lost.
-
-`.yaml` describes only the **YAML-managed portion** of the model, never the whole model. Python-side additions via `m.add_variables()`, `m.add_constraints()`, etc. are always outside `.yaml`. The source of truth for the full model is the linopy model itself (`m.variables`, `m.constraints`).
-
+m = compat.build("model.yaml", data={...}, coords={...})   # -> linopy.Model
+compat.extend(m, "ramp.yaml", data={...})                  # YAML math onto an existing model
 ```
-linopy.Model                      (unchanged — all solving, variable/constraint storage, etc.)
-    ├── .from_yaml()              (monkey-patched — builds model from YAML + data)
-    └── .yaml                     (monkey-patched descriptor — lazy-initialised on any model)
-         ├── .schema              (MathSchema, or None if no YAML has been loaded)
-         ├── .dataset             (xr.Dataset of loaded parameters; empty for Python-built models)
-         ├── .coords              (master coordinate dict — live inference + declared coords)
-         └── .extend()            (extend with another YAML file; available on any model)
-```
+
+Both functions are **pure producers**: YAML goes in, a model comes out, and nothing is retained — no accessor, no session, no state attached to the model. The returned object is a plain `linopy.Model` and stands for itself. Consequences worth stating:
+
+- A file's meaning never depends on what was loaded before it (hard rule 5). Every YAML declares the parameters it uses, and the caller supplies that data per call.
+- `extend()` may reference variables already on the model — those come from the model argument, not from Python-side history — and infers coordinates from `model.variables.indexes`.
+- Nothing is lost across `pickle`, `deepcopy`, or `to_netcdf`, because nothing is attached. To inspect the math, re-read the file with `ly.load_schema(path)`.
 
 ### Why a separate package?
 
@@ -435,7 +429,7 @@ The tradeoff is verbosity: users must declare every parameter they intend to pas
 
 Before any parameter is loaded, a master coordinate index is assembled for every dimension. Sources, in order of precedence:
 
-1. `coords=` kwarg passed to `from_yaml()` — highest priority, overrides everything.
+1. `coords=` kwarg passed to the loading call — highest priority, overrides everything.
 1. `values:` declared in the YAML under `dimensions.dim_name`.
 1. If neither is present for a declared dimension, loading raises immediately.
 
@@ -446,7 +440,7 @@ dimensions:
     values: [wind, solar, gas]
 
 # Values via coords= (overrides YAML values if both present)
-m = Model.from_yaml("model.yaml", data={...}, coords={
+m = compat.build("model.yaml", data={...}, coords={
     "snapshot": pd.date_range("2024-01-01", periods=24, freq="h"),
 })
 ```
@@ -476,7 +470,7 @@ Validation happens in this order at load time. Each step fails immediately if it
 **Step 1: Dimension coords**
 
 - Every declared dimension has a value source (YAML or `coords=`).
-- Error: `"Dimension '{name}' has no values. Declare them under 'dimensions.{name}.values' in the YAML or pass coords={{'{name}': [...]}} to from_yaml()."`
+- Error: `"Dimension '{name}' has no values. Declare them under 'dimensions.{name}.values' in the YAML or pass coords={{'{name}': [...]}}."`
 
 **Step 2: Parameter presence**
 
@@ -764,33 +758,23 @@ constraint's `foreach` should be covered by the mapping — groups absent from
 the mapping produce no output rows. The relational backend treats absent
 groups as zero contribution.
 
-### 7.5 Custom helper functions
+### 7.5 The helper set is closed
 
-> **Prefer `macros:` (§3.7) for anything expressible as a composition of built-ins** — macros keep the YAML self-contained and work on both backends. Python helpers execute arbitrary code against xarray/linopy objects and are therefore **eager-only**: the relational backend rejects them and the router falls back with that reason.
+There is **no Python helper registry**. The built-ins above are the whole set, and both lanes therefore accept exactly the same language — which is what makes the differential tests an oracle rather than a comparison of two dialects (ARCHITECTURE.md, hard rule 3).
 
-Register additional helpers at module load time using the `@linopy_yaml.register` decorator:
+Two routes replace it, in this order:
 
-```python
-import linopy_yaml
+1. **`macros:` (§3.7)** for anything expressible as a composition of built-ins. Macros are parameterised, schema-local, expanded to core AST before dispatch, and cost nothing on either lane.
 
-@linopy_yaml.register("weighted_sum")
-def weighted_sum(array, weights, *, over):
-    """sum(array * weights, over=dim)"""
-    return (array * weights).sum(over)
-```
+   ```yaml
+   macros:
+     weighted_sum:
+       args: [array, weights]
+       kwargs: [over]
+       template: sum(array * weights, over=over)
+   ```
 
-Then use in YAML:
-
-```yaml
-expression: weighted_sum(p, duration, over=snapshot) <= energy_budget
-```
-
-**Rules for custom helpers:**
-
-- The name must not conflict with built-in helpers.
-- Positional arguments receive evaluated values (DataArrays or linopy expressions).
-- Keyword arguments receive either evaluated values or bare strings (for dimension names).
-- The function must return something that linopy can handle in the context it is used (DataArray for pure parameter operations, LinearExpression if it involves variables).
+2. **A declared `escape:` island** ([#38](https://github.com/FBumann/linopy-yaml/issues/38)) when the math is not sayable in the language at all. Unlike a registered helper — which read like a built-in on the page and left the file dependent on invisible Python state — an escape names its module path in the YAML, is bounded by the `where` mask that precedes it, is terminal (it yields a constraint, never a sub-expression), and is billed against a label budget before any Python runs.
 
 -----
 
@@ -811,7 +795,7 @@ expression: weighted_sum(p, duration, over=snapshot) <= energy_budget
 ```
 Dimension 'snapshot' has no values.
 Declare them under 'dimensions.snapshot.values' in the YAML
-or pass coords={'snapshot': [...]} to from_yaml().
+or pass coords={'snapshot': [...]}.
 ```
 
 **Missing required parameter:**
@@ -856,114 +840,75 @@ Check for typos, or ensure 'p_charge' is declared as a variable or parameter.
 
 ```
 Unknown helper function 'weighted_sum' in expression 'weighted_sum(p, over=generator)'.
-Available built-ins: ['roll', 'sum']
-Register custom helpers with @linopy_yaml.register('weighted_sum').
+Available: ['group_sum', 'roll', 'shift', 'sum']
+Define 'weighted_sum' as a macro under 'macros:' if it composes built-ins; if the math is
+not sayable in the language, use a declared escape.
 ```
 
 -----
 
 ## 9. Python API
 
-`linopy_yaml` monkey-patches `linopy.Model` at import time. Importing the package adds:
+The product surface is the native, linopy-free API. The compat shim is opt-in
+and exists for Python math the language cannot say, and for parity checking.
 
-- `Model.from_yaml()` — static method to build a model from YAML
-- `model.yaml` — accessor on instances built from YAML
-
-No subclassing. The result of `from_yaml()` is a plain `linopy.Model`.
-
-### 9.1 `Model.from_yaml()`
+### 9.1 Native API (`linopy_yaml`)
 
 ```python
-import linopy_yaml  # registers Model.from_yaml() and model.yaml accessor
-from linopy import Model
+import linopy_yaml as ly
 
-m = Model.from_yaml(
-    "dispatch.yaml",
-    data={...},
-    coords={...},
-)
+ly.check("model.yaml")                       # validate, no data needed
+schema = ly.load_schema("model.yaml")        # MathSchema
+sol = ly.solve("model.yaml", sources={...})  # build + stream + solve
+ly.write_lp("model.yaml", "model.lp", sources={...})
 ```
 
-**Parameters:**
+`sources` maps parameter and dimension names to parquet paths, pandas objects,
+or scalars. Nothing in this path imports linopy.
 
-| Parameter | Type             | Description                                                                                                                                                          |
-|-----------|------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `path`    | `str` or `Path`  | Path to the YAML file.                                                                                                                                               |
-| `data`    | `dict` or `None` | Parameter data. Keys are parameter names as declared in the YAML. See [Section 4.3](#43-accepted-input-types-per-parameter) for accepted value types.                |
-| `coords`  | `dict` or `None` | Dimension coordinate values. Keys are dimension names. Values are anything accepted by `pd.Index()`. Overrides `values` declared in the YAML for the same dimension. |
+### 9.2 Compat shim (`linopy_yaml.compat`, `[compat]` extra)
 
-**Returns:** A `linopy.Model` with the `.yaml` accessor eagerly populated (schema, dataset, declared coords). Call `.solve()` as normal.
-
-**Raises:** `ValueError` with descriptive message for any validation failure. `pydantic.ValidationError` if the YAML structure is invalid.
-
-### 9.2 `model.yaml` accessor
-
-Available on any `linopy.Model`. On models not built via `from_yaml()`, the accessor is lazy-initialised on first access with an empty schema and dataset; subsequent accesses return the same accessor object.
-
-`.yaml` covers only the YAML-managed portion of the model, never the whole model. The contract is consistent across all construction paths:
-
-| How the model was built          | `.yaml` covers           |
-|----------------------------------|--------------------------|
-| `from_yaml()` only               | everything               |
-| `from_yaml()` + Python additions | the YAML portion         |
-| Python only                      | nothing (empty accessor) |
-| Python + `extend()`              | the `extend()` portion   |
+Two functions, both **pure producers** — YAML in, model out, nothing retained:
 
 ```python
-m.yaml.schema      # MathSchema or None — None if no YAML has been loaded
-m.yaml.dataset     # xr.Dataset of loaded parameters; empty for Python-built models
-m.yaml.coords      # dict[str, pd.Index] — live inference + declared coords
-m.yaml.extend(path, data=..., coords=...)  # extend with another YAML file
+from linopy_yaml import compat
+
+m = compat.build("model.yaml", data={...}, coords={...})   # -> linopy.Model
+compat.extend(m, "ramp.yaml", data={...})                  # mutates m in place
 ```
 
-**Attribute behaviour by construction path:**
+| Parameter | Type             | Description |
+|-----------|------------------|-------------|
+| `path`    | `str` or `Path`  | Path to the YAML file. |
+| `data`    | `dict` or `None` | Parameter data. Keys are parameter names as declared in *this* YAML. See [Section 4.3](#43-accepted-input-types-per-parameter) for accepted value types. |
+| `coords`  | `dict` or `None` | Dimension coordinate values. Anything accepted by `pd.Index()`. Overrides `values:` declared in the YAML. |
 
-| Attribute    | Python-built model              | YAML-built model       |
-|--------------|---------------------------------|------------------------|
-| `.schema`    | `None` (until first `extend()`) | `MathSchema`           |
-| `.dataset`   | `xr.Dataset()` (empty)          | populated `xr.Dataset` |
-| `.coords`    | live inference from variables   | YAML + `coords=`       |
-| `.extend()`  | available                       | available              |
+`build()` returns a plain `linopy.Model` — no accessor, no attached schema, no
+patched attributes. It stands for itself: solve, inspect, pickle, or
+`to_netcdf` it exactly like a hand-written model. To inspect the math, re-read
+the file with `ly.load_schema(path)`.
 
-**`model.yaml.schema`** — Programmatic access to the YAML definition. `None` until at least one YAML file has been loaded (via `from_yaml()` or `extend()`):
-
-```python
-m.yaml.schema.variables["p"].foreach   # ['snapshot', 'generator']
-m.yaml.schema.parameters["load"].dims  # ['snapshot']
-```
-
-**`model.yaml.dataset`** — The loaded parameter dataset. Empty `xr.Dataset()` for models that have not loaded any YAML:
-
-```python
-m.yaml.dataset["p_max"]    # xr.DataArray indexed over generator
-m.yaml.dataset["load"]     # xr.DataArray indexed over snapshot
-```
-
-**`model.yaml.coords`** — Live computed view: every access re-unions the coordinates of all variables currently on the model (via linopy's `model.variables.indexes`) and overlays explicitly declared coords (from YAML `values:` or a `coords=` kwarg). Variables added to the model between two accesses appear immediately on the second.
-
-**`model.yaml.extend(path, *, data=None, coords=None)`** — Add variables, constraints, and/or objectives from another YAML file. Available on any model — including Python-built ones — because `.yaml` lazy-initialises on first access. The extension YAML may reference dimensions and parameters already present in the model.
+`extend()` adds variables, constraints, and/or objectives to an existing
+model. Expressions may reference variables already on the model — those come
+from the model argument, not from Python-side history — and the YAML must
+declare every parameter it uses, with this call supplying that data.
 
 **Coords precedence for `extend()`** (highest first):
 
 1. `coords=` kwarg to this call
-2. Coords already declared by prior YAML or prior `coords=` kwarg
-3. Coords inferred from existing model variables
-4. `values:` declared in the extension YAML
-5. Error if none of the above resolve a referenced dim
+2. coords inferred from the model's existing variables
+3. `values:` declared in this YAML
+4. error if none of the above resolve a referenced dim
 
-If the extension YAML declares `values:` for a dim that is already known by any of (2) or (3), the values must match. Silent override would hide real bugs.
+If the YAML declares `values:` for a dim the model already has, they must
+match. Silent override would hide real bugs.
 
-### 9.3 `@linopy_yaml.register(name)`
+**Raises:** `ValueError` with a descriptive message for any validation
+failure; `pydantic.ValidationError` if the YAML structure is invalid.
 
-Decorator to register a custom helper function. Must be called before `Model.from_yaml()`.
+### 9.3 No helper-registration API
 
-```python
-import linopy_yaml
-
-@linopy_yaml.register("weighted_sum")
-def weighted_sum(array, weights, *, over):
-    return (array * weights).sum(over)
-```
+Removed. There is no `register()` decorator and no helper registry: the built-in set is closed so that both lanes accept the same language (§7.5, ARCHITECTURE.md hard rule 3). Compositions go in `macros:`; unsayable math goes in a declared `escape:` island ([#38](https://github.com/FBumann/linopy-yaml/issues/38)).
 
 -----
 
@@ -971,17 +916,21 @@ def weighted_sum(array, weights, *, over):
 
 **Time series processing.** Resampling, clustering, interpolation, and alignment of time series data are not handled by `linopy_yaml`. Users should preprocess their data before passing it in.
 
-**Data loading from files.** The package does not read CSV, Parquet, NetCDF, or any other file formats. Users load their data into pandas/xarray objects using whatever tools they prefer, then pass those objects to `from_yaml()`.
+**Data loading from files.** The package does not read CSV, Parquet, NetCDF, or any other file formats. Users load their data into pandas/xarray objects using whatever tools they prefer, then pass those objects in.
 
-**Solver configuration.** Solver selection, options, and result parsing are handled by linopy directly. `linopy_yaml` does not wrap `.solve()` or modify solver behaviour.
+**Solver configuration.** Solver selection, options, and result parsing are deliberately thin: the native path exposes what the streaming sinks support (see [#28](https://github.com/FBumann/linopy-yaml/issues/28)); the compat shim leaves solving to linopy entirely.
 
-**Piecewise linear constraints, SOS constraints.** These are linopy features but are not exposed through the YAML interface in v1.
+**SOS constraints.** Not exposed through the YAML interface. (Piecewise-linear relationships *are* — see §3.6 `piecewise` — via λ-formulation expansion; a native SOS2 stream is tracked in [#23](https://github.com/FBumann/linopy-yaml/issues/23).)
 
 **Multiple objectives / multi-objective optimisation.** Only one objective is added to the linopy model. Defining multiple objectives in YAML is not an error, but only the last one takes effect.
 
 **Schema migrations.** No tooling is provided for migrating YAML files between versions of the schema.
 
-**LaTeX rendering.** A `Model.to_latex(constraint_name)` method is a planned v2 feature, but not committed for v1.
+**LaTeX rendering.** Not in v1. Now a committed direction rather than a maybe: it is an AST consumer with no backend tax — see [ROADMAP.md](ROADMAP.md) Track 3.
+
+**Feature parity with other declarative math languages.** Calliope's math language (and the Calliope-derived port on linopy's `feature/declarative-yaml-interface` branch) is a **corpus we score coverage against, not a specification we match**. Constructs of theirs that fall outside the expressive ceiling in [ARCHITECTURE.md](ARCHITECTURE.md#the-expressive-ceiling) are out of scope by construction — and that ceiling admits operators they do not expose. Portability of files between the two is explicitly not a goal.
+
+**Operation parity with xarray / pandas.** The language is not an array-programming API with YAML syntax. Arbitrary array manipulation (`merge`, `reindex`, `apply_ufunc`, resampling) is unbounded as a target and would destroy the closed-AST property that makes streaming possible. Such work belongs in data prep — computing a *parameter* in Python is unrestricted and costs the streaming path nothing. Where the custom logic must operate on *variables*, the bounded route is a declared `escape:` island ([#38](https://github.com/FBumann/linopy-yaml/issues/38)): visible in the file, restricted to the `where`-masked slice, terminal (it yields a constraint, never a sub-expression), and billed against a label budget.
 
 -----
 
@@ -1003,8 +952,8 @@ def weighted_sum(array, weights, *, over):
 
 ### Open
 
-**Q3: Array slicing syntax.**
-Calliope supports `p[generator_bus=bus]` — selecting a subset of an array along a dimension. This is needed for network models where a generator is "at" a bus. Probably needed before this package is useful for PyPSA-style models.
+**Q3: Indexed access (array slicing).**
+Selecting a component at a fixed coordinate, and at a coordinate looked up through a mapping parameter (the *gather* whose adjoint is `group_sum`). Needed for terminal conditions, multi-period linking, and all network math beyond a nodal balance — DC power flow is unwritable without it. Both forms are pointwise and admissible under the expressive ceiling; scheduled as [ROADMAP.md](ROADMAP.md) Track 1 items 1–2. **Open only on surface syntax**: bracket slicing (`p[bus=gen_bus]`) puts the dimension in a kwarg key, where a macro cannot parameterise it, so a helper form keeping the dim in a value position is preferred.
 
 **Q8: Should `.yaml` ever become a complete representation of the model?**
 Currently `.yaml` covers only the YAML-managed portion. A future version could intercept `add_variables()` and `add_constraints()` calls and synthesise schema entries from their arguments. Investigation shows this is feasible on the *math* side — those calls carry all the structurally needed information (coords, bounds as DataArrays, `LinearExpression` coefficients, masks). What is lost is the **human-readable layer**: expression strings (`sum(p * cost, over=generator)`), where strings (`"p_max > 0"`), and bound parameter names become anonymous arrays. The result would be a **functional round-trip** (enough to rebuild an identical model) but not a **readable round-trip** (regenerating clean YAML); the latter would require linopy itself to carry expression provenance. Whether functional round-trip alone is worth the wrapping complexity is undecided. The clean alternative is to leave `.yaml` as "YAML-managed portion only" permanently. Tracked in [issue #3](https://github.com/FBumann/linopy-yaml/issues/3).
@@ -1035,11 +984,20 @@ trajectory is toward mutable, transformable models with solver-native
 constructs (piecewise formulations, SOS and indicator constraints,
 dualization, in-place updates). The eager builder, as a pure consumer of
 linopy's public API, inherits all of that for free; a flat
-``(col, row, coeff)`` streamer inherits none of it. The two backends are not
-fast-vs-slow versions of the same thing: the eager builder is the
-feature-complete default, and the relational backend is an optimization lane
-for the models where it wins (large, pure-affine), selected automatically
-with fallback (§12.8).
+``(col, row, coeff)`` streamer inherits none of it.
+
+**Superseded in part (549c055, and again by the P1 decision):** the two lanes
+are still not fast-vs-slow versions of the same thing, but the relationship
+inverted. The streaming engine is the product lane for models declared in
+YAML; the compat lane is the product lane for YAML math attached to a
+`linopy.Model` that already exists in memory (structurally eager — see
+ARCHITECTURE.md hard rule 3). There is **no automatic routing and no
+fallback**: both lanes accept the same language, the entry point picks the
+lane, and a construct outside the language is a load error naming its
+rewrite. Solver-native constructs linopy has and the sinks do not (SOS,
+indicator) are therefore *sink-bounded* for both lanes — tracked as
+[#23](https://github.com/FBumann/linopy-yaml/issues/23), not reachable by
+falling back.
 
 ### 12.2 Architecture
 

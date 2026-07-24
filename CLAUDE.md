@@ -5,12 +5,14 @@
 `linopy_yaml` is a YAML-based math definition layer for [linopy](https://github.com/PyPSA/linopy).
 It lets users define optimisation problems declaratively in YAML and build them into `linopy.Model` objects at runtime.
 
-See `ARCHITECTURE.md` for the architecture (brief, kept current — update it in any PR that changes structure) and `SPEC.md` for the full design specification.
+See `ARCHITECTURE.md` for the architecture (brief, kept current — update it in any PR that changes structure), `SPEC.md` for the full design specification, and `ROADMAP.md` for what we build toward and what we have decided never to build.
+
+**Before proposing a new language feature**, triage it: **macro, primitive, or escape?** Most requests are compositions (macro, free); a genuinely new shape earns a primitive only if it clears the expressive ceiling in `ARCHITECTURE.md` (degree 1 ∩ relational ∩ local); unsayable math goes to a declared `escape:` island (#38) rather than into the language. Check the deliberate non-primitives in `ROADMAP.md` first — parity with another tool is not by itself a reason to add anything.
 
 ## Common Commands
 
 ```bash
-# Install (uv-managed venv; oracle extra = linopy/xarray for differential tests)
+# Install (uv-managed venv; [compat] extra = linopy/xarray for the shim + oracle)
 uv sync  # dev group (tools + oracle deps) is default
 
 # Run tests
@@ -30,42 +32,43 @@ uv run pre-commit install
 
 ## Package Structure
 
+See `ARCHITECTURE.md` for the authoritative module map. In brief:
+
 ```
 linopy_yaml/
-├── __init__.py          # Applies the monkey-patch on import; exports MathSchema, register, Model alias
-├── _patch.py            # Monkey-patches linopy.Model with .from_yaml() and .yaml (WeakKeyDictionary-backed descriptor)
-├── accessor.py          # YamlAccessor class (state + extend())
-├── schema.py            # Pydantic models for YAML validation
-├── loader.py            # Data coercion, validation, master coords
+├── api.py               # native entry point: check / build / solve / write — linopy-free
+├── schema.py            # pydantic schema (incl. expressions:, macros:, piecewise:)
 ├── expression_parser.py # pyparsing grammar for math expressions
 ├── where_parser.py      # pyparsing grammar for where strings
-├── builder.py           # Schema + data → linopy Model construction
-└── helpers.py           # Built-in helpers (sum, roll) + registry
-tests/
-├── conftest.py          # Shared fixtures
-├── test_schema.py       # YAML schema validation tests
-├── test_loader.py       # Data loading and coercion tests
-├── test_parser.py       # Expression and where-string parser tests
-├── test_accessor.py     # YamlAccessor + extend() behavior
-└── test_dispatch.py     # Integration test with the dispatch example
+├── expansion.py         # macro / named-expression substitution (pre-dispatch)
+├── validation.py        # load-time: parse, expand, name-check everything
+├── piecewise.py         # piecewise: → λ-formulation declarations
+├── helpers.py           # built-in helpers — a CLOSED set, no registry
+├── lowering.py          # core AST → IR (defines the streaming subset)
+├── relational/          # ir.py + executor.py (duckdb; linopy-free)
+├── compat.py            # opt-in linopy patching ([compat] extra)
+├── compat.py, loader.py, builder.py                # compat/oracle lane (opt-in)
 ```
 
 ## API
 
-Requires linopy>=0.7 (the release that added `__weakref__` to `Model.__slots__`).
+```python
+import linopy_yaml as ly
+
+sol = ly.solve("model.yaml", sources={"p_max": "p_max.parquet", ...})
+sol.objective
+sol.primal("p")
+```
+
+Compat lane — YAML math on a `linopy.Model` that already exists in memory
+(requires the `[compat]` extra):
 
 ```python
 from linopy import Model
-import linopy_yaml  # registers .from_yaml and .yaml on linopy.Model
+from linopy_yaml import compat
 
-# Build from YAML
-m = Model.from_yaml("model.yaml", data={...}, coords={...})
-
-# Accessor on any model — lazy on Python-built models
-m.yaml.schema    # MathSchema (parsed YAML), or None on Python-built models
-m.yaml.dataset   # xr.Dataset of loaded parameters (empty on Python-built models)
-m.yaml.coords    # dict[str, pd.Index], inferred from variables when not declared
-m.yaml.extend(...)  # extend with another YAML file
+m = compat.build("model.yaml", data={...})          # YAML -> linopy.Model
+compat.extend(m, "ramp_constraint.yaml", data={...})  # YAML math onto an existing model
 ```
 
 ## Development Guidelines

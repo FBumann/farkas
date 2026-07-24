@@ -24,14 +24,17 @@ dependencies = [
     "pydantic>=2.0",
     "pyyaml>=6.0",
     "duckdb>=1.0",
+    # required by the solver_direct sink: duckdb's .to_arrow_reader() streams
+    # COO batches to highspy. Used through duckdb, never imported by name.
     "pyarrow",
     "highspy",
 ]
 
 [project.optional-dependencies]
-# linopy + xarray power the opt-in compatibility layer (linopy_yaml.compat)
-# and the differential-test oracle; the streaming engine never imports them
-oracle = [
+# linopy + xarray power the compatibility layer (linopy_yaml.compat): YAML math
+# on a Python-built linopy.Model, plus the differential-test oracle.
+# The streaming engine never imports them.
+compat = [
     "linopy>=0.9.0,<0.10",
     "xarray>=2024.2.0",
 ]
@@ -48,7 +51,7 @@ fallback-version = "0.0.0"
 packages = ["linopy_yaml"]
 
 [tool.hatch.build.targets.sdist]
-include = ["linopy_yaml/", "tests/", "LICENSE", "README.md", "ARCHITECTURE.md", "SPEC.md"]
+include = ["linopy_yaml/", "tests/", "LICENSE", "README.md", "ARCHITECTURE.md", "SPEC.md", "ROADMAP.md"]
 
 [dependency-groups]
 dev = [
