@@ -46,6 +46,9 @@ class Expr:
     def __rmul__(self, other: Expr | float | int) -> Expr:
         return Mul(_coerce(other), self)
 
+    def __truediv__(self, other: Expr | float | int) -> Expr:
+        return Div(self, _coerce(other))
+
     def __neg__(self) -> Expr:
         return Neg(self)
 
@@ -97,6 +100,14 @@ class Mul(Expr):
 
 
 @dataclass(frozen=True)
+class Div(Expr):
+    """Quotient ``a / b``. The divisor must be variable-free."""
+
+    a: Expr
+    b: Expr
+
+
+@dataclass(frozen=True)
 class Sum(Expr):
     """Sum ``x`` over the named dims, removing them from the result."""
 
@@ -136,6 +147,20 @@ class Cmp(Pred):
     param: str
     op: CmpOp
     value: float | str
+
+
+@dataclass(frozen=True)
+class Defined(Pred):
+    """True where the parameter has a non-null, finite value."""
+
+    param: str
+
+
+@dataclass(frozen=True)
+class Bool(Pred):
+    """Constant predicate (``Bool(False)`` masks out every row)."""
+
+    value: bool
 
 
 @dataclass(frozen=True)
@@ -182,6 +207,7 @@ class ConstraintDecl:
     """``lhs sense rhs`` for each coord combination of ``dims``.
 
     Both sides are affine; the executor normalises constants to the RHS.
+    ``where`` masks out coord combinations (row absence, like variables).
     """
 
     name: str
@@ -189,6 +215,7 @@ class ConstraintDecl:
     lhs: Expr
     sense: Sense
     rhs: Expr
+    where: Pred | None = None
 
 
 @dataclass(frozen=True)

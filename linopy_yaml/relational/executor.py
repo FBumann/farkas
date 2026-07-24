@@ -267,6 +267,23 @@ class DuckdbExecutor:
                 )
                 op = "=" if p.op == "==" else p.op
                 return f"({alias}.value {op} {val})"
+            if isinstance(p, ir.Defined):
+                decl = self._program.parameter(p.param)  # type: ignore[union-attr]
+                extra = set(decl.dims) - set(dims)
+                if extra:
+                    raise RelationalBuildError(
+                        f"where-parameter '{p.param}' has dims {sorted(extra)} outside "
+                        f"the foreach dims {list(dims)}"
+                    )
+                alias = f"w_{p.param}"
+                on = (
+                    " AND ".join(f"{alias}.{d} = t_{d}.val" for d in decl.dims)
+                    or "TRUE"
+                )
+                joins[alias] = f"LEFT JOIN p_{p.param} {alias} ON {on}"
+                return f"({alias}.value IS NOT NULL AND isfinite({alias}.value))"
+            if isinstance(p, ir.Bool):
+                return "TRUE" if p.value else "FALSE"
             if isinstance(p, ir.And):
                 return f"({walk(p.a)} AND {walk(p.b)})"
             if isinstance(p, ir.Or):
@@ -408,6 +425,23 @@ class DuckdbExecutor:
                     _join_mul(x, c, is_term=False) for x in a.consts for c in b.consts
                 )
                 return _Compiled(terms, consts)
+            if isinstance(e, ir.Div):
+                a, b = ev(e.a), ev(e.b)
+                if b.terms:
+                    raise RelationalBuildError(
+                        f"nonlinear quotient in {context}: the divisor contains variables"
+                    )
+                if len(b.consts) != 1:
+                    raise RelationalBuildError(
+                        f"in {context}: a divisor must be a single Const/Param factor, "
+                        f"not a sum — rewrite as multiplication by a precomputed parameter"
+                    )
+                inv = b.consts[0]
+                terms = tuple(_join_mul(t, inv, is_term=True, op="/") for t in a.terms)
+                consts = tuple(
+                    _join_mul(x, inv, is_term=False, op="/") for x in a.consts
+                )
+                return _Compiled(terms, consts)
             if isinstance(e, ir.Sum):
                 inner = ev(e.x)
                 terms = tuple(self._sum_piece(p, e.over, context) for p in inner.terms)
@@ -493,7 +527,7 @@ class DuckdbExecutor:
                 )
 
         collist = ", ".join(f"t_{d}.val AS {d}" for d in c.dims)
-        from_clause, where_clause, order_key = self._frame_sql(c.dims, None)
+        from_clause, where_clause, order_key = self._frame_sql(c.dims, c.where)
         self._con.execute(
             f"CREATE TABLE con_{c.name} AS SELECT {collist}, 0::BIGINT AS row FROM {from_clause} WHERE FALSE"
         )
@@ -746,8 +780,8 @@ def _negate(p: _Piece) -> _Piece:
     return _Piece(p.dims, f"SELECT {sel} FROM ({p.sql})", p.is_term, p.mult)
 
 
-def _join_mul(a: _Piece, c: _Piece, is_term: bool) -> _Piece:
-    """a × c where ``c`` is a const piece; join on shared dims, broadcast the rest."""
+def _join_mul(a: _Piece, c: _Piece, is_term: bool, op: str = "*") -> _Piece:
+    """a op c where ``c`` is a const piece; join on shared dims, broadcast the rest."""
     shared = [d for d in a.dims if d in c.dims]
     on = " AND ".join(f"a.{d} = c.{d}" for d in shared) or "TRUE"
     out_dims = a.dims + tuple(d for d in c.dims if d not in a.dims)
@@ -756,9 +790,9 @@ def _join_mul(a: _Piece, c: _Piece, is_term: bool) -> _Piece:
         *(f"c.{d}" for d in c.dims if d not in a.dims),
     ]
     val = (
-        "a.var_label, a.coeff * c.cval AS coeff"
+        f"a.var_label, a.coeff {op} c.cval AS coeff"
         if is_term
-        else "a.cval * c.cval AS cval"
+        else f"a.cval {op} c.cval AS cval"
     )
     sel = ", ".join([*dimcols, val])
     return _Piece(
