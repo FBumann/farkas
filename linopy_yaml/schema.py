@@ -42,7 +42,7 @@ class ParameterDef(BaseModel):
 class BoundsDef(BaseModel):
     """Variable bounds — each side is a number or parameter name."""
 
-    lower: float | str = 0
+    lower: float | str = 0.0
     upper: float | str = float('inf')
 
 

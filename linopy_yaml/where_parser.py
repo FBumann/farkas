@@ -74,40 +74,40 @@ def _build_where_grammar() -> pp.ParserElement:
     where_expr = pp.Forward()
 
     # Literals
-    true_lit = pp.CaselessKeyword('True').setParseAction(lambda: BoolLiteral(True))
-    false_lit = pp.CaselessKeyword('False').setParseAction(lambda: BoolLiteral(False))
+    true_lit = pp.CaselessKeyword('True').set_parse_action(lambda: BoolLiteral(True))
+    false_lit = pp.CaselessKeyword('False').set_parse_action(lambda: BoolLiteral(False))
 
     # Numbers
-    real = pp.Regex(r'-?\d+\.\d*([eE][+-]?\d+)?').setParseAction(lambda t: float(t[0]))
-    integer = pp.Regex(r'-?\d+').setParseAction(lambda t: int(t[0]))
+    real = pp.Regex(r'-?\d+\.\d*([eE][+-]?\d+)?').set_parse_action(lambda t: float(t[0]))
+    integer = pp.Regex(r'-?\d+').set_parse_action(lambda t: int(t[0]))
     number = real | integer
 
     # Names
     name = pp.Regex(r'[a-zA-Z_][a-zA-Z0-9_]*')
 
     # Comparisons
-    comparator = pp.oneOf('<= >= == != < >')
-    comparison = (name + comparator + (number | name)).setParseAction(lambda t: Comparison(t[0], t[1], t[2]))
+    comparator = pp.one_of('<= >= == != < >')
+    comparison = (name + comparator + (number | name)).set_parse_action(lambda t: Comparison(t[0], t[1], t[2]))
 
     # Existence check (bare name)
-    existence = name.copy().setParseAction(lambda t: ExistenceCheck(t[0]))
+    existence = name.copy().set_parse_action(lambda t: ExistenceCheck(t[0]))
 
     # Atoms
     atom = true_lit | false_lit | comparison | existence | (pp.Suppress('(') + where_expr + pp.Suppress(')'))
 
     # NOT (highest precedence)
     NOT = pp.CaselessKeyword('NOT').suppress()
-    not_expr = (NOT + atom).setParseAction(lambda t: NotNode(t[0])) | atom
+    not_expr = (NOT + atom).set_parse_action(lambda t: NotNode(t[0])) | atom
 
     # AND
     AND = pp.CaselessKeyword('AND').suppress()
     and_expr = not_expr + pp.ZeroOrMore(AND + not_expr)
-    and_expr.setParseAction(_fold_and)
+    and_expr.set_parse_action(_fold_and)
 
     # OR (lowest precedence)
     OR = pp.CaselessKeyword('OR').suppress()
     or_expr = and_expr + pp.ZeroOrMore(OR + and_expr)
-    or_expr.setParseAction(_fold_or)
+    or_expr.set_parse_action(_fold_or)
 
     where_expr <<= or_expr
     return where_expr
@@ -135,7 +135,7 @@ _WHERE_GRAMMAR = _build_where_grammar()
 def parse_where(text: str) -> WhereNode:
     """Parse a where string into an AST."""
     try:
-        result = _WHERE_GRAMMAR.parseString(text, parseAll=True)
+        result = _WHERE_GRAMMAR.parse_string(text, parse_all=True)
     except pp.ParseException as e:
         msg = f'Failed to parse where string: {text!r}\n{e}'
         raise ValueError(msg) from e

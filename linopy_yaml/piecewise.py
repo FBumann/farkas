@@ -65,7 +65,7 @@ def expand_piecewise(schema: MathSchema) -> MathSchema:
 
         raw['variables'][lam] = {
             'foreach': [*frame, pw.over],
-            'bounds': {'lower': 0, 'upper': 1},
+            'bounds': {'lower': 0.0, 'upper': 1.0},
         }
         rhs = f'({pw.active})' if pw.active else '1'
         raw['constraints'][f'{name}_convexity'] = {
