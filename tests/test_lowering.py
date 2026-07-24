@@ -146,8 +146,10 @@ def test_unsupported_features_rejected(dispatch_schema):
     from linopy_yaml.expression_parser import parse_expression
     from linopy_yaml.lowering import _lower_expr
 
-    with pytest.raises(RelationalBuildError, match="helper 'roll'"):
-        _lower_expr(parse_expression("roll(load, snapshot=1)"), dispatch_schema, "t")
+    # roll() is supported since ir.Shift landed; '**' and custom Python
+    # helpers remain outside the relational subset
+    with pytest.raises(RelationalBuildError, match="operator '\\*\\*'"):
+        _lower_expr(parse_expression("p ** 2"), dispatch_schema, "t")
 
     schema_dict = pyyaml.safe_load(open(DISPATCH_YAML))
     schema_dict["variables"]["p"]["binary"] = True

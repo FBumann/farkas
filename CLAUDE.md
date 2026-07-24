@@ -5,7 +5,7 @@
 `linopy_yaml` is a YAML-based math definition layer for [linopy](https://github.com/PyPSA/linopy).
 It lets users define optimisation problems declaratively in YAML and build them into `linopy.Model` objects at runtime.
 
-See `SPEC.md` for the full design specification.
+See `ARCHITECTURE.md` for the architecture (brief, kept current — update it in any PR that changes structure) and `SPEC.md` for the full design specification.
 
 ## Common Commands
 

@@ -321,6 +321,66 @@ objectives:
 | `equations`               | list | required   | Currently only the first equation is used.                                                     |
 | `equations[0].expression` | str  | required   | Arithmetic expression (no comparison operator). Must produce a scalar linopy LinearExpression. |
 
+
+### 3.6 `expressions`
+
+Named sub-expressions: reusable fragments of the expression language, referenced by name from any equation or other named expression.
+
+```yaml
+expressions:
+  total_generation: sum(p, over=generator)
+  net_cost: sum(p * cost, over=generator)
+
+constraints:
+  balance:
+    foreach: [snapshot]
+    equations:
+      - expression: total_generation == load
+```
+
+Rules:
+
+- Values are ordinary arithmetic expressions (no comparison operator).
+- A name is spliced in as a parsed subtree wherever it appears — both backends see only the expanded core AST.
+- Named expressions may reference each other; cycles are reported at load time with the reference chain.
+- Names must not collide with declared parameters, variables, or dimensions.
+
+
+### 3.7 `macros`
+
+Parameterised expression templates, declared in the YAML itself — language, not code. Because macros live in the schema, a YAML file is fully self-contained: its meaning never depends on Python-side state.
+
+```yaml
+macros:
+  weighted_sum:
+    args: [array, weights]
+    kwargs: [over]
+    template: sum(array * weights, over=over)
+
+objectives:
+  total_cost:
+    sense: minimize
+    equations:
+      - expression: weighted_sum(p, cost, over=generator)
+```
+
+**Fields (per macro):**
+
+| Field      | Type | Default  | Description                                            |
+|------------|------|----------|--------------------------------------------------------|
+| `template` | str  | required | Arithmetic expression (no comparison operator).        |
+| `args`     | list | `[]`     | Positional formal names.                               |
+| `kwargs`   | list | `[]`     | Keyword formal names (e.g. `over` for dimension args). |
+
+Semantics:
+
+- Every call site is expanded into core AST before either backend sees the expression, so macros work identically on the eager and relational backends (and never force the backend router to fall back).
+- Formal names shadow model names inside the template; all other names resolve against the model namespace.
+- Arguments are expanded before substitution (call-by-value), so they may themselves use named expressions and macros.
+- Arity is checked at each call; cycles are reported with the call chain.
+- Names must not collide with parameters, variables, dimensions, named expressions, or helpers.
+- **Validation is complete at load time**: because templates are schema-local, every template is parsed and name-checked against the schema even if the model never calls it.
+
 -----
 
 ## 4. Data Loading Contract
@@ -659,6 +719,8 @@ the mapping produce no output rows. The relational backend treats absent
 groups as zero contribution.
 
 ### 7.4 Custom helper functions
+
+> **Prefer `macros:` (§3.7) for anything expressible as a composition of built-ins** — macros keep the YAML self-contained and work on both backends. Python helpers execute arbitrary code against xarray/linopy objects and are therefore **eager-only**: the relational backend rejects them and the router falls back with that reason.
 
 Register additional helpers at module load time using the `@linopy_yaml.register` decorator:
 

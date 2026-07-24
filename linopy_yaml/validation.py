@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from linopy_yaml.expansion import expand, parse_and_expand, parse_template
 from linopy_yaml.expression_parser import (
     ArithNode,
     BinOpNode,
@@ -21,7 +22,6 @@ from linopy_yaml.expression_parser import (
     NameNode,
     NumberNode,
     UnaryOpNode,
-    parse_expression,
 )
 from linopy_yaml.helpers import get_helper
 from linopy_yaml.schema import MathSchema
@@ -63,6 +63,47 @@ def validate_expressions(
 
     errors: list[str] = []
 
+    for mname, macro in schema.macros.items():
+        context = f"Macro '{mname}'"
+        try:
+            get_helper(mname)
+        except NameError:
+            pass
+        else:
+            errors.append(
+                f"{context}: collides with a helper function of the same name."
+            )
+        try:
+            body_ast = parse_template(mname, macro, context)
+            body_ast = expand(body_ast, schema, context)
+        except ValueError as e:
+            errors.append(str(e) if str(e).startswith(context) else f"{context}: {e}")
+            continue
+        # macros are schema-local, so every free name in the template must be
+        # a formal or a name declared in *this* schema — checkable even for
+        # macros the current model never calls
+        formals = {*macro.args, *macro.kwargs}
+        _check_names(
+            body_ast,
+            macro.template,
+            context,
+            variables | formals,
+            parameters | formals,
+            errors,
+        )
+
+    for ename, body in schema.expressions.items():
+        context = f"Named expression '{ename}'"
+        ast = _check_parse(body, schema, context, errors)
+        if ast is None:
+            continue
+        if isinstance(ast, CompareNode):
+            errors.append(
+                f"{context}: must not contain a comparison operator.\nGot: {body!r}"
+            )
+            continue
+        _check_names(ast, body, context, variables, parameters, errors)
+
     for vname, vdef in schema.variables.items():
         _check_where(vdef.where, f"Variable '{vname}'", errors)
 
@@ -71,7 +112,7 @@ def validate_expressions(
         for i, eq in enumerate(cdef.equations):
             where = f"Constraint '{cname}', equation {i}"
             _check_where(eq.where, where, errors)
-            ast = _check_parse(eq.expression, where, errors)
+            ast = _check_parse(eq.expression, schema, where, errors)
             if ast is None:
                 continue
             if not isinstance(ast, CompareNode):
@@ -88,7 +129,7 @@ def validate_expressions(
         for i, eq in enumerate(odef.equations):
             where = f"Objective '{oname}', equation {i}"
             _check_where(eq.where, where, errors)
-            ast = _check_parse(eq.expression, where, errors)
+            ast = _check_parse(eq.expression, schema, where, errors)
             if ast is None:
                 continue
             if isinstance(ast, CompareNode):
@@ -106,11 +147,12 @@ def validate_expressions(
 
 def _check_parse(
     expression: str,
+    schema: MathSchema,
     context: str,
     errors: list[str],
 ) -> ArithNode | CompareNode | None:
     try:
-        return parse_expression(expression)
+        return parse_and_expand(expression, schema, context)
     except ValueError as e:
         errors.append(f"{context}: {e}")
         return None
