@@ -12,16 +12,17 @@ serves as the differential-test oracle and as an opt-in compatibility layer
     sol.primal("p")
 """
 
-from linopy_yaml.api import build, load_schema, solve, write_lp
-from linopy_yaml.helpers import register
+from linopy_yaml.api import LanguageError, build, check, load_schema, solve, write, write_lp
 from linopy_yaml.schema import MathSchema
 
 __all__ = [
+    'LanguageError',
     'MathSchema',
     'build',
+    'check',
     'load_schema',
-    'register',
     'solve',
+    'write',
     'write_lp',
 ]
 __version__ = '0.0.2'

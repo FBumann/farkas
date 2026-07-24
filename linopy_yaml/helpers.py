@@ -20,7 +20,7 @@ def register(name: str) -> Callable:
 
     Example::
 
-        @linopy_yaml.register('weighted_sum')
+        @linopy_yaml.compat.register('weighted_sum')
         def weighted_sum(array, weights, *, over):
             return (array * weights).sum(over)
     """
@@ -59,7 +59,7 @@ def get_helper(name: str) -> Callable:
     msg = (
         f"Unknown helper function '{name}'.\n"
         f'Available: {available}\n'
-        f"Register custom helpers with @linopy_yaml.register('{name}')."
+        f"Register custom helpers with @linopy_yaml.compat.register('{name}') — or prefer a macro."
     )
     raise NameError(msg)
 

@@ -20,4 +20,8 @@ except ModuleNotFoundError as exc:  # linopy / xarray absent
     msg = 'The linopy compatibility layer requires the [oracle] extra: pip install "linopy-yaml[oracle]"'
     raise ModuleNotFoundError(msg) from exc
 
+from linopy_yaml.helpers import register
+
 apply_patches()
+
+__all__ = ['register']
