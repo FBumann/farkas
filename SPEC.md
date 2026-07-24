@@ -983,6 +983,18 @@ memory at any point** — not as dense arrays, not as a full CSR. Every stage
 streams under a configured memory budget. The solver's own internal copy is
 the only irreducible full-model residency.
 
+**Scope (decided 2026-07-24): a streaming compiler for large pure-affine
+models — not a general replacement for the eager builder.** linopy's
+trajectory is toward mutable, transformable models with solver-native
+constructs (piecewise formulations, SOS and indicator constraints,
+dualization, in-place updates). The eager builder, as a pure consumer of
+linopy's public API, inherits all of that for free; a flat
+``(col, row, coeff)`` streamer inherits none of it. The two backends are not
+fast-vs-slow versions of the same thing: the eager builder is the
+feature-complete default, and the relational backend is an optimization lane
+for the models where it wins (large, pure-affine), selected automatically
+with fallback (§12.8).
+
 ### 12.2 Architecture
 
 ```
@@ -1074,7 +1086,19 @@ Affine expressions:
 Predicates (for `where`): `Cmp(param, op, value)`, `And`, `Or`, `Not`.
 
 This covers the v0 language subset (foreach, where, arithmetic, sum,
-group_sum, comparison). Quadratic and piecewise are out of scope.
+group_sum, roll, comparison). Quadratic is out of scope.
+
+**The IR is affine-by-design — decided, not provisional.** No node introduces
+variables or constraints as a side effect of an expression. Formulations
+(piecewise, SOS, indicator) are model *transformations*, not expressions:
+they are eager-only. If they ever come to the streaming path, they enter as a
+distinct expansion stage that emits new variable/constraint declarations
+*before* affine compilation — never as expression nodes — and only once the
+sink has the corresponding native streams (§12.6). Reimplementing linopy's
+reformulation passes (e.g. SOS big-M linearization) inside the IR is
+explicitly rejected: that would duplicate the library this package consumes.
+The one planned extension is semi-continuous variables, which are a variable
+*type* (a vtype + threshold column on ``cols``), not a formulation.
 
 ### 12.5 Execution requirements (phase-1 spike, corrected after phase 3)
 
@@ -1118,6 +1142,15 @@ group_sum, comparison). Quadratic and piecewise are out of scope.
   the solver's own model; float→text→parse disappears entirely. Full-CSR
   fallbacks violate the primary invariant and are last resorts.
 
+**The sink is capped, explicitly.** Today it expresses continuous columns
+with bounds and objective coefficients, affine rows, and COO coefficients —
+nothing else. SOS sets, indicator/general constraints, and integrality have
+no stream. The documented upgrade path is five streams — ``cols`` (with
+vtype and semi-continuous threshold), ``rows``, ``A``, ``sos_sets``,
+``genconstr`` — recorded here so the gap is a stated design bound, not a
+surprise at implementation time. Anything a stream cannot carry routes to
+the eager builder (§12.8).
+
 ### 12.7 Phase gates
 
 1. ✅ Spike: hand-written SQL, dispatch model — peak RSS flat at the budget
@@ -1129,3 +1162,20 @@ group_sum, comparison). Quadratic and piecewise are out of scope.
 3. YAML → IR lowering behind the `_eval_ast` seam, v0 subset only.
 4. In-memory executor for the same IR (folding in the CSR deferred-groupby
    prototype) so small models skip duckdb.
+
+### 12.8 Backend eligibility and automatic fallback
+
+Backend selection is the router's job, not the user's. A schema is
+**relational-eligible** iff it lowers to the IR:
+``linopy_yaml.router.relational_eligibility(schema)`` returns ``None`` on
+success or the first lowering error — verbatim, with its context — as the
+ineligibility reason. ``select_backend(schema)`` wraps this in an explicit
+choice object.
+
+Everything outside the streaming subset (custom helpers, ``**``,
+binary/integer variables, where-comparisons on dimensions — and formulations
+like piecewise/SOS if they enter the YAML language) automatically routes to
+the eager builder with a stated reason. The relational backend is an
+optimization that must fall back; it is never a constraint on what the
+language can express. The differential oracle (same YAML through both
+backends must agree) is what keeps the fast lane honest.
