@@ -2,7 +2,7 @@
 
 Declarative optimisation: define the math in YAML, supply data at runtime, solve.
 
-Models build on a **relational/streaming engine** (tidy tables in duckdb under a hard `memory_limit`, streamed straight to the solver — the full model never exists in process memory). [linopy](https://github.com/PyPSA/linopy) is kept in two roles: the **compatibility layer** — YAML extends Python-built `linopy.Model`s, and anything outside the streaming subset falls back to the eager linopy builder with a stated reason — and the **validation oracle** every language feature is differentially tested against.
+Models build on a **relational/streaming engine** (tidy tables in duckdb under a hard `memory_limit`, streamed straight to the solver — the full model never exists in process memory). [linopy](https://github.com/PyPSA/linopy) is kept in two roles, behind the opt-in `[oracle]` extra: the **compatibility layer** (`import linopy_yaml.compat` — YAML extends Python-built `linopy.Model`s) and the **validation oracle** every language feature is differentially tested against. Anything outside the streaming language is a load error naming the construct — there is no runtime fallback.
 
 ```mermaid
 flowchart LR
@@ -10,13 +10,14 @@ flowchart LR
     AST --> R{"lowers to the<br/>streaming subset?"}
     R -->|"yes"| S["streaming engine<br/>duckdb · fixed memory_limit"]
     S --> OUT["solver (batched) / LP file"]
-    R -->|"no — with the reason"| E["eager fallback<br/>linopy: compat layer & oracle"]
-    E --> LS["linopy.Model → solve"]
+    R -->|"no"| ERR["load error<br/>naming the construct"]
+    C["import linopy_yaml.compat<br/>(opt-in, [oracle] extra)"] -.-> E["linopy compat layer & oracle<br/>Model.from_yaml / .yaml.extend"]
+    E -.-> LS["linopy.Model → solve"]
 
     classDef stream fill:#f0f7f0,stroke:#3a7d44,stroke-width:2px,color:#111
     classDef compat fill:#eef1fb,stroke:#4a5fc1,stroke-width:2px,color:#111
     class S,OUT stream
-    class E,LS compat
+    class C,E,LS compat
 ```
 
 ## Goals
@@ -33,11 +34,11 @@ flowchart LR
 Small-to-medium models, teaching, policy studies, reproducible research.
 
 ```python
-from linopy import Model
-import linopy_yaml  # registers .from_yaml and .yaml on linopy.Model
+import linopy_yaml as ly
 
-m = Model.from_yaml("dispatch.yaml", data={...}, coords={...})
-m.solve()
+sol = ly.solve('dispatch.yaml', sources={...}, coords={...}, memory_limit='2GB')
+sol.objective
+sol.primal('p')  # tidy DataFrame (coords..., value)
 ```
 
 ### 2. Add custom constraints to a Python-built model
@@ -45,7 +46,9 @@ m.solve()
 Packages like PyPSA build their core math in Python, and their users modify it at runtime through **callbacks** (`extra_functionality`). Callbacks are maximally flexible — but the modification is invisible in the results, the math hides inside indexing/wiring code, and a Python function is not a sharable artefact. When the modification *is just math* (most policy requirements, pilot technologies, sensitivity scenarios), a YAML file fixes all three: it reads as the inequality itself, in the model's own vocabulary, and travels as a diffable text file. If you need arbitrary Python in the loop, stay with the callback.
 
 ```python
-m.yaml.extend("ramp_constraint.yaml", data={"ramp_max": network.generators["ramp_max"]})
+import linopy_yaml.compat  # opt-in linopy layer ([oracle] extra)
+
+m.yaml.extend('ramp_constraint.yaml', data={'ramp_max': network.generators['ramp_max']})
 ```
 
 ```yaml
@@ -66,7 +69,7 @@ YAML diffs cleanly in review; colleagues without optimisation-Python experience 
 
 ### 4. Build models that don't fit in memory
 
-The streaming engine's home turf: a 107-million-variable dispatch model builds in ~0.6 GB. Expressions become tidy tables, masks become row absence, and the model streams to the solver in batches or to an LP file. Routing is automatic — schemas inside the streaming subset stream, everything else runs on the eager linopy fallback. See [ARCHITECTURE.md](ARCHITECTURE.md).
+The streaming engine's home turf: a 107-million-variable dispatch model builds in ~0.6 GB. Expressions become tidy tables, masks become row absence, and the model streams to the solver in batches or to an LP file. The whole language streams — out-of-language constructs fail at load with the construct named, never silently on a slower path. See [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Quick example
 
@@ -97,35 +100,36 @@ objectives:
 ```
 
 ```python
-from linopy import Model
-import linopy_yaml
 import pandas as pd
 
-m = Model.from_yaml(
-    "dispatch.yaml",
-    data={
-        "p_max": pd.Series({"wind": 100, "solar": 60, "gas": 200}),
-        "load":  pd.Series([80, 120, 150, 180, 140, 100], name="snapshot"),
-        "cost":  pd.Series({"wind": 0, "solar": 0, "gas": 50}),
+import linopy_yaml as ly
+
+sol = ly.solve(
+    'dispatch.yaml',
+    sources={
+        'p_max': pd.Series({'wind': 100, 'solar': 60, 'gas': 200}),
+        'load': pd.Series([80, 120, 150, 180, 140, 100], name='snapshot'),
+        'cost': pd.Series({'wind': 0, 'solar': 0, 'gas': 50}),
     },
-    coords={"snapshot": pd.RangeIndex(6, name="snapshot")},
+    coords={'snapshot': pd.RangeIndex(6, name='snapshot')},
 )
-m.solve()
+sol.objective
+sol.primal('p')
 ```
 
 ## The language
 
 YAML sections: `dimensions` · `parameters` · `variables` (incl. binary/integer) · `constraints` · `objectives` · `expressions` (named sub-expressions) · `macros` (parameterised templates) · `piecewise` (λ-formulation).
 
-Expressions: arithmetic, comparisons, `where` masks, `sum` / `group_sum` / `roll` / `shift`. Custom Python helpers via `@linopy_yaml.register` run on the eager fallback only — prefer `macros:` for anything expressible as a composition.
+Expressions: arithmetic, comparisons, `where` masks, `sum` / `group_sum` / `roll` / `shift`. Custom Python helpers via `@linopy_yaml.register` run on the linopy compat layer only — prefer `macros:` for anything expressible as a composition.
 
 [ARCHITECTURE.md](ARCHITECTURE.md) for how it fits together · [SPEC.md](SPEC.md) for the full specification.
 
 ## Installation
 
 ```bash
-pip install "linopy-yaml[relational]"  # streaming engine (duckdb, highspy)
-pip install linopy-yaml                # eager/compatibility layer only
+pip install linopy-yaml             # the streaming engine — everything you need
+pip install "linopy-yaml[oracle]"   # + linopy compat layer / differential oracle
 ```
 
 ## Non-goals
@@ -134,7 +138,7 @@ Not a solver wrapper, not a domain package, not a data-loading layer — bring p
 
 ## Status
 
-**v0.0.2** — early but moving fast. Both backends round-trip real models through solve with differentially verified results. Open questions live in [SPEC.md](SPEC.md) §11.
+**v0.0.2** — early but moving fast. The streaming engine round-trips real models through solve, differentially verified against the linopy oracle in CI (which also proves a bare install never imports linopy). Open questions live in [SPEC.md](SPEC.md) §11.
 
 ## License
 

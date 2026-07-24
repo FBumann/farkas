@@ -2,8 +2,7 @@
 
 ## Project Overview
 
-`linopy_yaml` is a YAML-based math definition layer for [linopy](https://github.com/PyPSA/linopy).
-It lets users define optimisation problems declaratively in YAML and build them into `linopy.Model` objects at runtime.
+`linopy_yaml` is declarative optimisation: models are defined in YAML and built on a relational/streaming engine (duckdb under a hard `memory_limit`, streamed to the solver). [linopy](https://github.com/PyPSA/linopy) is not a runtime dependency — it lives behind the `[oracle]` extra as the opt-in compatibility layer (`import linopy_yaml.compat`) and the differential-test oracle.
 
 See `ARCHITECTURE.md` for the architecture (brief, kept current — update it in any PR that changes structure) and `SPEC.md` for the full design specification.
 
@@ -30,47 +29,42 @@ uv run pre-commit install
 
 ## Package Structure
 
-```
-linopy_yaml/
-├── __init__.py          # Applies the monkey-patch on import; exports MathSchema, register, Model alias
-├── _patch.py            # Monkey-patches linopy.Model with .from_yaml() and .yaml (WeakKeyDictionary-backed descriptor)
-├── accessor.py          # YamlAccessor class (state + extend())
-├── schema.py            # Pydantic models for YAML validation
-├── loader.py            # Data coercion, validation, master coords
-├── expression_parser.py # pyparsing grammar for math expressions
-├── where_parser.py      # pyparsing grammar for where strings
-├── builder.py           # Schema + data → linopy Model construction
-└── helpers.py           # Built-in helpers (sum, roll) + registry
-tests/
-├── conftest.py          # Shared fixtures
-├── test_schema.py       # YAML schema validation tests
-├── test_loader.py       # Data loading and coercion tests
-├── test_parser.py       # Expression and where-string parser tests
-├── test_accessor.py     # YamlAccessor + extend() behavior
-└── test_dispatch.py     # Integration test with the dispatch example
-```
+ARCHITECTURE.md's module map is the authoritative list (a test enforces its
+completeness). The shape: a shared language front end (schema, parsers,
+expansion, validation), the native runner (`api.py`), the streaming engine
+(`relational/` — IR + duckdb executor, import-isolated), and the opt-in
+linopy compat/oracle lane (`compat.py`, `_patch.py`, `accessor.py`,
+`loader.py`, `builder.py`).
 
 ## API
 
-Requires linopy>=0.7 (the release that added `__weakref__` to `Model.__slots__`).
+The product interface is YAML + the runner (no Python modeling API):
 
 ```python
+import linopy_yaml as ly
+
+sol = ly.solve('model.yaml', sources={'p_max': 'p_max.parquet', ...},
+               coords={'snapshot': range(8760)}, memory_limit='2GB')
+sol.objective
+sol.primal('p')          # tidy DataFrame (coords..., value)
+
+ly.write_lp('model.yaml', sources, 'model.lp')   # LP-file sink
+```
+
+Legacy linopy layer (requires `[oracle]` extra):
+
+```python
+import linopy_yaml.compat  # patches linopy.Model
 from linopy import Model
-import linopy_yaml  # registers .from_yaml and .yaml on linopy.Model
 
-# Build from YAML
-m = Model.from_yaml("model.yaml", data={...}, coords={...})
-
-# Accessor on any model — lazy on Python-built models
-m.yaml.schema    # MathSchema (parsed YAML), or None on Python-built models
-m.yaml.dataset   # xr.Dataset of loaded parameters (empty on Python-built models)
-m.yaml.coords    # dict[str, pd.Index], inferred from variables when not declared
-m.yaml.extend(...)  # extend with another YAML file
+m = Model.from_yaml('model.yaml', data={...}, coords={...})
+m.yaml.extend('extra.yaml', data={...})
 ```
 
 ## Development Guidelines
 
-- This package is a **pure consumer** of linopy's public API. Never depend on linopy internals.
-- All validation should happen at load time with clear, actionable error messages.
-- Use `ruff` for linting/formatting, `mypy` for type checking, `pytest` for tests.
+- Read ARCHITECTURE.md before structural changes; its hard rules are enforced by `tests/test_architecture.py`.
+- The runtime never imports linopy/xarray (CI's bare-install job proves it); the compat lane is a pure consumer of linopy's public API.
+- All validation happens at load time with clear, actionable error messages.
+- Use `ruff` for linting/formatting (pre-commit wired), `mypy` for type checking, `pytest` for tests; differential tests against the oracle guard every language feature.
 - Keep the dependency footprint minimal.
