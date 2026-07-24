@@ -40,6 +40,9 @@ backends.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 from linopy_yaml.expression_parser import CompareNode, parse_expression
 from linopy_yaml.schema import MathSchema, PiecewiseDef
 
@@ -62,9 +65,10 @@ def expand_piecewise(schema: MathSchema) -> MathSchema:
             "foreach": [*frame, pw.over],
             "bounds": {"lower": 0, "upper": 1},
         }
+        rhs = f"({pw.active})" if pw.active else "1"
         raw["constraints"][f"{name}_convexity"] = {
             "foreach": list(frame),
-            "equations": [{"expression": f"sum({lam}, over={pw.over}) == 1"}],
+            "equations": [{"expression": f"sum({lam}, over={pw.over}) == {rhs}"}],
         }
         for i, link in enumerate(pw.links):
             expr, values = link[0], link[1]
@@ -87,7 +91,7 @@ def expand_piecewise(schema: MathSchema) -> MathSchema:
             }
             raw["constraints"][f"{name}_pick"] = {
                 "foreach": list(frame),
-                "equations": [{"expression": f"sum({seg}, over={pw.over}) == 1"}],
+                "equations": [{"expression": f"sum({seg}, over={pw.over}) == {rhs}"}],
             }
             raw["constraints"][f"{name}_adjacency"] = {
                 "foreach": [*frame, pw.over],
@@ -129,6 +133,20 @@ def _validate_block(schema: MathSchema, name: str, pw: PiecewiseDef) -> tuple[st
             if d not in frame:
                 frame.append(d)
 
+    if pw.active is not None:
+        if pw.active in schema.variables and not schema.variables[pw.active].binary:
+            raise PiecewiseExpansionError(
+                f"{ctx}: active variable '{pw.active}' must be binary"
+            )
+        for d in _expr_dims(schema, pw.active, f"{ctx} active"):
+            if d == pw.over:
+                raise PiecewiseExpansionError(
+                    f"{ctx}: active expression must not carry the breakpoint dim "
+                    f"'{pw.over}'"
+                )
+            if d not in frame:
+                frame.append(d)
+
     for emitted in (f"{name}_lam", f"{name}_seg"):
         if emitted in schema.variables:
             raise PiecewiseExpansionError(
@@ -166,3 +184,65 @@ def _expr_dims(schema: MathSchema, text: str, ctx: str) -> frozenset[str]:
             f"{ctx}: link expression {text!r} is not a core-subset affine "
             f"expression: {exc}"
         ) from exc
+
+
+def validate_piecewise_data(schema: MathSchema, values: Mapping[str, Any] | Any) -> None:
+    """Data-time guard for ``convex: true`` blocks (SPEC §3.6).
+
+    The hull relaxation is silently wrong for curves of mixed curvature, and
+    ill-defined when the x-breakpoints are not strictly monotone — with the
+    breakpoint values in hand (which the schema never has), both are
+    checkable. *values* maps parameter names to array-likes; entries are
+    coerced per the parameter's declared dims. Blocks whose parameters are
+    missing from *values* are skipped (their absence errors elsewhere).
+    """
+    import numpy as np
+    import xarray as xr
+
+    for name, pw in schema.piecewise.items():
+        if not pw.convex:
+            continue
+        ctx = f"piecewise '{name}'"
+        (x_link, y_link) = pw.links  # convex requires exactly two links
+        try:
+            xa = _as_dataarray(schema, x_link[1], values)
+            ya = _as_dataarray(schema, y_link[1], values)
+        except KeyError:
+            continue
+        xa, ya = xr.broadcast(xa, ya)
+        other = [d for d in xa.dims if d != pw.over]
+        stacked_x = xa.transpose(*other, pw.over).values.reshape(-1, xa.sizes[pw.over])
+        stacked_y = ya.transpose(*other, pw.over).values.reshape(-1, ya.sizes[pw.over])
+        for xs, ys in zip(stacked_x, stacked_y):
+            dx = np.diff(xs)
+            if not (dx > 0).all():
+                raise PiecewiseExpansionError(
+                    f"{ctx}: convex: true requires strictly increasing breakpoints "
+                    f"in '{x_link[1]}' (got {xs.tolist()})"
+                )
+            curvature = np.diff(np.diff(ys) / dx)
+            tol = 1e-9 * max(1.0, float(np.abs(ys).max()))
+            if (curvature > tol).any() and (curvature < -tol).any():
+                raise PiecewiseExpansionError(
+                    f"{ctx}: convex: true is not exact for the mixed-curvature "
+                    f"curve in '{y_link[1]}' — the hull relaxation would silently "
+                    f"cut corners; drop convex: true to use the exact MILP form"
+                )
+
+
+def _as_dataarray(schema: MathSchema, pname: str, values: Mapping[str, Any] | Any) -> Any:
+    import pandas as pd
+    import xarray as xr
+
+    if pname not in values:
+        raise KeyError(pname)
+    obj = values[pname]
+    if isinstance(obj, xr.DataArray):
+        return obj
+    if isinstance(obj, pd.DataFrame) and "value" in obj.columns:
+        dims = list(schema.parameters[pname].dims)
+        return xr.DataArray.from_series(obj.set_index(dims)["value"])
+    if isinstance(obj, pd.Series):
+        dims = list(schema.parameters[pname].dims)
+        return xr.DataArray.from_series(obj.rename_axis(dims))
+    raise KeyError(pname)  # unrecognised source shape (e.g. parquet path): skip

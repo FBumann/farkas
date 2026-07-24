@@ -248,3 +248,129 @@ def test_expansion_structure_and_errors():
     ]
     with pytest.raises(ValueError, match="at most one link"):
         MathSchema(**raw)
+
+
+GATED_YAML = """
+dimensions:
+  snapshot: {dtype: int}
+  bp: {dtype: int}
+
+parameters:
+  load: {dims: [snapshot]}
+  on_flag: {dims: [snapshot]}
+  bp_x: {dims: [bp]}
+  bp_y: {dims: [bp]}
+
+variables:
+  u:
+    foreach: [snapshot]
+    binary: true
+  p:
+    foreach: [snapshot]
+    bounds: {lower: 0, upper: 100}
+  op_cost:
+    foreach: [snapshot]
+    bounds: {lower: 0}
+
+piecewise:
+  cost_curve:
+    over: bp
+    links:
+      - [p, bp_x]
+      - [op_cost, bp_y]
+    active: u
+
+constraints:
+  commit:
+    foreach: [snapshot]
+    equations:
+      - expression: u == on_flag
+  balance:
+    foreach: [snapshot]
+    equations:
+      - expression: p == load * on_flag
+
+objectives:
+  total:
+    sense: minimize
+    equations:
+      - expression: sum(op_cost, over=snapshot)
+"""
+
+
+def test_active_gating(nonconvex_inputs, tmp_path):
+    data, coords = nonconvex_inputs
+    on_flag = pd.Series([1.0, 0.0] * 6, index=pd.RangeIndex(12, name="snapshot"))
+    data = {**data, "on_flag": on_flag}
+
+    yaml_path = tmp_path / "gated.yaml"
+    yaml_path.write_text(GATED_YAML)
+    m = Model.from_yaml(yaml_path, data=data, coords=coords)
+    m.solve(solver_name="highs", output_flag=False)
+    oracle = float(m.objective.value)
+    assert np.isfinite(oracle)
+
+    schema = MathSchema(**pyyaml.safe_load(GATED_YAML))
+    with DuckdbExecutor(memory_limit="256MB") as ex:
+        ex.build(lower_program(schema), tidy_sources(schema, data, coords))
+        sol = ex.solve()
+        assert sol.status == "Optimal"
+        assert sol.objective == pytest.approx(oracle, rel=RTOL)
+
+        cost = sol.primal("op_cost").set_index("snapshot")["value"]
+        for s in on_flag.index:
+            if on_flag[s]:  # on: cost sits ON the curve at the pinned load
+                expected = curve(data["load"][s], data["bp_x"], data["bp_y"])
+            else:  # off: the whole formulation is pinned to zero
+                expected = 0.0
+            assert cost[s] == pytest.approx(expected, abs=1e-6)
+
+
+def test_active_must_be_binary():
+    raw = pyyaml.safe_load(GATED_YAML)
+    raw["variables"]["u"] = {
+        "foreach": ["snapshot"],
+        "bounds": {"lower": 0, "upper": 1},
+    }
+    with pytest.raises(PiecewiseExpansionError, match="must be binary"):
+        expand_piecewise(MathSchema(**raw))
+
+
+def test_convex_guard_rejects_mixed_curvature(nonconvex_inputs):
+    from linopy_yaml.piecewise import validate_piecewise_data
+
+    data, coords = nonconvex_inputs
+    raw = pyyaml.safe_load(NONCONVEX_YAML)
+    raw["piecewise"]["cost_curve"]["convex"] = True
+    schema = MathSchema(**raw)
+
+    # mixed curvature: convex then concave — hull would silently cut corners
+    bad = {
+        **data,
+        "bp_x": pd.Series([0.0, 30.0, 60.0, 100.0], index=pd.RangeIndex(4, name="bp")),
+        "bp_y": pd.Series([0.0, 10.0, 40.0, 50.0], index=pd.RangeIndex(4, name="bp")),
+    }
+    with pytest.raises(PiecewiseExpansionError, match="mixed-curvature"):
+        validate_piecewise_data(schema, bad)
+
+    # non-monotone x breakpoints
+    bad = {
+        **data,
+        "bp_x": pd.Series([0.0, 50.0, 40.0], index=pd.RangeIndex(3, name="bp")),
+    }
+    with pytest.raises(PiecewiseExpansionError, match="strictly increasing"):
+        validate_piecewise_data(schema, bad)
+
+    # consistent (concave) curvature passes — hull semantics documented
+    validate_piecewise_data(schema, data)
+
+    # the guard also fires via the relational adapter
+    with pytest.raises(PiecewiseExpansionError, match="strictly increasing"):
+        tidy_sources(schema, bad, coords)
+
+
+def test_convex_requires_two_links():
+    raw = pyyaml.safe_load(CHP_YAML)
+    raw["piecewise"]["chp"]["convex"] = True
+    with pytest.raises(ValueError, match="exactly two links"):
+        MathSchema(**raw)

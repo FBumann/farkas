@@ -151,6 +151,10 @@ def tidy_sources(
     import pandas as pd
     import xarray as xr
 
+    from linopy_yaml.piecewise import validate_piecewise_data
+
+    validate_piecewise_data(schema, data)
+
     sources: dict[str, object] = {}
     for pname, pdef in schema.parameters.items():
         if pname not in data:

@@ -149,6 +149,20 @@ class PiecewiseDef(BaseModel):
     over: str  # breakpoint dimension
     links: list[list[str]]
     convex: bool = False  # True: pure-LP convex hull (no binaries)
+    active: str | None = None  # gating expression: formulation pinned to 0 when 0
+
+    @model_validator(mode="after")
+    def _check_convex_shape(self) -> PiecewiseDef:
+        if self.convex and len(self.links) != 2:
+            msg = (
+                "convex: true requires exactly two links (the hull relaxation "
+                "is only well-defined for a single y=f(x) curve)."
+            )
+            raise ValueError(msg)
+        if self.convex and self.active is not None:
+            msg = "active gating is not supported with convex: true."
+            raise ValueError(msg)
+        return self
 
     @field_validator("links")
     @classmethod
