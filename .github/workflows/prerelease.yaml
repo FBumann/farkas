@@ -6,8 +6,11 @@ name: Prerelease
 # Pre-1.0 the defaults give a plain alpha stream: v0.0.0-alpha.1, -alpha.2, …
 # (dist versions 0.0.0a1, 0.0.0a2). No semantic promise, just a pinnable build.
 #
-# Deliberately not release-please's `prerelease` mode: that is sticky per branch
-# (every release stays an rc until the config changes back). This is per-cut.
+# release-please owns that stream on `main` (its config is in sticky `prerelease`
+# mode on purpose — the project stays on 0.0.0aN until someone edits it). This
+# workflow is for the cases that cannot reach: a cut from a branch that is not
+# `main`, or a differently-named stream such as 0.2.0/rc. Running it on `main`
+# with the defaults steals a counter release-please is about to use. See RELEASING.md.
 
 on:
   workflow_dispatch:
