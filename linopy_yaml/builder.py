@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, assert_never
 
 import numpy as np
@@ -27,6 +28,20 @@ from linopy_yaml.where_parser import evaluate_where
 
 # Mapping from YAML comparison operators to linopy sign strings
 _SIGN_MAP = {"==": "=", "<=": "<=", ">=": ">="}
+
+
+@dataclass(frozen=True)
+class EvalContext:
+    """Everything expression evaluation needs to resolve names.
+
+    Grows with the expression language (sub-expression scopes, slice
+    bindings, ...) — extend this instead of adding parameters to
+    ``_eval_ast`` and every helper-facing seam.
+    """
+
+    model: linopy.Model
+    dataset: xr.Dataset
+    master_coords: dict[str, pd.Index]
 
 
 def build_model(
@@ -105,6 +120,7 @@ def _build_constraints(
     dataset: xr.Dataset,
     master_coords: dict[str, pd.Index],
 ) -> None:
+    ctx = EvalContext(model, dataset, master_coords)
     for cname, cdef in schema.constraints.items():
         with note(f"while building constraint '{cname}'"):
             # Evaluate constraint-level where mask
@@ -136,8 +152,8 @@ def _build_constraints(
                     raise ValueError(msg)
 
                 # Evaluate both sides
-                lhs = _eval_ast(ast.left, model, dataset, master_coords)
-                rhs = _eval_ast(ast.right, model, dataset, master_coords)
+                lhs = _eval_ast(ast.left, ctx)
+                rhs = _eval_ast(ast.right, ctx)
                 sign = _SIGN_MAP[ast.op]
 
                 # Name: single equation uses constraint name directly
@@ -158,6 +174,7 @@ def _build_objectives(
     dataset: xr.Dataset,
     master_coords: dict[str, pd.Index],
 ) -> None:
+    ctx = EvalContext(model, dataset, master_coords)
     for oname, odef in schema.objectives.items():
         with note(f"while building objective '{oname}'"):
             eq = odef.equations[0]
@@ -170,7 +187,7 @@ def _build_objectives(
                 )
                 raise ValueError(msg)
 
-            expr = _eval_ast(ast, model, dataset, master_coords)
+            expr = _eval_ast(ast, ctx)
 
             sense = "min" if odef.sense == "minimize" else "max"
             model.add_objective(expr, overwrite=True, sense=sense)
@@ -182,26 +199,24 @@ def _build_objectives(
 
 def _eval_ast(
     node: ArithNode,
-    model: linopy.Model,
-    dataset: xr.Dataset,
-    master_coords: dict[str, pd.Index],
+    ctx: EvalContext,
 ) -> Any:
     """Evaluate an expression AST node against the model namespace."""
     if isinstance(node, NumberNode):
         return node.value
 
     if isinstance(node, NameNode):
-        return _resolve_name(node.name, model, dataset, master_coords)
+        return _resolve_name(node.name, ctx)
 
     if isinstance(node, UnaryOpNode):
-        operand = _eval_ast(node.operand, model, dataset, master_coords)
+        operand = _eval_ast(node.operand, ctx)
         if node.op == "-":
             return -operand
         return operand  # unary +
 
     if isinstance(node, BinOpNode):
-        left = _eval_ast(node.left, model, dataset, master_coords)
-        right = _eval_ast(node.right, model, dataset, master_coords)
+        left = _eval_ast(node.left, ctx)
+        right = _eval_ast(node.right, ctx)
         ops = {
             "+": lambda a, b: a + b,
             "-": lambda a, b: a - b,
@@ -214,14 +229,14 @@ def _eval_ast(
     if isinstance(node, FuncCallNode):
         helper = get_helper(node.name)
         # Evaluate positional args
-        args = [_eval_ast(a, model, dataset, master_coords) for a in node.args]
+        args = [_eval_ast(a, ctx) for a in node.args]
         # Evaluate keyword args — NameNodes become strings (for dim names)
         kwargs = {}
         for k, v in node.kwargs.items():
             if isinstance(v, NameNode):
                 kwargs[k] = v.name  # dimension names stay as strings
             else:
-                kwargs[k] = _eval_ast(v, model, dataset, master_coords)
+                kwargs[k] = _eval_ast(v, ctx)
         return helper(*args, **kwargs)
 
     assert_never(node)
@@ -229,22 +244,20 @@ def _eval_ast(
 
 def _resolve_name(
     name: str,
-    model: linopy.Model,
-    dataset: xr.Dataset,
-    master_coords: dict[str, pd.Index],
+    ctx: EvalContext,
 ) -> Any:
     """Resolve a name: check variables first, then parameters."""
     # Check linopy variables
-    if name in model.variables:
-        return model.variables[name]
+    if name in ctx.model.variables:
+        return ctx.model.variables[name]
 
     # Check parameters
-    if name in dataset:
-        return dataset[name]
+    if name in ctx.dataset:
+        return ctx.dataset[name]
 
     # Helpful error
-    var_names = list(model.variables)
-    param_names = sorted(dataset.data_vars)
+    var_names = list(ctx.model.variables)
+    param_names = sorted(ctx.dataset.data_vars)
     msg = (
         f"'{name}' not found.\n"
         f"  Variables:  {var_names}\n"
