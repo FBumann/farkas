@@ -13,26 +13,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.12"
-      - run: pip install -e . pytest
-      - run: python -c "import importlib.util,sys; sys.exit(importlib.util.find_spec('linopy') is not None)"
-        name: assert linopy is absent
-      - run: pytest -q
+      - run: uv sync --no-dev --no-default-groups
+      - run: uv pip install pytest
+      - name: assert linopy is absent
+        run: uv run --no-sync python -c "import importlib.util, sys; sys.exit(importlib.util.find_spec('linopy') is not None)"
+      - run: uv run --no-sync pytest -q
 
   full:
-    # dev install: oracle present — differential tests run against linopy.
+    # oracle install: differential tests run against linopy.
     runs-on: ubuntu-latest
     strategy:
       matrix:
         python-version: ["3.11", "3.13"]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python-version }}
-      - run: pip install -e ".[dev,oracle]"
-      - run: ruff check .
-      - run: ruff format --check .
-      - run: pytest -q
+      - run: uv sync --extra dev --extra oracle
+      - run: uv run --no-sync ruff check .
+      - run: uv run --no-sync ruff format --check .
+      - run: uv run --no-sync pytest -q
