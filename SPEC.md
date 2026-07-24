@@ -971,8 +971,8 @@ Currently `.yaml` covers only the YAML-managed portion. A future version could i
 
 ## 12. Relational Backend
 
-*Status: phase 2 (in design/implementation). Phase-1 spike results and
-operational findings live in `scratch/relational_spike/README.md`.*
+*Status: phase 2 (in design/implementation). Measured results and
+operational findings live in [docs/benchmarks.md](../docs/benchmarks.md).*
 
 ### 12.1 Why
 

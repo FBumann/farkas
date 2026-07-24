@@ -4,7 +4,7 @@ Brief, current, precise. If a PR changes the structure described here, it
 updates this file in the same PR. Details live in [SPEC.md](SPEC.md); the
 per-construct vocabulary lives in [GLOSSARY.md](GLOSSARY.md); what is planned
 and what is refused lives in [ROADMAP.md](ROADMAP.md); measured results live
-in `scratch/relational_spike/README.md`.
+in [docs/benchmarks.md](docs/benchmarks.md).
 
 ## Thesis
 
