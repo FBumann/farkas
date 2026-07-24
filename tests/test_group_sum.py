@@ -8,13 +8,15 @@ Three-way differential on examples/transport.yaml:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
 import xarray as xr
 
-duckdb = pytest.importorskip("duckdb")
-highspy = pytest.importorskip("highspy")
+duckdb = pytest.importorskip('duckdb')
+highspy = pytest.importorskip('highspy')
 
 import yaml as pyyaml  # noqa: E402
 from linopy import Model  # noqa: E402
@@ -35,25 +37,25 @@ from tests.test_relational import (  # noqa: E402
 
 RTOL = 1e-9
 
-TRANSPORT_YAML = "examples/transport.yaml"
+TRANSPORT_YAML = 'examples/transport.yaml'
 
 
 def _inputs(gens, lines, load):
     data = {
-        "p_max": gens.set_index("generator")["p_max"],
-        "cost": gens.set_index("generator")["cost"],
-        "gen_bus": gens.set_index("generator")["bus"],
-        "cap": lines.set_index("line")["cap"],
-        "neg_cap": -lines.set_index("line")["cap"],
-        "line_from": lines.set_index("line")["from_bus"],
-        "line_to": lines.set_index("line")["to_bus"],
-        "load": xr.DataArray.from_series(load.set_index(["snapshot", "bus"])["value"]),
+        'p_max': gens.set_index('generator')['p_max'],
+        'cost': gens.set_index('generator')['cost'],
+        'gen_bus': gens.set_index('generator')['bus'],
+        'cap': lines.set_index('line')['cap'],
+        'neg_cap': -lines.set_index('line')['cap'],
+        'line_from': lines.set_index('line')['from_bus'],
+        'line_to': lines.set_index('line')['to_bus'],
+        'load': xr.DataArray.from_series(load.set_index(['snapshot', 'bus'])['value']),
     }
     coords = {
-        "snapshot": pd.Index(sorted(load["snapshot"].unique()), name="snapshot"),
-        "generator": pd.Index(gens["generator"], name="generator"),
-        "bus": pd.Index(sorted(load["bus"].unique()), name="bus"),
-        "line": pd.Index(lines["line"], name="line"),
+        'snapshot': pd.Index(sorted(load['snapshot'].unique()), name='snapshot'),
+        'generator': pd.Index(gens['generator'], name='generator'),
+        'bus': pd.Index(sorted(load['bus'].unique()), name='bus'),
+        'line': pd.Index(lines['line'], name='line'),
     }
     return data, coords
 
@@ -68,34 +70,34 @@ def test_transport_yaml_differential(transport_data, tmp_path):  # noqa: F811
 
     # eager backend through the YAML group_sum helper
     m = Model.from_yaml(TRANSPORT_YAML, data=data, coords=coords)
-    m.solve(solver_name="highs", output_flag=False)
+    m.solve(solver_name='highs', output_flag=False)
     assert float(m.objective.value) == pytest.approx(oracle, rel=RTOL)
 
     # relational backend through lowering
-    schema = MathSchema(**pyyaml.safe_load(open(TRANSPORT_YAML)))
-    with DuckdbExecutor(memory_limit="256MB") as ex:
+    schema = MathSchema(**pyyaml.safe_load(Path(TRANSPORT_YAML).read_text()))
+    with DuckdbExecutor(memory_limit='256MB') as ex:
         ex.build(lower_program(schema), tidy_sources(schema, data, coords))
         sol = ex.solve()
-        assert sol.status == "Optimal"
+        assert sol.status == 'Optimal'
         assert sol.objective == pytest.approx(oracle, rel=RTOL)
 
-        lp = tmp_path / "transport.lp"
+        lp = tmp_path / 'transport.lp'
         ex.write_lp(lp)
         h = highspy.Highs()
-        h.setOptionValue("output_flag", False)
+        h.setOptionValue('output_flag', False)
         h.readModel(str(lp))
         h.run()
         assert h.getInfo().objective_function_value == pytest.approx(oracle, rel=RTOL)
 
 
 def test_group_sum_lowering_structure():
-    schema = MathSchema(**pyyaml.safe_load(open(TRANSPORT_YAML)))
+    schema = MathSchema(**pyyaml.safe_load(Path(TRANSPORT_YAML).read_text()))
     program = lower_program(schema)
 
     (c,) = program.constraints
-    assert c.dims == ("snapshot", "bus")
+    assert c.dims == ('snapshot', 'bus')
     # lhs contains the three GroupSum pieces
-    assert GroupSum(Var("p"), mapping="gen_bus", into="bus") in _flatten(c.lhs)
+    assert GroupSum(Var('p'), mapping='gen_bus', into='bus') in _flatten(c.lhs)
 
 
 def _flatten(expr):
@@ -109,17 +111,15 @@ def _flatten(expr):
 
 
 def test_group_sum_lowering_errors():
-    schema = MathSchema(**pyyaml.safe_load(open(TRANSPORT_YAML)))
+    schema = MathSchema(**pyyaml.safe_load(Path(TRANSPORT_YAML).read_text()))
     from linopy_yaml.expression_parser import parse_expression
     from linopy_yaml.lowering import _lower_expr
 
-    with pytest.raises(
-        RelationalBuildError, match="mapping must name a declared parameter"
-    ):
-        _lower_expr(parse_expression("group_sum(p, nope, into=bus)"), schema, "t")
-    with pytest.raises(RelationalBuildError, match="must name a declared dimension"):
-        _lower_expr(parse_expression("group_sum(p, gen_bus, into=nope)"), schema, "t")
-    with pytest.raises(RelationalBuildError, match="exactly one dim"):
-        _lower_expr(parse_expression("group_sum(p, load, into=bus)"), schema, "t")
-    with pytest.raises(RelationalBuildError, match="but the expression"):
-        _lower_expr(parse_expression("group_sum(f, gen_bus, into=bus)"), schema, "t")
+    with pytest.raises(RelationalBuildError, match='mapping must name a declared parameter'):
+        _lower_expr(parse_expression('group_sum(p, nope, into=bus)'), schema, 't')
+    with pytest.raises(RelationalBuildError, match='must name a declared dimension'):
+        _lower_expr(parse_expression('group_sum(p, gen_bus, into=nope)'), schema, 't')
+    with pytest.raises(RelationalBuildError, match='exactly one dim'):
+        _lower_expr(parse_expression('group_sum(p, load, into=bus)'), schema, 't')
+    with pytest.raises(RelationalBuildError, match='but the expression'):
+        _lower_expr(parse_expression('group_sum(f, gen_bus, into=bus)'), schema, 't')

@@ -34,16 +34,18 @@ oracle = [
     "linopy>=0.9.0,<0.10",
     "xarray>=2024.2.0",
 ]
+
+
+[dependency-groups]
 dev = [
-    "pytest",
-    "pytest-cov",
-    "ruff>=0.15,<0.16",  # format-check in CI: pin to the series the repo is formatted with
-    "mypy",
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+    "ruff==0.15.7",
+    "mypy==1.19.0",
+    "pre-commit==4.6.0",
     "linopy>=0.9.0,<0.10",
     "xarray>=2024.2.0",
 ]
-
-[dependency-groups]
 # benchmarking tools for scratch/relational_spike — not needed to use or test
 spike = [
     "memray",
@@ -54,9 +56,56 @@ spike = [
 [tool.setuptools.packages.find]
 include = ["linopy_yaml*"]
 
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
 [tool.ruff.lint]
-select = ["F", "E", "W", "I", "UP"]
-ignore = ["E501"]
+select = [
+    "E",     # pycodestyle errors
+    "F",     # Pyflakes
+    "W",     # pycodestyle warnings
+    "I",     # isort
+    "B",     # flake8-bugbear
+    "N",     # pep8-naming
+    "UP",    # pyupgrade
+    "FA",    # flake8-future-annotations
+    "TC",    # flake8-type-checking
+    "SIM",   # flake8-simplify
+    "RUF",   # Ruff-specific rules
+    "PERF",  # perflint
+    "C4",    # flake8-comprehensions
+    "PIE",   # flake8-pie
+    "RET",   # flake8-return
+    "FLY",   # flynt (f-string)
+    "FURB",  # refurb
+    "T20",   # flake8-print
+    "PLC",   # pylint conventions
+    "PLE",   # pylint errors
+]
+ignore = [
+    "E501",     # line too long (handled by formatter)
+    "RET504",   # unnecessary assignment before return
+    "PLC0415",  # import not at top level (lazy imports are load-bearing here)
+]
+extend-fixable = ["B", "SIM", "RUF", "C4", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"scratch/**/*.py" = ["T20"]  # benchmark scripts report via print
+"linopy_yaml/where_parser.py" = ["N806"]  # grammar tokens (NOT/AND/OR) are named after keywords
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+docstring-code-format = true
+
+[tool.ruff.lint.pyupgrade]
+keep-runtime-typing = false
+
+[tool.ruff.lint.flake8-type-checking]
+# pydantic models evaluate annotations at runtime to build validators, so imports
+# used only in annotations must stay at runtime (not moved to TYPE_CHECKING).
+runtime-evaluated-base-classes = ["pydantic.BaseModel"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -14,10 +14,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-Sense = Literal["==", "<=", ">="]
-ObjSense = Literal["min", "max"]
-CmpOp = Literal["==", "!=", "<=", ">=", "<", ">"]
-VType = Literal["continuous", "binary", "integer"]
+Sense = Literal['==', '<=', '>=']
+ObjSense = Literal['min', 'max']
+CmpOp = Literal['==', '!=', '<=', '>=', '<', '>']
+VType = Literal['continuous', 'binary', 'integer']
 
 
 # --------------------------------------------------------------------------
@@ -117,7 +117,7 @@ class Sum(Expr):
 
     def __post_init__(self) -> None:
         if isinstance(self.over, str):  # tolerate Sum(x, "generator")
-            object.__setattr__(self, "over", (self.over,))
+            object.__setattr__(self, 'over', (self.over,))
 
 
 @dataclass(frozen=True)
@@ -135,7 +135,7 @@ class GroupSum(Expr):
 
 @dataclass(frozen=True)
 class Shift(Expr):
-    """Shift along ``dim``: the result at coord *t* is ``x`` at coord *t−n*.
+    """Shift along ``dim``: the result at coord *t* is ``x`` at coord *t-n*.
 
     ``wrap=True`` is periodic (matching ``xarray.roll``); ``wrap=False`` is
     acyclic — positions shifted past the edge contribute zero (row absence).
@@ -213,9 +213,9 @@ class VariableDecl:
     name: str
     dims: tuple[str, ...]
     where: Pred | None = None
-    lower: Expr = field(default_factory=lambda: Const(float("-inf")))
-    upper: Expr = field(default_factory=lambda: Const(float("inf")))
-    vtype: VType = "continuous"
+    lower: Expr = field(default_factory=lambda: Const(float('-inf')))
+    upper: Expr = field(default_factory=lambda: Const(float('inf')))
+    vtype: VType = 'continuous'
 
 
 @dataclass(frozen=True)

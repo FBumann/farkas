@@ -11,7 +11,7 @@ See `ARCHITECTURE.md` for the architecture (brief, kept current — update it in
 
 ```bash
 # Install (uv-managed venv; oracle extra = linopy/xarray for differential tests)
-uv sync --extra dev --extra oracle
+uv sync  # dev group (tools + oracle deps) is default
 
 # Run tests
 uv run pytest
@@ -23,6 +23,9 @@ uv run ruff format .
 
 # Type check
 uv run mypy linopy_yaml
+
+# Hooks (once per clone)
+uv run pre-commit install
 ```
 
 ## Package Structure

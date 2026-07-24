@@ -35,7 +35,6 @@ from linopy_yaml.expression_parser import (
 )
 from linopy_yaml.relational import ir
 from linopy_yaml.relational.executor import RelationalBuildError
-from linopy_yaml.schema import MathSchema
 from linopy_yaml.where_parser import (
     AndNode,
     BoolLiteral,
@@ -48,9 +47,9 @@ from linopy_yaml.where_parser import (
 )
 
 if TYPE_CHECKING:
-    pass
+    from linopy_yaml.schema import MathSchema
 
-_SENSES = {"==", "<=", ">="}
+_SENSES = {'==', '<=', '>='}
 
 
 def lower_program(schema: MathSchema) -> ir.Program:
@@ -58,10 +57,7 @@ def lower_program(schema: MathSchema) -> ir.Program:
     from linopy_yaml.piecewise import expand_piecewise
 
     schema = expand_piecewise(schema)
-    parameters = tuple(
-        ir.ParameterDecl(name, tuple(pdef.dims))
-        for name, pdef in schema.parameters.items()
-    )
+    parameters = tuple(ir.ParameterDecl(name, tuple(pdef.dims)) for name, pdef in schema.parameters.items())
 
     variables = []
     for vname, vdef in schema.variables.items():
@@ -69,13 +65,13 @@ def lower_program(schema: MathSchema) -> ir.Program:
         upper: ir.Expr
         if vdef.binary:
             # binary implies fixed 0/1 bounds, matching linopy's binary=True
-            vtype, lower, upper = "binary", ir.Const(0.0), ir.Const(1.0)
+            vtype, lower, upper = 'binary', ir.Const(0.0), ir.Const(1.0)
         elif vdef.integer:
-            vtype = "integer"
+            vtype = 'integer'
             lower = _lower_bound(vdef.bounds.lower)
             upper = _lower_bound(vdef.bounds.upper)
         else:
-            vtype = "continuous"
+            vtype = 'continuous'
             lower = _lower_bound(vdef.bounds.lower)
             upper = _lower_bound(vdef.bounds.upper)
         variables.append(
@@ -94,7 +90,7 @@ def lower_program(schema: MathSchema) -> ir.Program:
         c_where = _lower_where(cdef.where, schema, f"constraint '{cname}'")
         n_eqs = len(cdef.equations)
         for i, eq in enumerate(cdef.equations):
-            eq_name = cname if n_eqs == 1 else f"{cname}_{i}"
+            eq_name = cname if n_eqs == 1 else f'{cname}_{i}'
             eq_where = _lower_where(eq.where, schema, f"constraint '{eq_name}'")
             where = _and_preds(c_where, eq_where)
 
@@ -102,12 +98,10 @@ def lower_program(schema: MathSchema) -> ir.Program:
             if not isinstance(ast, CompareNode):
                 raise RelationalBuildError(
                     f"constraint '{eq_name}': expression must contain exactly one "
-                    f"comparison operator (<=, >=, ==). Got: {eq.expression!r}"
+                    f'comparison operator (<=, >=, ==). Got: {eq.expression!r}'
                 )
             if ast.op not in _SENSES:
-                raise RelationalBuildError(
-                    f"constraint '{eq_name}': unsupported sense '{ast.op}'"
-                )
+                raise RelationalBuildError(f"constraint '{eq_name}': unsupported sense '{ast.op}'")
             constraints.append(
                 ir.ConstraintDecl(
                     eq_name,
@@ -120,17 +114,13 @@ def lower_program(schema: MathSchema) -> ir.Program:
             )
 
     if not schema.objectives:
-        raise RelationalBuildError("the relational backend requires an objective")
-    oname, odef = next(
-        reversed(schema.objectives.items())
-    )  # last one wins (eager parity)
+        raise RelationalBuildError('the relational backend requires an objective')
+    oname, odef = next(reversed(schema.objectives.items()))  # last one wins (eager parity)
     ast = parse_and_expand(odef.equations[0].expression, schema, f"objective '{oname}'")
     if isinstance(ast, CompareNode):
-        raise RelationalBuildError(
-            f"objective '{oname}': expression must not contain a comparison operator"
-        )
+        raise RelationalBuildError(f"objective '{oname}': expression must not contain a comparison operator")
     objective = ir.ObjectiveDecl(
-        "min" if odef.sense == "minimize" else "max",
+        'min' if odef.sense == 'minimize' else 'max',
         _lower_expr(ast, schema, f"objective '{oname}'"),
     )
 
@@ -155,7 +145,7 @@ def tidy_sources(
 
     # A DataArray argument implies the caller already imported xarray —
     # consult sys.modules instead of importing (keeps the runtime xarray-free)
-    xr = sys.modules.get("xarray")
+    xr = sys.modules.get('xarray')
 
     from linopy_yaml.piecewise import validate_piecewise_data
 
@@ -174,16 +164,16 @@ def tidy_sources(
         if xr is not None and isinstance(obj, xr.DataArray):
             obj = obj.to_series()
         if isinstance(obj, pd.Series):
-            df = obj.rename("value").rename_axis(pdef.dims).reset_index()
+            df = obj.rename('value').rename_axis(pdef.dims).reset_index()
         elif isinstance(obj, pd.DataFrame):
             df = obj
         elif isinstance(obj, (int, float)) and not pdef.dims:
-            df = pd.DataFrame({"value": [float(obj)]})
+            df = pd.DataFrame({'value': [float(obj)]})
         else:
             raise RelationalBuildError(
                 f"parameter '{pname}': cannot adapt {type(obj).__name__} to a tidy "
-                f"table — pass a Series indexed by {pdef.dims} or a DataFrame with "
-                f"columns {[*pdef.dims, 'value']}"
+                f'table — pass a Series indexed by {pdef.dims} or a DataFrame with '
+                f'columns {[*pdef.dims, "value"]}'
             )
         sources[pname] = df
 
@@ -213,118 +203,90 @@ def _lower_expr(node: ArithNode, schema: MathSchema, context: str) -> ir.Expr:
             return ir.Var(node.name)
         if node.name in schema.parameters:
             return ir.Param(node.name)
-        raise RelationalBuildError(
-            f"{context}: '{node.name}' is neither a declared variable nor parameter"
-        )
+        raise RelationalBuildError(f"{context}: '{node.name}' is neither a declared variable nor parameter")
 
     if isinstance(node, UnaryOpNode):
         inner = _lower_expr(node.operand, schema, context)
-        return ir.Neg(inner) if node.op == "-" else inner
+        return ir.Neg(inner) if node.op == '-' else inner
 
     if isinstance(node, BinOpNode):
         left = _lower_expr(node.left, schema, context)
         right = _lower_expr(node.right, schema, context)
         match node.op:
-            case "+":
+            case '+':
                 return ir.Add(left, right)
-            case "-":
+            case '-':
                 return ir.Add(left, ir.Neg(right))
-            case "*":
+            case '*':
                 return ir.Mul(left, right)
-            case "/":
+            case '/':
                 return ir.Div(left, right)
             case _:
                 raise RelationalBuildError(
-                    f"{context}: operator '{node.op}' is not supported by the "
-                    f"relational backend (v0)"
+                    f"{context}: operator '{node.op}' is not supported by the relational backend (v0)"
                 )
 
     if isinstance(node, FuncCallNode):
-        if node.name == "sum":
-            if len(node.args) != 1 or set(node.kwargs) != {"over"}:
-                raise RelationalBuildError(
-                    f"{context}: sum() expects sum(<expr>, over=<dim>)"
-                )
-            over_node = node.kwargs["over"]
+        if node.name == 'sum':
+            if len(node.args) != 1 or set(node.kwargs) != {'over'}:
+                raise RelationalBuildError(f'{context}: sum() expects sum(<expr>, over=<dim>)')
+            over_node = node.kwargs['over']
             if not isinstance(over_node, NameNode):
-                raise RelationalBuildError(
-                    f"{context}: sum(over=...) must name a dimension"
-                )
+                raise RelationalBuildError(f'{context}: sum(over=...) must name a dimension')
             inner = _lower_expr(node.args[0], schema, context)
             # eager parity: summing over a dim the operand does not carry is a no-op
             if over_node.name not in _dims_of(inner, schema):
                 return inner
             return ir.Sum(inner, (over_node.name,))
 
-        if node.name == "group_sum":
-            if len(node.args) != 2 or set(node.kwargs) != {"into"}:
+        if node.name == 'group_sum':
+            if len(node.args) != 2 or set(node.kwargs) != {'into'}:
                 raise RelationalBuildError(
-                    f"{context}: group_sum() expects "
-                    f"group_sum(<expr>, <mapping-parameter>, into=<dim>)"
+                    f'{context}: group_sum() expects group_sum(<expr>, <mapping-parameter>, into=<dim>)'
                 )
             mapping_node = node.args[1]
-            into_node = node.kwargs["into"]
-            if (
-                not isinstance(mapping_node, NameNode)
-                or mapping_node.name not in schema.parameters
-            ):
-                raise RelationalBuildError(
-                    f"{context}: group_sum() mapping must name a declared parameter"
-                )
+            into_node = node.kwargs['into']
+            if not isinstance(mapping_node, NameNode) or mapping_node.name not in schema.parameters:
+                raise RelationalBuildError(f'{context}: group_sum() mapping must name a declared parameter')
             mdims = schema.parameters[mapping_node.name].dims
             if len(mdims) != 1:
                 raise RelationalBuildError(
-                    f"{context}: group_sum() mapping '{mapping_node.name}' must have "
-                    f"exactly one dim (has {mdims})"
+                    f"{context}: group_sum() mapping '{mapping_node.name}' must have exactly one dim (has {mdims})"
                 )
-            if (
-                not isinstance(into_node, NameNode)
-                or into_node.name not in schema.dimensions
-            ):
-                raise RelationalBuildError(
-                    f"{context}: group_sum(into=...) must name a declared dimension"
-                )
+            if not isinstance(into_node, NameNode) or into_node.name not in schema.dimensions:
+                raise RelationalBuildError(f'{context}: group_sum(into=...) must name a declared dimension')
             inner = _lower_expr(node.args[0], schema, context)
             if mdims[0] not in _dims_of(inner, schema):
                 raise RelationalBuildError(
                     f"{context}: group_sum() over '{mdims[0]}' but the expression "
-                    f"has dims {sorted(_dims_of(inner, schema))}"
+                    f'has dims {sorted(_dims_of(inner, schema))}'
                 )
             return ir.GroupSum(inner, mapping=mapping_node.name, into=into_node.name)
 
-        if node.name in ("roll", "shift"):
-            wrap = node.name == "roll"
+        if node.name in ('roll', 'shift'):
+            wrap = node.name == 'roll'
             if len(node.args) != 1 or len(node.kwargs) != 1:
-                raise RelationalBuildError(
-                    f"{context}: {node.name}() expects {node.name}(<expr>, <dim>=<n>)"
-                )
+                raise RelationalBuildError(f'{context}: {node.name}() expects {node.name}(<expr>, <dim>=<n>)')
             ((dim, shift_node),) = node.kwargs.items()
             if dim not in schema.dimensions:
-                raise RelationalBuildError(
-                    f"{context}: {node.name}() dimension '{dim}' is not declared"
-                )
+                raise RelationalBuildError(f"{context}: {node.name}() dimension '{dim}' is not declared")
             sign = 1
-            if isinstance(shift_node, UnaryOpNode) and shift_node.op == "-":
+            if isinstance(shift_node, UnaryOpNode) and shift_node.op == '-':
                 sign, shift_node = -1, shift_node.operand
-            if (
-                not isinstance(shift_node, NumberNode)
-                or int(shift_node.value) != shift_node.value
-            ):
-                raise RelationalBuildError(
-                    f"{context}: {node.name}() shift must be an integer literal"
-                )
+            if not isinstance(shift_node, NumberNode) or int(shift_node.value) != shift_node.value:
+                raise RelationalBuildError(f'{context}: {node.name}() shift must be an integer literal')
             inner = _lower_expr(node.args[0], schema, context)
             if dim not in _dims_of(inner, schema):
                 raise RelationalBuildError(
                     f"{context}: {node.name}() along '{dim}' but the expression "
-                    f"has dims {sorted(_dims_of(inner, schema))}"
+                    f'has dims {sorted(_dims_of(inner, schema))}'
                 )
             return ir.Shift(inner, dim, sign * int(shift_node.value), wrap=wrap)
 
         raise RelationalBuildError(
             f"{context}: helper '{node.name}' is not supported by the relational "
             f"backend (v0 supports 'sum', 'group_sum', and 'roll') — use the "
-            f"eager backend"
+            f'eager backend'
         )
 
     assert_never(node)
@@ -348,7 +310,7 @@ def _dims_of(expr: ir.Expr, schema: MathSchema) -> frozenset[str]:
     if isinstance(expr, ir.GroupSum):
         d = schema.parameters[expr.mapping].dims[0]
         return (_dims_of(expr.x, schema) - {d}) | {expr.into}
-    raise RelationalBuildError(f"cannot infer dims of {type(expr).__name__}")
+    raise RelationalBuildError(f'cannot infer dims of {type(expr).__name__}')
 
 
 def _lower_bound(value: float | str) -> ir.Expr:
@@ -387,12 +349,9 @@ def _lower_where_node(node: WhereNode, schema: MathSchema, context: str) -> ir.P
         if node.name in schema.dimensions:
             raise RelationalBuildError(
                 f"{context}: where-comparisons on dimension '{node.name}' are not "
-                f"supported by the relational backend (v0) — use the eager backend"
+                f'supported by the relational backend (v0) — use the eager backend'
             )
-        raise RelationalBuildError(
-            f"{context}: where references '{node.name}', which is not a declared "
-            f"parameter"
-        )
+        raise RelationalBuildError(f"{context}: where references '{node.name}', which is not a declared parameter")
 
     if isinstance(node, NotNode):
         return ir.Not(_lower_where_node(node.operand, schema, context))

@@ -10,13 +10,13 @@ from pydantic import BaseModel, field_validator, model_validator
 class DimensionDef(BaseModel):
     """A declared dimension with optional dtype and values."""
 
-    dtype: str = "str"
+    dtype: str = 'str'
     values: list[Any] | None = None
 
-    @field_validator("dtype")
+    @field_validator('dtype')
     @classmethod
     def _check_dtype(cls, v: str) -> str:
-        allowed = {"float", "int", "str", "datetime"}
+        allowed = {'float', 'int', 'str', 'datetime'}
         if v not in allowed:
             msg = f"dtype must be one of {allowed}, got '{v}'"
             raise ValueError(msg)
@@ -27,12 +27,12 @@ class ParameterDef(BaseModel):
     """A declared parameter with dims and dtype."""
 
     dims: list[str]
-    dtype: str = "float"
+    dtype: str = 'float'
 
-    @field_validator("dtype")
+    @field_validator('dtype')
     @classmethod
     def _check_dtype(cls, v: str) -> str:
-        allowed = {"float", "int", "bool", "str"}
+        allowed = {'float', 'int', 'bool', 'str'}
         if v not in allowed:
             msg = f"dtype must be one of {allowed}, got '{v}'"
             raise ValueError(msg)
@@ -43,7 +43,7 @@ class BoundsDef(BaseModel):
     """Variable bounds — each side is a number or parameter name."""
 
     lower: float | str = 0
-    upper: float | str = float("inf")
+    upper: float | str = float('inf')
 
 
 class VariableDef(BaseModel):
@@ -55,10 +55,10 @@ class VariableDef(BaseModel):
     binary: bool = False
     integer: bool = False
 
-    @model_validator(mode="after")
+    @model_validator(mode='after')
     def _check_binary_integer(self) -> VariableDef:
         if self.binary and self.integer:
-            msg = "A variable cannot be both binary and integer."
+            msg = 'A variable cannot be both binary and integer.'
             raise ValueError(msg)
         return self
 
@@ -77,11 +77,11 @@ class ConstraintDef(BaseModel):
     where: str | None = None
     equations: list[EquationDef]
 
-    @field_validator("equations")
+    @field_validator('equations')
     @classmethod
     def _at_least_one(cls, v: list[EquationDef]) -> list[EquationDef]:
         if not v:
-            msg = "A constraint must have at least one equation."
+            msg = 'A constraint must have at least one equation.'
             raise ValueError(msg)
         return v
 
@@ -89,23 +89,23 @@ class ConstraintDef(BaseModel):
 class ObjectiveDef(BaseModel):
     """A declared objective function."""
 
-    sense: str = "minimize"
+    sense: str = 'minimize'
     equations: list[EquationDef]
 
-    @field_validator("sense")
+    @field_validator('sense')
     @classmethod
     def _check_sense(cls, v: str) -> str:
-        allowed = {"minimize", "maximize"}
+        allowed = {'minimize', 'maximize'}
         if v not in allowed:
             msg = f"sense must be one of {allowed}, got '{v}'"
             raise ValueError(msg)
         return v
 
-    @field_validator("equations")
+    @field_validator('equations')
     @classmethod
     def _at_least_one(cls, v: list[EquationDef]) -> list[EquationDef]:
         if not v:
-            msg = "An objective must have at least one equation."
+            msg = 'An objective must have at least one equation.'
             raise ValueError(msg)
         return v
 
@@ -122,11 +122,11 @@ class MacroDef(BaseModel):
     kwargs: list[str] = []
     template: str
 
-    @model_validator(mode="after")
+    @model_validator(mode='after')
     def _check_formals(self) -> MacroDef:
         formals = [*self.args, *self.kwargs]
         if len(set(formals)) != len(formals):
-            msg = f"duplicate formal names: {formals}"
+            msg = f'duplicate formal names: {formals}'
             raise ValueError(msg)
         return self
 
@@ -151,39 +151,36 @@ class PiecewiseDef(BaseModel):
     convex: bool = False  # True: pure-LP convex hull (no binaries)
     active: str | None = None  # gating expression: formulation pinned to 0 when 0
 
-    @model_validator(mode="after")
+    @model_validator(mode='after')
     def _check_convex_shape(self) -> PiecewiseDef:
         if self.convex and len(self.links) != 2:
             msg = (
-                "convex: true requires exactly two links (the hull relaxation "
-                "is only well-defined for a single y=f(x) curve)."
+                'convex: true requires exactly two links (the hull relaxation '
+                'is only well-defined for a single y=f(x) curve).'
             )
             raise ValueError(msg)
         if self.convex and self.active is not None:
-            msg = "active gating is not supported with convex: true."
+            msg = 'active gating is not supported with convex: true.'
             raise ValueError(msg)
         return self
 
-    @field_validator("links")
+    @field_validator('links')
     @classmethod
     def _check_links(cls, v: list[list[str]]) -> list[list[str]]:
         if len(v) < 2:
-            msg = "piecewise needs at least two links ([expression, values, sign?])."
+            msg = 'piecewise needs at least two links ([expression, values, sign?]).'
             raise ValueError(msg)
         signs = []
         for link in v:
             if not 2 <= len(link) <= 3:
-                msg = (
-                    f"each link must be [expression, values] or "
-                    f"[expression, values, sign], got {link!r}"
-                )
+                msg = f'each link must be [expression, values] or [expression, values, sign], got {link!r}'
                 raise ValueError(msg)
-            sign = link[2] if len(link) == 3 else "=="
-            if sign not in ("==", "<=", ">="):
+            sign = link[2] if len(link) == 3 else '=='
+            if sign not in ('==', '<=', '>='):
                 msg = f"link sign must be '==', '<=' or '>=', got {sign!r}"
                 raise ValueError(msg)
             signs.append(sign)
-        non_eq = [s for s in signs if s != "=="]
+        non_eq = [s for s in signs if s != '==']
         if len(non_eq) > 1:
             msg = "at most one link may carry a non-'==' sign."
             raise ValueError(msg)
@@ -205,71 +202,52 @@ class MathSchema(BaseModel):
     macros: dict[str, MacroDef] = {}
     piecewise: dict[str, PiecewiseDef] = {}
 
-    @model_validator(mode="after")
+    @model_validator(mode='after')
     def _validate_references(self) -> MathSchema:
         errors = []
 
         # Named expressions and macros must not shadow other model names
         for what, group in (
-            ("Named expression", self.expressions),
-            ("Macro", self.macros),
+            ('Named expression', self.expressions),
+            ('Macro', self.macros),
         ):
-            for ename in group:
+            errors.extend(
+                f"{what} '{ename}' collides with a declared {kind} of the same name. Rename one of them."
+                for ename in group
                 for kind, names in (
-                    ("parameter", self.parameters),
-                    ("variable", self.variables),
-                    ("dimension", self.dimensions),
-                ):
-                    if ename in names:
-                        errors.append(
-                            f"{what} '{ename}' collides with a declared "
-                            f"{kind} of the same name. Rename one of them."
-                        )
-        for mname in self.macros:
-            if mname in self.expressions:
-                errors.append(
-                    f"Macro '{mname}' collides with a named expression of the "
-                    f"same name. Rename one of them."
+                    ('parameter', self.parameters),
+                    ('variable', self.variables),
+                    ('dimension', self.dimensions),
                 )
+                if ename in names
+            )
+        errors.extend(
+            f"Macro '{mname}' collides with a named expression of the same name. Rename one of them."
+            for mname in self.macros
+            if mname in self.expressions
+        )
 
-        # Check parameter dims reference declared dimensions
-        for pname, pdef in self.parameters.items():
-            for d in pdef.dims:
-                if d not in self.dimensions:
-                    errors.append(
-                        f"Parameter '{pname}' references undeclared "
-                        f"dimension '{d}'. Declare it under 'dimensions:'."
-                    )
-
-        # Check variable foreach references declared dimensions
-        for vname, vdef in self.variables.items():
-            for d in vdef.foreach:
-                if d not in self.dimensions:
-                    errors.append(
-                        f"Variable '{vname}' references undeclared "
-                        f"dimension '{d}'. Declare it under 'dimensions:'."
-                    )
-
-        # Check constraint foreach references declared dimensions
-        for cname, cdef in self.constraints.items():
-            for d in cdef.foreach:
-                if d not in self.dimensions:
-                    errors.append(
-                        f"Constraint '{cname}' references undeclared "
-                        f"dimension '{d}'. Declare it under 'dimensions:'."
-                    )
+        # Referenced dimensions must be declared
+        errors.extend(
+            f"{kind} '{name}' references undeclared dimension '{d}'. Declare it under 'dimensions:'."
+            for kind, group, dims_of in (
+                ('Parameter', self.parameters, lambda p: p.dims),
+                ('Variable', self.variables, lambda v: v.foreach),
+                ('Constraint', self.constraints, lambda c: c.foreach),
+            )
+            for name, item in group.items()
+            for d in dims_of(item)
+            if d not in self.dimensions
+        )
 
         # Check variable bounds parameter references
         for vname, vdef in self.variables.items():
-            for side in ("lower", "upper"):
+            for side in ('lower', 'upper'):
                 val = getattr(vdef.bounds, side)
                 if isinstance(val, str) and val not in self.parameters:
-                    errors.append(
-                        f"Variable '{vname}' bounds.{side} references "
-                        f"undeclared parameter '{val}'."
-                    )
+                    errors.append(f"Variable '{vname}' bounds.{side} references undeclared parameter '{val}'.")
 
         if errors:
-            raise ValueError("\n".join(errors))
+            raise ValueError('\n'.join(errors))
 
         return self
