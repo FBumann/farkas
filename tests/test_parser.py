@@ -1,6 +1,5 @@
 """Tests for expression and where-string parsers."""
 
-import numpy as np
 import pandas as pd
 import pytest
 import xarray as xr

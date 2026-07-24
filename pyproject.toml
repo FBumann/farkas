@@ -17,7 +17,7 @@ classifiers = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "linopy>=0.7.0,<0.8",
+    "linopy>=0.9.0,<0.10",
     "xarray>=2024.2.0",
     "pandas",
     "numpy",
@@ -27,11 +27,26 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# the relational/streaming backend (linopy_yaml.relational) is opt-in:
+# without this extra the package behaves exactly as before
+relational = [
+    "duckdb>=1.0",
+    "pyarrow",
+    "highspy",
+]
 dev = [
     "pytest",
     "pytest-cov",
     "ruff",
     "mypy",
+]
+
+[dependency-groups]
+# benchmarking tools for scratch/relational_spike — not needed to use or test
+spike = [
+    "memray",
+    "pytest-benchmem",
+    "polars",
 ]
 
 [tool.setuptools.packages.find]

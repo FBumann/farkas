@@ -5,11 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, assert_never
 
-import numpy as np
+import linopy
 import pandas as pd
 import xarray as xr
-
-import linopy
 
 from linopy_yaml._notes import note
 from linopy_yaml.expression_parser import (

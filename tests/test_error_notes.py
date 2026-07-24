@@ -5,9 +5,9 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 import xarray as xr
+from linopy import Model
 
 import linopy_yaml  # noqa: F401 — registers .from_yaml / .yaml on linopy.Model
-from linopy import Model
 from linopy_yaml._patch import _ACCESSOR_REGISTRY
 from linopy_yaml.accessor import YamlAccessor
 from linopy_yaml.schema import MathSchema

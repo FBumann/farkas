@@ -1,0 +1,52 @@
+dimensions:
+  snapshot:
+    dtype: int
+  generator:
+    dtype: str
+
+parameters:
+  p_max:
+    dims: [generator]
+  cost:
+    dims: [generator]
+  load:
+    dims: [snapshot]
+
+variables:
+  p:
+    foreach: [snapshot, generator]
+    bounds:
+      lower: 0
+      upper: p_max
+  charge:
+    foreach: [snapshot]
+    bounds:
+      lower: 0
+      upper: 30
+  discharge:
+    foreach: [snapshot]
+    bounds:
+      lower: 0
+      upper: 30
+  soc:
+    foreach: [snapshot]
+    bounds:
+      lower: 0
+      upper: 100
+
+constraints:
+  power_balance:
+    foreach: [snapshot]
+    equations:
+      - expression: sum(p, over=generator) + discharge - charge == load
+  soc_balance:
+    foreach: [snapshot]
+    equations:
+      # cyclic storage: soc wraps around the snapshot horizon
+      - expression: soc == roll(soc, snapshot=1) + charge * 0.9 - discharge
+
+objectives:
+  total_cost:
+    sense: minimize
+    equations:
+      - expression: sum(p * cost, over=generator)

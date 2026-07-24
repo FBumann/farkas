@@ -17,3 +17,9 @@ htmlcov/
 venv/
 .idea/
 uv.lock
+
+# spike outputs (scripts are tracked; data/LP artifacts are not)
+scratch/relational_spike/*_data/
+scratch/relational_spike/bench_out/
+scratch/relational_spike/*.lp
+.DS_Store
