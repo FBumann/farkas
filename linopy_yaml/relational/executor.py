@@ -28,6 +28,7 @@ duckdb, pyarrow, and highspy are imported lazily; pandas is a core dep.
 
 from __future__ import annotations
 
+import contextlib
 import math
 import re
 import shutil
