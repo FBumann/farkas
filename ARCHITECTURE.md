@@ -5,6 +5,10 @@ this file in the same PR. The language is [SPEC.md](SPEC.md); plans and refusals
 are [ROADMAP.md](ROADMAP.md); measured results are
 [docs/benchmarks.md](docs/benchmarks.md).
 
+`python examples/walkthrough.py` executes the pipeline below stage by stage
+and prints what each one produces — the same public calls `ly.solve` makes,
+so the demonstration cannot drift from the code (`tests/test_walkthrough.py`).
+
 ## Thesis
 
 A YAML math spec is a **closed AST known before any data is touched**. That one
