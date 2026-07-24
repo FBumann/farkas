@@ -27,6 +27,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# the relational/streaming backend (linopy_yaml.relational) is opt-in:
+# without this extra the package behaves exactly as before
+relational = [
+    "duckdb>=1.0",
+    "pyarrow",
+    "highspy",
+]
 dev = [
     "pytest",
     "pytest-cov",
@@ -35,12 +42,10 @@ dev = [
 ]
 
 [dependency-groups]
+# benchmarking tools for scratch/relational_spike — not needed to use or test
 spike = [
-    "duckdb",
-    "pyarrow",
     "memray",
     "pytest-benchmem",
-    "highspy",
     "polars",
 ]
 
