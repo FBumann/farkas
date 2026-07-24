@@ -1132,12 +1132,12 @@ Affine expressions:
 Predicates (for `where`): `Cmp(param, op, value)`, `And`, `Or`, `Not`.
 
 This covers the v0 language subset (foreach, where, arithmetic, sum,
-group_sum, roll, comparison). Quadratic is out of scope.
+group_sum, roll, shift, comparison). Quadratic is out of scope.
 
 **The IR is affine-by-design — decided, not provisional.** No node introduces
 variables or constraints as a side effect of an expression. Formulations
-(piecewise, SOS, indicator) are model *transformations*, not expressions:
-they are eager-only. If they ever come to the streaming path, they enter as a
+are model *transformations*, not expressions: piecewise enters via
+schema-level expansion (§3.6); SOS and indicator remain eager-only. If they ever come to the streaming path, they enter as a
 distinct expansion stage that emits new variable/constraint declarations
 *before* affine compilation — never as expression nodes — and only once the
 sink has the corresponding native streams (§12.6). Reimplementing linopy's
@@ -1201,13 +1201,13 @@ pattern in ``tests/test_piecewise_convex.py``; automating it is issue #23's
   the solver's own model; float→text→parse disappears entirely. Full-CSR
   fallbacks violate the primary invariant and are last resorts.
 
-**The sink is capped, explicitly.** Today it expresses continuous columns
-with bounds and objective coefficients, affine rows, and COO coefficients —
-nothing else. SOS sets, indicator/general constraints, and integrality have
-no stream. The documented upgrade path is five streams — ``cols`` (with
-vtype and semi-continuous threshold), ``rows``, ``A``, ``sos_sets``,
-``genconstr`` — recorded here so the gap is a stated design bound, not a
-surprise at implementation time. Anything a stream cannot carry routes to
+**The sink is capped, explicitly.** Today it expresses columns with bounds,
+objective coefficients, and integrality (continuous / binary / integer
+vtypes), affine rows, and COO coefficients — nothing else. SOS sets and
+indicator/general constraints have no stream. The documented upgrade path is
+five streams — ``cols`` (gaining a semi-continuous threshold), ``rows``,
+``A``, ``sos_sets``, ``genconstr`` — recorded here so the gap is a stated
+design bound, not a surprise at implementation time. Anything a stream cannot carry routes to
 the eager builder (§12.8).
 
 ### 12.7 Phase gates
@@ -1232,9 +1232,9 @@ ineligibility reason. ``select_backend(schema)`` wraps this in an explicit
 choice object.
 
 Everything outside the streaming subset (custom helpers, ``**``,
-binary/integer variables, where-comparisons on dimensions — and formulations
-like piecewise/SOS if they enter the YAML language) automatically routes to
-the eager builder with a stated reason. The relational backend is an
+where-comparisons on dimensions — and formulations like SOS if they enter
+the YAML language) automatically routes to the eager builder with a stated
+reason. The relational backend is an
 optimization that must fall back; it is never a constraint on what the
 language can express. The differential oracle (same YAML through both
 backends must agree) is what keeps the fast lane honest.

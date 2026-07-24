@@ -124,11 +124,10 @@ def test_shift_acyclic_differential(storage_inputs, tmp_path):
     """
     data, coords = storage_inputs
     data = {**data, "load": (data["load"] * 0.93).round(3)}
-    yaml_text = (
-        open(STORAGE_YAML)
-        .read()
-        .replace("roll(soc, snapshot=1)", "shift(soc, snapshot=1)")
-    )
+    original = open(STORAGE_YAML).read()
+    assert "roll(soc, snapshot=1)" in original
+    yaml_text = original.replace("roll(soc, snapshot=1)", "shift(soc, snapshot=1)")
+    assert "shift(soc, snapshot=1)" in yaml_text
     yaml_path = tmp_path / "storage_acyclic.yaml"
     yaml_path.write_text(yaml_text)
 
@@ -163,3 +162,37 @@ def test_shift_lowering_structure():
 
     ast = parse_expression("shift(soc, snapshot=1)")
     assert _lower_expr(ast, schema, "t") == Shift(Var("soc"), "snapshot", 1, wrap=False)
+
+
+def test_roll_unsorted_string_coords_differential(tmp_path):
+    """Positional shift semantics with coords whose sorted order differs from
+    declared order (string labels: lexicographic t0,t1,t10,... vs positional
+    t0..t47). Both backends must couple the same neighbours."""
+    n_s = 48
+    labels = pd.Index([f"t{i}" for i in range(n_s)], name="snapshot")
+    assert list(labels.sort_values()) != list(labels)  # sorted != positional
+
+    p_max = pd.Series({"wind": 80.0, "gas": 70.0})
+    cost = pd.Series({"wind": 1.0, "gas": 40.0})
+    t = np.arange(n_s)
+    load = pd.Series((110 + 60 * np.sin(2 * np.pi * t / 24)).round(3), index=labels)
+    data = {"p_max": p_max, "cost": cost, "load": load}
+    coords = {"snapshot": labels, "generator": pd.Index(p_max.index, name="generator")}
+
+    original = open(STORAGE_YAML).read()
+    assert "dtype: int" in original
+    yaml_text = original.replace("dtype: int", "dtype: str")
+    yaml_path = tmp_path / "storage_str.yaml"
+    yaml_path.write_text(yaml_text)
+
+    m = Model.from_yaml(yaml_path, data=data, coords=coords)
+    m.solve(solver_name="highs", output_flag=False)
+    oracle = float(m.objective.value)
+    assert np.isfinite(oracle)
+
+    schema = MathSchema(**pyyaml.safe_load(yaml_text))
+    with DuckdbExecutor(memory_limit="256MB") as ex:
+        ex.build(lower_program(schema), tidy_sources(schema, data, coords))
+        sol = ex.solve()
+        assert sol.status == "Optimal"
+        assert sol.objective == pytest.approx(oracle, rel=RTOL)

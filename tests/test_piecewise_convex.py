@@ -112,7 +112,7 @@ def pwl_inputs():
 
 
 def pwl_cost(p: float, slopes, icepts) -> float:
-    return max(s * p + i for s, i in zip(slopes, icepts))
+    return max(s * p + i for s, i in zip(slopes, icepts, strict=True))
 
 
 def test_pwl_convex_differential(pwl_inputs, tmp_path):

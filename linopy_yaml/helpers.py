@@ -129,6 +129,9 @@ def _helper_shift(array: Any, **kwargs: int) -> Any:
         raise TypeError(msg)
 
     dim, n = next(iter(kwargs.items()))
+    if int(n) != n:
+        msg = f"shift() amount must be an integer, got {n!r}"
+        raise TypeError(msg)
     n = int(n)
 
     if isinstance(array, xr.DataArray):
@@ -162,6 +165,9 @@ def _helper_roll(array: Any, **kwargs: int) -> Any:
         raise TypeError(msg)
 
     dim, shift = next(iter(kwargs.items()))
+    if int(shift) != shift:
+        msg = f"roll() amount must be an integer, got {shift!r}"
+        raise TypeError(msg)
     shift = int(shift)
 
     if isinstance(array, xr.DataArray):
