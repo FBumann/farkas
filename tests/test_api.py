@@ -126,6 +126,7 @@ def test_runtime_is_linopy_free(dispatch_yaml):
         assert sol.status == "Optimal"
         sol.close()
         assert "linopy" not in sys.modules, "solve pulled in linopy"
+        assert "xarray" not in sys.modules, "solve pulled in xarray"
         print("LINOPY_FREE_OK")
     """)
     out = subprocess.run(

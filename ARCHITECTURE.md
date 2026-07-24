@@ -50,6 +50,9 @@ from what the backend actually supports.
 
 ## Hard rules
 
+*(Enforced, not aspirational: `tests/test_architecture.py` encodes these rules
+as static checks, and CI's bare-install job proves the dependency claims.)*
+
 1. **Core AST is the whole language.** Both backends consume only core AST.
    Anything above it (named expressions, macros) is expanded away before
    dispatch; anything below it (IR, SQL, xarray) is backend-private.
@@ -129,6 +132,33 @@ data-dependent structure inside expressions. The declarative substitutes
 are `where` masks and `foreach` dims; computation belongs in data prep,
 producing a parameter. `@register` Python helpers remain as an explicitly
 **eager-only** escape hatch.
+
+## Composition (component libraries)
+
+A component library is a fixed set of parametrised templates agreeing on a
+port/flow convention, merged into one program, wired through a data
+connectivity table and a single `group_sum` balance. The governing principle:
+
+**Topology is data, not structure.** Wiring a specific system is rows in a
+connectivity table, never generated YAML. A well-designed library has
+structure bounded by the number of component *types* and cardinality entirely
+in data — exactly the shape the streaming engine wants (`foreach` → GROUP BY,
+connectivity table → JOIN, balance → aggregate). The library boundary and
+the streaming backend are one discipline, not two.
+
+Rules that follow:
+
+- **Compose-then-build.** Schema merge is a pure step producing one
+  `MathSchema` before a single lower/stream pass — never incremental build
+  per template (`.yaml.extend` is compat-lane sugar; native merge: #30).
+- **Namespacing** (qualified names on import) is the missing primitive: #29.
+  The port/flow surface (`flow`, connectivity dims) is deliberately shared,
+  not namespaced — it is the coupling contract between templates.
+- Signs and bidirectional flows need bounds-as-expressions: #31.
+- Whatever genuinely is not data (variable port counts, runtime-unknown
+  component types) lives in a thin programmatic layer that emits **more rows
+  or more templates — never per-instance YAML**. Keep that residue small and
+  streaming stays intact.
 
 ## Module map
 

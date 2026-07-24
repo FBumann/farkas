@@ -148,14 +148,14 @@ def tidy_sources(
     come from declared YAML values, ``coords``, or fall back to the executor's
     inference from parameter tables.
     """
+    import sys
     from pathlib import Path
 
     import pandas as pd
 
-    try:  # optional: only needed to accept xr.DataArray inputs
-        import xarray as xr
-    except ImportError:
-        xr = None  # type: ignore[assignment]
+    # A DataArray argument implies the caller already imported xarray —
+    # consult sys.modules instead of importing (keeps the runtime xarray-free)
+    xr = sys.modules.get("xarray")
 
     from linopy_yaml.piecewise import validate_piecewise_data
 

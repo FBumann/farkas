@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  native:
+    # bare install: the streaming product with no linopy/xarray on disk.
+    # Proves the runtime dependency claim and runs the native suite
+    # (api, engine, language boundary, architecture enforcement).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e . pytest
+      - run: python -c "import importlib.util,sys; sys.exit(importlib.util.find_spec('linopy') is not None)"
+        name: assert linopy is absent
+      - run: pytest -q
+
+  full:
+    # dev install: oracle present — differential tests run against linopy.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[dev,oracle]"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: pytest -q

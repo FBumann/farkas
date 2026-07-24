@@ -186,7 +186,9 @@ def _expr_dims(schema: MathSchema, text: str, ctx: str) -> frozenset[str]:
         ) from exc
 
 
-def validate_piecewise_data(schema: MathSchema, values: Mapping[str, Any] | Any) -> None:
+def validate_piecewise_data(
+    schema: MathSchema, values: Mapping[str, Any] | Any
+) -> None:
     """Data-time guard for ``convex: true`` blocks (SPEC §3.6).
 
     The hull relaxation is silently wrong for curves of mixed curvature, and
@@ -197,11 +199,19 @@ def validate_piecewise_data(schema: MathSchema, values: Mapping[str, Any] | Any)
     missing from *values* are skipped (their absence errors elsewhere).
     """
     import numpy as np
-    import xarray as xr
 
     for name, pw in schema.piecewise.items():
         if not pw.convex:
             continue
+        try:  # only convex curvature checks need xarray (broadcast over dims)
+            import xarray as xr
+        except ImportError as exc:
+            msg = (
+                f"piecewise '{name}': convex curvature validation currently "
+                f'requires xarray — pip install "linopy-yaml[oracle]" '
+                f"(see issue #27: make this check numpy-only)"
+            )
+            raise ModuleNotFoundError(msg) from exc
         ctx = f"piecewise '{name}'"
         (x_link, y_link) = pw.links  # convex requires exactly two links
         try:
@@ -230,7 +240,9 @@ def validate_piecewise_data(schema: MathSchema, values: Mapping[str, Any] | Any)
                 )
 
 
-def _as_dataarray(schema: MathSchema, pname: str, values: Mapping[str, Any] | Any) -> Any:
+def _as_dataarray(
+    schema: MathSchema, pname: str, values: Mapping[str, Any] | Any
+) -> Any:
     import pandas as pd
     import xarray as xr
 
