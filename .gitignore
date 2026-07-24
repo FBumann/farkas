@@ -23,3 +23,7 @@ scratch/relational_spike/*_data/
 scratch/relational_spike/bench_out/
 scratch/relational_spike/*.lp
 .DS_Store
+
+# rendered presentation output (sources docs/*.md + docs/*.svg are tracked)
+docs/*.html
+docs/*.pdf
