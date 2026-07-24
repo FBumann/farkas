@@ -12,6 +12,9 @@ serves as the differential-test oracle and as an opt-in compatibility layer
     sol.primal("p")
 """
 
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _installed_version
+
 from linopy_yaml.api import LanguageError, build, check, load_schema, solve, write, write_lp
 from linopy_yaml.schema import MathSchema
 
@@ -25,4 +28,9 @@ __all__ = [
     'write',
     'write_lp',
 ]
-__version__ = '0.0.2'
+
+try:
+    # the git tag is the source of truth; hatch-vcs bakes it into the metadata
+    __version__ = _installed_version('linopy-yaml')
+except PackageNotFoundError:  # running from a source tree with nothing installed
+    __version__ = '0.0.0'

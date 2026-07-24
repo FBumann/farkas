@@ -1,0 +1,131 @@
+name: Publish
+
+# The only publish path: pushing a v* tag ships it. Every route to a release —
+# release-please merging on main, the prerelease dispatch, a hand-pushed tag —
+# converges here. See RELEASING.md.
+
+on:
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: publish-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # a hand-pushed tag bypasses CI entirely, so re-run the suite before shipping
+    name: Test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --group dev
+      - run: uv run --no-sync pytest -q
+
+  build:
+    name: Build
+    needs: [test]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0  # hatch-vcs reads the tag; a shallow clone yields a .dev version
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - run: uv build
+
+      - name: Verify the built version matches the tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          uv run --no-project --with packaging python - <<'PY'
+          import os, pathlib, sys
+          from packaging.utils import parse_wheel_filename
+          from packaging.version import Version
+
+          tag = Version(os.environ['TAG'].removeprefix('v'))
+          wheels = sorted(pathlib.Path('dist').glob('*.whl'))
+          if len(wheels) != 1:
+              sys.exit(f'expected exactly one wheel in dist/, found {[w.name for w in wheels]}')
+          built = parse_wheel_filename(wheels[0].name)[1]
+          if built != tag:
+              sys.exit(
+                  f'tag {os.environ["TAG"]} normalises to {tag}, but the wheel is {built}. '
+                  'Usually means the tag was not fetched (shallow clone) or the tree is dirty.'
+              )
+          print(f'ok: {wheels[0].name} == {tag}')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  github-release:
+    name: GitHub Release
+    needs: [build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # release-please already cut the release for its own tags; attach the
+          # artifacts there rather than failing. Dashed tags (v1.2.0-rc.1) are prereleases.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          elif [[ "$TAG" == *-* ]]; then
+            gh release create "$TAG" dist/* --generate-notes --prerelease
+          else
+            gh release create "$TAG" dist/* --generate-notes
+          fi
+
+  pypi:
+    # Off until a PyPI trusted publisher exists for linopy-yaml. Flip the repo
+    # variable PUBLISH_TO_PYPI to "true" to go live — see RELEASING.md.
+    name: PyPI
+    needs: [build]
+    if: vars.PUBLISH_TO_PYPI == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/project/linopy-yaml
+    permissions:
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

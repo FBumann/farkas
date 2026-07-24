@@ -134,7 +134,7 @@ Not a solver wrapper, not a domain package, not a data-loading layer — bring p
 
 ## Status
 
-**v0.0.2** — early but moving fast. Both backends round-trip real models through solve with differentially verified results. Open questions live in [SPEC.md](SPEC.md) §11.
+Pre-1.0 — early but moving fast. Both backends round-trip real models through solve with differentially verified results. Open questions live in [SPEC.md](SPEC.md) §11.
 
 ## License
 
