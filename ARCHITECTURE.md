@@ -14,40 +14,45 @@ thing. Every architectural rule below exists to protect that property.
 
 ## Pipeline
 
+```mermaid
+flowchart TB
+    Y[YAML file] -->|"parse + validate<br/>(schema.py, validation.py)"| MS[MathSchema]
+    MS -->|"expand macros: / expressions: (expansion.py)<br/>expand piecewise: blocks (piecewise.py)<br/>— backends never see any of them"| AST["core AST<br/>= the only contract between layers"]
+    D[("data<br/>(parquet paths / pandas)")]
+
+    AST --> ROUTE{"backend selection (router.py):<br/>attempt the lowering"}
+
+    subgraph EAGER["Eager lane — feature-complete, correctness oracle. linopy lives ONLY here."]
+        LOAD["loader.py<br/>coerce data → xr.Dataset"] --> BUILD["builder.py<br/>evaluate AST"]
+        BUILD --> MODEL["linopy.Model"] --> SOLVE["linopy solve / writers"]
+    end
+
+    subgraph REL["Relational lane — streaming, memory-bounded, linopy-free"]
+        LOWER["lowering.py"] --> IR["IR<br/>(relational/ir.py)"]
+        IR --> EXEC["executor.py<br/>tidy tables in file-backed duckdb<br/>under memory_limit"]
+        EXEC --> LPS["lp_file sink<br/>portability, debugging<br/>(mps planned)"]
+        EXEC --> DIRECT["solver_direct sink<br/>COO batches → highspy → HiGHS"]
+        DIRECT --> SOL["solution tables<br/>(label join, never dense)"]
+    end
+
+    ROUTE -->|"lowers"| LOWER
+    ROUTE -->|"RelationalBuildError<br/>→ eager, with that reason"| LOAD
+    D --> LOAD
+    D --> EXEC
 ```
-data sources (parquet / pandas)          YAML file
-                 │                          │  parse + validate (load time)
-                 │                          ▼
-                 │                     MathSchema
-                 │                          │  expand expressions: / macros:   (expansion.py)
-                 │                          │  expand piecewise: blocks         (piecewise.py)
-                 │                          ▼
-                 │                     core AST  ←── the only contract between layers
-                 │                ┌─────────┴─────────┐
-                 │                ▼ lower (lowering.py) ▼ evaluate (builder.py)
-                 │        logical-plan IR          eager backend
-                 │         (relational/ir.py)      (xarray → linopy.Model)
-                 │                │                    feature-complete,
-                 └──────► relational executor          correctness oracle
-                          (relational/executor.py)
-                          duckdb, memory-bounded
-                                  │
-                    ┌─────────────┴─────────────┐
-                    ▼                           ▼
-              lp_file / mps sink        solver_direct sink
-              (portability, oracle)     (COO/CSR batches → HiGHS)
-                                                │
-                                        solution tables (label join)
-```
+
+Eligibility is decided by *attempting the lowering*, so it can never drift
+from what the backend actually supports.
 
 ## Hard rules
 
 1. **Core AST is the whole language.** Both backends consume only core AST.
    Anything above it (named expressions, macros) is expanded away before
    dispatch; anything below it (IR, SQL, xarray) is backend-private.
-2. **The engine never imports the eager builder.** `linopy_yaml/relational/`
-   knows nothing about YAML, schemas, or xarray evaluation. Engine-internal
-   naming encodes neither "duckdb" nor "yaml".
+2. **The relational lane is linopy-free.** `linopy_yaml/relational/` imports
+   neither the eager builder nor linopy itself — the lane goes duckdb →
+   highspy → solver with linopy's semantics as a spec to match, not code to
+   share. Engine-internal naming encodes neither "duckdb" nor "yaml".
 3. **The eager builder is the correctness oracle and the fallback.** The
    relational backend is an optimization lane: eligibility is decided by
    *attempting the lowering*, and anything outside the subset routes eager
@@ -65,7 +70,7 @@ data sources (parquet / pandas)          YAML file
 The language is a deliberate economy of **taxed primitives** and **free
 composition**:
 
-- **Primitives** (operators, `sum`, `group_sum`, `roll`, `where` predicates)
+- **Primitives** (operators, `sum`, `group_sum`, `roll`/`shift`, `where` predicates)
   set the expressive ceiling. Each new primitive costs the full two-backend
   tax: eager implementation, IR node, executor implementation, lowering
   case, differential tests, SPEC entry.
@@ -81,11 +86,11 @@ Policy that keeps the economy healthy:
   earns a primitive.
 - **New primitives must be macro-friendly**: anything a user might
   parameterise goes in a *value* position (like `over=`/`into=`), never in
-  a kwarg key (the `roll(x, snapshot=1)` dim-as-key design is the
-  counterexample — macros cannot parameterise it).
+  a kwarg key (the `roll`/`shift` `(x, snapshot=1)` dim-as-key design is
+  the counterexample — macros cannot parameterise the dimension).
 - **New primitives declare coordinate locality** for the relational
   executor: *pointwise* (joins, masks, group_sum) and *bounded-halo*
-  (roll: t±k) compose under partition-wise execution; *global* operators
+  (roll/shift: t±k) compose under partition-wise execution; *global* operators
   (running sums, normalisations) are rejected at lowering with a rewrite
   hint (e.g. running sum → state-variable recurrence).
 
@@ -99,16 +104,18 @@ producing a parameter. `@register` Python helpers remain as an explicitly
 
 | Module | Role |
 |---|---|
+| `_patch.py`, `accessor.py` | entry point: `Model.from_yaml()` / `.yaml` accessor |
 | `schema.py` | pydantic schema incl. `expressions:` / `macros:` / `piecewise:` blocks |
 | `expression_parser.py`, `where_parser.py` | text → core AST |
 | `expansion.py` | named-expression / macro substitution (pre-dispatch) |
 | `validation.py` | load-time: parse, expand, name-check everything |
+| `piecewise.py` | `piecewise:` → λ-formulation declarations (schema-level expansion) + data-time curvature guard |
+| `router.py` | backend selection: relational iff the schema lowers, else eager with the verbatim reason |
+| `loader.py` | eager lane: data coercion to xr.Dataset, master coords |
 | `builder.py` | eager backend: core AST → linopy.Model |
 | `lowering.py` | core AST → IR (defines the relational subset) |
 | `relational/ir.py` | frozen logical-plan dataclasses |
 | `relational/executor.py` | duckdb execution + lp_file / solver_direct sinks |
-| `piecewise.py` | `piecewise:` → λ-formulation declarations (schema-level expansion) + data-time curvature guard |
-| `router.py` | backend selection: relational iff the schema lowers, else eager with the verbatim reason |
 | `helpers.py` | built-in + `@register` helpers (eager evaluation) |
 
 ## Extension checklists
