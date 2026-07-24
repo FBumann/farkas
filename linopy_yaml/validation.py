@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from linopy_yaml.expansion import parse_and_expand
+from linopy_yaml.expansion import expand, parse_and_expand, parse_template
 from linopy_yaml.expression_parser import (
     ArithNode,
     BinOpNode,
@@ -62,6 +62,35 @@ def validate_expressions(
     parameters = set(schema.parameters) | set(known_parameters)
 
     errors: list[str] = []
+
+    for mname, macro in schema.macros.items():
+        context = f"Macro '{mname}'"
+        try:
+            get_helper(mname)
+        except NameError:
+            pass
+        else:
+            errors.append(
+                f"{context}: collides with a helper function of the same name."
+            )
+        try:
+            body_ast = parse_template(mname, macro, context)
+            body_ast = expand(body_ast, schema, context)
+        except ValueError as e:
+            errors.append(str(e) if str(e).startswith(context) else f"{context}: {e}")
+            continue
+        # macros are schema-local, so every free name in the template must be
+        # a formal or a name declared in *this* schema — checkable even for
+        # macros the current model never calls
+        formals = {*macro.args, *macro.kwargs}
+        _check_names(
+            body_ast,
+            macro.template,
+            context,
+            variables | formals,
+            parameters | formals,
+            errors,
+        )
 
     for ename, body in schema.expressions.items():
         context = f"Named expression '{ename}'"

@@ -110,6 +110,27 @@ class ObjectiveDef(BaseModel):
         return v
 
 
+class MacroDef(BaseModel):
+    """A parameterised expression template, defined in the YAML itself.
+
+    The template is language, not code: formal names (``args`` positional,
+    ``kwargs`` keyword) shadow model names inside it, and every call site is
+    expanded into core AST before either backend sees the expression.
+    """
+
+    args: list[str] = []
+    kwargs: list[str] = []
+    template: str
+
+    @model_validator(mode="after")
+    def _check_formals(self) -> MacroDef:
+        formals = [*self.args, *self.kwargs]
+        if len(set(formals)) != len(formals):
+            msg = f"duplicate formal names: {formals}"
+            raise ValueError(msg)
+        return self
+
+
 class MathSchema(BaseModel):
     """Top-level schema for a linopy_yaml YAML file."""
 
@@ -119,23 +140,34 @@ class MathSchema(BaseModel):
     constraints: dict[str, ConstraintDef] = {}
     objectives: dict[str, ObjectiveDef] = {}
     expressions: dict[str, str] = {}
+    macros: dict[str, MacroDef] = {}
 
     @model_validator(mode="after")
     def _validate_references(self) -> MathSchema:
         errors = []
 
-        # Named expressions must not shadow other model names
-        for ename in self.expressions:
-            for kind, names in (
-                ("parameter", self.parameters),
-                ("variable", self.variables),
-                ("dimension", self.dimensions),
-            ):
-                if ename in names:
-                    errors.append(
-                        f"Named expression '{ename}' collides with a declared "
-                        f"{kind} of the same name. Rename one of them."
-                    )
+        # Named expressions and macros must not shadow other model names
+        for what, group in (
+            ("Named expression", self.expressions),
+            ("Macro", self.macros),
+        ):
+            for ename in group:
+                for kind, names in (
+                    ("parameter", self.parameters),
+                    ("variable", self.variables),
+                    ("dimension", self.dimensions),
+                ):
+                    if ename in names:
+                        errors.append(
+                            f"{what} '{ename}' collides with a declared "
+                            f"{kind} of the same name. Rename one of them."
+                        )
+        for mname in self.macros:
+            if mname in self.expressions:
+                errors.append(
+                    f"Macro '{mname}' collides with a named expression of the "
+                    f"same name. Rename one of them."
+                )
 
         # Check parameter dims reference declared dimensions
         for pname, pdef in self.parameters.items():

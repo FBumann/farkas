@@ -1,4 +1,4 @@
-"""Named sub-expressions (Layer 1) and macros (Layer 2).
+"""Named sub-expressions and macros — YAML-defined, schema-local.
 
 Both expand to core AST before backend dispatch, so one differential test at
 the end proves the whole feature works identically on both backends.
@@ -12,26 +12,23 @@ import pytest
 import yaml as pyyaml
 
 import linopy_yaml
-from linopy_yaml.expansion import (
-    _MACROS,
-    parse_and_expand,
-    register_macro,
-    unregister_macro,
-)
+from linopy_yaml.expansion import parse_and_expand
 from linopy_yaml.expression_parser import parse_expression
 from linopy_yaml.schema import MathSchema
 from linopy_yaml.validation import validate_expressions
 
-
-@pytest.fixture(autouse=True)
-def _clean_macros():
-    before = set(_MACROS)
-    yield
-    for name in set(_MACROS) - before:
-        unregister_macro(name)
+WEIGHTED_SUM = {
+    "args": ["array", "weights"],
+    "kwargs": ["over"],
+    "template": "sum(array * weights, over=over)",
+}
 
 
-def make_schema(expressions: dict[str, str] | None = None, **overrides) -> MathSchema:
+def make_schema(
+    expressions: dict[str, str] | None = None,
+    macros: dict | None = None,
+    **overrides,
+) -> MathSchema:
     base = {
         "dimensions": {
             "snapshot": {"dtype": "int"},
@@ -63,12 +60,14 @@ def make_schema(expressions: dict[str, str] | None = None, **overrides) -> MathS
     }
     if expressions is not None:
         base["expressions"] = expressions
+    if macros is not None:
+        base["macros"] = macros
     base.update(overrides)
     return MathSchema(**base)
 
 
 # ---------------------------------------------------------------------------
-# Layer 1: named sub-expressions
+# named sub-expressions
 # ---------------------------------------------------------------------------
 
 
@@ -119,18 +118,12 @@ def test_validation_reports_bad_named_expression():
 
 
 # ---------------------------------------------------------------------------
-# Layer 2: macros
+# macros
 # ---------------------------------------------------------------------------
 
 
 def test_macro_expansion():
-    register_macro(
-        "weighted_sum",
-        "sum(array * weights, over=over)",
-        args=["array", "weights"],
-        kwargs=["over"],
-    )
-    schema = make_schema()
+    schema = make_schema(macros={"weighted_sum": WEIGHTED_SUM})
     got = parse_and_expand("weighted_sum(p, cost, over=generator)", schema)
     want = parse_expression("sum(p * cost, over=generator)")
     assert got == want
@@ -138,33 +131,38 @@ def test_macro_expansion():
 
 def test_macro_formals_shadow_model_names():
     # formal 'load' shadows the model parameter 'load' inside the body
-    register_macro("double", "load + load", args=["load"])
-    schema = make_schema()
+    schema = make_schema(
+        macros={"double": {"args": ["load"], "template": "load + load"}}
+    )
     got = parse_and_expand("double(p)", schema)
     want = parse_expression("p + p")
     assert got == want
 
 
 def test_macro_args_may_use_named_expressions():
-    register_macro("twice", "x + x", args=["x"])
-    schema = make_schema({"gen_cost": "p * cost"})
+    schema = make_schema(
+        {"gen_cost": "p * cost"},
+        macros={"twice": {"args": ["x"], "template": "x + x"}},
+    )
     got = parse_and_expand("twice(gen_cost)", schema)
     want = parse_expression("(p * cost) + (p * cost)")
     assert got == want
 
 
 def test_macro_body_may_use_macros_and_named_expressions():
-    register_macro("total", "sum(x, over=generator)", args=["x"])
-    register_macro("total_cost", "total(p * cost)")
-    schema = make_schema()
+    schema = make_schema(
+        macros={
+            "total": {"args": ["x"], "template": "sum(x, over=generator)"},
+            "total_cost": {"template": "total(p * cost)"},
+        }
+    )
     got = parse_and_expand("total_cost()", schema)
     want = parse_expression("sum(p * cost, over=generator)")
     assert got == want
 
 
 def test_macro_arity_errors():
-    register_macro("ws", "sum(a * w, over=over)", args=["a", "w"], kwargs=["over"])
-    schema = make_schema()
+    schema = make_schema(macros={"ws": WEIGHTED_SUM})
     with pytest.raises(ValueError, match="expects 2 positional"):
         parse_and_expand("ws(p, over=generator)", schema)
     with pytest.raises(ValueError, match="keyword argument"):
@@ -172,30 +170,47 @@ def test_macro_arity_errors():
 
 
 def test_macro_cycle_raises():
-    register_macro("loop_a", "loop_b() + 1")
-    register_macro("loop_b", "loop_a() + 1")
-    schema = make_schema()
+    schema = make_schema(
+        macros={
+            "loop_a": {"template": "loop_b() + 1"},
+            "loop_b": {"template": "loop_a() + 1"},
+        }
+    )
     with pytest.raises(ValueError, match="circular macro reference"):
         parse_and_expand("loop_a()", schema)
 
 
-def test_macro_name_collisions_rejected():
-    with pytest.raises(ValueError, match="conflicts with a helper"):
-        register_macro("sum", "a", args=["a"])
-    register_macro("once", "a", args=["a"])
-    with pytest.raises(ValueError, match="already registered"):
-        register_macro("once", "a", args=["a"])
+def test_macro_collisions_rejected():
+    with pytest.raises(ValueError, match="collides with a declared parameter"):
+        make_schema(macros={"load": {"args": ["a"], "template": "a"}})
+    with pytest.raises(ValueError, match="collides with a named expression"):
+        make_schema(
+            {"thing": "p * cost"}, macros={"thing": {"args": ["a"], "template": "a"}}
+        )
+    schema = make_schema(macros={"sum": {"args": ["a"], "template": "a"}})
+    with pytest.raises(ValueError, match="collides with a helper"):
+        validate_expressions(schema)
 
 
-def test_macro_template_validated_at_registration():
+def test_duplicate_formals_rejected():
+    with pytest.raises(ValueError, match="duplicate formal"):
+        make_schema(macros={"m": {"args": ["a"], "kwargs": ["a"], "template": "a"}})
+
+
+def test_macro_templates_validated_even_when_unused():
+    # schema-local macros make load-time validation complete: a typo in a
+    # template the model never calls is still caught
+    schema = make_schema(macros={"unused": {"args": ["x"], "template": "x * cots"}})
+    with pytest.raises(ValueError, match="Macro 'unused'.*'cots' not found"):
+        validate_expressions(schema)
+
+    schema = make_schema(macros={"bad": {"args": ["a", "b"], "template": "a == b"}})
     with pytest.raises(ValueError, match="must not contain a comparison"):
-        register_macro("bad", "a == b", args=["a", "b"])
-    with pytest.raises(ValueError):
-        register_macro("bad2", "a +* b", args=["a", "b"])
+        validate_expressions(schema)
 
 
 # ---------------------------------------------------------------------------
-# end to end: both backends, same YAML, same answer
+# end to end: both backends, same self-contained YAML, same answer
 # ---------------------------------------------------------------------------
 
 
@@ -207,13 +222,6 @@ def test_differential_named_expression_and_macro(tmp_path):
     from linopy_yaml.lowering import lower_program, tidy_sources
     from linopy_yaml.relational import DuckdbExecutor
 
-    register_macro(
-        "weighted_sum",
-        "sum(array * weights, over=over)",
-        args=["array", "weights"],
-        kwargs=["over"],
-    )
-
     yaml_text = """
 dimensions:
   snapshot: {dtype: int}
@@ -224,6 +232,11 @@ parameters:
   load: {dims: [snapshot]}
 expressions:
   total_generation: sum(p, over=generator)
+macros:
+  weighted_sum:
+    args: [array, weights]
+    kwargs: [over]
+    template: sum(array * weights, over=over)
 variables:
   p:
     foreach: [snapshot, generator]
