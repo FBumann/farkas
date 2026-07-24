@@ -29,9 +29,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# linopy + xarray power the opt-in compatibility layer (linopy_yaml.compat)
-# and the differential-test oracle; the streaming engine never imports them
-oracle = [
+# linopy + xarray power the compatibility layer (linopy_yaml.compat): YAML math
+# on a Python-built linopy.Model, plus the differential-test oracle.
+# The streaming engine never imports them.
+compat = [
     "linopy>=0.9.0,<0.10",
     "xarray>=2024.2.0",
 ]

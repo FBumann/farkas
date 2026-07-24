@@ -18,9 +18,8 @@ duckdb = pytest.importorskip('duckdb')
 highspy = pytest.importorskip('highspy')
 
 import yaml as pyyaml  # noqa: E402
-from linopy import Model  # noqa: E402
 
-import linopy_yaml  # noqa: F401, E402 — registers .from_yaml on linopy.Model
+from linopy_yaml import compat  # noqa: E402
 from linopy_yaml.lowering import lower_program, tidy_sources  # noqa: E402
 from linopy_yaml.relational import (  # noqa: E402
     DuckdbExecutor,
@@ -58,7 +57,7 @@ def storage_inputs():
 def test_storage_yaml_differential(storage_inputs, tmp_path):
     data, coords = storage_inputs
 
-    m = Model.from_yaml(STORAGE_YAML, data=data, coords=coords)
+    m = compat.build(STORAGE_YAML, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     oracle = float(m.objective.value)
     assert np.isfinite(oracle)
@@ -133,7 +132,7 @@ def test_shift_acyclic_differential(storage_inputs, tmp_path):
     yaml_path = tmp_path / 'storage_acyclic.yaml'
     yaml_path.write_text(yaml_text)
 
-    m = Model.from_yaml(yaml_path, data=data, coords=coords)
+    m = compat.build(yaml_path, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     oracle = float(m.objective.value)
     assert np.isfinite(oracle)
@@ -187,7 +186,7 @@ def test_roll_unsorted_string_coords_differential(tmp_path):
     yaml_path = tmp_path / 'storage_str.yaml'
     yaml_path.write_text(yaml_text)
 
-    m = Model.from_yaml(yaml_path, data=data, coords=coords)
+    m = compat.build(yaml_path, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     oracle = float(m.objective.value)
     assert np.isfinite(oracle)

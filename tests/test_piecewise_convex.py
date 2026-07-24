@@ -16,9 +16,8 @@ duckdb = pytest.importorskip('duckdb')
 highspy = pytest.importorskip('highspy')
 
 import yaml as pyyaml  # noqa: E402
-from linopy import Model  # noqa: E402
 
-import linopy_yaml  # noqa: F401, E402 — registers .from_yaml on linopy.Model
+from linopy_yaml import compat  # noqa: E402
 from linopy_yaml.lowering import lower_program, tidy_sources  # noqa: E402
 from linopy_yaml.relational import DuckdbExecutor  # noqa: E402
 from linopy_yaml.schema import MathSchema  # noqa: E402
@@ -116,7 +115,7 @@ def test_pwl_convex_differential(pwl_inputs, tmp_path):
 
     yaml_path = tmp_path / 'epigraph.yaml'
     yaml_path.write_text(EPIGRAPH_YAML)
-    m = Model.from_yaml(yaml_path, data=data, coords=coords)
+    m = compat.build(yaml_path, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     oracle = float(m.objective.value)
     assert np.isfinite(oracle)

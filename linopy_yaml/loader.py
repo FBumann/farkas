@@ -35,7 +35,7 @@ def build_master_coords(
             msg = (
                 f"Dimension '{dim_name}' has no values.\n"
                 f"Declare them under 'dimensions.{dim_name}.values' in the YAML\n"
-                f"or pass coords={{'{dim_name}': [...]}} to from_yaml()."
+                f"or pass coords={{'{dim_name}': [...]}}."
             )
             raise ValueError(msg)
 

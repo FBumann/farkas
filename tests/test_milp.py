@@ -16,9 +16,8 @@ duckdb = pytest.importorskip('duckdb')
 highspy = pytest.importorskip('highspy')
 
 import yaml as pyyaml  # noqa: E402
-from linopy import Model  # noqa: E402
 
-import linopy_yaml  # noqa: F401, E402 — registers .from_yaml on linopy.Model
+from linopy_yaml import compat  # noqa: E402
 from linopy_yaml.lowering import lower_program, tidy_sources  # noqa: E402
 from linopy_yaml.relational import DuckdbExecutor  # noqa: E402
 from linopy_yaml.schema import MathSchema  # noqa: E402
@@ -94,7 +93,7 @@ def commitment_inputs(tmp_path):
 def test_commitment_milp_differential(commitment_inputs, tmp_path):
     yaml_path, data, coords = commitment_inputs
 
-    m = Model.from_yaml(yaml_path, data=data, coords=coords)
+    m = compat.build(yaml_path, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     oracle = float(m.objective.value)
     assert np.isfinite(oracle)

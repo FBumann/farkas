@@ -2,8 +2,8 @@
 
 Models build relationally (duckdb under a hard ``memory_limit``) and stream
 to the solver — see ARCHITECTURE.md. linopy is not imported at runtime; it
-serves as the differential-test oracle and as an opt-in compatibility layer
-(``import linopy_yaml.compat`` patches ``linopy.Model.from_yaml``).
+serves as the differential-test oracle and as an opt-in compatibility shim
+(``from linopy_yaml import compat`` — ``compat.build`` / ``compat.extend``).
 
     import linopy_yaml as ly
 

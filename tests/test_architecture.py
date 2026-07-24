@@ -14,20 +14,31 @@ PKG = Path(__file__).parent.parent / 'linopy_yaml'
 
 #: The compat/oracle lane — the ONLY modules allowed to import linopy/xarray
 #: at module level (they load only via `import linopy_yaml.compat`).
-COMPAT_LANE = {'_patch.py', 'accessor.py', 'builder.py', 'loader.py', 'compat.py'}
+COMPAT_LANE = {'builder.py', 'loader.py', 'compat.py'}
 
 FORBIDDEN_RUNTIME = {'linopy', 'xarray'}
 
 
 def _module_level_imports(path: Path) -> set[str]:
-    """Top-level (non-lazy, non-TYPE_CHECKING) imported root packages."""
+    """Top-level (non-lazy, non-TYPE_CHECKING) imported root packages.
+
+    Module-level ``try:`` blocks count. An optional-dependency guard is still
+    a module-level import, and wrapping one must not evade this check —
+    ``compat.py`` uses exactly that pattern, so the rule has to see through it.
+    """
     tree = ast.parse(path.read_text())
     found: set[str] = set()
-    for node in tree.body:  # module level only — function bodies are lazy
+    stmts = list(tree.body)  # module level only — function bodies are lazy
+    while stmts:
+        node = stmts.pop()
         if isinstance(node, ast.Import):
             found.update(alias.name.split('.')[0] for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module:
             found.add(node.module.split('.')[0])
+        elif isinstance(node, ast.Try):
+            stmts.extend([*node.body, *node.orelse, *node.finalbody])
+            for handler in node.handlers:
+                stmts.extend(handler.body)
     return found
 
 
@@ -118,7 +129,7 @@ def test_architecture_doc_mentions_every_module():
     missing = []
     for path in _all_modules():
         name = path.name
-        if name.startswith('_') and name != '_patch.py':
+        if name.startswith('_'):
             continue  # private plumbing (_notes) needs no doc entry
         if name == '__init__.py':
             continue

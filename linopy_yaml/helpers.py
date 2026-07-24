@@ -1,4 +1,12 @@
-"""Built-in helper functions and custom helper registry."""
+"""Built-in helper functions.
+
+The set is closed: there is no Python registry. Both lanes therefore accept
+exactly the same language, which is what makes the differential tests a
+meaningful oracle (ARCHITECTURE.md, hard rule 3). Compositions of these
+built-ins belong in ``macros:``; math the language cannot say belongs in a
+declared ``escape:`` island (#38), not in a helper that reads like a
+built-in on the page.
+"""
 
 from __future__ import annotations
 
@@ -7,43 +15,16 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-# Global registry of helper functions
-_REGISTRY: dict[str, Callable[..., Any]] = {}
-
 BUILTIN_NAMES = frozenset({'sum', 'roll', 'shift', 'group_sum'})
 
 
-def register(name: str) -> Callable:
-    """Decorator to register a custom helper function.
-
-    Must be called before ``Model.from_yaml()``.
-
-    Example::
-
-        @linopy_yaml.compat.register('weighted_sum')
-        def weighted_sum(array, weights, *, over):
-            return (array * weights).sum(over)
-    """
-    if name in BUILTIN_NAMES:
-        msg = f"Cannot register '{name}': conflicts with built-in helper. Built-ins: {sorted(BUILTIN_NAMES)}"
-        raise ValueError(msg)
-
-    def decorator(fn: Callable) -> Callable:
-        _REGISTRY[name] = fn
-        return fn
-
-    return decorator
-
-
 def get_helper(name: str) -> Callable:
-    """Look up a helper function by name.
-
-    Checks built-ins first, then the custom registry.
+    """Look up a built-in helper function by name.
 
     Raises
     ------
     NameError
-        If the helper is not found.
+        If the helper is not a built-in.
     """
     if name == 'sum':
         return _helper_sum
@@ -53,13 +34,11 @@ def get_helper(name: str) -> Callable:
         return _helper_shift
     if name == 'group_sum':
         return _helper_group_sum
-    if name in _REGISTRY:
-        return _REGISTRY[name]
-    available = sorted(BUILTIN_NAMES | set(_REGISTRY))
     msg = (
         f"Unknown helper function '{name}'.\n"
-        f'Available: {available}\n'
-        f"Register custom helpers with @linopy_yaml.compat.register('{name}') — or prefer a macro."
+        f'Available: {sorted(BUILTIN_NAMES)}\n'
+        f"Define '{name}' as a macro under 'macros:' if it composes built-ins; "
+        f'if the math is not sayable in the language, use a declared escape.'
     )
     raise NameError(msg)
 

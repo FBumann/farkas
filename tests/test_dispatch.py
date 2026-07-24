@@ -1,14 +1,14 @@
 """Integration test: the dispatch example from the spec."""
 
 import pandas as pd
-from linopy import Model
 
-import linopy_yaml  # noqa: F401 — registers .from_yaml / .yaml on linopy.Model
+import linopy_yaml as ly
+from linopy_yaml import compat
 
 
 def test_dispatch_builds(dispatch_yaml):
     """Build the dispatch model from YAML and verify structure."""
-    m = Model.from_yaml(
+    m = compat.build(
         dispatch_yaml,
         data={
             'p_max': pd.Series({'wind': 100, 'solar': 60, 'gas': 200}),
@@ -32,16 +32,16 @@ def test_dispatch_builds(dispatch_yaml):
     # Objective was set
     assert m.objective is not None
 
-    # YAML accessor is available
-    assert m.yaml.schema.variables['p'].foreach == ['snapshot', 'generator']
-    assert m.yaml.schema.parameters['load'].dims == ['snapshot']
-    assert 'p_max' in m.yaml.dataset
-    assert 'load' in m.yaml.dataset
+    # The model stands for itself; the schema is re-read from the file when
+    # wanted, never carried on the model (compat is a pure producer).
+    schema = ly.load_schema(dispatch_yaml)
+    assert schema.variables['p'].foreach == ['snapshot', 'generator']
+    assert schema.parameters['load'].dims == ['snapshot']
 
 
 def test_dispatch_solves(dispatch_yaml):
     """Build and solve the dispatch model, check solution is feasible."""
-    m = Model.from_yaml(
+    m = compat.build(
         dispatch_yaml,
         data={
             'p_max': pd.Series({'wind': 100, 'solar': 60, 'gas': 200}),
