@@ -68,6 +68,18 @@ Differential check (HiGHS solve, objective + dimensions): EQUIVALENT at 1.6k,
 920k, and 8.9M variables (re-checked after every plan change; at 8.9M the
 objectives agree to 14 significant digits).
 
+## Phase-2 follow-up: the general executor matches the hand-written SQL
+
+`executor_bench.py` runs the same dispatch model through the phase-2 IR +
+`DuckdbExecutor` (`linopy_yaml/relational/`). At S=100k, G=100 under a 512 MB
+budget: build 3.1 s (8.9M cols, 100k rows), `write_lp` 2.0 s (637 MB, same
+file size as the spike), 0.84 GB peak RSS — no generality penalty vs the
+hand-written SQL (3.1 s, 0.81 GB). End-to-end `solver_direct` (batched HiGHS
+`addCols`/`addRows`, no LP file): solve 30.5 s, Optimal, objective identical
+to the differential oracle; process peak 5.76 GB is dominated by HiGHS's own
+model + simplex workspace — the irreducible floor — while the build side
+stays at the configured budget.
+
 ## What the spike learned (feeds phase-2 IR design)
 
 1. **Not every relational operator spills.** duckdb raises OOM rather than

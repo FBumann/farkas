@@ -18,6 +18,7 @@
 1. [Python API](#9-python-api)
 1. [Out of Scope](#10-out-of-scope)
 1. [Open Questions](#11-open-questions)
+1. [Relational Backend](#12-relational-backend)
 
 -----
 
@@ -873,3 +874,157 @@ Calliope supports `p[generator_bus=bus]` — selecting a subset of an array alon
 
 **Q8: Should `.yaml` ever become a complete representation of the model?**
 Currently `.yaml` covers only the YAML-managed portion. A future version could intercept `add_variables()` and `add_constraints()` calls and synthesise schema entries from their arguments. Investigation shows this is feasible on the *math* side — those calls carry all the structurally needed information (coords, bounds as DataArrays, `LinearExpression` coefficients, masks). What is lost is the **human-readable layer**: expression strings (`sum(p * cost, over=generator)`), where strings (`"p_max > 0"`), and bound parameter names become anonymous arrays. The result would be a **functional round-trip** (enough to rebuild an identical model) but not a **readable round-trip** (regenerating clean YAML); the latter would require linopy itself to carry expression provenance. Whether functional round-trip alone is worth the wrapping complexity is undecided. The clean alternative is to leave `.yaml` as "YAML-managed portion only" permanently. Tracked in [issue #3](https://github.com/FBumann/linopy-yaml/issues/3).
+
+-----
+
+## 12. Relational Backend
+
+*Status: phase 2 (in design/implementation). Phase-1 spike results and
+operational findings live in `scratch/relational_spike/README.md`.*
+
+### 12.1 Why
+
+linopy's memory problems are structural: the eager xarray data model
+materialises dense, NaN-padded arrays (with a `_term` dimension) at every
+operator, so build peak RSS is O(dense dim product). A YAML math spec is a
+closed AST known before any data is touched — which makes it legal to compile
+the whole model to a logical query plan and execute it relationally.
+
+**Primary invariant: the full model is never held in this package's process
+memory at any point** — not as dense arrays, not as a full CSR. Every stage
+streams under a configured memory budget. The solver's own internal copy is
+the only irreducible full-model residency.
+
+### 12.2 Architecture
+
+```
+data sources (parquet / arrow / pandas)      YAML math spec
+                    │                             │ parse (existing)
+                    │                             ▼
+                    │                        typed AST ──────────────┐
+                    │                             │ (phase 3)        │ (today)
+                    │                             ▼                  ▼
+                    │                     logical-plan IR       eager builder
+                    │                             │             (xarray → linopy.Model)
+                    │                             ▼                  │
+                    └──────────────► relational executor             ▼
+                                     (duckdb, phase 2;         linopy writers / solve
+                                      in-memory, phase 4)      = correctness oracle
+                                              │
+                              ┌───────────────┼──────────────────┐
+                              ▼               ▼                  ▼
+                        lp_file sink      mps sink       solver_direct sink
+                        (portability,                    (COO/CSR batches →
+                         differential                     HiGHS / Gurobi)
+                         oracle)                                 │
+                                                                 ▼
+                                                     solution tables (label join)
+                                                       → parquet / pandas
+```
+
+Boundaries:
+
+- **The AST is the only contract** between the YAML layer and the engine. The
+  engine (`linopy_yaml.relational`) must not import the eager builder, and
+  engine-internal naming encodes neither "duckdb" nor "yaml" — the durable
+  idea is relational LP construction. (The engine may later be extracted as
+  its own package once proven.)
+- **The IR is the seam between language and execution.** Plans can be built in
+  Python without YAML (phase 2), lowered from the AST (phase 3), and executed
+  by different engines (duckdb now, in-memory later) and different sinks.
+- **The eager linopy path stays.** It is the correctness oracle (differential
+  tests: same model through both backends must produce equivalent solves) and
+  it remains the right tool for interactive/incremental use. The relational
+  path is batch build-and-solve; incremental model editing is out of scope.
+- In the `solver_direct` path, linopy is not in the loop at all: the solver is
+  driven through its own API (highspy / gurobipy), and solution read-back is a
+  join of the solver's label-indexed arrays against the label tables.
+
+### 12.3 Data model: tidy tables
+
+Everything is a table with named coordinate columns:
+
+| thing | columns |
+|---|---|
+| parameter | `(dim₁, …, dimₖ, value)` — k = 0 is a scalar |
+| variable frame | `(dims…, var_label)` — one row per **existing** variable |
+| linear expression | `(frame dims…, var_label, coeff)` + constant part `(frame dims…, const)` |
+| constraint rows | `(row, sense, rhs)` |
+| coefficient matrix | `(row, col, coeff)` — COO, `col` = `var_label` |
+
+Masks are **row absence**: a variable excluded by `where` simply has no row.
+No NaN sentinels, no `-1` labels. Broadcasting is a join; `sum(over=dim)`
+drops coordinate columns (final canonicalisation groups by `(row, col)` and
+sums coefficients); `group_sum` joins a mapping parameter and replaces the
+source dim with the target dim. Labels are dense `0..n-1` by construction
+(partition-wise `ROW_NUMBER` over the masked coord product), so `var_label`
+**is** the solver column index and `row` the solver row index — no remapping.
+
+### 12.4 IR node set (v0)
+
+Declarations (frozen dataclasses in `linopy_yaml/relational/ir.py`):
+
+- `Program(parameters, variables, constraints, objective)`
+- `ParameterDecl(name, dims)` — table shape only; actual data is bound at
+  execution time via a source registry (`name → parquet path | DataFrame`)
+- `VariableDecl(name, dims, where, lower, upper)` — bounds are constant
+  expressions (`Const` / `Param` arithmetic)
+- `ConstraintDecl(name, dims, lhs, sense, rhs)` — `sense ∈ {==, <=, >=}`;
+  both sides are affine expressions, the executor normalises constants to the
+  right-hand side
+- `ObjectiveDecl(sense, expr)` — remaining dims are implicitly summed
+
+Affine expressions:
+
+- `Const(value)`, `Param(name)`, `Var(name)`
+- `Neg(x)`, `Add(a, b)`, `Mul(a, b)` — at least one factor of `Mul` must be
+  variable-free
+- `Sum(x, over)` — reduce named dims
+- `GroupSum(x, mapping, into)` — sum through a mapping parameter
+  (`mapping: dims → group value`), producing dim `into`
+
+Predicates (for `where`): `Cmp(param, op, value)`, `And`, `Or`, `Not`.
+
+This covers the v0 language subset (foreach, where, arithmetic, sum,
+group_sum, comparison). Quadratic and piecewise are out of scope.
+
+### 12.5 Execution requirements (from the phase-1 spike)
+
+1. **Partition-wise execution is mandatory, not an optimisation.** Global
+   windows and ordered aggregates do not spill; every operator must be bounded
+   by chunking on the leading `foreach` dim (labels = per-chunk `ROW_NUMBER`
+   + running offset; per-chunk `GROUP BY` + sink writes). Chunk size × memory
+   limit trade off directly.
+2. The duckdb database must be **file-backed** with a temp directory, so the
+   buffer pool spills under `memory_limit`.
+3. Output line/row order inside a sink section is free — labels are carried in
+   the data — so no global sorts are needed (`preserve_insertion_order=false`).
+   The `solver_direct` sink needs `ORDER BY row` for batching; that sort
+   spills.
+4. Benchmarks: runtime is measured untracked (memray slows duckdb ~8×); peak
+   RSS via `/usr/bin/time -l` (or `ru_maxrss` of an isolated pass) is the gate
+   metric; memray is for attribution only.
+
+### 12.6 Sinks
+
+- `lp_file` — streaming `COPY` per section, parts concatenated. Portability
+  and the differential-test oracle format.
+- `mps` — same mechanics, later.
+- `solver_direct` — the end state. Stream `cols(col, lb, ub, obj_coeff)` and,
+  ordered by `row`, Arrow record batches of `A(row, col, coeff)` split on row
+  boundaries into batched solver calls (HiGHS `addCols`/`addRows`, Gurobi
+  `addMVar`/`addMConstr`). Peak ≈ duckdb `memory_limit` + one Arrow batch +
+  the solver's own model; float→text→parse disappears entirely. Full-CSR
+  fallbacks violate the primary invariant and are last resorts.
+
+### 12.7 Phase gates
+
+1. ✅ Spike: hand-written SQL, dispatch model — peak RSS flat at the budget
+   (0.49 GB vs 6.6 GB at 35.6M vars; 107M vars in 0.57 GB), ~2× runtime,
+   differential-equivalent to 8.9M vars.
+2. IR + duckdb executor, plans constructed in Python. Gate: **two real models
+   round-trip through solve** (dispatch + a multi-bus transport model
+   exercising `group_sum`), differential against the eager builder.
+3. YAML → IR lowering behind the `_eval_ast` seam, v0 subset only.
+4. In-memory executor for the same IR (folding in the CSR deferred-groupby
+   prototype) so small models skip duckdb.
