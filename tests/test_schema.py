@@ -90,3 +90,21 @@ def test_bound_parameter_reference_valid():
     }
     s = MathSchema.model_validate(raw)
     assert s.variables['v'].bounds.upper == 'p_max'
+
+
+def test_omitted_bounds_default_to_linopy_s_infinities():
+    """A declaration that omits a bound means unbounded, exactly as in
+    ``linopy.Model.add_variables`` — never an implicit ``>= 0``.
+
+    Nothing else pins this: both lanes read the same default, so the
+    differential tests agree with each other whatever it is.
+    """
+    from linopy_yaml.lowering import _lower_bound
+
+    s = MathSchema.model_validate({'dimensions': {'x': {'values': [1]}}, 'variables': {'v': {'foreach': ['x']}}})
+    bounds = s.variables['v'].bounds
+    assert (bounds.lower, bounds.upper) == (float('-inf'), float('inf'))
+
+    # and the relational lane carries it through rather than re-defaulting
+    assert _lower_bound(bounds.lower).value == float('-inf')
+    assert _lower_bound(bounds.upper).value == float('inf')

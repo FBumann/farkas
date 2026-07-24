@@ -10,29 +10,23 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import highspy
 import numpy as np
 import pandas as pd
 import pytest
-import xarray as xr
+import yaml as pyyaml
 
-duckdb = pytest.importorskip('duckdb')
-highspy = pytest.importorskip('highspy')
-
-import yaml as pyyaml  # noqa: E402
-
-from linopy_yaml import compat  # noqa: E402
-from linopy_yaml.lowering import lower_program, tidy_sources  # noqa: E402
-from linopy_yaml.relational import (  # noqa: E402
+from linopy_yaml.lowering import lower_program, tidy_sources
+from linopy_yaml.relational import (
     DuckdbExecutor,
-    GroupSum,
     RelationalBuildError,
+)
+from linopy_yaml.relational.ir import (
+    GroupSum,
     Var,
 )
-from linopy_yaml.schema import MathSchema  # noqa: E402
-from tests.test_relational import (  # noqa: E402
-    transport_data,  # noqa: F401 — fixture
-    transport_eager_objective,
-)
+from linopy_yaml.schema import MathSchema
+from tests.oracle import compat, transport_eager_objective, xr
 
 RTOL = 1e-9
 
@@ -59,7 +53,7 @@ def _inputs(gens, lines, load):
     return data, coords
 
 
-def test_transport_yaml_differential(transport_data, tmp_path):  # noqa: F811
+def test_transport_yaml_differential(transport_data, tmp_path):
     gens, lines, load = transport_data
     data, coords = _inputs(gens, lines, load)
 
@@ -100,7 +94,10 @@ def test_group_sum_lowering_structure():
 
 
 def _flatten(expr):
-    from linopy_yaml.relational import Add, Neg
+    from linopy_yaml.relational.ir import (
+        Add,
+        Neg,
+    )
 
     if isinstance(expr, Add):
         return _flatten(expr.a) + _flatten(expr.b)

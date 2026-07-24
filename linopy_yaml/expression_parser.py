@@ -78,43 +78,43 @@ def _build_grammar() -> pp.ParserElement:
     arith = pp.Forward()
 
     # Atoms
-    integer = pp.Regex(r'-?\d+').setParseAction(lambda t: NumberNode(int(t[0])))
-    real = pp.Regex(r'-?\d+\.\d*([eE][+-]?\d+)?').setParseAction(lambda t: NumberNode(float(t[0])))
-    inf_literal = (pp.Literal('.inf') | pp.Literal('inf')).setParseAction(lambda: NumberNode(float('inf')))
+    integer = pp.Regex(r'-?\d+').set_parse_action(lambda t: NumberNode(int(t[0])))
+    real = pp.Regex(r'-?\d+\.\d*([eE][+-]?\d+)?').set_parse_action(lambda t: NumberNode(float(t[0])))
+    inf_literal = (pp.Literal('.inf') | pp.Literal('inf')).set_parse_action(lambda: NumberNode(float('inf')))
     number = real | inf_literal | integer
 
     name = pp.Regex(r'[a-zA-Z_][a-zA-Z0-9_]*')
 
     # Function calls
-    kwarg = (name + pp.Suppress('=') + (arith | name)).setParseAction(lambda t: (t[0], t[1]))
+    kwarg = (name + pp.Suppress('=') + (arith | name)).set_parse_action(lambda t: (t[0], t[1]))
     pos_arg = arith
-    arg_list = pp.Optional(pp.delimitedList(kwarg | pos_arg))
-    func_call = (name + pp.Suppress('(') + arg_list + pp.Suppress(')')).setParseAction(_make_func_call)
+    arg_list = pp.Optional(pp.DelimitedList(kwarg | pos_arg))
+    func_call = (name + pp.Suppress('(') + arg_list + pp.Suppress(')')).set_parse_action(_make_func_call)
 
     # Atom: function call, number, name, or parenthesized expression
-    name_node = name.copy().setParseAction(lambda t: NameNode(t[0]))
+    name_node = name.copy().set_parse_action(lambda t: NameNode(t[0]))
     atom = func_call | number | name_node | (pp.Suppress('(') + arith + pp.Suppress(')'))
 
     # Unary
-    unary = (pp.oneOf('+ -') + atom).setParseAction(lambda t: UnaryOpNode(t[0], t[1])) | atom
+    unary = (pp.one_of('+ -') + atom).set_parse_action(lambda t: UnaryOpNode(t[0], t[1])) | atom
 
     # Power (right-associative)
     power = unary + pp.ZeroOrMore(pp.Literal('**') + unary)
-    power.setParseAction(_make_right_assoc)
+    power.set_parse_action(_make_right_assoc)
 
     # Multiplication / Division (left-associative)
-    mul_div = power + pp.ZeroOrMore(pp.oneOf('* /') + power)
-    mul_div.setParseAction(_make_left_assoc)
+    mul_div = power + pp.ZeroOrMore(pp.one_of('* /') + power)
+    mul_div.set_parse_action(_make_left_assoc)
 
     # Addition / Subtraction (left-associative)
-    add_sub = mul_div + pp.ZeroOrMore(pp.oneOf('+ -') + mul_div)
-    add_sub.setParseAction(_make_left_assoc)
+    add_sub = mul_div + pp.ZeroOrMore(pp.one_of('+ -') + mul_div)
+    add_sub.set_parse_action(_make_left_assoc)
 
     arith <<= add_sub
 
     # Comparison (optional, at most one)
-    comparator = pp.oneOf('<= >= ==')
-    expr = (arith + comparator + arith).setParseAction(lambda t: CompareNode(t[1], t[0], t[2])) | arith
+    comparator = pp.one_of('<= >= ==')
+    expr = (arith + comparator + arith).set_parse_action(lambda t: CompareNode(t[1], t[0], t[2])) | arith
 
     return expr
 
@@ -175,7 +175,7 @@ def parse_expression(text: str) -> ExprNode:
     CompareNode, or FuncCallNode.
     """
     try:
-        result = _GRAMMAR.parseString(text, parseAll=True)
+        result = _GRAMMAR.parse_string(text, parse_all=True)
     except pp.ParseException as e:
         msg = f'Failed to parse expression: {text!r}\n{e}'
         raise ValueError(msg) from e

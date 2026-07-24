@@ -23,7 +23,7 @@ from linopy_yaml.expression_parser import (
     NumberNode,
     UnaryOpNode,
 )
-from linopy_yaml.helpers import get_helper
+from linopy_yaml.helpers import BUILTIN_NAMES, unknown_helper_message
 from linopy_yaml.where_parser import parse_where
 
 if TYPE_CHECKING:
@@ -70,11 +70,7 @@ def validate_expressions(
 
     for mname, macro in schema.macros.items():
         context = f"Macro '{mname}'"
-        try:
-            get_helper(mname)
-        except NameError:
-            pass
-        else:
+        if mname in BUILTIN_NAMES:
             errors.append(f'{context}: collides with a helper function of the same name.')
         try:
             body_ast = parse_template(mname, macro, context)
@@ -219,10 +215,8 @@ def _check_names(
         return
 
     if isinstance(node, FuncCallNode):
-        try:
-            get_helper(node.name)
-        except NameError as e:
-            errors.append(f'{context}: {e}')
+        if node.name not in BUILTIN_NAMES:
+            errors.append(f'{context}: {unknown_helper_message(node.name)}')
         for arg in node.args:
             _check_names(arg, expression, context, variables, parameters, dimensions, errors)
         # Keyword-arg NameNodes are dimension names, not data references: the

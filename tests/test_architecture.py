@@ -123,6 +123,34 @@ def test_every_ir_expr_node_is_handled_by_the_executor():
     assert not unhandled_pred, f'ir.Pred nodes unknown to the executor: {unhandled_pred}'
 
 
+def test_both_lanes_implement_exactly_the_closed_helper_set():
+    """Hard rule 3: one language, two lanes. A helper name the eager lane
+    evaluates but the relational lane cannot lower (or vice versa) is a
+    dialect split, and it would make the differential tests meaningless.
+
+    Read statically: ``builder`` imports xarray at module level (it is compat
+    lane), and this check must still run on a bare install.
+    """
+    from linopy_yaml.helpers import BUILTIN_NAMES
+
+    tree = ast.parse((PKG / 'builder.py').read_text())
+    table = next(
+        node.value for node in tree.body if isinstance(node, ast.AnnAssign) and ast.unparse(node.target) == '_HELPERS'
+    )
+    assert isinstance(table, ast.Dict)
+    eager = {ast.literal_eval(k) for k in table.keys if k is not None}
+
+    assert eager == set(BUILTIN_NAMES), (
+        f'eager lane implements {sorted(eager)}, language declares {sorted(BUILTIN_NAMES)}'
+    )
+
+    # the relational lane spells its cases out in lowering.py rather than in a
+    # table; every declared name must appear there as a lowering branch
+    lowering_src = (PKG / 'lowering.py').read_text()
+    missing = [name for name in BUILTIN_NAMES if f"'{name}'" not in lowering_src]
+    assert not missing, f'built-in helpers with no lowering case: {missing}'
+
+
 def test_architecture_doc_mentions_every_module():
     """ARCHITECTURE.md's module map stays complete (its own first paragraph)."""
     doc = (PKG.parent / 'ARCHITECTURE.md').read_text()

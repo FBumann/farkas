@@ -4,7 +4,7 @@ Brief, current, precise. If a PR changes the structure described here, it
 updates this file in the same PR. Details live in [SPEC.md](SPEC.md); the
 per-construct vocabulary lives in [GLOSSARY.md](GLOSSARY.md); what is planned
 and what is refused lives in [ROADMAP.md](ROADMAP.md); measured results live
-in `scratch/relational_spike/README.md`.
+in [docs/benchmarks.md](docs/benchmarks.md).
 
 ## Thesis
 
@@ -251,11 +251,11 @@ Rules that follow:
 | `api.py` | native entry point: `check` / `build` / `solve` / `write`, linopy-free |
 | `compat.py` | opt-in shim: `build` / `extend` on a `linopy.Model` (`[compat]` extra) — pure producers, nothing attached |
 | `loader.py` | compat/oracle lane: data coercion to xr.Dataset, master coords |
-| `builder.py` | eager backend: core AST → linopy.Model |
+| `builder.py` | eager backend: core AST → linopy.Model, incl. eager helper evaluation |
 | `lowering.py` | core AST → IR (defines the relational subset) |
 | `relational/ir.py` | frozen logical-plan dataclasses |
 | `relational/executor.py` | duckdb execution + lp_file / solver_direct sinks |
-| `helpers.py` | built-in helpers (eager evaluation) — a closed set, no registry |
+| `helpers.py` | the closed set of built-in helper *names* — no registry; dependency-free, so the linopy-free lane can import it |
 
 ## Extension checklists
 

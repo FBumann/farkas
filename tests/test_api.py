@@ -11,6 +11,7 @@ import sys
 import textwrap
 from pathlib import Path
 
+import highspy
 import numpy as np
 import pandas as pd
 import pytest
@@ -53,8 +54,7 @@ def test_build_context_manager_and_write_lp(dispatch_yaml, dispatch_inputs, tmp_
         assert sol.status == 'Optimal'
         objective_direct = sol.objective
 
-    lp = ly.write_lp(dispatch_yaml, sources, tmp_path / 'm.lp', coords=coords)
-    import highspy
+    lp = ly.write(dispatch_yaml, sources, tmp_path / 'm.lp', coords=coords)
 
     h = highspy.Highs()
     h.setOptionValue('output_flag', False)

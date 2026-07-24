@@ -45,7 +45,7 @@ them.*
 
 **The second axis.** Expressiveness is not the axis we lead on. Scale —
 declarative math at 10⁸ variables under a fixed memory budget — is
-unmatched and is measured separately (`scratch/relational_spike/README.md`,
+unmatched and is measured separately ([docs/benchmarks.md](docs/benchmarks.md),
 `docs/bench.svg`). Language work must not crowd out that number.
 
 **Explicit non-yardsticks.** Feature parity with Calliope's math language

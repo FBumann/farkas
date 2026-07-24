@@ -2,7 +2,6 @@
 
 import pandas as pd
 import pytest
-import xarray as xr
 
 from linopy_yaml.expression_parser import (
     BinOpNode,
@@ -14,6 +13,7 @@ from linopy_yaml.expression_parser import (
     parse_expression,
 )
 from linopy_yaml.where_parser import evaluate_where, parse_where
+from tests.oracle import xr
 
 
 class TestExpressionParser:
