@@ -220,7 +220,7 @@ variables:
     foreach: [snapshot, generator]   # required: dimensions to index over
     where: "p_max > 0"               # optional: boolean mask — only create variables where True
     bounds:
-      lower: 0                       # number or parameter name. Default: 0
+      lower: 0                       # number or parameter name. Default: -inf
       upper: p_max                   # number or parameter name. Default: inf
 
   committed:
@@ -241,7 +241,7 @@ variables:
 |----------------|---------------|----------|---------------------------------------------------------------------------------------------------------------------------|
 | `foreach`      | list[str]     | required | Dimension names to iterate over. Each combination is one variable.                                                        |
 | `where`        | str or null   | `null`   | Where string (see [Section 6](#6-where-strings)). Variables are only created at coordinates where this evaluates to True. |
-| `bounds.lower` | number or str | `0`      | Lower bound. Either a literal number or the name of a declared parameter.                                                 |
+| `bounds.lower` | number or str | `-inf`   | Lower bound. Either a literal number or the name of a declared parameter.                                                 |
 | `bounds.upper` | number or str | `inf`    | Upper bound. Either a literal number or the name of a declared parameter.                                                 |
 | `binary`       | bool          | `false`  | If true, variable is binary (0/1). Bounds are ignored.                                                                    |
 | `integer`      | bool          | `false`  | If true, variable is integer-valued.                                                                                      |
@@ -249,6 +249,8 @@ variables:
 **Rules:**
 
 - `binary` and `integer` cannot both be true.
+- Omitting a bound means unbounded on that side, matching `linopy.Model.add_variables`.
+  Non-negativity is a constraint like any other: write `lower: 0` to get it.
 - If `bounds.lower` or `bounds.upper` is a string, it must be the name of a declared parameter.
 - A parameter used as a bound must be broadcastable onto the variable's `foreach` dimensions.
 

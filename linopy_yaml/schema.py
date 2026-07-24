@@ -40,9 +40,15 @@ class ParameterDef(BaseModel):
 
 
 class BoundsDef(BaseModel):
-    """Variable bounds — each side is a number or parameter name."""
+    """Variable bounds — each side is a number or parameter name.
 
-    lower: float | str = 0.0
+    The defaults are linopy's (``add_variables(lower=-inf, upper=inf)``): a
+    declaration that omits a bound means the variable is unbounded on that
+    side, not implicitly non-negative. Non-negativity is a real constraint,
+    so the file has to say it.
+    """
+
+    lower: float | str = float('-inf')
     upper: float | str = float('inf')
 
 
