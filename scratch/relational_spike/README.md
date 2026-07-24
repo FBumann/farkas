@@ -1,42 +1,43 @@
-# Phase-1 spike: relational/streaming LP construction
+# Streaming LP construction: the gate benchmark
 
-Hand-translation of `examples/dispatch.yaml` into duckdb SQL over parquet,
-streaming the LP file via `COPY`, benchmarked against linopy's eager build +
-`lp-polars` writer. See the project handoff: the goal is to show that build
-peak RSS becomes a config knob (`memory_limit`) instead of O(dense dim product).
+Builds `examples/dispatch.yaml` relationally — duckdb SQL over parquet,
+streaming the LP file via `COPY` — and benchmarks it against linopy's eager
+build + `lp-polars` writer. The claim under test is that build peak RSS
+becomes a config knob (`memory_limit`) instead of O(dense dim product).
 
-**Gate:** meaningful peak-RSS win at equal-or-better runtime.
+**Gate:** meaningful peak-RSS win at equal-or-better runtime. *Passed* — see
+Results below.
+
+The phase-1 spike this began as (`duckdb_spike.py`, a hand-written SQL
+translation, plus `check_equivalence.py` comparing its LP against linopy's)
+is retired. `DuckdbExecutor` superseded the hand-written SQL, and the
+differential comparison is now the test suite's job, run on every commit
+rather than by hand. The benchmark below measures the shipped path.
 
 ## Files
 
 - `gen_data.py` — writes `generators.parquet` (generator, p_max, cost) and
   `load.parquet` (snapshot, load); `--masked-frac` zeroes a fraction of `p_max`
   to exercise the mask.
-- `linopy_baseline.py` — eager oracle: dense xarray build with `mask=`,
+- `linopy_baseline.py` — eager reference: dense xarray build with `mask=`,
   LP via `m.to_file(io_api="lp-polars")`.
-- `duckdb_spike.py` — the relational mapping under test:
-  mask → row absence (`WHERE p_max > 0`), broadcast → join,
-  `sum(over=generator)` → `GROUP BY snapshot`, labels → `ROW_NUMBER()` over the
-  masked coord product, LP writing → per-section `COPY` under a duckdb
-  `memory_limit` with a file-backed database, sections concatenated at the end.
-- `check_equivalence.py` — differential test: solve both LP files with HiGHS,
-  assert equal dimensions and objective.
+- `executor_bench.py` — the shipped path: `examples/dispatch.yaml` → lowering
+  → `DuckdbExecutor`, timing build / write_lp / solve separately.
 - `bench.py` — gate benchmark via pytest-benchmem (memray under the hood,
-  `isolate=True` → per-pass fresh process + `ru_maxrss` peak RSS).
+  `isolate=True` → per-pass fresh process + `ru_maxrss` peak RSS), running
+  the two arms above.
 
 ## Run
 
 ```bash
 uv sync --extra dev --group spike
 
-# differential correctness
-uv run --group spike python scratch/relational_spike/gen_data.py --snapshots 20000 --generators 50 --out /tmp/d
-uv run --group spike python scratch/relational_spike/linopy_baseline.py --data /tmp/d --out /tmp/a.lp
-uv run --group spike python scratch/relational_spike/duckdb_spike.py --data /tmp/d --out /tmp/b.lp
-uv run --group spike python scratch/relational_spike/check_equivalence.py /tmp/a.lp /tmp/b.lp
-
-# gate benchmark
+# gate benchmark (both arms)
 uv run --group spike python scratch/relational_spike/bench.py --snapshots 100000 --generators 100 --repeats 3
+
+# one arm in isolation, with per-stage timings
+uv run --group spike python scratch/relational_spike/gen_data.py --snapshots 20000 --generators 50 --out /tmp/d
+uv run --group spike python scratch/relational_spike/executor_bench.py --data /tmp/d --memory-limit 512MB --solve
 ```
 
 ## Results (macOS, M-series, 24 GB RAM, linopy 0.9.0 / duckdb 1.5.5)

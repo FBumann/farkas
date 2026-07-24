@@ -26,11 +26,7 @@ from linopy_yaml.relational.ir import (
     Var,
 )
 from linopy_yaml.schema import MathSchema
-from tests.oracle import compat, xr
-from tests.test_relational import (
-    transport_data,  # noqa: F401 — fixture
-    transport_eager_objective,
-)
+from tests.oracle import compat, transport_eager_objective, xr
 
 RTOL = 1e-9
 
@@ -57,7 +53,7 @@ def _inputs(gens, lines, load):
     return data, coords
 
 
-def test_transport_yaml_differential(transport_data, tmp_path):  # noqa: F811
+def test_transport_yaml_differential(transport_data, tmp_path):
     gens, lines, load = transport_data
     data, coords = _inputs(gens, lines, load)
 

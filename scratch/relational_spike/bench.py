@@ -1,4 +1,10 @@
-"""Phase-1 gate benchmark: peak memory + runtime, linopy eager writer vs duckdb streaming.
+"""Gate benchmark: peak memory + runtime, linopy eager writer vs duckdb streaming.
+
+The duckdb arm runs the shipped path (executor_bench → examples/dispatch.yaml
+→ lowering → DuckdbExecutor). It used to run a hand-written SQL spike, which
+was the point at the phase-1 gate and became a liability once the executor
+existed: the number no longer described anything that ships.
+
 
 Uses pytest-benchmem's measure_memory (memray under the hood — never tracemalloc)
 with isolate=True, so every pass runs in a fresh spawned process and also reports
@@ -25,7 +31,7 @@ def run_linopy(data_dir: Path, out: Path, io_api: str) -> None:
 
 
 def run_duckdb(data_dir: Path, out: Path, memory_limit: str) -> None:
-    from duckdb_spike import build_and_write
+    from executor_bench import build_and_write
 
     build_and_write(data_dir, out, memory_limit)
 

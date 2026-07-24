@@ -1,75 +1,102 @@
-"""Scale check: the general executor vs the hand-written spike SQL.
+"""Scale check: the shipped streaming path at S x G scale.
 
-Runs the dispatch program (parquet sources) through DuckdbExecutor at
-S x G scale, timing build / write_lp / solve separately.
+Runs ``examples/dispatch.yaml`` — the real YAML, lowered by the real
+lowering — through DuckdbExecutor, timing build / write_lp / solve
+separately. Nothing here hand-builds IR, so what it measures is what ships.
 
     /usr/bin/time -l .venv/bin/python scratch/relational_spike/executor_bench.py \
         --data scratch/relational_spike/bench_out/data_s100000_g100 --memory-limit 512MB
 """
 
 import argparse
+import copy
 import time
 from pathlib import Path
 
+import yaml
+
+from linopy_yaml.api import load_schema
+from linopy_yaml.lowering import lower_program
 from linopy_yaml.relational import DuckdbExecutor
-from linopy_yaml.relational.ir import (
-    Cmp,
-    Const,
-    ConstraintDecl,
-    ObjectiveDecl,
-    Param,
-    ParameterDecl,
-    Program,
-    Sum,
-    Var,
-    VariableDecl,
-)
+from linopy_yaml.relational.ir import Program
 
 HERE = Path(__file__).parent
+DISPATCH_YAML = HERE.parent.parent / 'examples' / 'dispatch.yaml'
 
 
 def dispatch_program(trivial: bool = False) -> Program:
-    """The dispatch model; with ``trivial=True`` every variable is fixed
-    (lower == upper == p_fix, chosen to satisfy the balance exactly), so the
-    solver's presolve finishes the model instantly and a benchmark measures
-    build + streaming only, not simplex time."""
+    """The dispatch model, lowered from the example YAML.
+
+    With ``trivial=True`` every variable is fixed (lower == upper == p_fix,
+    chosen to satisfy the balance exactly), so the solver's presolve finishes
+    instantly and the benchmark measures build + streaming, not simplex.
+    """
+    raw = yaml.safe_load(DISPATCH_YAML.read_text())
+    # the benchmark data has G generators, not the example's three
+    raw['dimensions']['generator'] = {'dtype': 'str'}
     if trivial:
-        bounds = {'lower': Param('p_fix'), 'upper': Param('p_fix')}
-        extra = (ParameterDecl('p_fix', ('snapshot', 'generator')),)
-    else:
-        bounds = {'lower': Const(0.0), 'upper': Param('p_max')}
-        extra = ()
-    return Program(
-        parameters=(
-            ParameterDecl('p_max', ('generator',)),
-            ParameterDecl('cost', ('generator',)),
-            ParameterDecl('load', ('snapshot',)),
-            *extra,
-        ),
-        variables=(
-            VariableDecl(
-                'p',
-                ('snapshot', 'generator'),
-                where=Cmp('p_max', '>', 0),
-                **bounds,
-            ),
-        ),
-        constraints=(
-            ConstraintDecl(
-                'power_balance',
-                ('snapshot',),
-                lhs=Sum(Var('p'), over=('generator',)),
-                sense='==',
-                rhs=Param('load'),
-            ),
-        ),
-        objective=ObjectiveDecl('min', Sum(Var('p') * Param('cost'), over=('generator', 'snapshot'))),
+        raw = copy.deepcopy(raw)
+        raw['parameters']['p_fix'] = {'dims': ['snapshot', 'generator']}
+        raw['variables']['p']['bounds'] = {'lower': 'p_fix', 'upper': 'p_fix'}
+    return lower_program(load_schema(raw))
+
+
+def prepare_sources(data_dir: Path, trivial: bool = False) -> dict[str, str]:
+    """Adapt the generator/load parquet into the tidy (dims..., value) shape."""
+    import duckdb
+
+    con = duckdb.connect()
+    prep = data_dir / 'prep'
+    prep.mkdir(exist_ok=True)
+    for column, name in (('p_max', 'p_max'), ('cost', 'cost')):
+        con.execute(
+            f"COPY (SELECT generator, {column} AS value FROM read_parquet('{data_dir}/generators.parquet')) "
+            f"TO '{prep}/{name}.parquet' (FORMAT parquet)"
+        )
+    con.execute(
+        f"COPY (SELECT snapshot, load AS value FROM read_parquet('{data_dir}/load.parquet')) "
+        f"TO '{prep}/load.parquet' (FORMAT parquet)"
     )
+
+    sources = {
+        'p_max': str(prep / 'p_max.parquet'),
+        'cost': str(prep / 'cost.parquet'),
+        'load': str(prep / 'load.parquet'),
+        'snapshot': str(prep / 'load.parquet'),
+        'generator': str(prep / 'p_max.parquet'),
+    }
+
+    if trivial:
+        # proportional dispatch: p_fix = load * p_max / sum(active p_max),
+        # so sum(p_fix) == load and the balance holds with all vars fixed
+        con.execute(
+            f"""
+            COPY (
+                SELECT l.snapshot, g.generator,
+                       l.load * g.p_max / (
+                           SELECT SUM(p_max) FROM read_parquet('{data_dir}/generators.parquet')
+                           WHERE p_max > 0
+                       ) AS value
+                FROM read_parquet('{data_dir}/load.parquet') l
+                CROSS JOIN read_parquet('{data_dir}/generators.parquet') g
+                WHERE g.p_max > 0
+            ) TO '{prep}/p_fix.parquet' (FORMAT parquet)
+            """
+        )
+        sources['p_fix'] = str(prep / 'p_fix.parquet')
+    con.close()
+    return sources
+
+
+def build_and_write(data_dir: Path, out: Path, memory_limit: str) -> None:
+    """Build and stream to an LP file — the arm ``bench.py`` measures."""
+    sources = prepare_sources(data_dir)
+    with DuckdbExecutor(memory_limit=memory_limit) as ex:
+        ex.build(dispatch_program(), sources)
+        ex.write_lp(out)
 
 
 def main() -> None:
-    import duckdb
-
     ap = argparse.ArgumentParser()
     ap.add_argument('--data', type=Path, required=True)
     ap.add_argument('--memory-limit', default='512MB')
@@ -82,49 +109,7 @@ def main() -> None:
     )
     args = ap.parse_args()
 
-    # the executor wants tidy (dims..., value) sources; adapt the spike parquet
-    con = duckdb.connect()
-    prep = args.data / 'prep'
-    prep.mkdir(exist_ok=True)
-    con.execute(
-        f"COPY (SELECT generator, p_max AS value FROM read_parquet('{args.data}/generators.parquet')) "
-        f"TO '{prep}/p_max.parquet' (FORMAT parquet)"
-    )
-    con.execute(
-        f"COPY (SELECT generator, cost AS value FROM read_parquet('{args.data}/generators.parquet')) "
-        f"TO '{prep}/cost.parquet' (FORMAT parquet)"
-    )
-    con.execute(
-        f"COPY (SELECT snapshot, load AS value FROM read_parquet('{args.data}/load.parquet')) "
-        f"TO '{prep}/load.parquet' (FORMAT parquet)"
-    )
-
-    sources = {
-        'p_max': str(prep / 'p_max.parquet'),
-        'cost': str(prep / 'cost.parquet'),
-        'load': str(prep / 'load.parquet'),
-        'snapshot': str(prep / 'load.parquet'),
-    }
-
-    if args.trivial:
-        # proportional dispatch: p_fix = load * p_max / sum(active p_max),
-        # so sum(p_fix) == load and the balance holds with all vars fixed
-        con.execute(
-            f"""
-            COPY (
-                SELECT l.snapshot, g.generator,
-                       l.load * g.p_max / (
-                           SELECT SUM(p_max) FROM read_parquet('{args.data}/generators.parquet')
-                           WHERE p_max > 0
-                       ) AS value
-                FROM read_parquet('{args.data}/load.parquet') l
-                CROSS JOIN read_parquet('{args.data}/generators.parquet') g
-                WHERE g.p_max > 0
-            ) TO '{prep}/p_fix.parquet' (FORMAT parquet)
-            """
-        )
-        sources['p_fix'] = str(prep / 'p_fix.parquet')
-    con.close()
+    sources = prepare_sources(args.data, trivial=args.trivial)
 
     with DuckdbExecutor(memory_limit=args.memory_limit) as ex:
         t0 = time.perf_counter()
