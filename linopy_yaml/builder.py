@@ -1,4 +1,10 @@
-"""Model builder: schema + data → linopy Model."""
+"""Model builder: schema + data → linopy Model.
+
+Also holds the eager evaluation of every built-in helper. The helper *names*
+are the language (``helpers.py``, imported by the linopy-free lane); these
+xarray/linopy evaluations are this backend's private business, mirrored on
+the relational side by lowering cases and SQL rather than shared code.
+"""
 
 from __future__ import annotations
 
@@ -16,10 +22,12 @@ from linopy_yaml.expression_parser import (
     NumberNode,
     UnaryOpNode,
 )
-from linopy_yaml.helpers import get_helper
+from linopy_yaml.helpers import unknown_helper_message
 from linopy_yaml.where_parser import evaluate_where
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import linopy
     import pandas as pd
     import xarray as xr
@@ -236,7 +244,11 @@ def _eval_ast(
         return ops[node.op](left, right)
 
     if isinstance(node, FuncCallNode):
-        helper = get_helper(node.name)
+        # validation.py already rejected unknown helpers at load time; this
+        # guard covers direct calls that skipped it
+        if node.name not in _HELPERS:
+            raise NameError(unknown_helper_message(node.name))
+        helper = _HELPERS[node.name]
         # Evaluate positional args
         args = [_eval_ast(a, ctx) for a in node.args]
         # Evaluate keyword args — NameNodes become strings (for dim names)
@@ -275,3 +287,115 @@ def _resolve_name(
         f'or parameter.'
     )
     raise NameError(msg)
+
+
+# ---------------------------------------------------------------------------
+# Built-in helpers, eager evaluation
+# ---------------------------------------------------------------------------
+#
+# Each operand is an xr.DataArray (a parameter) or a linopy Variable /
+# LinearExpression. xarray is imported inside the bodies, not at module level,
+# so this module still imports on a bare install — that is what lets
+# ``tests/test_architecture.py`` check ``_HELPERS`` against the closed name
+# set without the [compat] extra.
+
+
+def _helper_sum(array: Any, *, over: str) -> Any:
+    """Sum *array* over dimension *over*.
+
+    If the array does not have the named dimension, it is returned unchanged.
+    """
+    import xarray as xr
+
+    if isinstance(array, xr.DataArray):
+        if over in array.dims:
+            return array.sum(dim=over)
+        return array
+    if hasattr(array, 'dims') and over in array.dims:
+        return array.sum(over)
+    return array
+
+
+def _helper_group_sum(array: Any, mapping: Any, *, into: str) -> Any:
+    """Sum *array* through a mapping parameter, producing dimension *into*.
+
+    Usage in YAML: ``group_sum(p, gen_bus, into=bus)``
+
+    *mapping* must be a one-dimensional parameter whose values are group
+    labels (e.g. ``gen_bus``: generator → bus). The mapping's dimension is
+    summed out; a new dimension named *into* holds the group labels.
+    """
+    import xarray as xr
+
+    if not isinstance(mapping, xr.DataArray):
+        msg = (
+            f'group_sum() mapping must be a parameter (got '
+            f'{type(mapping).__name__}). Usage: group_sum(expr, mapping, into=dim)'
+        )
+        raise TypeError(msg)
+    if mapping.ndim != 1:
+        msg = f'group_sum() mapping must have exactly one dimension, got {list(mapping.dims)}'
+        raise ValueError(msg)
+
+    group = mapping.rename(into)
+    if isinstance(array, xr.DataArray) or hasattr(array, 'groupby'):
+        return array.groupby(group).sum()
+    msg = f"group_sum() does not support type '{type(array).__name__}'."
+    raise TypeError(msg)
+
+
+def _shift_amount(helper: str, kwargs: dict[str, int]) -> tuple[str, int]:
+    """Unpack and check the shared ``<dim>=<n>`` signature of roll/shift."""
+    if len(kwargs) != 1:
+        msg = f'{helper}() expects exactly one keyword argument (dim=n), got {len(kwargs)}: {kwargs}'
+        raise TypeError(msg)
+    dim, n = next(iter(kwargs.items()))
+    if int(n) != n:
+        msg = f'{helper}() amount must be an integer, got {n!r}'
+        raise TypeError(msg)
+    return dim, int(n)
+
+
+def _helper_shift(array: Any, **kwargs: int) -> Any:
+    """Non-cyclic shift along a dimension; vacated positions contribute zero.
+
+    Usage in YAML: ``shift(soc, snapshot=1)`` — the value at *t-1*, with the
+    first position empty (an acyclic recurrence, e.g. storage starting empty).
+    """
+    import xarray as xr
+
+    dim, n = _shift_amount('shift', kwargs)
+    if isinstance(array, xr.DataArray):
+        return array.shift({dim: n}, fill_value=0)
+    if hasattr(array, 'shift'):
+        return array.shift({dim: n})
+    msg = f"shift() does not support type '{type(array).__name__}'."
+    raise TypeError(msg)
+
+
+def _helper_roll(array: Any, **kwargs: int) -> Any:
+    """Roll (circular shift) *array* along a dimension.
+
+    Usage in YAML: ``roll(soc, snapshot=1)``
+    """
+    import xarray as xr
+
+    dim, n = _shift_amount('roll', kwargs)
+    if isinstance(array, xr.DataArray):
+        return array.roll({dim: n}, roll_coords=False)
+    if hasattr(array, 'roll'):
+        return array.roll({dim: n})
+    msg = f"roll() does not support type '{type(array).__name__}'."
+    raise TypeError(msg)
+
+
+#: Eager evaluation of every name in ``helpers.BUILTIN_NAMES``. The two must
+#: agree exactly — enforced by ``tests/test_architecture.py``, because a name
+#: one lane implements and the other does not is precisely the divergence
+#: that would make the differential tests a comparison of dialects.
+_HELPERS: dict[str, Callable[..., Any]] = {
+    'sum': _helper_sum,
+    'group_sum': _helper_group_sum,
+    'shift': _helper_shift,
+    'roll': _helper_roll,
+}
