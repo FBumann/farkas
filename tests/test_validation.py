@@ -178,3 +178,66 @@ class TestLoadTimeIntegration:
         )
         with pytest.raises(ValueError, match="'p' not found"):
             compat.extend(model, f)
+
+
+class TestDimensionKwargs:
+    """ROADMAP 5c: a dim kwarg that names nothing is a silent no-op, not an error.
+
+    ``sum(p, over=snapshto)`` used to build a model that solved and was wrong —
+    both lanes agree on the no-op, so nothing downstream caught it.
+    """
+
+    @staticmethod
+    def _schema(expression: str) -> MathSchema:
+        return MathSchema.model_validate(
+            {
+                'dimensions': {'snapshot': {'dtype': 'int'}, 'generator': {'values': ['wind']}},
+                'parameters': {'load': {'dims': ['snapshot']}, 'gen_bus': {'dims': ['generator'], 'dtype': 'str'}},
+                'variables': {'p': {'foreach': ['snapshot', 'generator']}},
+                'constraints': {'c': {'foreach': ['snapshot'], 'equations': [{'expression': expression}]}},
+            }
+        )
+
+    def test_sum_over_typo_is_rejected(self):
+        with pytest.raises(ValueError, match='silent no-op') as ei:
+            validate_expressions(self._schema('sum(p, over=snapshto) == load'))
+        assert 'sum(over=snapshto)' in str(ei.value)
+
+    def test_group_sum_into_typo_is_rejected(self):
+        with pytest.raises(ValueError, match='does not name a declared dimension'):
+            validate_expressions(self._schema('group_sum(p, gen_bus, into=buss) == load'))
+
+    def test_roll_and_shift_dim_key_is_checked(self):
+        for helper in ('roll', 'shift'):
+            with pytest.raises(ValueError, match='does not name a declared dimension'):
+                validate_expressions(self._schema(f'{helper}(p, snapshto=1) == load'))
+
+    def test_declared_dimensions_still_pass(self):
+        for expression in (
+            'sum(p, over=generator) == load',
+            'group_sum(p, gen_bus, into=generator) == load',
+            'roll(p, snapshot=1) == load',
+            'shift(p, snapshot=1) == load',
+        ):
+            validate_expressions(self._schema(expression))
+
+    def test_macro_formals_are_not_mistaken_for_dimensions(self):
+        """A formal in a dim position is legal inside the template body."""
+        schema = MathSchema.model_validate(
+            {
+                'dimensions': {'generator': {'values': ['wind']}},
+                'parameters': {'cost': {'dims': ['generator']}},
+                'variables': {'p': {'foreach': ['generator']}},
+                'macros': {
+                    'ws': {
+                        'args': ['array', 'weights'],
+                        'kwargs': ['over'],
+                        'template': 'sum(array * weights, over=over)',
+                    }
+                },
+                'objectives': {
+                    'obj': {'sense': 'minimize', 'equations': [{'expression': 'ws(p, cost, over=generator)'}]}
+                },
+            }
+        )
+        validate_expressions(schema)

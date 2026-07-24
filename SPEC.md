@@ -673,6 +673,8 @@ where: null   # omit entirely, or write: "True"
 
 Helper functions are called inside expressions to perform operations that cannot be expressed with arithmetic alone.
 
+Dimension arguments — `over=`, `into=`, and the `roll`/`shift` keyword *key* — are name-checked at load time against `dimensions:`. An unknown dimension is an error, not a no-op: `sum(p, over=snapshto)` would otherwise build a model that solves and is silently wrong.
+
 ### 7.1 `sum(array, over=dim)`
 
 Sums an array or expression over a dimension.
@@ -1081,13 +1083,16 @@ Declarations (frozen dataclasses in `linopy_yaml/relational/ir.py`):
 Affine expressions:
 
 - `Const(value)`, `Param(name)`, `Var(name)`
-- `Neg(x)`, `Add(a, b)`, `Mul(a, b)` — at least one factor of `Mul` must be
-  variable-free
+- `Neg(x)`, `Add(a, b)`, `Mul(a, b)`, `Div(a, b)` — at least one factor of
+  `Mul` must be variable-free, and the divisor of `Div` must be
 - `Sum(x, over)` — reduce named dims
 - `GroupSum(x, mapping, into)` — sum through a mapping parameter
   (`mapping: dims → group value`), producing dim `into`
+- `Shift(x, dim, n, wrap)` — the value at *t−n* along `dim`; `wrap=True` is
+  periodic (`roll`), `wrap=False` acyclic (`shift`, vacated rows absent)
 
-Predicates (for `where`): `Cmp(param, op, value)`, `And`, `Or`, `Not`.
+Predicates (for `where`): `Cmp(param, op, value)`, `Defined(param)`,
+`Bool(value)`, `And`, `Or`, `Not`.
 
 This covers the v0 language subset (foreach, where, arithmetic, sum,
 group_sum, roll, shift, comparison). Quadratic is out of scope.

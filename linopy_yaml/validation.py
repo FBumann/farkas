@@ -64,6 +64,7 @@ def validate_expressions(
     """
     variables = set(schema.variables) | set(known_variables)
     parameters = set(schema.parameters)
+    dimensions = set(schema.dimensions)
 
     errors: list[str] = []
 
@@ -91,6 +92,7 @@ def validate_expressions(
             context,
             variables | formals,
             parameters | formals,
+            dimensions | formals,
             errors,
         )
 
@@ -102,7 +104,7 @@ def validate_expressions(
         if isinstance(ast, CompareNode):
             errors.append(f'{context}: must not contain a comparison operator.\nGot: {body!r}')
             continue
-        _check_names(ast, body, context, variables, parameters, errors)
+        _check_names(ast, body, context, variables, parameters, dimensions, errors)
 
     for vname, vdef in schema.variables.items():
         _check_where(vdef.where, f"Variable '{vname}'", errors)
@@ -122,8 +124,8 @@ def validate_expressions(
                     f'Got: {eq.expression!r}'
                 )
                 continue
-            _check_names(ast.left, eq.expression, where, variables, parameters, errors)
-            _check_names(ast.right, eq.expression, where, variables, parameters, errors)
+            _check_names(ast.left, eq.expression, where, variables, parameters, dimensions, errors)
+            _check_names(ast.right, eq.expression, where, variables, parameters, dimensions, errors)
 
     for oname, odef in schema.objectives.items():
         for i, eq in enumerate(odef.equations):
@@ -135,7 +137,7 @@ def validate_expressions(
             if isinstance(ast, CompareNode):
                 errors.append(f'{where}: expression must not contain a comparison operator.\nGot: {eq.expression!r}')
                 continue
-            _check_names(ast, eq.expression, where, variables, parameters, errors)
+            _check_names(ast, eq.expression, where, variables, parameters, dimensions, errors)
 
     if errors:
         raise ValueError('\n'.join(errors))
@@ -167,12 +169,28 @@ def _check_where(
         errors.append(f'{context}: {e}')
 
 
+#: helpers whose keyword *value* names a dimension — ``sum(x, over=snapshot)``
+_DIM_VALUE_KWARGS: dict[str, tuple[str, ...]] = {'sum': ('over',), 'group_sum': ('into',)}
+#: helpers whose keyword *key* names a dimension — ``roll(x, snapshot=1)``
+_DIM_KEY_HELPERS = frozenset({'roll', 'shift'})
+
+
+def _undeclared_dim(context: str, helper: str, shown: str, name: str, dimensions: set[str]) -> str:
+    return (
+        f'{context}: {helper}({shown}) does not name a declared dimension.\n'
+        f'  Dimensions: {sorted(dimensions)}\n'
+        f"Declare '{name}' under 'dimensions:', or fix the typo — an unknown "
+        f'dimension makes {helper}() a silent no-op rather than an error.'
+    )
+
+
 def _check_names(
     node: ArithNode,
     expression: str,
     context: str,
     variables: set[str],
     parameters: set[str],
+    dimensions: set[str],
     errors: list[str],
 ) -> None:
     """Collect unknown names and unknown helpers under *node*."""
@@ -192,12 +210,12 @@ def _check_names(
         return
 
     if isinstance(node, UnaryOpNode):
-        _check_names(node.operand, expression, context, variables, parameters, errors)
+        _check_names(node.operand, expression, context, variables, parameters, dimensions, errors)
         return
 
     if isinstance(node, BinOpNode):
-        _check_names(node.left, expression, context, variables, parameters, errors)
-        _check_names(node.right, expression, context, variables, parameters, errors)
+        _check_names(node.left, expression, context, variables, parameters, dimensions, errors)
+        _check_names(node.right, expression, context, variables, parameters, dimensions, errors)
         return
 
     if isinstance(node, FuncCallNode):
@@ -206,10 +224,22 @@ def _check_names(
         except NameError as e:
             errors.append(f'{context}: {e}')
         for arg in node.args:
-            _check_names(arg, expression, context, variables, parameters, errors)
-        # Keyword-arg NameNodes are dimension names, not data references —
-        # the evaluator passes them through as strings, so skip them here.
+            _check_names(arg, expression, context, variables, parameters, dimensions, errors)
+        # Keyword-arg NameNodes are dimension names, not data references: the
+        # evaluator passes them through as strings. They still have to name a
+        # *declared* dimension — an unknown one is not an error at build time,
+        # it silently makes the call a no-op (ROADMAP item 5c).
+        for kwarg in _DIM_VALUE_KWARGS.get(node.name, ()):
+            value = node.kwargs.get(kwarg)
+            if isinstance(value, NameNode) and value.name not in dimensions:
+                errors.append(_undeclared_dim(context, node.name, f'{kwarg}={value.name}', value.name, dimensions))
+        if node.name in _DIM_KEY_HELPERS:
+            errors.extend(
+                _undeclared_dim(context, node.name, f'{key}=...', key, dimensions)
+                for key in node.kwargs
+                if key not in dimensions
+            )
         for value in node.kwargs.values():
             if not isinstance(value, NameNode):
-                _check_names(value, expression, context, variables, parameters, errors)
+                _check_names(value, expression, context, variables, parameters, dimensions, errors)
         return

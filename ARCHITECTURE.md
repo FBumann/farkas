@@ -1,8 +1,10 @@
 # Architecture
 
 Brief, current, precise. If a PR changes the structure described here, it
-updates this file in the same PR. Details live in [SPEC.md](SPEC.md);
-measured results live in `scratch/relational_spike/README.md`.
+updates this file in the same PR. Details live in [SPEC.md](SPEC.md); the
+per-construct vocabulary lives in [GLOSSARY.md](GLOSSARY.md); what is planned
+and what is refused lives in [ROADMAP.md](ROADMAP.md); measured results live
+in `scratch/relational_spike/README.md`.
 
 ## Thesis
 
@@ -100,7 +102,7 @@ composition**:
 ```mermaid
 flowchart TB
     T2["<b>Tier 2 — free composition</b><br/>macros: · expressions:<br/>(edit YAML, nothing else)"]
-    T1["<b>Tier 1 — taxed primitives</b><br/>operators · sum · group_sum · roll/shift · where · piecewise:<br/>(the expressive ceiling)"]
+    T1["<b>Tier 1 — taxed</b><br/>primitives: operators · sum · group_sum · roll/shift · where<br/>formulations: piecewise: (expands to declarations, no IR node)<br/>(the expressive ceiling)"]
     BOTH["both lanes, one meaning"]
     ESC["<b>escape: islands</b> (#38)<br/>declared · sliced by where · terminal"]
 
