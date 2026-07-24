@@ -20,6 +20,7 @@ data sources (parquet / pandas)          YAML file
                  │                          ▼
                  │                     MathSchema
                  │                          │  expand expressions: / macros:   (expansion.py)
+                 │                          │  expand piecewise: blocks         (piecewise.py)
                  │                          ▼
                  │                     core AST  ←── the only contract between layers
                  │                ┌─────────┴─────────┐
@@ -98,7 +99,7 @@ producing a parameter. `@register` Python helpers remain as an explicitly
 
 | Module | Role |
 |---|---|
-| `schema.py` | pydantic schema incl. `expressions:` / `macros:` blocks |
+| `schema.py` | pydantic schema incl. `expressions:` / `macros:` / `piecewise:` blocks |
 | `expression_parser.py`, `where_parser.py` | text → core AST |
 | `expansion.py` | named-expression / macro substitution (pre-dispatch) |
 | `validation.py` | load-time: parse, expand, name-check everything |
@@ -106,6 +107,8 @@ producing a parameter. `@register` Python helpers remain as an explicitly
 | `lowering.py` | core AST → IR (defines the relational subset) |
 | `relational/ir.py` | frozen logical-plan dataclasses |
 | `relational/executor.py` | duckdb execution + lp_file / solver_direct sinks |
+| `piecewise.py` | `piecewise:` → λ-formulation declarations (schema-level expansion) + data-time curvature guard |
+| `router.py` | backend selection: relational iff the schema lowers, else eager with the verbatim reason |
 | `helpers.py` | built-in + `@register` helpers (eager evaluation) |
 
 ## Extension checklists
