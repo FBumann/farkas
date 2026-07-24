@@ -300,17 +300,27 @@ class DuckdbExecutor:
         assert self._program is not None
         joins: dict[str, str] = {}
 
+        def join_param(param: str) -> str:
+            """LEFT JOIN where-parameter *param* onto the frame; return its alias.
+
+            Every parameter predicate needs this same join and the same
+            containment check: a where-parameter carrying a dim the frame does
+            not have would silently reduce the mask over that dim.
+            """
+            decl = self._program.parameter(param)  # type: ignore[union-attr]
+            extra = set(decl.dims) - set(dims)
+            if extra:
+                raise RelationalBuildError(
+                    f"where-parameter '{param}' has dims {sorted(extra)} outside the foreach dims {list(dims)}"
+                )
+            alias = f'w_{param}'
+            on = ' AND '.join(f'{alias}.{d} = t_{d}.val' for d in decl.dims) or 'TRUE'
+            joins[alias] = f'LEFT JOIN p_{param} {alias} ON {on}'
+            return alias
+
         def walk(p: ir.Pred) -> str:
             if isinstance(p, ir.Cmp):
-                decl = self._program.parameter(p.param)  # type: ignore[union-attr]
-                extra = set(decl.dims) - set(dims)
-                if extra:
-                    raise RelationalBuildError(
-                        f"where-parameter '{p.param}' has dims {sorted(extra)} outside the foreach dims {list(dims)}"
-                    )
-                alias = f'w_{p.param}'
-                on = ' AND '.join(f'{alias}.{d} = t_{d}.val' for d in decl.dims) or 'TRUE'
-                joins[alias] = f'LEFT JOIN p_{p.param} {alias} ON {on}'
+                alias = join_param(p.param)
                 val = f"'{p.value}'" if isinstance(p.value, str) else repr(float(p.value))
                 op = '=' if p.op == '==' else p.op
                 return f'({alias}.value {op} {val})'
@@ -324,15 +334,7 @@ class DuckdbExecutor:
                 op = '=' if p.op == '==' else p.op
                 return f'(t_{p.dim}.val {op} {val})'
             if isinstance(p, ir.Defined):
-                decl = self._program.parameter(p.param)  # type: ignore[union-attr]
-                extra = set(decl.dims) - set(dims)
-                if extra:
-                    raise RelationalBuildError(
-                        f"where-parameter '{p.param}' has dims {sorted(extra)} outside the foreach dims {list(dims)}"
-                    )
-                alias = f'w_{p.param}'
-                on = ' AND '.join(f'{alias}.{d} = t_{d}.val' for d in decl.dims) or 'TRUE'
-                joins[alias] = f'LEFT JOIN p_{p.param} {alias} ON {on}'
+                alias = join_param(p.param)
                 return f'({alias}.value IS NOT NULL AND isfinite({alias}.value))'
             if isinstance(p, ir.Bool):
                 return 'TRUE' if p.value else 'FALSE'
