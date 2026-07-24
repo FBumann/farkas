@@ -801,10 +801,8 @@ class DuckdbExecutor:
 
 
 def _release(con: Any, workdir: Path | None) -> None:
-    try:
+    with contextlib.suppress(Exception):  # best-effort at interpreter exit
         con.close()
-    except Exception:
-        pass
     if workdir is not None:
         shutil.rmtree(workdir, ignore_errors=True)
 
