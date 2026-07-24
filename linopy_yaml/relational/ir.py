@@ -132,6 +132,16 @@ class GroupSum(Expr):
     into: str
 
 
+@dataclass(frozen=True)
+class Shift(Expr):
+    """Circular shift along ``dim``: the result at coord *t* is ``x`` at
+    coord *t−n* (periodic wrap, matching ``xarray.roll``)."""
+
+    x: Expr
+    dim: str
+    n: int
+
+
 # --------------------------------------------------------------------------
 # Predicates (where masks — row absence)
 # --------------------------------------------------------------------------

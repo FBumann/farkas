@@ -464,6 +464,11 @@ class DuckdbExecutor:
                 terms = tuple(self._group_piece(p, e, context) for p in inner.terms)
                 consts = tuple(self._group_piece(p, e, context) for p in inner.consts)
                 return _Compiled(terms, consts)
+            if isinstance(e, ir.Shift):
+                inner = ev(e.x)
+                terms = tuple(self._shift_piece(p, e, context) for p in inner.terms)
+                consts = tuple(self._shift_piece(p, e, context) for p in inner.consts)
+                return _Compiled(terms, consts)
             raise RelationalBuildError(
                 f"unsupported expression node {type(e).__name__} in {context}"
             )
@@ -511,6 +516,29 @@ class DuckdbExecutor:
             f"SELECT {keepcols} FROM ({p.sql}) t JOIN p_{g.mapping} m ON m.{d} = t.{d}"
         )
         return _Piece((*keep, g.into), sql, p.is_term)
+
+    def _shift_piece(self, p: _Piece, s: ir.Shift, context: str) -> _Piece:
+        """Circular shift = a pointwise remap of the dim through its ord:
+        a row at ord *o* contributes to output coord at ord ``(o + n) % card``.
+        No window function involved — bounded-halo locality."""
+        if s.dim not in p.dims:
+            raise RelationalBuildError(
+                f"in {context}: Shift along '{s.dim}' but the expression has dims "
+                f"{list(p.dims)}"
+            )
+        card = self._dim_card[s.dim]
+        others = [d for d in p.dims if d != s.dim]
+        valcols = "t.var_label, t.coeff" if p.is_term else "t.cval"
+        cols = ", ".join(
+            [*(f"t.{d}" for d in others), f"d_out.val AS {s.dim}", valcols]
+        )
+        sql = (
+            f"SELECT {cols} FROM ({p.sql}) t "
+            f"JOIN dim_{s.dim} d_in ON d_in.val = t.{s.dim} "
+            f"JOIN dim_{s.dim} d_out "
+            f"ON d_out.ord = ((d_in.ord + {s.n}) % {card} + {card}) % {card}"
+        )
+        return _Piece(p.dims, sql, p.is_term)
 
     # ------------------------------------------------------------------
     # constraints and objective

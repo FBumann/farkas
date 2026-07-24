@@ -263,9 +263,38 @@ def _lower_expr(node: ArithNode, schema: MathSchema, context: str) -> ir.Expr:
                 )
             return ir.GroupSum(inner, mapping=mapping_node.name, into=into_node.name)
 
+        if node.name == "roll":
+            if len(node.args) != 1 or len(node.kwargs) != 1:
+                raise RelationalBuildError(
+                    f"{context}: roll() expects roll(<expr>, <dim>=<n>)"
+                )
+            ((dim, shift_node),) = node.kwargs.items()
+            if dim not in schema.dimensions:
+                raise RelationalBuildError(
+                    f"{context}: roll() dimension '{dim}' is not declared"
+                )
+            sign = 1
+            if isinstance(shift_node, UnaryOpNode) and shift_node.op == "-":
+                sign, shift_node = -1, shift_node.operand
+            if (
+                not isinstance(shift_node, NumberNode)
+                or int(shift_node.value) != shift_node.value
+            ):
+                raise RelationalBuildError(
+                    f"{context}: roll() shift must be an integer literal"
+                )
+            inner = _lower_expr(node.args[0], schema, context)
+            if dim not in _dims_of(inner, schema):
+                raise RelationalBuildError(
+                    f"{context}: roll() along '{dim}' but the expression has dims "
+                    f"{sorted(_dims_of(inner, schema))}"
+                )
+            return ir.Shift(inner, dim, sign * int(shift_node.value))
+
         raise RelationalBuildError(
             f"{context}: helper '{node.name}' is not supported by the relational "
-            f"backend (v0 supports 'sum' and 'group_sum') — use the eager backend"
+            f"backend (v0 supports 'sum', 'group_sum', and 'roll') — use the "
+            f"eager backend"
         )
 
     assert_never(node)
@@ -284,6 +313,8 @@ def _dims_of(expr: ir.Expr, schema: MathSchema) -> frozenset[str]:
         return _dims_of(expr.a, schema) | _dims_of(expr.b, schema)
     if isinstance(expr, ir.Sum):
         return _dims_of(expr.x, schema) - set(expr.over)
+    if isinstance(expr, ir.Shift):
+        return _dims_of(expr.x, schema)
     if isinstance(expr, ir.GroupSum):
         d = schema.parameters[expr.mapping].dims[0]
         return (_dims_of(expr.x, schema) - {d}) | {expr.into}
