@@ -81,6 +81,10 @@ class Solution:
     def primal(self, name: str) -> pd.DataFrame:
         return self._executor._primal(name)
 
+    def close(self) -> None:
+        """Release the executor backing this solution's label tables."""
+        self._executor.close()
+
 
 class DuckdbExecutor:
     """Build and sink a :class:`Program` relationally under a memory budget."""

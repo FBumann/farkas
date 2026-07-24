@@ -1,4 +1,9 @@
-"""Relational LP construction: logical-plan IR and executors.
+"""Relational LP construction: logical-plan IR and executors. **Internal.**
+
+The public interface of the package is YAML (see ``linopy_yaml.api``). The
+IR names exported here are implementation surface for the executor and the
+test suite — constructing Programs in Python is not supported API; a stable
+IR API may be offered later.
 
 This subpackage is the engine behind SPEC.md §12. It must not import the
 eager builder — the typed AST (and, in phase 2, hand-built IR programs) is

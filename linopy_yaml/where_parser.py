@@ -7,12 +7,14 @@ that can be evaluated against an xr.Dataset to produce boolean masks.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, assert_never
+from typing import TYPE_CHECKING, Any, assert_never
 
 import numpy as np
 import pandas as pd
 import pyparsing as pp
-import xarray as xr
+
+if TYPE_CHECKING:
+    import xarray as xr
 
 # ---------------------------------------------------------------------------
 # AST nodes
@@ -65,6 +67,7 @@ WhereNode = BoolLiteral | ExistenceCheck | Comparison | NotNode | AndNode | OrNo
 # ---------------------------------------------------------------------------
 # Grammar
 # ---------------------------------------------------------------------------
+
 
 def _build_where_grammar() -> pp.ParserElement:
     """Build and return the pyparsing grammar for where strings."""
@@ -151,6 +154,7 @@ def parse_where(text: str) -> WhereNode:
 # Evaluation
 # ---------------------------------------------------------------------------
 
+
 def evaluate_where(
     text: str | None,
     dataset: xr.Dataset,
@@ -162,6 +166,8 @@ def evaluate_where(
     string, unknown names, literals) come back 0-dimensional, so callers
     can combine masks with ``&``/``|`` without case analysis.
     """
+    import xarray as xr
+
     if text is None:
         return xr.DataArray(True)
 
@@ -174,6 +180,8 @@ def _eval_node(
     dataset: xr.Dataset,
     master_coords: dict[str, pd.Index],
 ) -> xr.DataArray:
+    import xarray as xr
+
     if isinstance(node, BoolLiteral):
         return xr.DataArray(node.value)
 

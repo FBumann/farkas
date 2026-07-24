@@ -67,9 +67,7 @@ def test_binary_and_integer_conflict():
 
 def test_invalid_sense():
     raw = {
-        "objectives": {
-            "obj": {"sense": "unknown", "equations": [{"expression": "v"}]}
-        },
+        "objectives": {"obj": {"sense": "unknown", "equations": [{"expression": "v"}]}},
     }
     with pytest.raises(ValidationError, match="minimize|maximize"):
         MathSchema.model_validate(raw)
@@ -78,9 +76,7 @@ def test_invalid_sense():
 def test_undeclared_bound_parameter():
     raw = {
         "dimensions": {"x": {"values": [1]}},
-        "variables": {
-            "v": {"foreach": ["x"], "bounds": {"upper": "nonexistent"}}
-        },
+        "variables": {"v": {"foreach": ["x"], "bounds": {"upper": "nonexistent"}}},
     }
     with pytest.raises(ValidationError, match="undeclared parameter 'nonexistent'"):
         MathSchema.model_validate(raw)
@@ -90,9 +86,7 @@ def test_bound_parameter_reference_valid():
     raw = {
         "dimensions": {"x": {"values": [1]}},
         "parameters": {"p_max": {"dims": ["x"]}},
-        "variables": {
-            "v": {"foreach": ["x"], "bounds": {"upper": "p_max"}}
-        },
+        "variables": {"v": {"foreach": ["x"], "bounds": {"upper": "p_max"}}},
     }
     s = MathSchema.model_validate(raw)
     assert s.variables["v"].bounds.upper == "p_max"

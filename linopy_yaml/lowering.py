@@ -148,19 +148,30 @@ def tidy_sources(
     come from declared YAML values, ``coords``, or fall back to the executor's
     inference from parameter tables.
     """
+    from pathlib import Path
+
     import pandas as pd
-    import xarray as xr
+
+    try:  # optional: only needed to accept xr.DataArray inputs
+        import xarray as xr
+    except ImportError:
+        xr = None  # type: ignore[assignment]
 
     from linopy_yaml.piecewise import validate_piecewise_data
 
-    validate_piecewise_data(schema, data)
+    # parquet paths cannot be curvature-checked in process; validate the rest
+    in_memory = {k: v for k, v in data.items() if not isinstance(v, (str, Path))}
+    validate_piecewise_data(schema, in_memory)
 
     sources: dict[str, object] = {}
     for pname, pdef in schema.parameters.items():
         if pname not in data:
             raise RelationalBuildError(f"no data provided for parameter '{pname}'")
         obj = data[pname]
-        if isinstance(obj, xr.DataArray):
+        if isinstance(obj, (str, Path)):
+            sources[pname] = obj  # parquet path — the executor reads it directly
+            continue
+        if xr is not None and isinstance(obj, xr.DataArray):
             obj = obj.to_series()
         if isinstance(obj, pd.Series):
             df = obj.rename("value").rename_axis(pdef.dims).reset_index()
@@ -177,7 +188,9 @@ def tidy_sources(
         sources[pname] = df
 
     for dname, ddef in schema.dimensions.items():
-        if coords and dname in coords:
+        if dname in data:
+            sources[dname] = data[dname]  # explicit index source (path or frame)
+        elif coords and dname in coords:
             idx = pd.Index(coords[dname])  # type: ignore[arg-type]
             sources[dname] = pd.DataFrame({dname: idx})
         elif ddef.values is not None:
