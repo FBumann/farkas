@@ -1,0 +1,32 @@
+# Deliberately quiet: quarterly, everything grouped into one PR per ecosystem.
+# Security updates are unaffected by this cadence (GitHub raises those as
+# they land). For full silence on version updates, set
+# open-pull-requests-limit: 0 on an ecosystem.
+version: 2
+
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "quarterly"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore"
+    groups:
+      python:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "quarterly"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns:
+          - "*"
