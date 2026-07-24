@@ -5,10 +5,11 @@ Importing this package patches ``linopy.Model`` with ``.from_yaml()`` and
 """
 
 from linopy_yaml._patch import apply_patches
+from linopy_yaml.expansion import register_macro
 from linopy_yaml.helpers import register
 from linopy_yaml.schema import MathSchema
 
 apply_patches()
 
-__all__ = ["MathSchema", "register"]
+__all__ = ["MathSchema", "register", "register_macro"]
 __version__ = "0.0.2"

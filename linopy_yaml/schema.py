@@ -118,10 +118,24 @@ class MathSchema(BaseModel):
     variables: dict[str, VariableDef] = {}
     constraints: dict[str, ConstraintDef] = {}
     objectives: dict[str, ObjectiveDef] = {}
+    expressions: dict[str, str] = {}
 
     @model_validator(mode="after")
     def _validate_references(self) -> MathSchema:
         errors = []
+
+        # Named expressions must not shadow other model names
+        for ename in self.expressions:
+            for kind, names in (
+                ("parameter", self.parameters),
+                ("variable", self.variables),
+                ("dimension", self.dimensions),
+            ):
+                if ename in names:
+                    errors.append(
+                        f"Named expression '{ename}' collides with a declared "
+                        f"{kind} of the same name. Rename one of them."
+                    )
 
         # Check parameter dims reference declared dimensions
         for pname, pdef in self.parameters.items():

@@ -321,6 +321,30 @@ objectives:
 | `equations`               | list | required   | Currently only the first equation is used.                                                     |
 | `equations[0].expression` | str  | required   | Arithmetic expression (no comparison operator). Must produce a scalar linopy LinearExpression. |
 
+
+### 3.6 `expressions`
+
+Named sub-expressions: reusable fragments of the expression language, referenced by name from any equation or other named expression.
+
+```yaml
+expressions:
+  total_generation: sum(p, over=generator)
+  net_cost: sum(p * cost, over=generator)
+
+constraints:
+  balance:
+    foreach: [snapshot]
+    equations:
+      - expression: total_generation == load
+```
+
+Rules:
+
+- Values are ordinary arithmetic expressions (no comparison operator).
+- A name is spliced in as a parsed subtree wherever it appears — both backends see only the expanded core AST.
+- Named expressions may reference each other; cycles are reported at load time with the reference chain.
+- Names must not collide with declared parameters, variables, or dimensions.
+
 -----
 
 ## 4. Data Loading Contract
@@ -683,6 +707,34 @@ expression: weighted_sum(p, duration, over=snapshot) <= energy_budget
 - Positional arguments receive evaluated values (DataArrays or linopy expressions).
 - Keyword arguments receive either evaluated values or bare strings (for dimension names).
 - The function must return something that linopy can handle in the context it is used (DataArray for pure parameter operations, LinearExpression if it involves variables).
+
+### 7.5 Expression macros
+
+Parameterised expression templates, registered from Python. Unlike `@register` helpers, a macro body is *language, not code* — it is parsed at registration and expanded into core AST at every call site, so macros work identically on the eager and relational backends (and never force the backend router to fall back to eager).
+
+```python
+linopy_yaml.register_macro(
+    "weighted_sum", "sum(array * weights, over=over)",
+    args=["array", "weights"], kwargs=["over"],
+)
+```
+
+```yaml
+objectives:
+  total_cost:
+    sense: minimize
+    equations:
+      - expression: weighted_sum(p, cost, over=generator)
+```
+
+Semantics:
+
+- Formal names (`args`, `kwargs`) shadow model names inside the body; all other names in the body resolve against the model namespace.
+- Arguments are expanded before substitution (call-by-value), so they may themselves use named expressions and macros.
+- Arity is checked at each call; the template is syntax-checked at registration.
+- Macro names must not collide with helpers; cycles are reported with the call chain.
+
+`@register` Python helpers remain supported, but are **eager-only**: they execute arbitrary Python against xarray/linopy objects and cannot be compiled by the relational backend. Prefer macros for anything expressible as a composition of built-ins.
 
 -----
 

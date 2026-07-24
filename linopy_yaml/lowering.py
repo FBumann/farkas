@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, assert_never
 
+from linopy_yaml.expansion import parse_and_expand
 from linopy_yaml.expression_parser import (
     ArithNode,
     BinOpNode,
@@ -31,7 +32,6 @@ from linopy_yaml.expression_parser import (
     NameNode,
     NumberNode,
     UnaryOpNode,
-    parse_expression,
 )
 from linopy_yaml.relational import ir
 from linopy_yaml.relational.executor import RelationalBuildError
@@ -86,7 +86,7 @@ def lower_program(schema: MathSchema) -> ir.Program:
             eq_where = _lower_where(eq.where, schema, f"constraint '{eq_name}'")
             where = _and_preds(c_where, eq_where)
 
-            ast = parse_expression(eq.expression)
+            ast = parse_and_expand(eq.expression, schema, f"constraint '{eq_name}'")
             if not isinstance(ast, CompareNode):
                 raise RelationalBuildError(
                     f"constraint '{eq_name}': expression must contain exactly one "
@@ -112,7 +112,7 @@ def lower_program(schema: MathSchema) -> ir.Program:
     oname, odef = next(
         reversed(schema.objectives.items())
     )  # last one wins (eager parity)
-    ast = parse_expression(odef.equations[0].expression)
+    ast = parse_and_expand(odef.equations[0].expression, schema, f"objective '{oname}'")
     if isinstance(ast, CompareNode):
         raise RelationalBuildError(
             f"objective '{oname}': expression must not contain a comparison operator"

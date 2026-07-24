@@ -10,6 +10,7 @@ import pandas as pd
 import xarray as xr
 
 from linopy_yaml._notes import note
+from linopy_yaml.expansion import parse_and_expand
 from linopy_yaml.expression_parser import (
     ArithNode,
     BinOpNode,
@@ -18,7 +19,6 @@ from linopy_yaml.expression_parser import (
     NameNode,
     NumberNode,
     UnaryOpNode,
-    parse_expression,
 )
 from linopy_yaml.helpers import get_helper
 from linopy_yaml.schema import MathSchema
@@ -61,6 +61,7 @@ def build_model(
 # ---------------------------------------------------------------------------
 # Variables
 # ---------------------------------------------------------------------------
+
 
 def _build_variables(
     model: linopy.Model,
@@ -121,6 +122,7 @@ def _as_linopy_mask(mask: xr.DataArray) -> xr.DataArray | None:
 # Constraints
 # ---------------------------------------------------------------------------
 
+
 def _build_constraints(
     model: linopy.Model,
     schema: MathSchema,
@@ -140,8 +142,8 @@ def _build_constraints(
                 eq_mask = evaluate_where(eq.where, dataset, master_coords)
                 mask = constraint_mask & eq_mask
 
-                # Parse expression
-                ast = parse_expression(eq.expression)
+                # Parse expression and expand named expressions / macros
+                ast = parse_and_expand(eq.expression, schema, f"constraint '{cname}'")
                 if not isinstance(ast, CompareNode):
                     msg = (
                         f"Equation {i}: expression must contain exactly one "
@@ -167,6 +169,7 @@ def _build_constraints(
 # Objectives
 # ---------------------------------------------------------------------------
 
+
 def _build_objectives(
     model: linopy.Model,
     schema: MathSchema,
@@ -177,7 +180,7 @@ def _build_objectives(
     for oname, odef in schema.objectives.items():
         with note(f"while building objective '{oname}'"):
             eq = odef.equations[0]
-            ast = parse_expression(eq.expression)
+            ast = parse_and_expand(eq.expression, schema, f"objective '{oname}'")
 
             if isinstance(ast, CompareNode):
                 msg = (
@@ -195,6 +198,7 @@ def _build_objectives(
 # ---------------------------------------------------------------------------
 # AST evaluation
 # ---------------------------------------------------------------------------
+
 
 def _eval_ast(
     node: ArithNode,
