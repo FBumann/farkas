@@ -4,6 +4,21 @@ Declarative optimisation: define the math in YAML, supply data at runtime, solve
 
 Models build on a **relational/streaming engine** (tidy tables in duckdb under a hard `memory_limit`, streamed straight to the solver — the full model never exists in process memory). [linopy](https://github.com/PyPSA/linopy) is kept in two roles: the **compatibility layer** — YAML extends Python-built `linopy.Model`s, and anything outside the streaming subset falls back to the eager linopy builder with a stated reason — and the **validation oracle** every language feature is differentially tested against.
 
+```mermaid
+flowchart LR
+    Y["YAML + data"] --> AST["core AST"]
+    AST --> R{"lowers to the<br/>streaming subset?"}
+    R -->|"yes"| S["streaming engine<br/>duckdb · fixed memory_limit"]
+    S --> OUT["solver (batched) / LP file"]
+    R -->|"no — with the reason"| E["eager fallback<br/>linopy: compat layer & oracle"]
+    E --> LS["linopy.Model → solve"]
+
+    classDef stream fill:#f0f7f0,stroke:#3a7d44,stroke-width:2px,color:#111
+    classDef compat fill:#eef1fb,stroke:#4a5fc1,stroke-width:2px,color:#111
+    class S,OUT stream
+    class E,LS compat
+```
+
 ## Goals
 
 - **Declarative math** — defined in YAML, readable without knowing the implementation. Files are self-contained: no Python state changes what a file means.
