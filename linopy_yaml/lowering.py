@@ -23,7 +23,7 @@ Semantics mirror the eager builder exactly:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, assert_never
+from typing import TYPE_CHECKING, Any, assert_never
 
 from linopy_yaml.expansion import parse_and_expand
 from linopy_yaml.expression_parser import (
@@ -84,7 +84,7 @@ def lower_program(schema: MathSchema) -> ir.Program:
                 where=_lower_where(vdef.where, schema, f"variable '{vname}'"),
                 lower=lower,
                 upper=upper,
-                vtype=vtype,  # type: ignore[arg-type]
+                vtype=vtype,
             )
         )
 
@@ -110,7 +110,7 @@ def lower_program(schema: MathSchema) -> ir.Program:
                     eq_name,
                     tuple(cdef.foreach),
                     lhs=_lower_expr(ast.left, schema, f"constraint '{eq_name}'"),
-                    sense=ast.op,  # type: ignore[arg-type]
+                    sense=ast.op,
                     rhs=_lower_expr(ast.right, schema, f"constraint '{eq_name}'"),
                     where=where,
                 )
@@ -133,7 +133,7 @@ def lower_program(schema: MathSchema) -> ir.Program:
 def tidy_sources(
     schema: MathSchema,
     data: dict[str, object],
-    coords: dict[str, object] | None = None,
+    coords: dict[str, Any] | None = None,
 ) -> dict[str, object]:
     """Adapt the eager path's ``data=``/``coords=`` inputs to executor sources.
 
@@ -184,7 +184,7 @@ def tidy_sources(
         if dname in data:
             sources[dname] = data[dname]  # explicit index source (path or frame)
         elif coords and dname in coords:
-            idx = pd.Index(coords[dname])  # type: ignore[arg-type]
+            idx = pd.Index(coords[dname])
             sources[dname] = pd.DataFrame({dname: idx})
         elif ddef.values is not None:
             sources[dname] = pd.DataFrame({dname: ddef.values})
@@ -383,9 +383,9 @@ def _lower_where_node(node: WhereNode, schema: MathSchema, context: str) -> ir.P
 
     if isinstance(node, Comparison):
         if node.name in schema.parameters:
-            return ir.Cmp(node.name, node.op, node.value)  # type: ignore[arg-type]
+            return ir.Cmp(node.name, node.op, node.value)
         if node.name in schema.dimensions:
-            return ir.DimCmp(node.name, node.op, node.value)  # type: ignore[arg-type]
+            return ir.DimCmp(node.name, node.op, node.value)
         raise RelationalBuildError(f"{context}: where references '{node.name}', which is not a declared parameter")
 
     if isinstance(node, NotNode):

@@ -307,7 +307,7 @@ class DuckdbExecutor:
             containment check: a where-parameter carrying a dim the frame does
             not have would silently reduce the mask over that dim.
             """
-            decl = self._program.parameter(param)  # type: ignore[union-attr]
+            decl = self._program.parameter(param)
             extra = set(decl.dims) - set(dims)
             if extra:
                 raise RelationalBuildError(
@@ -401,7 +401,7 @@ class DuckdbExecutor:
             if isinstance(e, ir.Const):
                 return _lit(e.value)
             if isinstance(e, ir.Param):
-                decl = self._program.parameter(e.name)  # type: ignore[union-attr]
+                decl = self._program.parameter(e.name)
                 extra = set(decl.dims) - set(v.dims)
                 if extra:
                     raise RelationalBuildError(
@@ -822,8 +822,7 @@ def _release(con: Any, workdir: Path | None) -> None:
 def _lit(v: float) -> str:
     if math.isinf(v):
         return "('infinity'::DOUBLE)" if v > 0 else "('-infinity'::DOUBLE)"
-    # int is assignable to float, so _lit(0) type-checks and would emit '0' —
-    # duckdb reads that as INTEGER, not DOUBLE.
+    # _lit(0) type-checks (int -> float) and would emit '0': INTEGER, not DOUBLE
     # pyrefly: ignore[unnecessary-type-conversion]
     return repr(float(v))
 

@@ -12,9 +12,11 @@ linopy-free by hard rule 3, and they import this module.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import pyparsing as pp
+
+ComparisonOp = Literal['<=', '>=', '==', '!=', '<', '>']
 
 # ---------------------------------------------------------------------------
 # AST nodes
@@ -36,7 +38,7 @@ class ExistenceCheck:
 @dataclass
 class Comparison:
     name: str
-    op: str  # "<=", ">=", "==", "!=", "<", ">"
+    op: ComparisonOp
     value: float | str
 
 
@@ -79,7 +81,7 @@ def _build_where_grammar() -> pp.ParserElement:
 
     # Numbers
     real = pp.Regex(r'-?\d+\.\d*([eE][+-]?\d+)?').set_parse_action(lambda t: float(t[0]))
-    # float, not int — see the note in expression_parser._build_grammar
+    # float, not int: Comparison.value is declared float, so store one
     integer = pp.Regex(r'-?\d+').set_parse_action(lambda t: float(t[0]))
     number = real | integer
 

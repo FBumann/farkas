@@ -148,4 +148,5 @@ unnecessary-type-conversion = true
 unreachable = true
 unresolvable-dunder-all = true
 untyped-import = true
+unused-ignore = true
 variance-mismatch = true
