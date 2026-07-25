@@ -8,6 +8,7 @@ install, so they cannot share a module with anything importing xarray.
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from tests.oracle import builder, xr
 
