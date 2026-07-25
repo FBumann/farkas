@@ -199,3 +199,20 @@ def test_architecture_doc_mentions_every_module():
         if name not in doc:
             missing.append(str(path.relative_to(PKG)))
     assert not missing, f"modules absent from ARCHITECTURE.md's map: {missing}"
+
+
+def test_every_schema_model_is_strict():
+    """A schema model that inherits BaseModel directly silently drops unknown
+    keys, which turns a typo into a different model. Strictness lives on
+    ``_Strict``, so the check is that nothing bypasses it."""
+    tree = ast.parse((PKG / 'schema.py').read_text())
+    loose = [
+        node.name
+        for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and node.name != '_Strict'
+        and any(isinstance(b, ast.Name) and b.id == 'BaseModel' for b in node.bases)
+    ]
+    assert not loose, (
+        f'schema models {loose} inherit BaseModel directly and so accept unknown keys — inherit _Strict instead'
+    )

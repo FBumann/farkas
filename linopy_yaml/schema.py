@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+import difflib
+from typing import TYPE_CHECKING, Any, ClassVar
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from linopy_yaml.helpers import BUILTIN_NAMES
 
@@ -12,8 +13,45 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 
-class DimensionDef(BaseModel):
+class _Strict(BaseModel):
+    """Base for every schema model: unknown keys are an error, not a shrug.
+
+    Without this, a misspelled optional key is silently dropped and the
+    declaration it belonged to falls back to its default — ``boundz:`` leaves
+    the variable unbounded, ``wher:`` leaves it unmasked. Both build a model
+    the file does not describe, and neither says anything.
+    """
+
+    model_config = ConfigDict(extra='forbid')
+
+    #: What this model is called in a YAML file, for the error message.
+    _label: ClassVar[str] = ''
+
+    @model_validator(mode='before')
+    @classmethod
+    def _reject_unknown_keys(cls, data: Any) -> Any:
+        # pydantic's own extra='forbid' is the backstop; this runs first only
+        # to name the near-miss, which is what a typo actually needs.
+        if not isinstance(data, dict):
+            return data
+        known = set(cls.model_fields)
+        unknown = [k for k in data if isinstance(k, str) and k not in known]
+        if unknown:
+            raise ValueError('\n'.join(cls._unknown_key_error(k, known) for k in unknown))
+        return data
+
+    @classmethod
+    def _unknown_key_error(cls, key: str, known: set[str]) -> str:
+        label = cls._label or cls.__name__
+        near = difflib.get_close_matches(key, sorted(known), n=1, cutoff=0.6)
+        fix = f"Did you mean '{near[0]}'?" if near else f'Valid keys: {", ".join(sorted(known))}.'
+        return f"unknown key '{key}' in {label}. {fix}"
+
+
+class DimensionDef(_Strict):
     """A declared dimension with optional dtype and values."""
+
+    _label: ClassVar[str] = 'a dimension declaration'
 
     dtype: str = 'str'
     values: list[Any] | None = None
@@ -28,8 +66,10 @@ class DimensionDef(BaseModel):
         return v
 
 
-class ParameterDef(BaseModel):
+class ParameterDef(_Strict):
     """A declared parameter with dims and dtype."""
+
+    _label: ClassVar[str] = 'a parameter declaration'
 
     dims: list[str]
     dtype: str = 'float'
@@ -44,7 +84,7 @@ class ParameterDef(BaseModel):
         return v
 
 
-class BoundsDef(BaseModel):
+class BoundsDef(_Strict):
     """Variable bounds — each side is a number or parameter name.
 
     The defaults are linopy's (``add_variables(lower=-inf, upper=inf)``): a
@@ -53,12 +93,16 @@ class BoundsDef(BaseModel):
     so the file has to say it.
     """
 
+    _label: ClassVar[str] = 'a bounds block'
+
     lower: float | str = float('-inf')
     upper: float | str = float('inf')
 
 
-class VariableDef(BaseModel):
+class VariableDef(_Strict):
     """A declared decision variable."""
+
+    _label: ClassVar[str] = 'a variable declaration'
 
     foreach: list[str]
     where: str | None = None
@@ -74,15 +118,19 @@ class VariableDef(BaseModel):
         return self
 
 
-class EquationDef(BaseModel):
+class EquationDef(_Strict):
     """A single equation inside a constraint or objective."""
+
+    _label: ClassVar[str] = 'an equation'
 
     expression: str
     where: str | None = None
 
 
-class ConstraintDef(BaseModel):
+class ConstraintDef(_Strict):
     """A declared constraint with foreach, where, and equations."""
+
+    _label: ClassVar[str] = 'a constraint declaration'
 
     foreach: list[str]
     where: str | None = None
@@ -97,8 +145,10 @@ class ConstraintDef(BaseModel):
         return v
 
 
-class ObjectiveDef(BaseModel):
+class ObjectiveDef(_Strict):
     """A declared objective function."""
+
+    _label: ClassVar[str] = 'an objective declaration'
 
     sense: str = 'minimize'
     equations: list[EquationDef]
@@ -121,13 +171,15 @@ class ObjectiveDef(BaseModel):
         return v
 
 
-class MacroDef(BaseModel):
+class MacroDef(_Strict):
     """A parameterised expression template, defined in the YAML itself.
 
     The template is language, not code: formal names (``args`` positional,
     ``kwargs`` keyword) shadow model names inside it, and every call site is
     expanded into core AST before either backend sees the expression.
     """
+
+    _label: ClassVar[str] = 'a macro declaration'
 
     args: list[str] = []
     kwargs: list[str] = []
@@ -142,7 +194,7 @@ class MacroDef(BaseModel):
         return self
 
 
-class PiecewiseDef(BaseModel):
+class PiecewiseDef(_Strict):
     """N expressions jointly pinned to a breakpoint-indexed piecewise curve.
 
     Mirrors ``linopy.Model.add_piecewise_formulation``: each link is a tuple
@@ -156,6 +208,8 @@ class PiecewiseDef(BaseModel):
     Expanded (before building) into plain variables and constraints via the
     λ convex-combination method — see ``linopy_yaml.piecewise``.
     """
+
+    _label: ClassVar[str] = 'a piecewise declaration'
 
     over: str  # breakpoint dimension
     links: list[list[str]]
@@ -201,8 +255,10 @@ class PiecewiseDef(BaseModel):
         return v
 
 
-class MathSchema(BaseModel):
+class MathSchema(_Strict):
     """Top-level schema for a linopy_yaml YAML file."""
+
+    _label: ClassVar[str] = 'the top level of the file'
 
     dimensions: dict[str, DimensionDef] = {}
     parameters: dict[str, ParameterDef] = {}
