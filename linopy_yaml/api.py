@@ -43,7 +43,7 @@ if TYPE_CHECKING:
 LanguageError = RelationalBuildError
 
 
-def load_schema(model: str | Path | dict | MathSchema) -> MathSchema:
+def load_schema(model: str | Path | dict[str, Any] | MathSchema) -> MathSchema:
     """Load and validate a model definition.
 
     Accepts a YAML file path, an already-parsed dict, or a ``MathSchema``.
@@ -67,7 +67,7 @@ def load_schema(model: str | Path | dict | MathSchema) -> MathSchema:
     return schema
 
 
-def check(model: str | Path | dict | MathSchema) -> MathSchema:
+def check(model: str | Path | dict[str, Any] | MathSchema) -> MathSchema:
     """Compile-check a model without data: parse, validate, expand, lower.
 
     Lowering needs no sources, so this works on a bare YAML file — the CI
@@ -81,7 +81,7 @@ def check(model: str | Path | dict | MathSchema) -> MathSchema:
 
 
 def build(
-    model: str | Path | dict | MathSchema,
+    model: str | Path | dict[str, Any] | MathSchema,
     sources: Mapping[str, Any],
     *,
     coords: dict[str, Any] | None = None,
@@ -120,7 +120,7 @@ def build(
 
 
 def solve(
-    model: str | Path | dict | MathSchema,
+    model: str | Path | dict[str, Any] | MathSchema,
     sources: Mapping[str, Any],
     **build_kwargs: Any,
 ) -> Solution:
@@ -139,7 +139,7 @@ def solve(
 
 
 def write(
-    model: str | Path | dict | MathSchema,
+    model: str | Path | dict[str, Any] | MathSchema,
     sources: Mapping[str, Any],
     out: str | Path,
     **build_kwargs: Any,

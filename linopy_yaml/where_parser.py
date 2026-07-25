@@ -7,7 +7,7 @@ that can be evaluated against an xr.Dataset to produce boolean masks.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, assert_never
+from typing import TYPE_CHECKING, Any, assert_never, cast
 
 import numpy as np
 import pyparsing as pp
@@ -139,7 +139,8 @@ def parse_where(text: str) -> WhereNode:
     except pp.ParseException as e:
         msg = f'Failed to parse where string: {text!r}\n{e}'
         raise ValueError(msg) from e
-    return result[0]
+    # parseAll with a single top-level alternative: element 0 is the root node
+    return cast('WhereNode', result[0])
 
 
 # ---------------------------------------------------------------------------

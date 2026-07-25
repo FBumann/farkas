@@ -94,7 +94,7 @@ def expand_piecewise(schema: MathSchema) -> MathSchema:
                 'equations': [{'expression': f'{lam} <= {seg} + shift({seg}, {pw.over}=1)'}],
             }
 
-    raw['piecewise'] = {}
+    raw['piecewise'].clear()  # every block is now expanded away
     return MathSchema(**raw)
 
 
