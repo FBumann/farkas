@@ -178,6 +178,29 @@ dropped `bounds:` leaves the variable unbounded, a dropped `where:` leaves it
 unmasked, and in both cases the file says one thing while the model does
 another. Adding a key to the language therefore means adding it here.
 
+### 3.0 How a file is read
+
+The document is parsed as **YAML 1.2 for booleans** and 1.1 otherwise. The
+difference is not cosmetic: under 1.1, `on`, `off`, `yes`, `no`, `y` and `n`
+resolve to `True`/`False`, so a dimension whose labels are country or region
+codes loses the rows those labels keyed — silently, because a boolean is a
+perfectly valid scalar. Here only `true` and `false` are booleans, and
+`values: [no, se, on]` is three labels.
+
+Two 1.1 coercions deliberately survive: the implicit timestamp
+(`2024-01-01` → a date) and sexagesimal ints (`12:30` → `750`). Both belong
+with the `dtype: datetime` guard rather than with the reader.
+
+Three further rules, each because the alternative is a file that means
+something other than what it says:
+
+- **A duplicate key is a load error**, naming both lines. YAML keeps the last
+  one, which discards a declaration the file plainly contains.
+- **A `<<:` merge key is honoured**, and a key the mapping then declares
+  itself overrides the merged value — that is not a duplicate.
+- **The document must be a mapping of sections.** A list or a bare scalar at
+  the top level is a load error, not a crash.
+
 ### 3.1 `dimensions`
 
 Declares the master coordinate index for each dimension. Every dimension referenced anywhere in the YAML must be declared here.

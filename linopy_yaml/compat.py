@@ -40,12 +40,12 @@ try:
     import linopy
     import pandas as pd
     import xarray  # noqa: F401 — guarded here so the message covers it
-    import yaml
 except ModuleNotFoundError as exc:  # linopy / xarray absent
     msg = 'The linopy compatibility layer requires the [compat] extra: pip install "linopy-yaml[compat]"'
     raise ModuleNotFoundError(msg) from exc
 
 from linopy_yaml._notes import note
+from linopy_yaml._yaml import read_yaml
 from linopy_yaml.builder import build_model
 from linopy_yaml.loader import build_master_coords, load_parameters
 from linopy_yaml.piecewise import expand_piecewise, validate_piecewise_data
@@ -158,7 +158,7 @@ def extend(
 
 
 def _read(path: Path) -> MathSchema:
-    return MathSchema.model_validate(yaml.safe_load(path.read_text()) or {})
+    return MathSchema.model_validate(read_yaml(path))
 
 
 def _infer_coords(model: linopy.Model) -> dict[str, pd.Index]:
