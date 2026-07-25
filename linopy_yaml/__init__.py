@@ -9,6 +9,8 @@ serves as the differential-test oracle and as an opt-in compatibility shim
 
     sol = ly.solve("model.yaml", sources={"p_max": "p_max.parquet", ...})
     sol.objective
+    sol.primal("p")      # tidy DataFrame
+    sol.to_dataarray("p")   # labelled, for array post-processing
     sol.primal("p")
 """
 
