@@ -19,7 +19,7 @@ thing. Every architectural rule below exists to protect that property.
 ```mermaid
 flowchart TB
     Y[YAML file] -->|"parse + validate<br/>(schema.py, validation.py)"| MS[MathSchema]
-    MS -->|"expand macros: / expressions: (expansion.py)<br/>expand piecewise: blocks (piecewise.py)<br/>resolve names to typed nodes (resolution.py)<br/>— backends never see any of them"| AST["core AST<br/>= the only contract between layers<br/>fully typed: no unresolved names"]
+    MS -->|"expand macros: / expressions: (expansion.py)<br/>expand piecewise: blocks (piecewise.py)<br/>resolve names to typed nodes (resolution.py)<br/>check dim sets (dimensions.py)<br/>— backends never see any of them"| AST["core AST<br/>= the only contract between layers<br/>fully typed: names resolved, dims checked"]
     AST -->|"api.py: build / solve / write_lp"| LOWER
     AST -.->|"linopy_yaml.compat<br/>(opt-in shim: build / extend)"| BUILD
     LOWER -->|"outside the language:<br/>RelationalBuildError naming the construct"| ERR["load error<br/>(no fallback)"]
@@ -277,6 +277,7 @@ Rules that follow:
 | `expression_parser.py`, `where_parser.py` | text → core AST — grammar and AST only, dependency-free |
 | `expansion.py` | named-expression / macro substitution (pre-dispatch) |
 | `resolution.py` | one flat namespace; `Name` → typed `Var`/`Param`/`Dim` nodes, so no unresolved name crosses the seam |
+| `dimensions.py` | static dim-set checking over the resolved AST — the type is a set of dim names, computed before any data |
 | `validation.py` | load-time: parse, expand, resolve, check everything |
 | `piecewise.py` | `piecewise:` → λ-formulation declarations (schema-level expansion) + data-time curvature guard |
 | `api.py` | native entry point: `check` / `build` / `solve` / `write`, linopy-free |
