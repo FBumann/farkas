@@ -8,9 +8,11 @@ parameters.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import pyparsing as pp
+
+CompareOp = Literal['<=', '>=', '==']
 
 # ---------------------------------------------------------------------------
 # AST nodes
@@ -59,7 +61,7 @@ ArithNode = NumberNode | NameNode | UnaryOpNode | BinOpNode | FuncCallNode
 
 @dataclass
 class CompareNode:
-    op: str  # "<=", ">=", "=="
+    op: CompareOp
     left: ArithNode
     right: ArithNode
 
@@ -78,7 +80,8 @@ def _build_grammar() -> pp.ParserElement:
     arith = pp.Forward()
 
     # Atoms
-    integer = pp.Regex(r'-?\d+').set_parse_action(lambda t: NumberNode(int(t[0])))
+    # float, not int: NumberNode.value is declared float, so store one
+    integer = pp.Regex(r'-?\d+').set_parse_action(lambda t: NumberNode(float(t[0])))
     real = pp.Regex(r'-?\d+\.\d*([eE][+-]?\d+)?').set_parse_action(lambda t: NumberNode(float(t[0])))
     inf_literal = (pp.Literal('.inf') | pp.Literal('inf')).set_parse_action(lambda: NumberNode(float('inf')))
     number = real | inf_literal | integer

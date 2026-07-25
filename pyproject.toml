@@ -127,17 +127,14 @@ preset = "strict"
 # Warn-by-default rules promoted to error, so a regression fails CI instead of
 # scrolling past. All of these are already clean; each one is a gate, not a TODO.
 #
+# Where a rule is genuinely wrong about one line, suppress that line with
+# `# pyrefly: ignore[rule-name]` and a reason — do not turn the rule off here.
+#
 # Deliberately NOT promoted:
-#   explicit-any               — `Any` is the honest type at the xarray/linopy
-#                                boundary and in the ParseResults handoff.
-#   unnecessary-type-conversion — the flagged `int(n)`/`float(v)` calls are
-#                                load-bearing: `int(n) != n` rejects non-integral
-#                                YAML input, and `repr(float(v))` decides whether
-#                                a SQL literal lands as DOUBLE or INTEGER. The
-#                                annotation says int/float; the runtime value
-#                                need not be.
-#   deprecated                 — currently only fires on typeshed's
-#                                `contextlib.contextmanager` overload.
+#   explicit-any — `Any` is the honest type at the xarray/linopy boundary and
+#                  in the ParseResults handoff.
+#   deprecated   — currently only fires on typeshed's `contextlib.contextmanager`
+#                  overload.
 [tool.pyrefly.errors]
 implicit-import = true
 missing-import = true
@@ -147,7 +144,9 @@ redundant-cast = true
 redundant-condition = true
 unknown-name = true
 unnecessary-comparison = true
+unnecessary-type-conversion = true
 unreachable = true
 unresolvable-dunder-all = true
 untyped-import = true
+unused-ignore = true
 variance-mismatch = true
