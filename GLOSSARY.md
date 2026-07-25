@@ -93,11 +93,12 @@ Two rules make them affine:
   factors is a load error (`nonlinear product`).
 - `/` — the divisor must be variable-free *and* a single factor, not a sum.
 
-**`**` is a language-parity gap.** It parses (SPEC §5.1), and the eager lane
-evaluates it (`builder.py:225`), but it has no IR node and no lowering case,
-so the streaming lane rejects it. Same class as ROADMAP item 5b, currently
-unlisted there. It is also of dubious membership: with a variable base it
-breaks degree 1, and over parameters alone it is data prep (SPEC §10).
+**`**` is outside the language, on both lanes.** It parses (SPEC §5.1) — so
+that the refusal can name the operator and its rewrite rather than dying in
+the grammar — and is then refused at load time: `lowering.py` has no case
+for it, and `builder.py:246` raises rather than evaluating it. Membership is
+what settled the direction: with a variable base it breaks degree 1, and
+over parameters alone it is data prep (SPEC §10).
 
 ---
 
@@ -130,9 +131,11 @@ are the same table read in opposite directions.
 ### Current
 
 **`sum(array, over=dim)`** — pushforward along the constant map: `dim`
-collapses. If the expression does not carry `dim`, this is a **silent
-no-op** on both lanes, and `dim` is never name-checked (§8, open naming
-item 3). One dim per call at the surface; `ir.Sum.over` is a tuple, but
+collapses. `dim` must name a declared dimension, or a macro formal bound to
+one; that is checked at load time on both lanes
+(`resolution.py:_DIM_VALUE_KWARGS`). If the *operand* does not carry `dim`
+the call is a deliberate no-op (`lowering.py:269`), for parity with the
+eager lane. One dim per call at the surface; `ir.Sum.over` is a tuple, but
 lowering only ever fills it with one.
 
 **`group_sum(array, mapping, into=dim)`** — pushforward along a mapping
@@ -175,26 +178,34 @@ without the aggregate.
 The `where` sub-language. Its result is always a boolean mask; its meaning
 is always row absence.
 
-| Surface | Meaning |
-|---|---|
-| `name` (bare) | **defined**: the parameter is non-null and finite |
-| `name OP value` | element-wise comparison; `OP ∈ {==, !=, <, >, <=, >=}`; NaN → False |
-| `AND` / `OR` / `NOT` | boolean logic, case-insensitive; `NOT` > `AND` > `OR` |
-| `True` / `False` | literals; `True` ≡ no `where` at all |
+A bare name and a comparison are each typed by `resolution.py` into one of
+two predicates, according to what the name turns out to denote:
+
+| Surface | Names a… | Meaning |
+|---|---|---|
+| `name` (bare) | parameter | **defined**: non-null and finite (`ParamDefined`) |
+| `name` (bare) | dimension | true over its whole coordinate index (`DimDefined`) |
+| `name OP value` | parameter | element-wise comparison (`ParamCmp`); `OP ∈ {==, !=, <, >, <=, >=}`; NaN → False |
+| `name OP value` | dimension | comparison against the frame's own coordinate column (`DimCmp`) |
+| `AND` / `OR` / `NOT` | — | boolean logic, case-insensitive; `NOT` > `AND` > `OR` |
+| `True` / `False` | — | literals; `True` ≡ no `where` at all |
 
 **A bare name means different things in the two grammars.** In an
 expression it is the value; in a `where` it is "is defined". This is
 deliberate and it is also the language's sharpest context-sensitivity (§8,
 open naming item 4).
 
-Unknown names in a `where` evaluate to **False** rather than erroring — by
-design (SPEC §6.2), which is why `validation.py` name-checks expressions but
-not `where` strings.
+Unknown names in a `where` are a **load error**. They used to evaluate to
+scalar False, which silently produced an empty model; resolution now types
+every bare name as a parameter or a dimension and fails on anything else, so
+both grammars are name-checked.
 
 **Comparisons against a dimension coordinate** (`where: "snapshot > 0"`) are
-accepted eagerly and rejected at lowering. That is ROADMAP item 5b, filed as
-a bug rather than a feature: hard rule 3 forbids the same file meaning
-different things per lane.
+in the language on both lanes. They need no join — the frame already carries
+its own coordinates, so the predicate is a filter on a column that is
+already there. A dimension *outside* the declaration's `foreach` is still
+rejected: the mask would have to be `any`-reduced over a dim the declaration
+never named.
 
 If a mask carries a dim not in `foreach`, it is reduced with `any` before
 broadcasting. `all` is currently unreachable (ROADMAP item 6).
@@ -249,14 +260,16 @@ between columns is a bug.
 | `a + b`, `a - b` | `BinOpNode` | `Add` (+ `Neg`) | term concat | `+` / `-` |
 | `a * b` | `BinOpNode('*')` | `Mul` | join, coeff product | `*` |
 | `a / b` | `BinOpNode('/')` | `Div` | join, coeff quotient | `/` |
-| `a ** b` | `BinOpNode('**')` | **none** | **rejected** | `**` |
+| `a ** b` | `BinOpNode('**')` | **none** | refused at load | refused at load |
 | `sum(x, over=d)` | `FuncCallNode` | `Sum` | drop dim column | `.sum(d)` |
 | `group_sum(x, m, into=b)` | `FuncCallNode` | `GroupSum` | join mapping, relabel | `.groupby(m).sum()` |
 | `roll(x, d=n)` | `FuncCallNode` | `Shift(wrap=True)` | ord join, modulo | `.roll(roll_coords=False)` |
 | `shift(x, d=n)` | `FuncCallNode` | `Shift(wrap=False)` | ord join, no modulo | `.shift(fill_value=0)` |
 | `<=` `>=` `==` | `CompareNode` | `ConstraintDecl.sense` | row sense | linopy `sign` |
-| bare name in `where` | `ExistenceCheck` | `Defined` | `IS NOT NULL AND isfinite` | `notnull() & isfinite` |
-| `name OP value` | `Comparison` | `Cmp` | `WHERE` clause | element-wise compare |
+| bare parameter in `where` | `ExistenceCheck` → `ParamDefined` | `Defined` | `IS NOT NULL AND isfinite` | `notnull() & isfinite` |
+| bare dimension in `where` | `ExistenceCheck` → `DimDefined` | `Bool(True)` | no filter | all-True mask |
+| `param OP value` | `Comparison` → `ParamCmp` | `Cmp` | `LEFT JOIN` + `WHERE` | element-wise compare |
+| `dim OP value` | `Comparison` → `DimCmp` | `DimCmp` | `WHERE` on the frame's own column | coordinate compare |
 | `True` / `False` | `BoolLiteral` | `Bool` | constant filter | scalar mask |
 | `AND` / `OR` / `NOT` | `AndNode` / `OrNode` / `NotNode` | `And` / `Or` / `Not` | `AND` / `OR` / `NOT` | `&` / `\|` / `~` |
 | `foreach:` | — | `.dims` on the decl | grid table | master coords |
@@ -264,11 +277,14 @@ between columns is a bug.
 | `binary:` / `integer:` | — | `.vtype` | LP section, HiGHS integrality | linopy kwargs |
 | `sense: minimize` | — | `ObjectiveDecl('min')` | LP objective | linopy sense |
 
-Two drifts visible here, both worth closing: the where-AST and the IR use
-different words for identical concepts (`ExistenceCheck`/`Defined`,
-`Comparison`/`Cmp`, `BoolLiteral`/`Bool`), and SPEC §12.4's IR listing is
-stale — it omits `Div`, `Shift`, `Defined` and `Bool`, all four of which are
-in `relational/ir.py` today.
+The arrow in the where rows is not drift — it is the resolution pass.
+`ExistenceCheck` and `Comparison` are *syntactic*: the grammar sees a name
+and cannot know what it denotes. `resolution.py` types them, and everything
+downstream consumes only the typed forms, which is why `_lower_where_node`
+treats an unresolved node as an assertion failure rather than a case to
+handle. Where the words still differ for one concept (`ParamDefined` vs
+`Defined`, `ParamCmp` vs `Cmp`), the layer is the reason: the where-AST
+names what the *name* denotes, the IR names what the *predicate* does.
 
 ---
 
@@ -320,19 +336,18 @@ mis-cues: SQL's `GROUP BY` keys off a column of the same table, whereas here
 the key arrives from a separate mapping parameter. If the operators stay
 separate, `sum_by` beats `group_sum`.
 
-**3. `over=` is never validated.** `validation.py:210-214` skips kwarg
-`NameNode`s ("dimension names, not data references"), and no other pass
-checks them, so `sum(p, over=snapshto)` is accepted by both lanes and
-silently returns `p` (`helpers.py:59-61`, `lowering.py:241`). `into=` and
-the `roll`/`shift` dim *are* checked, but only in `lowering.py`, so the
-eager lane misses those too. A dim name in any operator should be checked
-against `dimensions:` at load time, on both lanes.
+**3. Dim names in operators — settled.** Every dimension-valued kwarg is now
+checked against `dimensions:` at load time, on both lanes:
+`resolution.py:_DIM_VALUE_KWARGS` covers `sum(over=)` and `group_sum(into=)`,
+`_DIM_KEY_HELPERS` covers the `roll`/`shift` dim-as-key. A macro formal bound
+to a dimension at the call site passes. What remains is not a name check:
+`sum` over a dim the *operand* does not carry is still a silent no-op (§3).
 
-**4. `defined` should be sayable.** The bare-name-means-defined rule has
-three names across the codebase (`ExistenceCheck`, `Defined`, "existence
-check") and no surface spelling at all. ROADMAP item 5 wants `defined(v)`
-over variables anyway — make it the explicit form, keep the bare name as
-sugar, and settle the internal name on `Defined`.
+**4. `defined` should be sayable.** The internal names are settled —
+`ParamDefined`/`DimDefined` in the where-AST, `Defined` in the IR — but there
+is still no surface spelling; a bare name is the only way to say it. ROADMAP
+item 5 wants `defined(v)` over variables anyway: make it the explicit form
+and keep the bare name as sugar.
 
 **5. `foreach:` vs `dims:`.** One concept, two keys, split by which
 declaration you are writing. Unifying is breaking; recording it here so the
@@ -348,3 +363,68 @@ functions", SPEC §7 agrees, ARCHITECTURE calls the same things primitives.
 They are the taxed core of the language, not conveniences. Proposal: **shape
 operator** in user-facing docs, `helpers.py` keeps its name as the eager
 *evaluation* module.
+
+---
+
+## 9. Cross-language map
+
+§7 maps a construct through *our* layers. This maps it outward, to the two
+languages a reader most often arrives from: linopy (the object model we
+build into) and Calliope (the declarative math language ours most resembles).
+
+It is a **name index, not a scorecard**. Whether a construct of theirs is
+one we should have is a scoping question, and it is answered in
+[ROADMAP.md](ROADMAP.md#how-we-measure-capability), not here.
+
+### Declaration forms
+
+| Concept | linopy_yaml | linopy | Calliope |
+|---|---|---|---|
+| index set | `dimensions:` | `coords=` at `add_variables` | none in math — dims come from the model definition |
+| known data | `parameters:` (shape only; bound at run time) | an `xr.DataArray` you pass in | model-definition params / lookup arrays |
+| decision variable | `variables:` | `m.add_variables(lower, upper, coords, mask, binary, integer)` | `variables:` (`domain: real\|integer`, `bounds: {min, max}`) |
+| affine relation | `constraints:` | `m.add_constraints(lhs, sign, rhs, mask)` | `constraints:` |
+| objective | `objectives:` (`sense: minimize`) | `m.add_objective(expr, sense='min')` | `objectives:` (`sense: minimise`) |
+| substituted expression | `expressions:` | a Python name holding a `LinearExpression` | `sub_expressions` (`$name`) |
+| parameterised template | `macros:` | a Python function | — (their sub-expressions take no formals) |
+| piecewise | `piecewise:` (λ) | `add_piecewise_formulation` | `piecewise_constraints:` (SOS2) |
+| index signature | `foreach:` / `dims:` | `coords` | `foreach:` |
+| row-absence mask | `where:` | `mask=` | `where:` |
+
+### Operators
+
+| linopy_yaml | linopy | Calliope |
+|---|---|---|
+| `sum(x, over=d)` | `.sum(dim=d)` | `sum(x, over=d)` |
+| `group_sum(x, m, into=b)` | `.groupby(m).sum()` | `group_sum(x, m, b)` |
+| `roll(x, d=n)` | `.roll(d=n, roll_coords=False)` | `roll(x, d=n)` |
+| `shift(x, d=n)` | `.shift(d=n, fill_value=0)` | — |
+| `a ** b` — refused | `**` | supported |
+| *planned* `at` (ROADMAP 1–2) | `.sel()` / `.isel()` | `x[d=$slice]`, `select_from_lookup_arrays`, `get_val_at_index` |
+| *planned* `sum_next_n` (ROADMAP 4) | `.rolling(...).sum()` | `sum_next_n` |
+| — | — | `map_dim`, `group_datetime`, expression-level `where(x, cond)` |
+
+### False friends
+
+Four places where the same word means different things. These are the
+reason this section exists.
+
+1. **`active:`** — Calliope: a boolean that switches a component off.
+   Ours: a *gating expression* on `piecewise:`, pinning the formulation to
+   zero. Unrelated.
+2. **`where`** — ours is only a declaration-level predicate. Calliope also
+   has an expression-level `where(component, condition)` helper, which is a
+   different construct wearing the same word.
+3. **`expressions:`** — ours is Calliope's `sub_expressions` (substitution),
+   **not** their `global_expressions`, which carry `foreach`/`where`/`order`
+   and are materialised components. Naming ours after theirs mis-cues.
+4. **`group_sum`** — near-identical spelling to theirs, but the word
+   mis-describes both: SQL's `GROUP BY` keys off a column of the same table,
+   while here the key arrives from a separate mapping parameter (§8, open
+   decision 2).
+
+And one structural difference worth stating, because it reads as a gap and
+is not: Calliope's `order:` exists because their `global_expressions` are
+materialised components that can depend on each other. Ours are
+substitution, expanded before dispatch, so there is no evaluation order to
+declare. The concept has nowhere to attach.

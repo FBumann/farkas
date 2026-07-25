@@ -177,6 +177,31 @@ Locality is judged in **data space**. Reductions over a *coordinate* space —
 which are small and already materialised, so they are free and stay
 admissible even though they look global.
 
+### Reading the verdict off the SQL
+
+Rules 2 and 3 are the same question asked twice, and the executor already
+answers it. Write the candidate's SQL over the term stream first; its shape
+decides:
+
+| Shape of the emitted SQL | Locality | Rules 2–3 |
+|---|---|---|
+| filter on a column already in the frame | pointwise | admissible |
+| equi-join against a parameter or mapping table | pointwise | admissible |
+| join on `dim_d.ord ± k`, `k` fixed | bounded-halo | admissible |
+| dim table only, no data join | coordinate-space | admissible (free) |
+| window over unbounded rows, or a recursive CTE | global | **reject**, with the rewrite |
+
+The test is not a formality: it is the same case analysis `_sum_piece`,
+`_group_piece` and `_shift_piece` already implement, so a candidate that
+cannot be written in one of those shapes has no executor to be written into.
+
+Two limits, so it is not over-read. It settles rules 2 and 3 only — **degree
+is not a SQL property**, and `variable × variable` is refused by rule 1 even
+though its join is perfectly ordinary. And it presumes the coefficient
+assembly is unchanged: `GROUP BY row, col` is the only aggregate a *term*
+ever passes through, so an operator needing a different one over terms is a
+sink-level change, not a new lowering case.
+
 The done-condition follows from the rules rather than from taste: a
 primitive is finished when `lowering.py` accepts it and the differential
 test against the linopy oracle passes. Two consequences worth stating
