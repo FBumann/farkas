@@ -166,6 +166,18 @@ macros:       ...   # parameterised templates    (§3.7, pure substitution)
 piecewise:    ...   # λ-formulation blocks       (§3.8, schema-level expansion)
 ```
 
+**The schema is closed at every level.** Any key not listed in this section — at
+the top level or inside any declaration — is a load error naming the near miss:
+
+```
+unknown key 'boundz' in a variable declaration. Did you mean 'bounds'?
+```
+
+Silently ignoring an unrecognised key would let a typo change the model: a
+dropped `bounds:` leaves the variable unbounded, a dropped `where:` leaves it
+unmasked, and in both cases the file says one thing while the model does
+another. Adding a key to the language therefore means adding it here.
+
 ### 3.1 `dimensions`
 
 Declares the master coordinate index for each dimension. Every dimension referenced anywhere in the YAML must be declared here.

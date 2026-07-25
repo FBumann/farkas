@@ -108,3 +108,62 @@ def test_omitted_bounds_default_to_linopy_s_infinities():
     # and the relational lane carries it through rather than re-defaulting
     assert _lower_bound(bounds.lower).value == float('-inf')
     assert _lower_bound(bounds.upper).value == float('inf')
+
+
+def test_unknown_key_in_variable_is_rejected_with_a_suggestion():
+    """A misspelled key used to be dropped, leaving the variable unbounded."""
+    raw = {
+        'dimensions': {'x': {'values': [1]}},
+        'variables': {'v': {'foreach': ['x'], 'boundz': {'lower': 0, 'upper': 5}}},
+    }
+    with pytest.raises(ValidationError, match=r"unknown key 'boundz'.*Did you mean 'bounds'"):
+        MathSchema.model_validate(raw)
+
+
+def test_unknown_key_without_a_near_miss_lists_the_valid_keys():
+    raw = {
+        'dimensions': {'x': {'values': [1]}},
+        'variables': {'v': {'foreach': ['x'], 'zzzz': 1}},
+    }
+    with pytest.raises(ValidationError, match='Valid keys: binary, bounds, foreach, integer, where'):
+        MathSchema.model_validate(raw)
+
+
+def test_unknown_top_level_section_is_rejected():
+    with pytest.raises(ValidationError, match="unknown key 'dimenzions' in the top level"):
+        MathSchema.model_validate({'dimenzions': {'x': {'values': [1]}}})
+
+
+@pytest.mark.parametrize(
+    ('section', 'body', 'typo'),
+    [
+        ('dimensions', {'dtypo': 'str'}, 'dtypo'),
+        ('parameters', {'dims': ['x'], 'dtyp': 'float'}, 'dtyp'),
+        ('macros', {'template': 'a + b', 'arg': ['a']}, 'arg'),
+        ('piecewise', {'over': 'x', 'links': [['v', 'p'], ['w', 'q']], 'convx': True}, 'convx'),
+    ],
+)
+def test_every_schema_model_rejects_unknown_keys(section, body, typo):
+    """Strictness is on the shared base, so no model can opt out by omission."""
+    raw = {'dimensions': {'x': {'values': [1]}}, section: {'thing': body}}
+    with pytest.raises(ValidationError, match=f"unknown key '{typo}'"):
+        MathSchema.model_validate(raw)
+
+
+def test_nested_bounds_block_rejects_unknown_keys():
+    raw = {
+        'dimensions': {'x': {'values': [1]}},
+        'variables': {'v': {'foreach': ['x'], 'bounds': {'lowerr': 0}}},
+    }
+    with pytest.raises(ValidationError, match="unknown key 'lowerr' in a bounds block"):
+        MathSchema.model_validate(raw)
+
+
+def test_equation_block_rejects_unknown_keys():
+    raw = {
+        'dimensions': {'x': {'values': [1]}},
+        'variables': {'v': {'foreach': ['x']}},
+        'constraints': {'c': {'foreach': ['x'], 'equations': [{'expresion': 'v >= 0'}]}},
+    }
+    with pytest.raises(ValidationError, match="unknown key 'expresion' in an equation"):
+        MathSchema.model_validate(raw)
