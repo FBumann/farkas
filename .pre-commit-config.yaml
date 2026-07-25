@@ -15,3 +15,19 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
+
+  # Deliberately a local hook rather than facebook/pyrefly-pre-commit: that hook
+  # is `language: python`, so it type-checks against pre-commit's own isolated
+  # venv, where pydantic/pandas/xarray/linopy do not exist. With missing-import
+  # promoted to error (pyproject.toml) every third-party import would fail.
+  # Running through uv points pyrefly at the project venv, which is the whole
+  # point of checking imports.
+  - repo: local
+    hooks:
+      - id: pyrefly
+        name: pyrefly check
+        entry: uv run pyrefly check
+        language: system
+        types_or: [python, pyi]
+        pass_filenames: false  # pyrefly reads project-includes from pyproject.toml
+        require_serial: true

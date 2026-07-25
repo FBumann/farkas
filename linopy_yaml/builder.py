@@ -111,7 +111,7 @@ def _resolve_bound(
         if value not in dataset:
             msg = (
                 f"Bound references parameter '{value}' which is not in the "
-                f'loaded dataset. Available: {sorted(dataset.data_vars)}'
+                f'loaded dataset. Available: {sorted(map(str, dataset.data_vars))}'
             )
             raise ValueError(msg)
         return dataset[value]
@@ -269,8 +269,10 @@ def _resolve_name(
     ctx: EvalContext,
 ) -> Any:
     """Resolve a name: check variables first, then parameters."""
-    # Check linopy variables
-    if name in ctx.model.variables:
+    # Check linopy variables. Variables is iterable but defines no __contains__,
+    # so `in` would fall back to iteration anyway — materialise once and reuse.
+    var_names = list(ctx.model.variables)
+    if name in var_names:
         return ctx.model.variables[name]
 
     # Check parameters
@@ -278,8 +280,7 @@ def _resolve_name(
         return ctx.dataset[name]
 
     # Helpful error
-    var_names = list(ctx.model.variables)
-    param_names = sorted(ctx.dataset.data_vars)
+    param_names = sorted(map(str, ctx.dataset.data_vars))
     msg = (
         f"'{name}' not found.\n"
         f'  Variables:  {var_names}\n'

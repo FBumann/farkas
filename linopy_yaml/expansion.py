@@ -37,7 +37,7 @@ than a registered function that reads like a built-in on the page.
 from __future__ import annotations
 
 import copy
-from typing import TYPE_CHECKING, assert_never
+from typing import TYPE_CHECKING, assert_never, overload
 
 from linopy_yaml.expression_parser import (
     ArithNode,
@@ -65,8 +65,19 @@ def parse_and_expand(text: str, schema: MathSchema, context: str = 'expression')
     return expand(parse_expression(text), schema, context)
 
 
+@overload
+def expand(node: ArithNode, schema: MathSchema, context: str = ...) -> ArithNode: ...
+@overload
+def expand(node: CompareNode, schema: MathSchema, context: str = ...) -> CompareNode: ...
+
+
 def expand(node: ExprNode, schema: MathSchema, context: str = 'expression') -> ExprNode:
-    """Expand all named sub-expressions and macro calls under *node*."""
+    """Expand all named sub-expressions and macro calls under *node*.
+
+    Expansion never changes the shape of the root: a comparison stays a
+    comparison, an arithmetic node stays arithmetic. The overloads say so, so
+    callers holding an ``ArithNode`` keep it across the call.
+    """
     if isinstance(node, CompareNode):
         return CompareNode(
             node.op,

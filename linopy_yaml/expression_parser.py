@@ -8,7 +8,7 @@ parameters.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 import pyparsing as pp
 
@@ -121,7 +121,8 @@ def _build_grammar() -> pp.ParserElement:
 
 def _make_func_call(tokens: pp.ParseResults) -> FuncCallNode:
     """Build a FuncCallNode from parsed tokens."""
-    name = tokens[0]
+    # a ParseResults element is untyped; the grammar guarantees an identifier here
+    name = cast('str', tokens[0])
     args = []
     kwargs = {}
     for item in tokens[1:]:
@@ -179,4 +180,5 @@ def parse_expression(text: str) -> ExprNode:
     except pp.ParseException as e:
         msg = f'Failed to parse expression: {text!r}\n{e}'
         raise ValueError(msg) from e
-    return result[0]
+    # parseAll with a single top-level alternative: element 0 is the root node
+    return cast('ExprNode', result[0])

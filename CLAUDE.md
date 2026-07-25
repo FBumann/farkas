@@ -24,7 +24,7 @@ uv run ruff check --fix .
 uv run ruff format .
 
 # Type check
-uv run mypy linopy_yaml
+uv run pyrefly check
 
 # Hooks (once per clone)
 uv run pre-commit install
@@ -75,7 +75,12 @@ compat.extend(m, "ramp_constraint.yaml", data={...})  # YAML math onto an existi
 
 - This package is a **pure consumer** of linopy's public API. Never depend on linopy internals.
 - All validation should happen at load time with clear, actionable error messages.
-- Use `ruff` for linting/formatting, `mypy` for type checking, `pytest` for tests.
+- Use `ruff` for linting/formatting, `pyrefly` for type checking, `pytest` for tests.
+- pyrefly runs on the `strict` preset with zero errors and is gated in CI. Keep it
+  that way: fix the type, don't widen it. If a finding is genuinely wrong, suppress
+  the one line with `# pyrefly: ignore[rule-name]` and say why — do not turn the rule
+  off globally. The rules `pyproject.toml` deliberately leaves unpromoted are
+  documented there with the reason.
 - Keep the dependency footprint minimal.
 - Releasing: the git tag *is* the version (hatch-vcs derives it at build time) — never
   hardcode one in `pyproject.toml`. Conventional commits drive the changelog. See `RELEASING.md`.

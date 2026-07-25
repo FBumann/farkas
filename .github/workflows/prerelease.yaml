@@ -93,6 +93,7 @@ jobs:
 
       - run: uv run --no-sync ruff check .
       - run: uv run --no-sync ruff format --check .
+      - run: uv run --no-sync pyrefly check
       - run: uv run --no-sync pytest -q
 
       - name: Push the tag

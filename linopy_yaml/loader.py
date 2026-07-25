@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pandas as pd
@@ -147,7 +147,8 @@ def _coerce_to_dataarray(
             raw.index.name = dims[0]
         if raw.columns.name is None:
             raw.columns.name = dims[1]
-        stacked = raw.stack()
+        # flat columns (checked above: exactly 2 dims), so stack() gives a Series
+        stacked = cast('pd.Series', raw.stack())
         stacked.name = name
         arr = xr.DataArray.from_series(stacked).unstack()
         _validate_dims(name, arr, dims)
