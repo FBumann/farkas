@@ -198,3 +198,73 @@ def test_check_rejects_degree_two_without_data(dispatch_yaml):
     raw['objectives']['total_cost']['equations'] = [{'expression': 'sum(p * p, over=generator)'}]
     with pytest.raises(ly.LanguageError, match='degree 2'):
         ly.check(raw)
+
+
+def test_solution_to_dataarray(dispatch_yaml, dispatch_inputs):
+    """Long tables are right for joining, wrong for the array math that
+    post-processing is mostly made of. `to_dataarray` is the bridge."""
+    pytest.importorskip('xarray')
+    sources, coords = dispatch_inputs
+
+    with ly.solve(dispatch_yaml, sources, coords=coords) as sol:
+        arr = sol.to_dataarray('p')
+        tidy = sol.primal('p')
+
+    assert arr.name == 'p'  # not 'value', the tidy column it came from
+    assert sorted(arr.dims) == ['generator', 'snapshot']
+    assert arr.sizes['generator'] == 3
+    # the labelled form is the tidy form, indexed
+    wind_0 = tidy.query("generator == 'wind' and snapshot == 0")['value'].iloc[0]
+    assert float(arr.sel(generator='wind', snapshot=0)) == pytest.approx(wind_0)
+
+
+def test_solution_to_dataset(dispatch_yaml, dispatch_inputs):
+    """Several variables at once, each keeping its own dims."""
+    pytest.importorskip('xarray')
+    sources, coords = dispatch_inputs
+
+    with ly.solve(dispatch_yaml, sources, coords=coords) as sol:
+        ds = sol.to_dataset('p')
+        tidy = sol.primal('p')
+
+    assert list(ds.data_vars) == ['p']
+    assert sorted(ds['p'].dims) == ['generator', 'snapshot']
+    first = tidy.iloc[0]
+    assert float(ds['p'].sel(snapshot=first['snapshot'], generator=first['generator'])) == pytest.approx(first['value'])
+
+
+TWO_VARIABLE_MODEL = {
+    'dimensions': {'snapshot': {'dtype': 'int'}, 'generator': {'values': ['wind', 'gas']}},
+    'parameters': {'p_max': {'dims': ['generator']}, 'load': {'dims': ['snapshot']}},
+    'variables': {
+        'p': {'foreach': ['snapshot', 'generator'], 'bounds': {'lower': 0, 'upper': 'p_max'}},
+        'shed': {'foreach': ['snapshot'], 'bounds': {'lower': 0}},
+    },
+    'constraints': {
+        'balance': {
+            'foreach': ['snapshot'],
+            'equations': [{'expression': 'sum(p, over=generator) + shed == load'}],
+        }
+    },
+    'objectives': {'total': {'sense': 'minimize', 'equations': [{'expression': 'shed'}]}},
+}
+
+
+def test_to_dataset_defaults_to_every_variable():
+    """A small model wants all of them at once, as linopy's model.solution
+    gives you — naming them would be busywork."""
+    pytest.importorskip('xarray')
+    n = 4
+    sources = {
+        'p_max': pd.Series({'wind': 100.0, 'gas': 200.0}),
+        'load': pd.Series(np.full(n, 90.0), index=pd.RangeIndex(n, name='snapshot')),
+    }
+
+    with ly.solve(TWO_VARIABLE_MODEL, sources, coords={'snapshot': pd.RangeIndex(n, name='snapshot')}) as sol:
+        ds = sol.to_dataset()
+        subset = sol.to_dataset('shed')
+
+    assert set(ds.data_vars) == {'p', 'shed'}
+    assert sorted(ds['p'].dims) == ['generator', 'snapshot']
+    assert list(ds['shed'].dims) == ['snapshot']  # keeps its own dims
+    assert set(subset.data_vars) == {'shed'}

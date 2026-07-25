@@ -1038,7 +1038,34 @@ ly.check("model.yaml")                       # validate, no data needed
 schema = ly.load_schema("model.yaml")        # MathSchema
 sol = ly.solve("model.yaml", sources={...})  # build + stream + solve
 ly.write_lp("model.yaml", "model.lp", sources={...})
+
+sol.primal("p")            # tidy DataFrame (dims..., value)
+sol.to_dataarray("p")         # the same, labelled — for .sel/resample/plot
+sol.to_dataset()           # every variable; names for a subset
+sol.to_parquet(dir)        # streamed to disk, never through this process
 ```
+
+`primal` is the native shape: long tables slice and join well, which is what
+the relational lane produces anyway. `to_dataarray` exists because the array math
+post-processing is mostly made of — `.sel(generator="wind")`, resampling,
+duration curves — wants the labelled form, and the conversion should not be
+something every user rediscovers.
+
+`to_dataset` returns **every variable by default**, like linopy's
+`model.solution`; pass names for a subset. It costs what it says: each
+variable arrives dense over its own dims, so the Dataset holds the full
+coordinate product regardless of what the mask removed, and all of them at
+once. Small models want exactly this and naming them would be busywork; a
+model built for the memory budget this engine exists for should name a subset
+or use `to_parquet`, which streams.
+
+The pair is named for what it returns — `to_dataarray` one variable,
+`to_dataset` several. pandas' `to_xarray` returns either type depending on the
+receiver; that ambiguity is not worth inheriting once both forms exist.
+
+Duals are **not** exposed yet: the solve path reads `col_value` only. Tracked
+in ROADMAP Track 2b — the read-back is the same label join as `primal`, against
+the constraint tables.
 
 `sources` maps parameter and dimension names to parquet paths, pandas objects,
 or scalars. Nothing in this path imports linopy.

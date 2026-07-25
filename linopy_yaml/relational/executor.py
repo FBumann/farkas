@@ -90,6 +90,52 @@ class Solution:
     def primal(self, name: str) -> pd.DataFrame:
         return self._executor._primal(name)
 
+    def to_dataarray(self, name: str) -> Any:
+        """``primal(name)`` as a labelled :class:`xarray.DataArray`.
+
+        Named for what it returns, pairing with :meth:`to_dataset` — pandas'
+        ``to_xarray`` returns either type depending on the receiver, and that
+        ambiguity is not worth inheriting when both forms exist here.
+
+        Long tables are the right shape for slicing and joining, and the wrong
+        one for the array math post-processing is mostly made of —
+        ``.sel(generator='wind')``, resampling, duration curves. This is the
+        bridge, and it is one line so that its absence never reads as "results
+        are hard to use".
+
+        Goes through ``pandas.DataFrame.to_xarray()`` rather than importing
+        xarray here: the streaming lane is xarray-free (hard rule 2), and
+        pandas does the optional import for us. Requires xarray to be
+        installed (it ships with the ``[compat]`` extra); missing coordinate
+        combinations come back as NaN, since a masked variable has no row.
+        """
+        frame = self.primal(name)
+        dims = [c for c in frame.columns if c != 'value']
+        if not dims:
+            return frame['value'].to_xarray().rename(name)
+        # the tidy column is 'value'; the array should carry the variable's name
+        return frame.set_index(dims).to_xarray()['value'].rename(name)
+
+    def to_dataset(self, *names: str) -> Any:
+        """Variables as one :class:`xarray.Dataset`; all of them by default.
+
+        A small model wants every variable at once — that is what linopy's
+        ``model.solution`` gives you, and naming them would be busywork.
+
+        Costs what it says: each variable arrives *dense* over its own dims, so
+        the Dataset holds the full coordinate product regardless of what the
+        mask removed, and all of them at once. On a model built for the memory
+        budget this engine exists for, name the few you need or use
+        :meth:`to_parquet`, which streams.
+        """
+        assert self._executor._program is not None
+        wanted = names or tuple(v.name for v in self._executor._program.variables)
+        first, *rest = wanted
+        dataset = self.to_dataarray(first).to_dataset(name=first)
+        for name in rest:
+            dataset[name] = self.to_dataarray(name)
+        return dataset
+
     def to_parquet(self, directory: str | Path) -> dict[str, Path]:
         """Stream per-variable solution tables to ``directory`` (one parquet
         file per variable, columns ``(dims..., value)``). Returns name → path.
