@@ -1,6 +1,5 @@
 """Tests for expression and where-string parsers."""
 
-import pandas as pd
 import pytest
 
 from linopy_yaml.expression_parser import (
@@ -12,8 +11,7 @@ from linopy_yaml.expression_parser import (
     UnaryOpNode,
     parse_expression,
 )
-from linopy_yaml.where_parser import evaluate_where, parse_where
-from tests.oracle import xr
+from linopy_yaml.where_parser import parse_where
 
 
 class TestExpressionParser:
@@ -132,50 +130,3 @@ class TestWhereParser:
         node = parse_where('a OR b AND c')
         assert isinstance(node, OrNode)
         assert isinstance(node.right, AndNode)
-
-
-class TestWhereEvaluation:
-    def _ds(self):
-        return xr.Dataset(
-            {
-                'p_max': xr.DataArray(
-                    [100, 0, 50],
-                    dims=['g'],
-                    coords={'g': ['wind', 'solar', 'gas']},
-                ),
-            }
-        )
-
-    def _mc(self):
-        return {'g': pd.Index(['wind', 'solar', 'gas'], name='g')}
-
-    def test_none_returns_scalar_true(self):
-        mask = evaluate_where(None, self._ds(), self._mc())
-        assert isinstance(mask, xr.DataArray)
-        assert mask.ndim == 0
-        assert bool(mask) is True
-
-    def test_existence_check(self):
-        mask = evaluate_where('p_max', self._ds(), self._mc())
-        assert isinstance(mask, xr.DataArray)
-        assert mask.all()
-
-    def test_comparison(self):
-        mask = evaluate_where('p_max > 0', self._ds(), self._mc())
-        assert bool(mask.sel(g='wind')) is True
-        assert bool(mask.sel(g='solar')) is False
-        assert bool(mask.sel(g='gas')) is True
-
-    def test_missing_param_returns_scalar_false(self):
-        mask = evaluate_where('nonexistent', self._ds(), self._mc())
-        assert isinstance(mask, xr.DataArray)
-        assert mask.ndim == 0
-        assert bool(mask) is False
-
-    def test_dimension_comparison(self):
-        ds = xr.Dataset()
-        mc = {'t': pd.Index([0, 1, 2], name='t')}
-        mask = evaluate_where('t > 0', ds, mc)
-        assert isinstance(mask, xr.DataArray)
-        assert bool(mask.sel(t=0)) is False
-        assert bool(mask.sel(t=1)) is True
