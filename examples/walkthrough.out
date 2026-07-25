@@ -1,0 +1,90 @@
+The whole architecture, one model, one stage at a time — run it and read.
+
+model: examples/walkthrough.yaml
+
+[1] YAML text -> validated MathSchema  (schema.py, validation.py)
+    dimensions   snapshot, generator
+    parameters   p_max, load, cost
+    variables    p
+    constraints  power_balance
+    expressions  total_supply    <- tier 2, still present
+    macros       weighted_sum   <- tier 2, still present
+
+[2] expand macros / named expressions -> core AST  (expansion.py)
+    written      'weighted_sum(p, cost, over=generator)'
+    parsed       FunctionCallNode(name='weighted_sum', args=[NameNode(name='p'), NameNode(name='cost')], kwargs={'over': NameNode(name='generator')})
+    expanded     FunctionCallNode(name='sum', args=[BinaryOperatorNode(op='*', left=NameNode(name='p'), right=NameNode(name='cost'))], kwargs={'over': NameNode(name='generator')})
+                 ^ the macro is gone: sum(p * cost, over=generator)
+
+[3] core AST -> relational IR  (lowering.py)
+    Program(
+      VariableDeclaration(name='p', dims=('snapshot', 'generator'), where=ParameterComparison(parameter='p_max', op='>', value=0.0), lower=Constant(value=0.0), upper=Parameter(name='p_max'), variable_type='continuous')
+      ConstraintDeclaration(name='power_balance', dims=('snapshot',), lhs=Sum(operand=Variable(name='p'), over=('generator',)), sense='==', rhs=Parameter(name='load'), where=None)
+      ObjectiveDeclaration(sense='min', expression=Sum(operand=Multiply(left=Variable(name='p'), right=Parameter(name='cost')), over=('generator',)))
+    )
+    ^ frozen dataclasses, no macro, no YAML, no linopy, no duckdb
+
+[4] IR + data -> tidy tables in duckdb  (relational/executor.py)
+    A                      18 rows
+    cols                   18 rows
+    con_power_balance       6 rows
+    dim_generator           4 rows
+    dim_snapshot            6 rows
+    obj                    18 rows
+    p_cost                  4 rows
+    p_load                  6 rows
+    p_p_max                 4 rows
+    rows                    6 rows
+    var_p                  18 rows
+
+    memory_limit=256MB, on disk at $TMPDIR/relational_XXXXXXXX
+    dim_* = coordinates · p_* = parameters · var_* = coord -> column label
+    cols/rows/A/obj = the LP itself, in COO form
+
+    where "p_max > 0" is not a mask array — it is row absence:
+    var_p has 18 rows, not 24: retired oil never becomes a column.
+       snapshot generator  var_label
+    0         0      wind          0
+    1         0     solar          1
+    2         0       gas          2
+    3         1      wind          3
+
+[5] sink: stream the tables to an LP file  (relational/executor.py)
+    min
+    
+    obj:
+    +0 x0
+    +0 x1
+    +50 x2
+    +0 x3
+    +0 x4
+    +50 x5
+    +0 x6
+    +0 x7
+    +50 x8
+    ... (76 lines total)
+
+[6] sink: batches -> highspy -> solution tables  (relational/executor.py)
+    status     Optimal
+    objective  1,000.0
+       snapshot generator  value
+    0         0      wind   80.0
+    1         0     solar    0.0
+    2         0       gas    0.0
+    3         1      wind   60.0
+    4         1     solar   60.0
+    5         1       gas    0.0
+
+[7] and what the language refuses  (validation.py, lowering.py)
+
+    a helper that is not in the closed built-in set:
+    caught by check() as SchemaError
+      Constraint 'cumulative', equation 0: Unknown helper function 'cumsum'.
+      Available: ['group_sum', 'roll', 'shift', 'sum']
+      Define 'cumsum' as a macro under 'macros:' if it composes built-ins; if the math is not sayable in the language, use a declared escape.
+
+    variable x variable — above the degree-1 ceiling:
+    caught by check() as LanguageError
+      objective 'total_cost': both factors of a product contain variables, which is degree 2. Multiply the variable by a parameter instead, or model the curve with a piecewise: block — see ROADMAP, "The degree axis".
+
+ARCHITECTURE.md has the rules these stages enforce.

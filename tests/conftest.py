@@ -15,6 +15,15 @@ import pytest
 EXAMPLES_DIR = Path(__file__).parent.parent / 'examples'
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        '--update-golden',
+        action='store_true',
+        default=False,
+        help='rewrite committed golden output (examples/*.out) from this run instead of asserting on it',
+    )
+
+
 def resolved(text, schema):
     """Parse + expand + resolve — exactly what a backend receives.
 

@@ -7,6 +7,12 @@ internally, so what you see is what actually runs.
 
     uv run python examples/walkthrough.py
 
+Its output is committed as ``examples/walkthrough.out`` and asserted line for
+line by ``tests/test_walkthrough.py``, so the narration cannot go stale
+unnoticed: a stage that starts saying something else fails CI, and the diff of
+the regenerated file is the record of what changed. Everything printed is
+therefore deterministic — see ``_scrubbed`` for the one thing that is not.
+
 The point it is trying to make is the thesis in ARCHITECTURE.md: a YAML math
 spec is a closed AST known before any data is touched. Stages 1-3 happen with
 no data bound at all; only stage 4 sees a number.
@@ -14,6 +20,7 @@ no data bound at all; only stage 4 sees a number.
 
 from __future__ import annotations
 
+import sys
 import tempfile
 from pathlib import Path
 
@@ -61,7 +68,7 @@ _REFUSED = [
 
 
 def banner(n: int, title: str, module: str) -> None:
-    print(f'\n\033[1m[{n}] {title}\033[0m  \033[2m({module})\033[0m')
+    print(f'\n{_bold(f"[{n}] {title}")}  {_dim(f"({module})")}')
 
 
 def main() -> None:
@@ -124,7 +131,7 @@ def main() -> None:
         for (name,) in tables:
             n = ex._con.execute(f'SELECT count(*) FROM {name}').fetchone()[0]
             print(f'    {name:<20} {n:>4} rows')
-        print(f'\n    memory_limit={ex.memory_limit}, on disk at {ex.workdir}')
+        print(f'\n    memory_limit={ex.memory_limit}, on disk at {_scrubbed(ex.workdir)}')
         print('    dim_* = coordinates · p_* = parameters · var_* = coord -> column label')
         print('    cols/rows/A/obj = the LP itself, in COO form')
 
@@ -177,12 +184,30 @@ def main() -> None:
         except ValueError as exc:
             _refusal('build()', exc)
 
-    print('\n\033[2mARCHITECTURE.md has the rules these stages enforce.\033[0m')
+    print(f'\n{_dim("ARCHITECTURE.md has the rules these stages enforce.")}')
 
 
 def _refusal(verb: str, exc: Exception) -> None:
-    print(f'    \033[2mcaught by {verb} as {type(exc).__name__}\033[0m')
+    print(f'    {_dim(f"caught by {verb} as {type(exc).__name__}")}')
     print(_indent(str(exc), '      '))
+
+
+def _bold(text: str) -> str:
+    return f'\033[1m{text}\033[0m' if sys.stdout.isatty() else text
+
+
+def _dim(text: str) -> str:
+    return f'\033[2m{text}\033[0m' if sys.stdout.isatty() else text
+
+
+def _scrubbed(workdir: Path) -> str:
+    """The workdir, minus this run's randomness.
+
+    ``mkdtemp`` appends eight random characters and lives under a temp root
+    that differs per machine and per CI runner. Both are real, and neither is
+    a fact about the architecture, so the golden file gets the shape instead.
+    """
+    return f'$TMPDIR/{workdir.name[:-8]}XXXXXXXX'
 
 
 def _indent(obj: object, pad: str = '    ') -> str:

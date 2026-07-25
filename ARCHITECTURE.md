@@ -7,7 +7,10 @@ are [ROADMAP.md](ROADMAP.md); measured results are
 
 `python examples/walkthrough.py` executes the pipeline below stage by stage
 and prints what each one produces — the same public calls `ly.solve` makes,
-so the demonstration cannot drift from the code (`tests/test_walkthrough.py`).
+so the demonstration cannot drift from the code. Its output is committed as
+[examples/walkthrough.out](examples/walkthrough.out) and asserted line for line
+(`tests/test_walkthrough.py`), so reading it is the same as running it — and a
+stage that starts telling a different story shows up as a diff in that file.
 
 ## Thesis
 
