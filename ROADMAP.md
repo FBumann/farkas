@@ -120,7 +120,9 @@ re-derived, not inherited.
   (highspy `passHessian`, LP/MPS quadratic sections), a data-time convexity
   guard, and differential coverage of a new problem class.
 
-**What would move it.** All four, not any one:
+**What would move it.** All four, not any one — the live argument over how close
+each is to met lives in [#84](https://github.com/FBumann/linopy-yaml/issues/84),
+not here:
 
 1. A model where the *approximation* is the problem, not the formulation —
    in practice that means **bilinear terms across dimensions**, where PWL is
@@ -184,41 +186,51 @@ results (LCOE, curtailment, emissions by group — Calliope's
 `postprocessed`) are SQL over solution tables we already materialise, and
 carry **no tax on the build path**. Sequenced after Track 1 items 1–4.
 
-## Track 2b — the operational surface (untaxed, queries)
+## Track 2b — the operational surface
 
-Everything here is a query over tables we already materialise, so none of it
-touches the build path or either lane's semantics. It is listed because
+Items 1–4 are queries over tables we already materialise, so none of them
+touch the build path or either lane's semantics. The track is listed because
 "cheap once written" and "will exist" are different claims, and this is the
 work that decides whether the engine is usable at 3am.
 
-1. **Elastic relaxation — the infeasibility answer.** HiGHS has no IIS, so
-   `solver_direct` on the default solver returns a status code for a model
-   too large to open in an editor. The relational form has a *better* answer
-   than linopy's, and it is sayable in our own language: add slack variables
-   with penalty costs, solve, then query the nonzero slacks grouped by
-   constraint block. It needs no solver feature, works on every sink and
-   every solver, and points at *which* constraints conflict rather than at a
-   minimal set. Treat as a headline feature, not a gap.
-2. **Algebraic rendering of a row.** linopy's `print()` of a constraint;
+1. **Dual read-back** — a join, same shape as `primal`; scheduled as
+   [#78](https://github.com/FBumann/linopy-yaml/issues/78). `getSolution()`
+   is already called and `row_dual` simply never fetched.
+2. **IIS read-back**, where a solver does provide one: row indices join to
+   the constraint label tables, which is tidier than linopy's scatter. HiGHS
+   has none, so this arrives with the Gurobi direct sink
+   ([#28](https://github.com/FBumann/linopy-yaml/issues/28)) — the read-back
+   is the easy half.
+3. **Algebraic rendering of a row.** linopy's `print()` of a constraint;
    here a `string_agg` over `A` joined to the label tables — roughly one
    query.
-3. **IIS read-back**, where a solver does provide one: row indices join to
-   the label table, which is tidier than linopy's scatter. The read-back is
-   easy; the primitive is what is missing.
 4. **Model statistics and coefficient-range diagnostics** — queries over
    `cols` / `rows` / `A`.
-5. **Dual read-back** — a join, same shape as `primal`.
+5. **Elastic relaxation** — the infeasibility answer for everyone not on
+   Gurobi: slack variables with penalty costs, solve, then query the nonzero
+   slacks grouped by constraint block. No solver feature, every sink, every
+   solver, and it names *which* constraints conflict and by how much rather
+   than a minimal set. Unlike 1–4 it is **not** a query — it needs a
+   schema-level expansion pass, the way `piecewise:` does — so it sits later
+   on the roadmap, behind item 1:
+   [#80](https://github.com/FBumann/linopy-yaml/issues/80).
 
 ## Track 2c — value-only re-solve
 
-§12.2 puts "incremental model editing" out of scope, which currently reads as
-covering both structural and value-only changes. Split it:
+Tracked as [#82](https://github.com/FBumann/linopy-yaml/issues/82). §12.2 puts
+"incremental model editing" out of scope, which currently reads as covering
+both structural and value-only changes. Split it:
 
 - **In scope: value-only.** Because `var_label` *is* the solver column index
   and `row` the solver row index, with no remapping, changing a bound or an
   RHS is a label query plus `changeColsBounds` / `changeRowsBounds`. That is
   cleaner here than in linopy, not worse — and it is what rolling horizon,
-  parameter sweeps and Benders subproblems actually need.
+  parameter sweeps and Benders subproblems actually need. With one condition:
+  "value-only" has to be a property of the *model*, not of the user's
+  intent — a parameter that appears in a `where` or a `group_sum` mapping
+  changes row existence, so the labels move and an in-place bound update
+  writes to the wrong columns. That is statically decidable off the resolved
+  AST and ships with the feature (#82).
 - **Out of scope: structural.** Adding or removing variables and constraints
   invalidates the label contract, and rebuilding is the supported answer.
 - **Related gap: warm starts.** linopy passes basis files; `solver_direct`
@@ -257,8 +269,8 @@ constraint with `where`; only unsayable shapes escape).
 
 | Request | Why not | Instead | Escape? |
 |---|---|---|---|
-| Quadratic / bilinear terms | degree axis pinned at 1 — see [The degree axis](#the-degree-axis) | `piecewise:` (`convex: true` for a pure-LP hull) or the epigraph pattern | **banned today** — but the *reachable* one: HiGHS exposes a Hessian, so a `(row, col1, col2, coeff)` stream is a real path, and linopy's `QuadraticExpression` means the oracle already covers it |
-| SOS / indicator constraints ([#23](https://github.com/FBumann/linopy-yaml/issues/23)) | no sink carries the stream | `piecewise:` λ-formulation (SOS2's usual purpose) | **banned** — and the *harder* one: the oracle exists (linopy has it) but no sink stream does, and adding one means a new stream in every sink |
+| Quadratic / bilinear terms | degree axis pinned at 1 — see [The degree axis](#the-degree-axis) | `piecewise:` (`convex: true` for a pure-LP hull) or the epigraph pattern | **banned today** — whether it is *reachable* is an open discussion, not a settled claim: [#84](https://github.com/FBumann/linopy-yaml/issues/84) |
+| SOS / indicator constraints ([#23](https://github.com/FBumann/linopy-yaml/issues/23)) | no sink carries the stream | `piecewise:` λ-formulation (SOS2's usual purpose) | **banned** — and note which half is missing: the oracle exists (linopy has it), the sink stream does not, and adding one means a new stream in *every* sink |
 | Cumulative / running sums, normalisations | **global** operator — breaks partition-wise execution | state-variable recurrence (a storage SOC balance *is* the rewrite) | billed — the rewrite is still the right answer at scale (O(T) vs O(T²)) |
 | Conditionals, iteration, data-dependent structure in expressions | destroys the closed AST that makes streaming possible | `where` masks + `foreach` dims; computation moves to data prep | billed — inside an escape island only, never in the symbolic plan |
 | Resampling, clustering, interpolation, IO, units | data layer, not math | preprocess; pass a parameter (SPEC §10) | n/a — free in Python already, no escape needed |

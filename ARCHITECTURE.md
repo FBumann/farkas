@@ -307,13 +307,15 @@ Rules that follow:
   component types) lives in a thin programmatic layer that emits **more rows
   or more templates — never per-instance YAML**. Keep that residue small and
   streaming stays intact.
-- **That layer currently has nothing to call.** Hard rule 6 refuses a Python
-  modeling API and treats the IR as internal, while this section forbids
-  generated YAML — so the residue has no supported seam. Composition forces
-  the IR-construction contract earlier than the roadmap has it: not a general
-  modeling API, but a narrow, versioned way to emit declarations. Until it
-  exists, a library that needs the residue has to reach past hard rule 6 or
-  do the thing this section forbids.
+- **That layer has nothing *supported* to call.** A seam exists —
+  `api.load_schema` accepts `dict | MathSchema`, so the native lane already
+  takes a programmatically built model through validation, expansion,
+  resolution and dim checking — but it is undocumented and unversioned, and
+  hard rule 6 refuses a Python modeling API while this section forbids
+  generated YAML. Whether that seam gets blessed (and at the schema level,
+  not the IR level) is [#83](https://github.com/FBumann/linopy-yaml/issues/83);
+  until it is, a library that needs the residue is relying on something we
+  are free to change.
 
 ## Module map
 
