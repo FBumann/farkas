@@ -123,7 +123,19 @@ class TestValidateExpressions:
         )
         with pytest.raises(ValueError, match="'p' not found"):
             validate_expressions(schema)
-        validate_expressions(schema, known_variables=['p'])
+        validate_expressions(schema, known_variables={'p': ['g']})
+
+    def test_known_variable_dims_reach_the_objective(self):
+        """The dim checker needs an external variable's dims wherever it needs
+        the name — objectives included, not just constraints."""
+        schema = MathSchema.model_validate(
+            {
+                'dimensions': {'g': {'values': ['wind', 'solar']}},
+                'parameters': {'cost': {'dims': ['g']}},
+                'objectives': {'total': {'equations': [{'expression': 'sum(p * cost, over=g)'}]}},
+            }
+        )
+        validate_expressions(schema, known_variables={'p': ['g']})
 
 
 class TestLoadTimeIntegration:
@@ -190,13 +202,16 @@ class TestDimensionKwargs:
     """
 
     @staticmethod
-    def _schema(expression: str) -> MathSchema:
+    def _schema(expression: str, foreach: list[str] | None = None) -> MathSchema:
+        # `or` would turn an explicit [] into ['snapshot']; a scalar constraint
+        # is a legitimate thing to ask for
+        foreach = ['snapshot'] if foreach is None else foreach
         return MathSchema.model_validate(
             {
                 'dimensions': {'snapshot': {'dtype': 'int'}, 'generator': {'values': ['wind']}},
                 'parameters': {'load': {'dims': ['snapshot']}, 'gen_bus': {'dims': ['generator'], 'dtype': 'str'}},
                 'variables': {'p': {'foreach': ['snapshot', 'generator']}},
-                'constraints': {'c': {'foreach': ['snapshot'], 'equations': [{'expression': expression}]}},
+                'constraints': {'c': {'foreach': foreach, 'equations': [{'expression': expression}]}},
             }
         )
 
@@ -215,13 +230,13 @@ class TestDimensionKwargs:
                 validate_expressions(self._schema(f'{helper}(p, snapshto=1) == load'))
 
     def test_declared_dimensions_still_pass(self):
-        for expression in (
-            'sum(p, over=generator) == load',
-            'group_sum(p, gen_bus, into=generator) == load',
-            'roll(p, snapshot=1) == load',
-            'shift(p, snapshot=1) == load',
+        for expression, foreach in (
+            ('sum(p, over=generator) == load', ['snapshot']),
+            ('group_sum(p, gen_bus, into=generator) == load', ['snapshot', 'generator']),
+            ('roll(p, snapshot=1) == load', ['snapshot', 'generator']),
+            ('shift(p, snapshot=1) == load', ['snapshot', 'generator']),
         ):
-            validate_expressions(self._schema(expression))
+            validate_expressions(self._schema(expression, foreach))
 
     def test_macro_formals_are_not_mistaken_for_dimensions(self):
         """A formal in a dim position is legal inside the template body."""

@@ -98,11 +98,12 @@ def test_roll_requires_the_dim():
         _dims('roll(cost, snapshot=1)')
 
 
-def test_incomparable_dims_are_rejected():
-    """The subset rule: neither operand's dims contain the other's, so the
-    result would carry both and build a bigger model than either."""
-    with pytest.raises(DimError, match='cannot combine dims'):
-        _dims('cost + load')
+def test_an_outer_product_is_legal_and_carries_both_dim_sets():
+    """Binary ops union. Requiring subset instead would reject the convex
+    piecewise epigraph, which multiplies a per-segment slope by a per-snapshot
+    variable on purpose. The guard is the constraint rule below: the *frame*
+    has to declare the result."""
+    assert _dims('cost + load') == {'generator', 'snapshot', 'bus'}
 
 
 def test_broadcast_is_legal_when_one_side_contains_the_other():

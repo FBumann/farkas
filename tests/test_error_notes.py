@@ -87,9 +87,9 @@ def test_build_failure_attaches_constraint_note(tmp_path):
         '    foreach: [g]\n'
         'constraints:\n'
         '  c:\n'
-        '    foreach: [g]\n'
+        '    foreach: []\n'
         '    equations:\n'
-        "      - expression: '1 <= 2'\n"  # valid syntax, but no variable on the LHS
+        "      - expression: '1 <= 2'\n"  # valid syntax and dims, but no variable on the LHS
     )
 
     with pytest.raises(TypeError) as ei:

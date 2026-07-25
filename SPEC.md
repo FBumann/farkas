@@ -685,15 +685,17 @@ The type of an expression is a set of dim names:
 | parameter `p` | its declared `dims` | |
 | variable `v` | its `foreach` | |
 | `-x`, `+x` | `dims(x)` | |
-| `a + b`, `a * b`, `a / b` | `dims(a) ∪ dims(b)` | unless one contains the other |
+| `a + b`, `a * b`, `a / b` | `dims(a) ∪ dims(b)` | |
 | `sum(x, over=d)` | `dims(x) − {d}` | if `d ∉ dims(x)` |
 | `group_sum(x, m, into=g)` | `(dims(x) − dims(m)) ∪ {g}` | unless `dims(m) ⊆ dims(x)` |
 | `roll(x, d=n)`, `shift(x, d=n)` | `dims(x)` | if `d ∉ dims(x)` |
 
-The binary-operator rule is **subset, not union**: `p * cost` is fine because
-`cost`'s dims are contained in `p`'s, but combining two operands whose dims
-merely overlap is rejected. The result would carry both dim sets and build a
-model larger than either operand reads as.
+Binary operators **union**. An outer product is legitimate when the frame
+declares the result: the convex-piecewise epigraph multiplies a per-segment
+slope by a per-snapshot variable and wants one row per `(snapshot, generator,
+segment)`. Requiring subset instead would reject it. What must not be silent
+is the *declaration* disagreeing, and the constraint rule below catches that
+at the point where model size is actually decided.
 
 At the declaration level:
 
