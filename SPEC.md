@@ -24,7 +24,9 @@
 
 ## 1. Overview
 
-`linopy_yaml` is a thin layer on top of [linopy](https://github.com/PyPSA/linopy) that lets users define optimisation problems in YAML rather than Python. A YAML file declares dimensions, parameters, variables, constraints, and an objective. At runtime, the user supplies data (pandas, numpy, or xarray objects) and receives a fully built `linopy.Model` ready to solve.
+`linopy_yaml` lets users define optimisation problems in YAML rather than Python. A YAML file declares dimensions, parameters, variables, constraints, and an objective. At runtime, the user supplies data (parquet paths or pandas objects) and the model is compiled to a logical plan and executed relationally — tidy tables in duckdb under a hard `memory_limit`, streamed to the solver or to an LP file. The full model never resides in this process's memory.
+
+[linopy](https://github.com/PyPSA/linopy) is not a runtime dependency. It is reached only through the opt-in `linopy_yaml.compat` shim (§2), which serves YAML math attached to a `linopy.Model` that already exists in memory, and serves as the differential-test oracle.
 
 The core value proposition is **transparency and shareability**. A YAML math definition is readable without knowing Python, can be version-controlled, diffed, and shared with collaborators who don't write optimisation code. It separates *what the problem is* from *how it is built*.
 
@@ -92,8 +94,8 @@ print(sol.primal("p"))
 
 - **Explicit over inferred.** Dimension coordinates and parameter shapes are declared in the YAML. There is no guessing.
 - **Fail early, fail clearly.** All validation happens at load time, before any linopy calls. Errors name the problem and say how to fix it.
-- **Linopy-native output.** The result is a standard `linopy.Model`. Nothing is hidden or wrapped. Users can inspect variables, constraints, and the solution exactly as they would with hand-written linopy code.
-- **No domain assumptions.** The package knows nothing about energy, transport, or any other domain. It is a general-purpose layer over linopy's API.
+- **Memory as a config knob.** Build peak RSS is set by `memory_limit`, not by model size. Where the compat shim is used, its output is a standard `linopy.Model` — nothing hidden, nothing wrapped, inspectable exactly as hand-written linopy code.
+- **No domain assumptions.** The package knows nothing about energy, transport, or any other domain.
 
 -----
 
@@ -127,21 +129,31 @@ Both functions are **pure producers**: YAML goes in, a model comes out, and noth
 
 ### Dependency surface
 
-| Dependency  | Used for                                                               |
-|-------------|------------------------------------------------------------------------|
-| `linopy`    | Model, Variable, LinearExpression, add_variables/constraints/objective |
-| `xarray`    | DataArrays, Dataset, broadcasting, merge                               |
-| `pandas`    | Index objects, Series/DataFrame coercion                               |
-| `numpy`     | Array operations, NaN handling                                         |
-| `pyparsing` | Expression and where-string parsing                                    |
-| `pydantic`  | YAML schema validation                                                 |
-| `pyyaml`    | YAML file loading                                                      |
+Runtime — installed by `pip install linopy-yaml`:
+
+| Dependency  | Used for                                                       |
+|-------------|----------------------------------------------------------------|
+| `duckdb`    | relational execution of the logical plan under `memory_limit`  |
+| `highspy`   | the `solver_direct` sink                                       |
+| `pyarrow`   | COO record batches from duckdb to the sink (never imported by name) |
+| `pandas`    | Index objects, Series/DataFrame coercion of sources            |
+| `numpy`     | array operations, NaN handling                                 |
+| `pyparsing` | expression and where-string parsing                            |
+| `pydantic`  | YAML schema validation                                         |
+| `pyyaml`    | YAML file loading                                              |
+
+Compat/oracle only — the `[compat]` extra, never imported by the streaming lane (ARCHITECTURE.md hard rule 2, enforced by `tests/test_architecture.py` and CI's bare-install job):
+
+| Dependency | Used for                                                               |
+|------------|------------------------------------------------------------------------|
+| `linopy`   | Model, Variable, LinearExpression, add_variables/constraints/objective |
+| `xarray`   | DataArrays, Dataset, broadcasting, merge                               |
 
 -----
 
 ## 3. YAML Schema Reference
 
-A `linopy_yaml` YAML file has five top-level keys. All are optional except that a useful model will have at least `dimensions`, `parameters`, `variables`, and either `constraints` or `objectives`.
+A `linopy_yaml` YAML file has eight top-level keys. All are optional except that a useful model will have at least `dimensions`, `parameters`, `variables`, and either `constraints` or `objectives`.
 
 ```yaml
 dimensions:   ...   # master coordinate definitions
@@ -149,6 +161,9 @@ parameters:   ...   # named input data with declared shapes
 variables:    ...   # decision variables
 constraints:  ...   # linear constraints
 objectives:   ...   # objective function(s)
+expressions:  ...   # named sub-expressions      (§3.6, pure substitution)
+macros:       ...   # parameterised templates    (§3.7, pure substitution)
+piecewise:    ...   # λ-formulation blocks       (§3.8, schema-level expansion)
 ```
 
 ### 3.1 `dimensions`
@@ -370,7 +385,7 @@ objectives:
 
 Semantics:
 
-- Every call site is expanded into core AST before either backend sees the expression, so macros work identically on the eager and relational backends (and never force the backend router to fall back).
+- Every call site is expanded into core AST before either backend sees the expression, so macros work identically on both lanes. A macro can never widen or narrow what a lane accepts, because no lane ever sees one.
 - Formal names shadow model names inside the template; all other names resolve against the model namespace.
 - Arguments are expanded before substitution (call-by-value), so they may themselves use named expressions and macros.
 - Arity is checked at each call; cycles are reported with the call chain.
@@ -379,7 +394,7 @@ Semantics:
 
 -----
 
-### 3.6 `piecewise`
+### 3.8 `piecewise`
 
 N expressions jointly pinned to a breakpoint-indexed piecewise-linear curve,
 mirroring `linopy.Model.add_piecewise_formulation`:
@@ -929,7 +944,7 @@ Removed. There is no `register()` decorator and no helper registry: the built-in
 
 **Solver configuration.** Solver selection, options, and result parsing are deliberately thin: the native path exposes what the streaming sinks support (see [#28](https://github.com/FBumann/linopy-yaml/issues/28)); the compat shim leaves solving to linopy entirely.
 
-**SOS constraints.** Not exposed through the YAML interface. (Piecewise-linear relationships *are* — see §3.6 `piecewise` — via λ-formulation expansion; a native SOS2 stream is tracked in [#23](https://github.com/FBumann/linopy-yaml/issues/23).)
+**SOS constraints.** Not exposed through the YAML interface. (Piecewise-linear relationships *are* — see §3.8 `piecewise` — via λ-formulation expansion; a native SOS2 stream is tracked in [#23](https://github.com/FBumann/linopy-yaml/issues/23).)
 
 **Multiple objectives / multi-objective optimisation.** Only one objective is added to the linopy model. Defining multiple objectives in YAML is not an error, but only the last one takes effect.
 
@@ -949,7 +964,7 @@ Removed. There is no `register()` decorator and no helper registry: the built-in
 
 **Q1: Package name.** → `linopy-yaml` (Python import: `linopy_yaml`).
 
-**Q2: Sub-expressions.** → Deferred to v2. Not needed for v1.
+**Q2: Sub-expressions.** → Implemented, not deferred: the `expressions:` block (§3.6), with `macros:` (§3.7) covering the parameterised case. Both are pure AST substitution before dispatch, so neither backend ever sees one.
 
 **Q4: `bounds` as full expressions.** → Deferred. Interactions with linopy's internals make this complex.
 
@@ -972,7 +987,7 @@ Currently `.yaml` covers only the YAML-managed portion. A future version could i
 ## 12. Relational Backend
 
 *Status: phase 2 (in design/implementation). Measured results and
-operational findings live in [docs/benchmarks.md](../docs/benchmarks.md).*
+operational findings live in [docs/benchmarks.md](docs/benchmarks.md).*
 
 ### 12.1 Why
 
@@ -1109,7 +1124,7 @@ group_sum, roll, shift, comparison). Quadratic is out of scope.
 **The IR is affine-by-design — decided, not provisional.** No node introduces
 variables or constraints as a side effect of an expression. Formulations
 are model *transformations*, not expressions: piecewise enters via
-schema-level expansion (§3.6); SOS and indicator remain eager-only. If they ever come to the streaming path, they enter as a
+schema-level expansion (§3.8); SOS and indicator remain sink-bounded for both lanes. If they ever come to the streaming path, they enter as a
 distinct expansion stage that emits new variable/constraint declarations
 *before* affine compilation — never as expression nodes — and only once the
 sink has the corresponding native streams (§12.6). Reimplementing linopy's
@@ -1120,7 +1135,7 @@ Variable *types* are not formulations: binary/integer are supported (a
 integrality), which makes basic MILP relational-eligible. Semi-continuous is
 the remaining planned vtype extension.
 
-Piecewise is implemented as *schema-level expansion* (§3.6): a
+Piecewise is implemented as *schema-level expansion* (§3.8): a
 ``piecewise:`` block expands into ordinary variable/constraint declarations
 (λ convex-combination over a breakpoint dimension, binaries via vtype,
 adjacency via ``shift``) so **both backends receive identical affine
@@ -1179,8 +1194,9 @@ vtypes), affine rows, and COO coefficients — nothing else. SOS sets and
 indicator/general constraints have no stream. The documented upgrade path is
 five streams — ``cols`` (gaining a semi-continuous threshold), ``rows``,
 ``A``, ``sos_sets``, ``genconstr`` — recorded here so the gap is a stated
-design bound, not a surprise at implementation time. Anything a stream cannot carry routes to
-the eager builder (§12.8).
+design bound, not a surprise at implementation time. Anything a stream cannot
+carry is outside the language for *both* lanes — a load error naming the
+construct, never a redirection to the other lane (§12.8).
 
 ### 12.7 Phase gates
 
@@ -1194,19 +1210,36 @@ the eager builder (§12.8).
 4. In-memory executor for the same IR (folding in the CSR deferred-groupby
    prototype) so small models skip duckdb.
 
-### 12.8 Backend eligibility and automatic fallback
+### 12.8 The language boundary
 
-Backend selection is the router's job, not the user's. A schema is
-**relational-eligible** iff it lowers to the IR:
-``linopy_yaml.router.relational_eligibility(schema)`` returns ``None`` on
-success or the first lowering error — verbatim, with its context — as the
-ineligibility reason. ``select_backend(schema)`` wraps this in an explicit
-choice object.
+There is no router. There is no `relational_eligibility`, no
+`select_backend`, and no fallback — the entry point picks the lane, both
+lanes accept the same language, and a construct outside that language is a
+load error naming the construct and its rewrite (ARCHITECTURE.md hard rule
+3).
 
-Everything outside the streaming subset (custom helpers, ``**``,
-where-comparisons on dimensions — and formulations like SOS if they enter
-the YAML language) automatically routes to the eager builder with a stated
-reason. The relational backend is an
-optimization that must fall back; it is never a constraint on what the
-language can express. The differential oracle (same YAML through both
-backends must agree) is what keeps the fast lane honest.
+**The boundary is decided by attempting the lowering**, which is why it
+cannot drift from what the engine supports: `lower_program(schema)` either
+returns a `Program` or raises `RelationalBuildError` (public alias:
+`ly.LanguageError`) carrying the construct and its context. `ly.check()` is
+exactly parse → validate → expand → lower with no data bound, so a model
+repository can compile-check its math in CI.
+
+The four constructs this section used to list as *fallback triggers* are all
+settled, and none of them falls back:
+
+| Construct | Status |
+|---|---|
+| custom Python helpers | gone — the helper set is closed (§7.5); compositions are `macros:` (§3.7), unsayable math is a declared `escape:` island |
+| `**` | rejected at load time in both lanes (§5.2) |
+| where-comparisons on dimensions | *in* the language, both lanes — `DimCmp` (§12.4) |
+| SOS / indicator | sink-bounded (§12.6), not lane-bounded: no sink carries the stream, so neither lane has them ([#23](https://github.com/FBumann/linopy-yaml/issues/23)) |
+
+That last row is the distinction the old text got wrong. A construct linopy
+has and the sinks do not is not a reason to route somewhere — it is a
+capability neither lane offers, and the honest response is a load error, not
+a silent change of engine.
+
+The differential oracle (same YAML + data through both lanes must agree) is
+therefore testing *semantics*, not coverage: it can assume both lanes accept
+the input, because a construct one lane rejects is rejected by both.
