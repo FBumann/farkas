@@ -113,7 +113,7 @@ def _descend(node: ArithNode, recurse: Callable[[ArithNode], ArithNode]) -> Arit
     the other four cases is how the two drift apart.
     """
     if isinstance(node, NumberNode | NameNode | VarNode | ParamNode | DimRefNode):
-        return node  # leaves — resolved or not, they have no children
+        return node
     if isinstance(node, UnaryOpNode):
         return UnaryOpNode(node.op, recurse(node.operand))
     if isinstance(node, BinOpNode):

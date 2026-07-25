@@ -1,50 +1,17 @@
 """Name resolution — the pass that makes the core AST fully typed.
 
 Parsers emit ``NameNode``: a token, not yet a meaning. This module rewrites
-every one of them into a typed node — :class:`~linopy_yaml.expression_parser.VarNode`,
-:class:`~linopy_yaml.expression_parser.ParamNode`, or on the where side a
-``ParamCmp`` / ``DimCmp`` — so that **the core AST reaching either backend
-contains no unresolved names**.
+each one into a typed node (``VarNode`` / ``ParamNode`` / ``DimRefNode``, and
+``ParamCmp`` / ``DimCmp`` / ``ParamDefined`` / ``DimDefined`` on the where
+side), so the AST reaching either backend holds no unresolved names.
 
-Why this is a pass and not a backend detail
--------------------------------------------
+Doing this once, here, is what makes scoping identical across the lanes by
+construction rather than by test. When each backend resolved for itself they
+disagreed three ways, every one of which built a model on one lane and raised
+on the other — see SPEC §5.3 for the list and the rules that replace it.
 
-Resolution used to happen at evaluation time, independently in each lane: the
-eager builder looked a name up in the ``linopy.Model``'s variable store and
-then in the ``xr.Dataset``; the relational lane looked it up in the schema.
-Two implementations of one language rule is a divergence surface, and it had
-already diverged in three places:
-
-- an unknown name in a ``where`` was a scalar-``False`` mask in the eager lane
-  (a model that builds, solves, and is silently empty) and a load error in the
-  relational one;
-- ``where: "p_max > other_param"`` compared two parameters in the eager lane
-  and compared ``p_max`` against the *string* ``'other_param'`` in the
-  relational one;
-- a ``where`` name that was neither parameter nor dimension resolved to
-  ``False`` rather than being rejected.
-
-With resolution as a pass, those are not bugs to keep fixed in two places —
-they are unrepresentable. A backend that receives a ``ParamNode`` cannot
-disagree about what it refers to, because the disagreement was resolved before
-dispatch (ARCHITECTURE.md hard rule 1: the core AST is the whole contract).
-
-One flat namespace
-------------------
-
-Variables, parameters, dimensions, named expressions, macros and built-in
-helpers share **one** namespace, and a collision is a load error
-(``schema.py``). The alternative — resolving in a fixed order and letting the
-winner shadow the loser — makes a file's meaning depend on which kinds of
-declaration happen to exist, which is the opposite of the fail-loud contract:
-adding a parameter named ``snapshot`` would silently change what an existing
-``where: "snapshot > 0"`` means.
-
-Macro formals are the one legitimate scope. They shadow model names inside
-the template body (call-by-value expansion avoids capture), but they may not
-collide with a **declared dimension** — a formal named ``snapshot`` inside a
-template that also writes ``over=snapshot`` would be ambiguous with no way to
-say which was meant.
+The namespace is flat and collisions are load errors (``schema.py``); macro
+formals are the one scope, and may not collide with a declared dimension.
 """
 
 from __future__ import annotations
@@ -84,9 +51,7 @@ if TYPE_CHECKING:
 
     from linopy_yaml.schema import MathSchema
 
-#: helper kwargs whose *value* names a dimension — ``sum(x, over=generator)``.
-#: The key form (``roll(x, snapshot=1)``) is handled separately: the dimension
-#: is the key, so there is no value node to resolve.
+#: helper kwargs whose *value* names a dimension — ``sum(x, over=generator)``
 _DIM_VALUE_KWARGS: dict[str, tuple[str, ...]] = {'sum': ('over',), 'group_sum': ('into',)}
 
 
@@ -216,7 +181,7 @@ def _resolve_arith(node: ArithNode, ns: Namespace, context: str, errors: list[st
         return node
 
     if isinstance(node, (VarNode, ParamNode, DimRefNode)):
-        return node  # already resolved (idempotent — piecewise re-resolves)
+        return node  # idempotent: piecewise re-resolves expanded links
 
     if isinstance(node, NameNode):
         match ns.kind(node.name):
@@ -257,8 +222,7 @@ def _resolve_arith(node: ArithNode, ns: Namespace, context: str, errors: list[st
         kwargs: dict[str, ArithNode] = {}
         dim_valued = _DIM_VALUE_KWARGS.get(node.name, ())
         for key, value in node.kwargs.items():
-            # roll(x, snapshot=1) puts the dimension in the *key*, so there is
-            # no value node to type — check the key names a declared dim
+            # roll(x, snapshot=1): the dim is the key, so there is no node to type
             if node.name in _DIM_KEY_HELPERS and key not in ns.dimensions:
                 errors.append(_undeclared_dim(context, node.name, f'{key}=...', key, ns))
             kwargs[key] = (
@@ -353,10 +317,8 @@ def _resolve_where(node: WhereNode, ns: Namespace, context: str, errors: list[st
 
     if isinstance(node, Comparison):
         value = node.value
-        # A bare-name right-hand side is ambiguous by construction: the where
-        # grammar has no string quoting. Resolve it the same way as any other
-        # name, so the meaning cannot depend on which parameters happen to be
-        # declared.
+        # The grammar has no string quoting, so a bare-name RHS is ambiguous;
+        # resolving it like any other name keeps the meaning declaration-independent.
         if isinstance(value, str) and ns.kind(value) == 'parameter':
             errors.append(
                 f"{context}: '{node.name} {node.op} {value}' compares two "

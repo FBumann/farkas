@@ -82,7 +82,6 @@ def build_model(
     This mutates *model* in-place, adding variables, constraints, and
     objectives as declared in *schema*.
     """
-    # variables already on the model widen the namespace (compat.extend)
     ctx = EvalContext(model, dataset, master_coords, schema, Namespace.of(schema, list(model.variables)))
     _build_variables(ctx)
     _build_constraints(ctx)
@@ -222,8 +221,6 @@ def _eval_ast(
         return ctx.dataset[node.name]
 
     if isinstance(node, (NameNode, DimRefNode)):
-        # A NameNode here means resolution was skipped; a bare DimRefNode
-        # means a dimension was used as a value, which resolution rejects.
         msg = (
             f'{type(node).__name__}({node.name!r}) reached the evaluator. '
             f'Expressions must go through resolution.expression_of() first '
@@ -266,7 +263,6 @@ def _eval_ast(
         helper = _HELPERS[node.name]
         # Evaluate positional args
         args = [_eval_ast(a, ctx) for a in node.args]
-        # Dimension arguments pass through as strings; everything else evaluates
         kwargs = {}
         for k, v in node.kwargs.items():
             if isinstance(v, DimRefNode):
@@ -421,8 +417,6 @@ def _eval_node(
         return xr.DataArray(node.value)
 
     if isinstance(node, (ExistenceCheck, Comparison)):
-        # Unresolved nodes never reach evaluation — resolution.py rewrites
-        # them before either backend sees the AST (hard rule 1).
         msg = (
             f'{type(node).__name__} reached the evaluator unresolved. '
             f'Where strings must go through resolution.resolve_where() first.'

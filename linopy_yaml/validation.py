@@ -88,16 +88,13 @@ def validate_expressions(
     for mname, macro in schema.macros.items():
         context = f"Macro '{mname}'"
         try:
-            # parse_template already rejected a comparison, so this is an ArithNode
             body_ast = expand(parse_template(mname, macro, context), schema, context)
             assert not isinstance(body_ast, CompareNode)
         except ValueError as e:
             errors.append(str(e) if str(e).startswith(context) else f'{context}: {e}')
             continue
-        # Formals are the one legitimate scope. They may shadow model names
-        # (call-by-value expansion avoids capture) but not a declared
-        # dimension — `over=snapshot` inside a template with a formal named
-        # `snapshot` has no way to say which was meant.
+        # Formals may shadow model names but not a declared dimension:
+        # `over=snapshot` under a formal `snapshot` cannot say which it means.
         formals = {*macro.args, *macro.kwargs}
         errors.extend(
             f"{context}: formal '{f}' collides with declared dimension '{f}'. "
@@ -227,8 +224,7 @@ def _check_template_names(
             errors.append(f'{context}: {unknown_helper_message(node.name)}')
         for arg in node.args:
             _check_template_names(arg, template, context, ns, formals, errors)
-        # dimension arguments must name a declared dim or a formal that will
-        # be bound to one at the call site (ROADMAP 5c, for templates)
+        # a formal may be bound to a dimension at the call site (ROADMAP 5c)
         known_dims = ns.dimensions | formals
         for kwarg in _DIM_VALUE_KWARGS.get(node.name, ()):
             value = node.kwargs.get(kwarg)

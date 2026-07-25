@@ -217,11 +217,8 @@ class MathSchema(BaseModel):
     def _validate_references(self) -> MathSchema:
         errors = []
 
-        # One flat namespace. Resolving in a fixed order and letting the winner
-        # shadow the loser would make a file's meaning depend on which kinds of
-        # declaration happen to exist — adding a parameter named `snapshot`
-        # would silently change what an existing `where: "snapshot > 0"` means.
-        # See resolution.py.
+        # One flat namespace: shadowing would let a new declaration silently
+        # change what an existing expression means. See resolution.py.
         kinds: list[tuple[str, Iterable[str]]] = [
             ('dimension', self.dimensions),
             ('parameter', self.parameters),
@@ -261,9 +258,8 @@ class MathSchema(BaseModel):
             if d not in self.dimensions
         )
 
-        # Bounds are a narrower language than expressions: a literal number or
-        # the name of a declared parameter, nothing else. It *looks* like the
-        # expression language, so say what it actually accepts.
+        # Bounds look like the expression language but are not it, so the
+        # error says what they actually accept.
         for vname, vdef in self.variables.items():
             for side in ('lower', 'upper'):
                 val = getattr(vdef.bounds, side)

@@ -158,7 +158,7 @@ def _expr_dims(schema: MathSchema, text: str, ctx: str) -> frozenset[str]:
     resolved = resolve_expression(ast, Namespace.of(schema), ctx, errors)
     if resolved is None:
         raise PiecewiseExpansionError('\n'.join(errors))
-    assert not isinstance(resolved, CompareNode)  # rejected above
+    assert not isinstance(resolved, CompareNode)
     try:
         return _dims_of(_lower_expr(resolved, schema, ctx), schema)
     except RelationalBuildError as exc:
