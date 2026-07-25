@@ -696,12 +696,18 @@ value       ::= NUMBER | NAME_OR_STRING
 
 ### 6.2 Semantics
 
-**Plain name** (`"p_max"`): resolves to a parameter or a dimension (§5.3). A
-parameter is True wherever it is defined (non-null) and finite — equivalent to
-`p_max.notnull() & (p_max != inf) & (p_max != -inf)`. A dimension is True over
-its whole index. **An undeclared name is a load error**, in both lanes: it
-used to evaluate to scalar False, which built a model that solved and was
-silently empty.
+**Plain name** (`"p_max"`): must name a **parameter**, and is True wherever
+that parameter is defined (non-null) and finite — equivalent to
+`p_max.notnull() & (p_max != inf) & (p_max != -inf)`.
+
+A bare **dimension** name is a load error: it would be true at every
+coordinate, so the mask has no effect, and a mask that reads as a condition
+but is not one is worse than no mask. Compare it instead —
+`where: "snapshot > 0"` (§5.3, dimension comparisons are in the language).
+
+An **undeclared** name is also a load error, in both lanes: it used to
+evaluate to scalar False, which built a model that solved and was silently
+empty.
 
 **Comparison** (`"p_max > 0"`): Evaluates the comparison element-wise. NaN values propagate as False. The right-hand side is a literal — a number, or a
 bare name treated as a string coordinate. Comparing two parameters is not in

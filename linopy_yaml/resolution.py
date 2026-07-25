@@ -2,7 +2,7 @@
 
 Parsers emit ``NameNode``: a token, not yet a meaning. This module rewrites
 each one into a typed node (``VarNode`` / ``ParamNode`` / ``DimRefNode``, and
-``ParamCmp`` / ``DimCmp`` / ``ParamDefined`` / ``DimDefined`` on the where
+``ParamCmp`` / ``DimCmp`` / ``ParamDefined`` on the where
 side), so the AST reaching either backend holds no unresolved names.
 
 Doing this once, here, is what makes scoping identical across the lanes by
@@ -37,7 +37,6 @@ from linopy_yaml.where_parser import (
     BoolLiteral,
     Comparison,
     DimCmp,
-    DimDefined,
     ExistenceCheck,
     NotNode,
     OrNode,
@@ -295,7 +294,7 @@ def _resolve_where(node: WhereNode, ns: Namespace, context: str, errors: list[st
     if isinstance(node, BoolLiteral):
         return node
 
-    if isinstance(node, (ParamCmp, DimCmp, ParamDefined, DimDefined)):
+    if isinstance(node, (ParamCmp, DimCmp, ParamDefined)):
         return node  # already resolved
 
     if isinstance(node, ExistenceCheck):
@@ -303,7 +302,12 @@ def _resolve_where(node: WhereNode, ns: Namespace, context: str, errors: list[st
             case 'parameter':
                 return ParamDefined(node.name)
             case 'dimension':
-                return DimDefined(node.name)
+                errors.append(
+                    f"{context}: '{node.name}' is a dimension, and a bare dimension "
+                    f'name is true at every coordinate — the mask has no effect. '
+                    f'Remove it, or compare it: where: "{node.name} > 0".'
+                )
+                return node
             case 'variable':
                 errors.append(
                     f"{context}: where references variable '{node.name}'. A where "
