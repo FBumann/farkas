@@ -66,7 +66,9 @@ def lower_program(schema: MathSchema) -> ir.Program:
 
     schema = expand_piecewise(schema)
     ns = Namespace.of(schema)
-    parameters = tuple(ir.ParameterDecl(name, tuple(pdef.dims)) for name, pdef in schema.parameters.items())
+    parameters = tuple(
+        ir.ParameterDecl(name, tuple(pdef.dims), pdef.values_in) for name, pdef in schema.parameters.items()
+    )
 
     variables = []
     for vname, vdef in schema.variables.items():

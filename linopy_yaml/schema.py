@@ -67,12 +67,21 @@ class DimensionDef(_Strict):
 
 
 class ParameterDef(_Strict):
-    """A declared parameter with dims and dtype."""
+    """A declared parameter with dims, dtype, and optionally a value domain.
+
+    ``dims`` types the parameter's *index*; ``values_in`` types its *values*,
+    naming the dimension whose coordinates they are. Only a mapping parameter
+    needs it, and it needs it because ``group_sum`` promotes the value column
+    into an index: without the declaration those labels reach the join having
+    passed no coordinate check at all, and one typo silently drops a term
+    (§4.4 step 4 validates coordinates in the index, and only there).
+    """
 
     _label: ClassVar[str] = 'a parameter declaration'
 
     dims: list[str]
     dtype: str = 'float'
+    values_in: str | None = None
 
     @field_validator('dtype')
     @classmethod
@@ -313,6 +322,20 @@ class MathSchema(_Strict):
             for d in dims_of(item)
             if d not in self.dimensions
         )
+        for name, pdef in self.parameters.items():
+            if pdef.values_in is None:
+                continue
+            if pdef.values_in not in self.dimensions:
+                errors.append(
+                    f"Parameter '{name}' declares values_in: '{pdef.values_in}', which is not a "
+                    f"declared dimension. Declare it under 'dimensions:'."
+                )
+            elif pdef.values_in in pdef.dims:
+                errors.append(
+                    f"Parameter '{name}' declares values_in: '{pdef.values_in}', which is also one "
+                    f'of its own dims. A mapping points at a dimension other than the one it is '
+                    f'indexed by — otherwise it maps every coordinate to itself.'
+                )
 
         # Bounds look like the expression language but are not it, so the
         # error says what they actually accept.

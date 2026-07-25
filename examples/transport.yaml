@@ -16,6 +16,7 @@ parameters:
   gen_bus:
     dims: [generator]
     dtype: str
+    values_in: bus
   cap:
     dims: [line]
   neg_cap:
@@ -23,9 +24,11 @@ parameters:
   line_from:
     dims: [line]
     dtype: str
+    values_in: bus
   line_to:
     dims: [line]
     dtype: str
+    values_in: bus
   load:
     dims: [snapshot, bus]
 

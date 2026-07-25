@@ -246,6 +246,11 @@ parameters:
 
   load:
     dims: [snapshot]
+
+  gen_bus:                    # a mapping parameter
+    dims: [generator]
+    dtype: str
+    values_in: bus            # its values are `bus` coordinates
 ```
 
 **Fields:**
@@ -254,11 +259,19 @@ parameters:
 |--------|-----------|----------|-----------------------------------------------------------------------------------------------------------|
 | `dims` | list[str] | required | Dimensions this parameter is indexed over. Must all be declared in `dimensions`. Empty list means scalar. |
 | `dtype` | str      | `float`  | Expected data type. Used for coercion after loading.                                                      |
+| `values_in` | str \| null | `null` | The dimension this parameter's **values** are coordinates of. Required on a `group_sum` mapping (§7.4).  |
 
 **Rules:**
 
 - Every declared parameter must be provided in `data=` at load time.
 - Parameters cannot have dims that aren't in `dimensions`.
+- `values_in` must name a declared dimension, and not one of the parameter's
+  own `dims` — a mapping points somewhere other than where it is indexed.
+
+`dims` types the **index**; `values_in` types the **values**. Only a mapping
+needs the second, and it needs it because `group_sum` promotes the value
+column into an index: §4.4 step 4 checks coordinates that arrive in the
+index, and without a declaration these never pass through it (§4.4 step 6).
 
 ### 3.3 `variables`
 
@@ -452,6 +465,7 @@ piecewise:
       - [fuel, fuel_bp, "<="]       # optional sign: bounded by the curve
       - [heat, heat_bp]
     convex: false                   # true: pure-LP convex hull, no binaries
+    active: on_off                  # optional: gate the whole formulation
 ```
 
 Each link is `[expression, values, sign?]`: *expression* is any affine
@@ -460,6 +474,22 @@ parameter carrying the `over` dim (this link's breakpoint coordinates —
 because they are parameters, curves may vary along other dims, e.g.
 per-generator), and *sign* (`<=`/`>=`, at most one, only with exactly two
 links) bounds the link instead of pinning it.
+
+**Fields:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `over` | str | required | The breakpoint dimension. |
+| `links` | list | required | `[expression, values, sign?]` per link, at least two. |
+| `convex` | bool | `false` | `true` drops the segment binaries for a pure-LP hull. |
+| `active` | str \| null | `null` | Gating expression: it replaces the `1` on the right of the convexity row (and of the segment-pick row), so the whole formulation is pinned to zero when the gate is. |
+
+`active` is what makes a curve switchable — a unit that is either off (every
+λ zero, so every linked expression is zero) or on its curve. The gate must be
+an affine expression that does **not** carry the breakpoint dim, and when it
+names a variable that variable must be binary. It is rejected with
+`convex: true`: the convex hull has no binaries by construction, and a gate
+that can take a fractional value would scale the curve rather than switch it.
 
 Blocks are **expanded before building** (`linopy_yaml.piecewise`) into plain
 variables and constraints via the λ convex-combination method — λ weights in
@@ -553,9 +583,24 @@ Validation happens in this order at load time. Each step fails immediately if it
 - Keys in `data=` that are not declared parameters raise an error. The YAML is the source of truth.
 - Error: `"The following data keys are not declared as parameters: {names}. Declare them under 'parameters:' in the YAML or remove them from data=."`
 
+**Step 6: Value domains**
+
+- For a parameter declaring `values_in: {dim}` (§3.2), every non-null *value*
+  must be a coordinate of `{dim}`. This is step 4 applied to the value column,
+  and it exists because `group_sum` turns that column into an index — the join
+  against the target frame is an inner join, so an unmatched label contributes
+  nothing and reports nothing. A mistyped bus name silently drops a generator
+  out of its balance and the model still solves.
+- Error: `"Parameter '{name}' declares values_in: '{dim}', but has values that are not '{dim}' coordinates: {unknown}.\nMaster '{dim}' coords: {master}"`
+- Both lanes enforce it. The relational lane runs it after the dim tables
+  exist, since a derived dimension's coordinates are only known then.
+
 ### 4.5 What the loader does NOT validate
 
 - Whether the data's values are sensible (no range checks, no NaN warnings).
+  The one exception is a declared `values_in` domain (step 6) — and it is an
+  exception because those values are not really values, they are index labels
+  wearing a value column.
 - Whether a parameter is actually *used* in the math (declared but unused is fine).
 - Whether coordinate values in the data are a *complete* cover of the master coordinate. Missing values become NaN in the DataArray, which propagates into the where mask via `.notnull()` checks. This is intentional — sparse data produces sparse variables and constraints.
 
@@ -731,7 +776,7 @@ The type of an expression is a set of dim names:
 | `-x`, `+x` | `dims(x)` | |
 | `a + b`, `a * b`, `a / b` | `dims(a) ∪ dims(b)` | |
 | `sum(x, over=d)` | `dims(x) − {d}` | if `d ∉ dims(x)` |
-| `group_sum(x, m, into=g)` | `(dims(x) − dims(m)) ∪ {g}` | unless `dims(m) ⊆ dims(x)` |
+| `group_sum(x, m, into=g)` | `(dims(x) − dims(m)) ∪ {g}` | unless `dims(m) ⊆ dims(x)` and `m` declares `values_in: g` |
 | `roll(x, d=n)`, `shift(x, d=n)` | `dims(x)` | if `d ∉ dims(x)` |
 
 Binary operators **union**. An outer product is legitimate when the frame
@@ -908,24 +953,45 @@ mapping's dimension with a group dimension. This is the membership-sum needed
 for network models: "sum the generators at each bus".
 
 ```yaml
-# gen_bus: dims [generator], dtype str — maps each generator to its bus
+parameters:
+  gen_bus:                    # maps each generator to its bus
+    dims: [generator]
+    dtype: str
+    values_in: bus
+
+# ...
 expression: group_sum(p, gen_bus, into=bus) == load
 ```
 
 | Argument  | Type                  | Description                                          |
 |-----------|-----------------------|------------------------------------------------------|
 | `array`   | arithmetic expression | The expression to sum. Must carry the mapping's dim. |
-| `mapping` | parameter name        | 1-D parameter whose values are the group labels.     |
-| `into`    | dimension name        | The resulting group dimension.                       |
+| `mapping` | parameter name        | 1-D parameter whose values are the group labels. Must declare `values_in` (§3.2). |
+| `into`    | dimension name        | The resulting group dimension. Must equal the mapping's `values_in`. |
 
 The mapping's dimension is summed out; the result has dimension `into` with
 the mapping's values as coordinates. On the eager backend this is linopy's
 `.groupby()`; on the relational backend it is a join + GROUP BY.
 
-Note: for the eager backend, every value of `into` that appears in the
-constraint's `foreach` should be covered by the mapping — groups absent from
-the mapping produce no output rows. The relational backend treats absent
-groups as zero contribution.
+**The mapping must declare `values_in`, and it must agree with `into`.** The
+declaration is what subjects the mapping's values to the coordinate check
+(§4.4 step 6); the agreement is redundant by design, so the call site and the
+declaration have to say the same thing for either to be believed. Omitting
+the declaration is a load error, not a default:
+
+```
+Constraint 'balance': group_sum() mapping 'gen_bus' does not declare which
+dimension its values belong to. Add `values_in: bus` to its declaration, so a
+label that is not a 'bus' coordinate is caught when the data is bound rather
+than silently dropping its term.
+```
+
+Note: a *group* with no members is a different case from a label with no
+group, and it is not an error in either lane — for the eager backend a group
+absent from the mapping produces no output row, and the relational backend
+treats it as a zero contribution. Where that matters (a bus in `foreach` that
+no generator sits on), give the constraint the row it needs from another term
+or a `where` mask.
 
 ### 7.5 The helper set is closed
 
@@ -1270,7 +1336,19 @@ Masks are **row absence**: a variable excluded by `where` simply has no row.
 No NaN sentinels, no `-1` labels. Broadcasting is a join; `sum(over=dim)`
 drops coordinate columns (final canonicalisation groups by `(row, col)` and
 sums coefficients); `group_sum` joins a mapping parameter and replaces the
-source dim with the target dim. Labels are dense `0..n-1` by construction
+source dim with the target dim.
+
+**Canonicalisation keeps exact zeros.** A `(row, col)` group summing to zero
+stays in `A` and reaches the sink as `+0 x7`. This is a decision, not an
+oversight: a structural zero is a column the row genuinely mentions, dropping
+it changes the sparsity pattern the solver sees, and "the coefficient
+happened to cancel at these data values" is not a property of the model. The
+consequence to know about is that **a mask spelled as multiplication by a 0/1
+indicator parameter does not shrink the term table** — it keeps every masked
+row at coefficient 0. Masking is row absence for a reason; use `where`, and
+if a filter is wanted inside an expression, that is a language question
+(ROADMAP, the `where`-in-expression cell) rather than something to buy by
+making canonicalisation lossy. Labels are dense `0..n-1` by construction
 (partition-wise `ROW_NUMBER` over the masked coord product), so `var_label`
 **is** the solver column index and `row` the solver row index — no remapping.
 
@@ -1279,8 +1357,10 @@ source dim with the target dim. Labels are dense `0..n-1` by construction
 Declarations (frozen dataclasses in `linopy_yaml/relational/ir.py`):
 
 - `Program(parameters, variables, constraints, objective)`
-- `ParameterDecl(name, dims)` — table shape only; actual data is bound at
-  execution time via a source registry (`name → parquet path | DataFrame`)
+- `ParameterDecl(name, dims, values_in)` — table shape only; actual data is
+  bound at execution time via a source registry (`name → parquet path |
+  DataFrame`). `values_in` carries the declared value domain (§3.2), checked
+  against the dim table once the data is bound
 - `VariableDecl(name, dims, where, lower, upper)` — bounds are constant
   expressions (`Const` / `Param` arithmetic)
 - `ConstraintDecl(name, dims, lhs, sense, rhs)` — `sense ∈ {==, <=, >=}`;

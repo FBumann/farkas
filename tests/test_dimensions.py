@@ -24,7 +24,7 @@ BASE = {
     'parameters': {
         'p_max': {'dims': ['generator']},
         'cost': {'dims': ['generator']},
-        'gen_bus': {'dims': ['generator'], 'dtype': 'str'},
+        'gen_bus': {'dims': ['generator'], 'dtype': 'str', 'values_in': 'bus'},
         'load': {'dims': ['snapshot', 'bus']},
     },
     'variables': {'p': {'foreach': ['snapshot', 'generator'], 'bounds': {'lower': 0, 'upper': 'p_max'}}},

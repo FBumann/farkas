@@ -65,18 +65,27 @@ mechanically, so a verdict is derived rather than argued.
 | `select_from_lookup_arrays` | — | the `group_sum` join, no aggregate | pointwise | **(a)** — Track 1 item 2 |
 | `get_val_at_index(d=i)` | — | dim table only | coordinate-space | **(a)** — Track 1 item 3 |
 | `sum_next_n(x, d, N)` | — | range join on `ord` | bounded-halo | **(a)** — Track 1 item 4 |
-| `any(param, over=d)` in `where` | implicit | `bool_or` aggregate | pointwise | **have** (as the default reduction); `all` is item 6 |
+| `any(param, over=d)` in `where` | — | `bool_or` aggregate | pointwise | **(a)** — Track 1 item 6, with `all` |
 | `group_datetime(x, t, period)` | — | `group_sum` along a derived mapping | pointwise | **(b)** — compute the mapping in data prep, then `group_sum`. No primitive |
 | `x ** y` | refused | — | — | **(b)/(c)** — degree 1 with a variable base; data prep otherwise |
 | `order:` on expressions | — | — | — | **unnecessary by construction** — our `expressions:` substitute, so no evaluation order exists to declare |
-| `where(x, cond)` in an expression | — | ? | ? | **unjudged** — may reduce to equation-level `where`, may be a real gap |
+| `where(x, cond)` in an expression | — | semi-join on the term table | pointwise | **(a)** — see below; *not* (b) |
 
-Two of those verdicts are ones a prose comparison does not produce:
+One of those verdicts is one a prose comparison does not produce:
+**unnecessary by construction** — distinct from missing; the concept has
+nowhere to attach in our design, so no amount of scope would add it.
 
-- **unnecessary by construction** — distinct from missing; the concept has
-  nowhere to attach in our design, so no amount of scope would add it;
-- **unjudged** — a live cell, kept visible in the table rather than
-  resolved by omission.
+**The last row, resolved.** `where(x, cond)` inside an expression used to sit
+in the table as *unjudged*. The tempting resolution is (b): multiply by a 0/1
+indicator parameter, `sum(x * ind, over=g)`, which is degree 1 and needs no
+primitive. That is wrong on cost. The equivalence only holds if
+canonicalisation drops exact zeros, and it deliberately does not (SPEC §12.3)
+— the filter would remove rows, the multiplication keeps them at coefficient
+0, and every masked reduction silently inflates the term table on the one
+axis this project leads on. The honest lowering is a **semi-join on the term
+table**, the same shape masks already have (§12.3, "masks are row absence"):
+pointwise, exact, and free. So it scores (a) — a candidate primitive to
+schedule, not data prep already available.
 
 **The second axis.** Expressiveness is not the axis we lead on. Scale —
 declarative math at 10⁸ variables under a fixed memory budget — is
@@ -120,7 +129,7 @@ re-derived, not inherited.
   (highspy `passHessian`, LP/MPS quadratic sections), a data-time convexity
   guard, and differential coverage of a new problem class.
 
-**What would move it.** All four, not any one:
+**What would move it.** All three, not any one:
 
 1. A model where the *approximation* is the problem, not the formulation —
    in practice that means **bilinear terms across dimensions**, where PWL is
@@ -128,8 +137,20 @@ re-derived, not inherited.
 2. Sinks carry a quadratic stream.
 3. A data-time convexity guard exists (precedent: the piecewise curvature
    guard).
-4. The oracle covers it — linopy's `QuadraticExpression` does, so
-   differential testing stays possible.
+
+*Note, not a condition: the oracle covers it today* — linopy's
+`QuadraticExpression` means differential testing would stay possible. That is
+worth knowing and is not a gate. Making it one would put linopy's feature set
+back in the position this package exists to leave: a permanent upper bound on
+what our language may contain, in a project that does not depend on linopy at
+runtime. It would also contradict §12.8, which settles that the differential
+oracle tests *semantics, not coverage*, and that a construct linopy has and
+our sinks do not is a capability question rather than a routing one. Every
+case on this page is already decided by condition 2 — the SOS row below is
+exactly the shape where the oracle exists and the sink does not, and the sink
+wins. If a primitive ever clears the ceiling and linopy cannot express it, the
+answer is a second oracle form (a dense brute-force reference builder, or an
+LP round-trip through an independent parser), not a smaller language.
 
 **An escape does not lift this one.** `escape:` islands ([#38](https://github.com/FBumann/linopy-yaml/issues/38)) return affine COO
 rows into the same sink, and no sink carries a quadratic stream — so unlike
@@ -160,14 +181,29 @@ SPEC entry.
 | 3 | **Coordinate helpers in `where`** | `index(dim, i)`, negative `i` for from-end | "first/last snapshot" without hardcoding a label; boundary masks on datetime dims | coordinate-space | dim table only — never touches data | planned; blocks 4 |
 | 4 | **Window sum** | `sum_next_n(x, over=dim, n=N)` | rolling-horizon limits, demand-side response, reserve horizons, min up/down time | bounded-halo | range join, same class as `roll`/`shift` | planned; needs 3 for its boundary mask |
 | 5 | **Component-aware `where`** | `defined(v)` over variables/expressions | masks compose across components instead of being re-derived from parameters at each use site (and silently drifting) | pointwise | existence semi-join on the component's table | needs design |
-| 6 | **`all`-reduction in `where`** | `all(x, over=dim)` | today an out-of-`foreach` mask dim is always reduced with `any`; `all` is unreachable | pointwise | `bool_and` aggregate | small |
+| 6 | **Reductions in `where`** | `any(x, over=dim)`, `all(x, over=dim)` | an out-of-`foreach` mask dim is a load error (#68), so a mask that legitimately reduces one has no spelling at all | pointwise | `bool_or` / `bool_and` aggregate | small; the backfill for a removed capability |
 | 7 | Bounds as expressions | — | signs, bidirectional flows, component libraries | pointwise | — | #31 |
 | 8 | Namespacing / qualified names | — | component libraries | n/a | n/a | #29 |
 | 9 | Compose-then-build (schema merge) | — | one lower/stream pass over merged libraries | n/a | n/a | #30 |
+| 10 | **Filter in an expression** | `where(x, cond)` | masking one term of an equation without masking the row, at no cost in terms | pointwise | semi-join on the term table | needs design — surface only |
 
 Items 1–4 are one coherent piece of work — **indexed access plus the masks
 that make it usable** — and are the difference between "dispatch and
 balances" and "network and multi-period math".
+
+Item 6 is not a new capability so much as a restored one. #68 made an
+out-of-`foreach` mask dim a load error because the implicit `any` reduction
+failed *open* — one true value anywhere included every coordinate. That was
+the right call and the replacement was never shipped, so both reductions are
+missing today and the table row above scores `any` accordingly.
+
+**Item 2's prerequisite is already in.** A gather reads coordinates out of a
+mapping's *value* column, which is exactly where `group_sum` was silently
+losing terms: the join is inner, so a label that is not a coordinate of the
+target dim contributed nothing and said nothing. Mapping parameters now
+declare `values_in:` (SPEC §3.2) and their values are checked against the dim
+at load time in both lanes (SPEC §4.4 step 6). `at(x, over=d, index=map)`
+inherits the check rather than reopening the hole.
 
 **Surface-syntax note.** Calliope spells 1 and 2 as `x[dim=value]` /
 `x[dim=$lookup]`. We deliberately do not: a dimension in a *kwarg key*
@@ -282,4 +318,4 @@ piecewise as N links with per-link signs, convex mode and `active` gating;
 non-cyclic `shift`; load-time validation of every expression, where string
 and *uncalled* macro template.
 
-**Behind:** everything in Track 1 items 1–6, plus Tracks 2 and 3.
+**Behind:** everything in Track 1 items 1–6 and 10, plus Tracks 2 and 3.

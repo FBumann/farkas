@@ -165,10 +165,10 @@ def transport_program() -> Program:
         parameters=(
             ParameterDecl('p_max', ('generator',)),
             ParameterDecl('cost', ('generator',)),
-            ParameterDecl('gen_bus', ('generator',)),
+            ParameterDecl('gen_bus', ('generator',), values_in='bus'),
             ParameterDecl('cap', ('line',)),
-            ParameterDecl('line_from', ('line',)),
-            ParameterDecl('line_to', ('line',)),
+            ParameterDecl('line_from', ('line',), values_in='bus'),
+            ParameterDecl('line_to', ('line',), values_in='bus'),
             ParameterDecl('load', ('snapshot', 'bus')),
         ),
         variables=(

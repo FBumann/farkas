@@ -16,6 +16,7 @@ The rules::
     sum(x, over=d)          -> x's dims without d;  error if x has no d
     group_sum(x, m, into=g) -> x's dims, minus the mapping's, plus g;
                                error unless the mapping's dims are all in x's
+                               and it declares ``values_in: g``
     roll/shift(x, d=n)      -> same dims as x;      error if x has no d
 
 and at the declaration level::
@@ -155,12 +156,28 @@ def _dims_call(
         into = node.kwargs['into']
         assert isinstance(mapping, ParamNode)
         assert isinstance(into, DimRefNode)
-        mdims = frozenset(schema.parameters[mapping.name].dims)
+        mdecl = schema.parameters[mapping.name]
+        mdims = frozenset(mdecl.dims)
         if not mdims <= inner:
             raise DimError(
                 f"{context}: group_sum() mapping '{mapping.name}' has dims "
                 f'{sorted(mdims)}, which the expression (dims {sorted(inner)}) does '
                 f'not carry.'
+            )
+        # The mapping's *values* become the result's coordinates, so they are
+        # index data and have to be typed as such — see ParameterDef.values_in.
+        if mdecl.values_in is None:
+            raise DimError(
+                f"{context}: group_sum() mapping '{mapping.name}' does not declare which "
+                f'dimension its values belong to. Add `values_in: {into.name}` to its '
+                f"declaration, so a label that is not a '{into.name}' coordinate is caught "
+                f'when the data is bound rather than silently dropping its term.'
+            )
+        if mdecl.values_in != into.name:
+            raise DimError(
+                f"{context}: group_sum(into={into.name}) but mapping '{mapping.name}' declares "
+                f"values_in: '{mdecl.values_in}'. The call site and the declaration must agree "
+                f'on which dimension the values are coordinates of.'
             )
         return (inner - mdims) | {into.name}
 

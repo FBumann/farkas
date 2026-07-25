@@ -215,10 +215,16 @@ class Not(Pred):
 
 @dataclass(frozen=True)
 class ParameterDecl:
-    """Shape declaration; data is bound at execution time by name."""
+    """Shape declaration; data is bound at execution time by name.
+
+    ``values_in`` names the dimension this parameter's *values* are
+    coordinates of, when it has one (a mapping parameter). It is checked
+    against the dim table once data is bound.
+    """
 
     name: str
     dims: tuple[str, ...]
+    values_in: str | None = None
 
 
 @dataclass(frozen=True)

@@ -208,8 +208,15 @@ class TestDimensionKwargs:
         foreach = ['snapshot'] if foreach is None else foreach
         return MathSchema.model_validate(
             {
-                'dimensions': {'snapshot': {'dtype': 'int'}, 'generator': {'values': ['wind']}},
-                'parameters': {'load': {'dims': ['snapshot']}, 'gen_bus': {'dims': ['generator'], 'dtype': 'str'}},
+                'dimensions': {
+                    'snapshot': {'dtype': 'int'},
+                    'generator': {'values': ['wind']},
+                    'bus': {'values': ['n']},
+                },
+                'parameters': {
+                    'load': {'dims': ['snapshot']},
+                    'gen_bus': {'dims': ['generator'], 'dtype': 'str', 'values_in': 'bus'},
+                },
                 'variables': {'p': {'foreach': ['snapshot', 'generator']}},
                 'constraints': {'c': {'foreach': foreach, 'equations': [{'expression': expression}]}},
             }
@@ -232,7 +239,7 @@ class TestDimensionKwargs:
     def test_declared_dimensions_still_pass(self):
         for expression, foreach in (
             ('sum(p, over=generator) == load', ['snapshot']),
-            ('group_sum(p, gen_bus, into=generator) == load', ['snapshot', 'generator']),
+            ('group_sum(p, gen_bus, into=bus) == load', ['snapshot', 'bus']),
             ('roll(p, snapshot=1) == load', ['snapshot', 'generator']),
             ('shift(p, snapshot=1) == load', ['snapshot', 'generator']),
         ):

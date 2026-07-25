@@ -93,6 +93,9 @@ def load_parameters(
             else:
                 arr = arr.reindex(reindex_coords)
 
+        if pdef.values_in is not None:
+            _validate_value_domain(pname, arr, pdef.values_in, master_coords)
+
         arrays[pname] = arr
 
     return xr.Dataset(arrays)
@@ -201,6 +204,32 @@ def _validate_dims(
             f"Parameter '{name}' has unexpected dimensions {unexpected}.\n"
             f'Declared dims: {declared_dims}.\n'
             f'Either update the declaration or reshape your data.'
+        )
+        raise ValueError(msg)
+
+
+def _validate_value_domain(
+    name: str,
+    arr: xr.DataArray,
+    values_in: str,
+    master_coords: dict[str, pd.Index],
+) -> None:
+    """Check a mapping's *values* against the master coordinate they name.
+
+    Step 4 checks coordinates that arrive in the index. ``group_sum`` promotes
+    this column into an index, so it needs the same check — and it is the one
+    place where skipping it is silent rather than loud: an unmatched label
+    joins to nothing and its term simply never reaches the row.
+    """
+    if values_in not in master_coords:
+        return
+    vals = arr.values[~pd.isna(arr.values)] if arr.size else arr.values
+    unknown = set(vals.tolist()) - set(master_coords[values_in])
+    if unknown:
+        msg = (
+            f"Parameter '{name}' declares values_in: '{values_in}', but has values that "
+            f'are not {values_in!r} coordinates: {sorted(unknown, key=str)}.\n'
+            f"Master '{values_in}' coords: {list(master_coords[values_in])}"
         )
         raise ValueError(msg)
 

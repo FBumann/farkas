@@ -143,7 +143,11 @@ parameter. `mapping` is a 1-D parameter whose *values* are group labels; its
 dim is replaced by `into`. This is the membership sum ("all generators at
 this bus"), and it is what makes topology data rather than structure. The
 source dim is implicit — it is read off the mapping's declaration, not
-written at the call site.
+written at the call site. So is the *target*: the mapping declares
+`values_in: bus` (SPEC §3.2), and `into=bus` at the call site has to agree.
+That declaration is what types the value column as index data, so a label
+that is no coordinate is refused when the data is bound instead of quietly
+joining to nothing.
 
 **`roll(array, dim=n)`** — pullback along a cyclic translation. The result
 at coordinate *t* is the input at *t−n* (so `roll(soc, snapshot=1)` is "soc
@@ -165,8 +169,9 @@ item 1).
 | Surface | Family | Re-indexes | Item |
 |---|---|---|---|
 | `at(x, over=d, index=value)` | pullback (constant) | `d` collapses by selection | 1 |
-| `at(x, over=d, index=map)` | pullback (gather) | `d` → the map's target dim | 2 |
+| `at(x, over=d, index=map)` | pullback (gather) | `d` → the map's declared `values_in` | 2 |
 | `sum_next_n(x, over=d, n=N)` | pushforward (window) | `d` → `d`, bounded halo | 4 |
+| `where(x, cond)` | filter | nothing; drops terms | 10 |
 
 `at` with a lookup is the adjoint of `group_sum`: same mapping table, join
 without the aggregate.
@@ -207,8 +212,11 @@ already there. A dimension *outside* the declaration's `foreach` is still
 rejected: the mask would have to be `any`-reduced over a dim the declaration
 never named.
 
-If a mask carries a dim not in `foreach`, it is reduced with `any` before
-broadcasting. `all` is currently unreachable (ROADMAP item 6).
+A mask carrying a dim not in `foreach` is a **load error** (`dimensions.py`,
+SPEC §6.3). It used to be reduced with `any` before broadcasting, which fails
+*open*: one true value anywhere along the reduced dim included every
+coordinate. Neither reduction has a spelling today — `any` and `all` are both
+ROADMAP Track 1 item 6.
 
 ---
 

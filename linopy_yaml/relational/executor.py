@@ -205,6 +205,8 @@ class DuckdbExecutor:
         for p in program.parameters:
             self._create_param_table(p, sources)
         self._create_dim_tables(program, sources)
+        for p in program.parameters:
+            self._check_value_domain(p)
 
         self._con.execute('CREATE TABLE cols (col BIGINT, lb DOUBLE, ub DOUBLE, vtype VARCHAR)')
         self._con.execute('CREATE TABLE obj (col BIGINT, coeff DOUBLE)')
@@ -242,6 +244,29 @@ class DuckdbExecutor:
             )
         collist = ', '.join(cols)
         self._con.execute(f'CREATE TABLE p_{p.name} AS SELECT {collist} FROM {rel}')
+
+    def _check_value_domain(self, p: ir.ParameterDecl) -> None:
+        """A mapping's values are index data, so they get the index's check.
+
+        ``GroupSum`` joins this column against the target dim's frame, and the
+        join is inner: a label that is not a coordinate contributes nothing and
+        says nothing. Runs after the dim tables exist, since a derived dim's
+        coordinates are only known then.
+        """
+        if p.values_in is None:
+            return
+        unknown = self._con.execute(
+            f'SELECT DISTINCT t.value FROM p_{p.name} t '
+            f'LEFT JOIN dim_{p.values_in} d ON d.val = t.value '
+            f'WHERE d.val IS NULL AND t.value IS NOT NULL LIMIT 6'
+        ).fetchall()
+        if unknown:
+            labels = sorted(str(r[0]) for r in unknown[:5])
+            more = ', …' if len(unknown) > 5 else ''
+            raise RelationalBuildError(
+                f"parameter '{p.name}' declares values_in: '{p.values_in}', but has values "
+                f"that are not '{p.values_in}' coordinates: {labels}{more}"
+            )
 
     def _source_relation(self, name: str, source: Any) -> str:
         import pandas as pd

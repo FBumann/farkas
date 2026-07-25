@@ -16,6 +16,7 @@ import pandas as pd
 import pytest
 import yaml as pyyaml
 
+from linopy_yaml.dimensions import DimError
 from linopy_yaml.lowering import lower_program, tidy_sources
 from linopy_yaml.relational import (
     DuckdbExecutor,
@@ -26,6 +27,7 @@ from linopy_yaml.relational.ir import (
     Var,
 )
 from linopy_yaml.schema import MathSchema
+from linopy_yaml.validation import validate_expressions
 from tests.conftest import resolved
 from tests.oracle import compat, transport_eager_objective, xr
 
@@ -122,3 +124,62 @@ def test_group_sum_lowering_errors():
         _lower_expr(resolved('group_sum(p, load, into=bus)', schema), schema, 't')
     with pytest.raises(RelationalBuildError, match='but the expression'):
         _lower_expr(resolved('group_sum(f, gen_bus, into=bus)', schema), schema, 't')
+
+
+# ---------------------------------------------------------------------------
+# the mapping's value domain
+# ---------------------------------------------------------------------------
+
+
+def _transport_schema_dict() -> dict:
+    return pyyaml.safe_load(Path(TRANSPORT_YAML).read_text())
+
+
+def test_mapping_must_declare_values_in():
+    """`group_sum` promotes values to coordinates, so they need a declared dim."""
+    raw = _transport_schema_dict()
+    del raw['parameters']['gen_bus']['values_in']
+    with pytest.raises(DimError, match=r'does not declare which dimension its values'):
+        validate_expressions(MathSchema(**raw))
+
+
+def test_values_in_must_agree_with_into():
+    raw = _transport_schema_dict()
+    raw['dimensions']['zone'] = {'values': ['z0']}
+    raw['parameters']['gen_bus']['values_in'] = 'zone'
+    with pytest.raises(DimError, match=r"declares values_in: 'zone'"):
+        validate_expressions(MathSchema(**raw))
+
+
+def test_values_in_must_name_a_declared_dimension():
+    raw = _transport_schema_dict()
+    raw['parameters']['gen_bus']['values_in'] = 'zoon'
+    with pytest.raises(ValueError, match=r"values_in: 'zoon', which is not a declared dimension"):
+        MathSchema(**raw)
+
+
+def test_values_in_must_not_be_the_mapping_s_own_dim():
+    raw = _transport_schema_dict()
+    raw['parameters']['gen_bus']['values_in'] = 'generator'
+    with pytest.raises(ValueError, match='also one of its own dims'):
+        MathSchema(**raw)
+
+
+def test_unknown_mapping_label_is_rejected_in_both_lanes(transport_data):
+    """A typo in the mapping used to drop the term silently — inner join.
+
+    The generator stays in the model and keeps its cost, so the solve
+    succeeds and simply omits that generator from its bus balance. Both
+    lanes now refuse the data instead.
+    """
+    gens, lines, load = transport_data
+    gens = gens.copy()
+    gens.loc[gens.index[0], 'bus'] = 'b0_typo'
+    data, coords = _inputs(gens, lines, load)
+
+    with pytest.raises(ValueError, match=r"not 'bus' coordinates: \['b0_typo'\]"):
+        compat.build(TRANSPORT_YAML, data=data, coords=coords)
+
+    schema = MathSchema(**_transport_schema_dict())
+    with DuckdbExecutor(memory_limit='256MB') as ex, pytest.raises(RelationalBuildError, match="\\['b0_typo'\\]"):
+        ex.build(lower_program(schema), tidy_sources(schema, data, coords))
