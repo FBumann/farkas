@@ -28,8 +28,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import yaml as _yaml
-
+from linopy_yaml._yaml import read_yaml
 from linopy_yaml.lowering import lower_program, tidy_sources
 from linopy_yaml.relational.executor import DuckdbExecutor, RelationalBuildError, Solution
 from linopy_yaml.schema import MathSchema
@@ -61,8 +60,7 @@ def load_schema(model: str | Path | dict[str, Any] | MathSchema) -> MathSchema:
     elif isinstance(model, dict):
         schema = MathSchema(**model)
     else:
-        raw = _yaml.safe_load(Path(model).read_text())
-        schema = MathSchema(**(raw or {}))
+        schema = MathSchema(**read_yaml(Path(model)))
     validate_expressions(schema)
     return schema
 
