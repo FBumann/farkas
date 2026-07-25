@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.0.0-alpha.4](https://github.com/FBumann/linopy-yaml/compare/v0.0.0-alpha.3...v0.0.0-alpha.4) (2026-07-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* unknown YAML keys are an error, not a silent default ([#72](https://github.com/FBumann/linopy-yaml/issues/72))
+* sum/roll/shift/group_sum over a dim the operand does not carry, a where dim outside the frame, a bound parameter dim outside foreach, and a constraint whose expression dims differ from its foreach are all load errors. Each previously built a model that solved and was wrong, or larger than the file read as.
+
+### Features
+
+* Solution.to_xarray() — the labelled form, one call away ([#75](https://github.com/FBumann/linopy-yaml/issues/75)) ([7df73b4](https://github.com/FBumann/linopy-yaml/commit/7df73b4e75a1d1656b4b1a1d928d0e4bf5814a99))
+* static dim checking — the type is a set of dim names ([#68](https://github.com/FBumann/linopy-yaml/issues/68)) ([f96bcb4](https://github.com/FBumann/linopy-yaml/commit/f96bcb4f12797514ef93afd1cd8e771cf8490d0b))
+
+
+### Bug Fixes
+
+* dim checking runs on both lanes, and binary ops union ([#70](https://github.com/FBumann/linopy-yaml/issues/70)) ([2072cfa](https://github.com/FBumann/linopy-yaml/commit/2072cfae4cfb42c3664d6d4a1e9eb3171e6cfb51))
+* read YAML 1.2 booleans, and refuse duplicate keys ([#77](https://github.com/FBumann/linopy-yaml/issues/77)) ([b12af91](https://github.com/FBumann/linopy-yaml/commit/b12af91953f4730e0a9beb74643214bb52dd62d5))
+* unknown YAML keys are an error, not a silent default ([#72](https://github.com/FBumann/linopy-yaml/issues/72)) ([909bc4c](https://github.com/FBumann/linopy-yaml/commit/909bc4c120d2a1ca341917971dbfb7851af35553))
+
+
+### Documentation
+
+* an objective totals its dims, so the examples stop pretending otherwise ([#74](https://github.com/FBumann/linopy-yaml/issues/74)) ([f090c8c](https://github.com/FBumann/linopy-yaml/commit/f090c8c6b214d633b2e14a34fa2aee3c8ff9a1e5))
+* the axes the expressiveness taxonomy does not rank ([#76](https://github.com/FBumann/linopy-yaml/issues/76)) ([bcfcdee](https://github.com/FBumann/linopy-yaml/commit/bcfcdeebc6eb7a17e53076c5d75f7d0539d6bbf1))
+
 ## [0.0.0-alpha.3](https://github.com/FBumann/linopy-yaml/compare/v0.0.0-alpha.2...v0.0.0-alpha.3) (2026-07-25)
 
 
