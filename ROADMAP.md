@@ -43,6 +43,41 @@ measured number with a principled remainder.
 *No coverage numbers are published here until the harness in #27 produces
 them.*
 
+### Provisional operator-level scoring
+
+Hand-written, and it scores *vocabulary* rather than math: one row per
+construct the Calliope corpus exposes as a named operator or key. It does
+not pre-empt #27 and must not be quoted as coverage — operator coverage
+answers "do we have the words?", the harness answers "can we say the
+sentences?", and the second is the number we publish. It also flatters us
+by construction: math their users write out by hand, with no helper and no
+keyword, never becomes a row.
+
+Its use is triage. The relational-shape column is the admissibility test
+from [ARCHITECTURE.md](ARCHITECTURE.md#the-expressive-ceiling) applied
+mechanically, so a verdict is derived rather than argued.
+
+| Their construct | Ours | Relational shape | Locality | Verdict |
+|---|---|---|---|---|
+| `sum(x, over=d)` | `sum` | drop a dim column | pointwise | **have** |
+| `group_sum(x, m, d)` | `group_sum` | equi-join a mapping | pointwise | **have** |
+| `roll(x, d=n)` | `roll` | self-join on `ord`, modulo | bounded-halo | **have** |
+| `select_from_lookup_arrays` | — | the `group_sum` join, no aggregate | pointwise | **(a)** — Track 1 item 2 |
+| `get_val_at_index(d=i)` | — | dim table only | coordinate-space | **(a)** — Track 1 item 3 |
+| `sum_next_n(x, d, N)` | — | range join on `ord` | bounded-halo | **(a)** — Track 1 item 4 |
+| `any(param, over=d)` in `where` | implicit | `bool_or` aggregate | pointwise | **have** (as the default reduction); `all` is item 6 |
+| `group_datetime(x, t, period)` | — | `group_sum` along a derived mapping | pointwise | **(b)** — compute the mapping in data prep, then `group_sum`. No primitive |
+| `x ** y` | refused | — | — | **(b)/(c)** — degree 1 with a variable base; data prep otherwise |
+| `order:` on expressions | — | — | — | **unnecessary by construction** — our `expressions:` substitute, so no evaluation order exists to declare |
+| `where(x, cond)` in an expression | — | ? | ? | **unjudged** — may reduce to equation-level `where`, may be a real gap |
+
+Two of those verdicts are ones a prose comparison does not produce:
+
+- **unnecessary by construction** — distinct from missing; the concept has
+  nowhere to attach in our design, so no amount of scope would add it;
+- **unjudged** — a live cell, kept visible in the table rather than
+  resolved by omission.
+
 **The second axis.** Expressiveness is not the axis we lead on. Scale —
 declarative math at 10⁸ variables under a fixed memory budget — is
 unmatched and is measured separately ([docs/benchmarks.md](docs/benchmarks.md),
