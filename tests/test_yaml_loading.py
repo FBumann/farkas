@@ -46,14 +46,14 @@ def test_only_true_and_false_are_booleans(tmp_path):
     """
     path = _write(tmp_path, 'dimensions:\n  c: {dtype: str, values: [no, se, on, off, yes, n, y]}\n')
 
-    assert read_yaml(path)['dimensions']['c']['values'] == ['no', 'se', 'on', 'off', 'yes', 'n', 'y']
+    assert read_yaml(path)[0]['dimensions']['c']['values'] == ['no', 'se', 'on', 'off', 'yes', 'n', 'y']
 
 
 def test_real_booleans_still_parse(tmp_path):
     """The narrowed resolver must not break `binary:` / `integer:` / `convex:`."""
     path = _write(tmp_path, MODEL.replace('    bounds: {lower: 0, upper: 100}', '    binary: true\n    integer: false'))
 
-    schema = MathSchema(**read_yaml(path))
+    schema = MathSchema(**read_yaml(path)[0])
 
     assert schema.variables['p'].binary is True
     assert schema.variables['p'].integer is False
@@ -61,7 +61,7 @@ def test_real_booleans_still_parse(tmp_path):
 
 def test_the_loader_yields_plain_types(tmp_path):
     """No loader wrapper may reach the schema, the AST, the IR, or duckdb."""
-    raw = read_yaml(_write(tmp_path, MODEL))
+    raw, _ = read_yaml(_write(tmp_path, MODEL))
     assert type(raw) is dict
 
     schema = MathSchema(**raw)
@@ -96,7 +96,7 @@ def test_a_merge_key_override_is_not_a_duplicate(tmp_path):
         'variables:\n  p:\n    <<: *d\n    foreach: [generator]\n',
     )
 
-    assert read_yaml(path)['variables']['p']['foreach'] == ['generator']
+    assert read_yaml(path)[0]['variables']['p']['foreach'] == ['generator']
 
 
 def test_a_non_mapping_document_is_a_load_error(tmp_path):
@@ -108,5 +108,5 @@ def test_a_non_mapping_document_is_a_load_error(tmp_path):
 
 
 def test_an_empty_file_is_an_empty_model(tmp_path):
-    assert read_yaml(_write(tmp_path, '')) == {}
-    assert read_yaml(_write(tmp_path, '# only a comment\n')) == {}
+    assert read_yaml(_write(tmp_path, ''))[0] == {}
+    assert read_yaml(_write(tmp_path, '# only a comment\n'))[0] == {}

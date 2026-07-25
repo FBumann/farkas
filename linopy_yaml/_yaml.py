@@ -19,15 +19,26 @@ implement, so they belong to the dtype guard in #65 rather than here.
 
 The output is plain ``dict``/``str``: no loader wrapper reaches the schema,
 the AST, the IR, or duckdb.
+
+Reading the nodes is also the only chance to learn **where** each declaration
+sits. ``yaml.safe_load`` discards positions the moment a document parses, so
+every later error — a schema-shape complaint, an unparseable expression, an
+unresolved name — can name the declaration but not the line. The node walk
+that checks for duplicate keys therefore also records each key's line into a
+side table, and :class:`SourceMap` turns a path into the document into a
+``file:line`` prefix.
 """
 
 from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 #: The YAML 1.2 core-schema boolean set — nothing else resolves to a bool.
 _BOOL_1_2 = re.compile(r'^(?:true|True|TRUE|false|False|FALSE)$')
@@ -50,11 +61,55 @@ def _install_bool_resolver(loader: type[yaml.SafeLoader]) -> None:
 _install_bool_resolver(_StrictLoader)
 
 
-def _check_duplicate_keys(node: yaml.Node, where: str) -> None:
-    """Reject a mapping that declares the same key twice.
+_Path = tuple[str | int, ...]
 
-    Checked on the node tree before construction, so a ``<<:`` merge key that
-    a mapping overrides is not a duplicate — the override is the point.
+
+class SourceMap:
+    """Maps a path into the document (``variables`` → ``p`` → ``where``) to a line.
+
+    Positions are best-effort by design: a path that does not resolve — an
+    absent optional key, a pydantic ``loc`` naming a union member rather than a
+    document node — degrades to the nearest ancestor that does, and finally to
+    the file name alone. An error that cannot be placed is still an error worth
+    reporting.
+    """
+
+    def __init__(self, marks: dict[_Path, int] | None = None, path: Path | str | None = None) -> None:
+        self._marks: dict[_Path, int] = marks or {}
+        self._path = str(path) if path is not None else None
+
+    @classmethod
+    def none(cls) -> SourceMap:
+        """A map for input that never had a file — a dict passed to ``build()``."""
+        return cls()
+
+    def line(self, *keys: str | int) -> int | None:
+        """1-based line of the deepest resolvable prefix of *keys*, if any."""
+        for i in range(len(keys), -1, -1):
+            line = self._marks.get(tuple(keys[:i]))
+            if line is not None:
+                return line
+        return None
+
+    def at(self, *keys: str | int) -> str:
+        """``'model.yaml:12'`` — or ``''`` when there is nothing to point at."""
+        if self._path is None:
+            return ''
+        line = self.line(*keys)
+        return f'{self._path}:{line}' if line is not None else self._path
+
+    def where(self, *keys: str | int) -> str:
+        """``' (model.yaml:12)'``, ready to append to a message context."""
+        located = self.at(*keys)
+        return f' ({located})' if located else ''
+
+
+def _walk(node: yaml.Node, path: _Path, marks: dict[_Path, int], where: str) -> None:
+    """Record each key's line, and reject a mapping that declares one twice.
+
+    Duplicates are checked on the node tree before construction, so a ``<<:``
+    merge key that a mapping overrides is not a duplicate — the override is
+    the point.
     """
     if isinstance(node, yaml.MappingNode):
         seen: dict[Any, int] = {}
@@ -69,27 +124,45 @@ def _check_duplicate_keys(node: yaml.Node, where: str) -> None:
                 )
                 raise ValueError(msg)
             seen[key] = line
-            _check_duplicate_keys(value_node, where)
+            child = (*path, key)
+            marks[child] = line
+            _walk(value_node, child, marks, where)
     elif isinstance(node, yaml.SequenceNode):
-        for item in node.value:
-            _check_duplicate_keys(item, where)
+        for i, item in enumerate(node.value):
+            child = (*path, i)
+            marks[child] = item.start_mark.line + 1
+            _walk(item, child, marks, where)
 
 
-def read_yaml(path: Path | str) -> dict[str, Any]:
-    """Load *path* as a mapping of sections, in YAML 1.2's reading of scalars."""
+def read_yaml(path: Path | str) -> tuple[dict[str, Any], SourceMap]:
+    """Load *path* as a mapping of sections, plus a map from paths to lines."""
     where = str(path)
     loader = _StrictLoader(Path(path).read_text())
+    marks: dict[_Path, int] = {}
     try:
         node = loader.get_single_node()
         if node is None:
-            return {}
-        _check_duplicate_keys(node, where)
+            return {}, SourceMap(marks, path)
+        _walk(node, (), marks, where)
         data = loader.construct_document(node)
     finally:
         loader.dispose()
     if data is None:
-        return {}
+        return {}, SourceMap(marks, path)
     if not isinstance(data, dict):
         msg = f'{where}: a model file must be a mapping of sections (dimensions:, variables:, …), got {type(data).__name__}.'
         raise ValueError(msg)
-    return data
+    return data, SourceMap(marks, path)
+
+
+def annotate(errors: Sequence[Any], source: SourceMap) -> str:
+    """Render pydantic's ``ValidationError.errors()`` with source positions."""
+    lines = []
+    for err in errors:
+        loc = err.get('loc', ())
+        located = source.at(*loc)
+        dotted = '.'.join(str(part) for part in loc)
+        head = f'{located}: ' if located else ''
+        body = f'{dotted}: {err.get("msg", "")}' if dotted else str(err.get('msg', ''))
+        lines.append(head + body)
+    return '\n'.join(lines)

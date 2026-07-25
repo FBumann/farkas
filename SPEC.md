@@ -957,6 +957,23 @@ Two routes replace it, in this order:
 1. What the user needs to do to fix it.
 1. When helpful, what valid options look like.
 
+**Say where it is.** A load error raised against a file carries the line the
+declaration sits on:
+
+```
+model.yaml:15: variables.p.foreach: Input should be a valid list
+Constraint 'balance', equation 0 (model.yaml:22): 'generatr' does not name a
+declared dimension.
+```
+
+Positions are best-effort. A declaration that has no line of its own — a key
+spliced in by a `<<:` merge, a declaration a `piecewise:` block generated, a
+model passed as a dict rather than a file — falls back to the nearest
+enclosing declaration, and then to the file name. An error that cannot be
+placed is still an error worth reporting. The line locates the *declaration*;
+locating a column inside an expression string is a separate mechanism and is
+not implemented.
+
 ### 8.1 Error message templates
 
 **Missing dimension values:**
