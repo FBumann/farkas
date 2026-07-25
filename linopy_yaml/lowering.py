@@ -25,28 +25,34 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, assert_never
 
-from linopy_yaml.expansion import parse_and_expand
 from linopy_yaml.expression_parser import (
     ArithNode,
     BinOpNode,
     CompareNode,
+    DimRefNode,
     FuncCallNode,
     NameNode,
     NumberNode,
+    ParamNode,
     UnaryOpNode,
+    VarNode,
 )
 from linopy_yaml.helpers import BUILTIN_NAMES
 from linopy_yaml.relational import ir
 from linopy_yaml.relational.executor import RelationalBuildError
+from linopy_yaml.resolution import Namespace, expression_of, where_of
 from linopy_yaml.where_parser import (
     AndNode,
     BoolLiteral,
     Comparison,
+    DimCmp,
+    DimDefined,
     ExistenceCheck,
     NotNode,
     OrNode,
+    ParamCmp,
+    ParamDefined,
     WhereNode,
-    parse_where,
 )
 
 if TYPE_CHECKING:
@@ -60,6 +66,7 @@ def lower_program(schema: MathSchema) -> ir.Program:
     from linopy_yaml.piecewise import expand_piecewise
 
     schema = expand_piecewise(schema)
+    ns = Namespace.of(schema)
     parameters = tuple(ir.ParameterDecl(name, tuple(pdef.dims)) for name, pdef in schema.parameters.items())
 
     variables = []
@@ -81,7 +88,7 @@ def lower_program(schema: MathSchema) -> ir.Program:
             ir.VariableDecl(
                 vname,
                 tuple(vdef.foreach),
-                where=_lower_where(vdef.where, schema, f"variable '{vname}'"),
+                where=_lower_where(vdef.where, ns, f"variable '{vname}'"),
                 lower=lower,
                 upper=upper,
                 vtype=vtype,
@@ -90,14 +97,14 @@ def lower_program(schema: MathSchema) -> ir.Program:
 
     constraints = []
     for cname, cdef in schema.constraints.items():
-        c_where = _lower_where(cdef.where, schema, f"constraint '{cname}'")
+        c_where = _lower_where(cdef.where, ns, f"constraint '{cname}'")
         n_eqs = len(cdef.equations)
         for i, eq in enumerate(cdef.equations):
             eq_name = cname if n_eqs == 1 else f'{cname}_{i}'
-            eq_where = _lower_where(eq.where, schema, f"constraint '{eq_name}'")
+            eq_where = _lower_where(eq.where, ns, f"constraint '{eq_name}'")
             where = _and_preds(c_where, eq_where)
 
-            ast = parse_and_expand(eq.expression, schema, f"constraint '{eq_name}'")
+            ast = expression_of(eq.expression, schema, ns, f"constraint '{eq_name}'")
             if not isinstance(ast, CompareNode):
                 raise RelationalBuildError(
                     f"constraint '{eq_name}': expression must contain exactly one "
@@ -119,7 +126,7 @@ def lower_program(schema: MathSchema) -> ir.Program:
     if not schema.objectives:
         raise RelationalBuildError('the relational backend requires an objective')
     oname, odef = next(reversed(schema.objectives.items()))  # last one wins (eager parity)
-    ast = parse_and_expand(odef.equations[0].expression, schema, f"objective '{oname}'")
+    ast = expression_of(odef.equations[0].expression, schema, ns, f"objective '{oname}'")
     if isinstance(ast, CompareNode):
         raise RelationalBuildError(f"objective '{oname}': expression must not contain a comparison operator")
     objective = ir.ObjectiveDecl(
@@ -201,12 +208,19 @@ def _lower_expr(node: ArithNode, schema: MathSchema, context: str) -> ir.Expr:
     if isinstance(node, NumberNode):
         return ir.Const(node.value)
 
-    if isinstance(node, NameNode):
-        if node.name in schema.variables:
-            return ir.Var(node.name)
-        if node.name in schema.parameters:
-            return ir.Param(node.name)
-        raise RelationalBuildError(f"{context}: '{node.name}' is neither a declared variable nor parameter")
+    if isinstance(node, VarNode):
+        return ir.Var(node.name)
+
+    if isinstance(node, ParamNode):
+        return ir.Param(node.name)
+
+    if isinstance(node, (NameNode, DimRefNode)):
+        msg = (
+            f'{type(node).__name__}({node.name!r}) reached lowering. Expressions '
+            f'must go through resolution.expression_of() first '
+            f'(ARCHITECTURE.md hard rule 1).'
+        )
+        raise AssertionError(msg)
 
     if isinstance(node, UnaryOpNode):
         inner = _lower_expr(node.operand, schema, context)
@@ -248,7 +262,7 @@ def _lower_expr(node: ArithNode, schema: MathSchema, context: str) -> ir.Expr:
             if len(node.args) != 1 or set(node.kwargs) != {'over'}:
                 raise RelationalBuildError(f'{context}: sum() expects sum(<expr>, over=<dim>)')
             over_node = node.kwargs['over']
-            if not isinstance(over_node, NameNode):
+            if not isinstance(over_node, DimRefNode):
                 raise RelationalBuildError(f'{context}: sum(over=...) must name a dimension')
             inner = _lower_expr(node.args[0], schema, context)
             # eager parity: summing over a dim the operand does not carry is a no-op
@@ -263,14 +277,14 @@ def _lower_expr(node: ArithNode, schema: MathSchema, context: str) -> ir.Expr:
                 )
             mapping_node = node.args[1]
             into_node = node.kwargs['into']
-            if not isinstance(mapping_node, NameNode) or mapping_node.name not in schema.parameters:
+            if not isinstance(mapping_node, ParamNode):
                 raise RelationalBuildError(f'{context}: group_sum() mapping must name a declared parameter')
             mdims = schema.parameters[mapping_node.name].dims
             if len(mdims) != 1:
                 raise RelationalBuildError(
                     f"{context}: group_sum() mapping '{mapping_node.name}' must have exactly one dim (has {mdims})"
                 )
-            if not isinstance(into_node, NameNode) or into_node.name not in schema.dimensions:
+            if not isinstance(into_node, DimRefNode):
                 raise RelationalBuildError(f'{context}: group_sum(into=...) must name a declared dimension')
             inner = _lower_expr(node.args[0], schema, context)
             if mdims[0] not in _dims_of(inner, schema):
@@ -285,8 +299,6 @@ def _lower_expr(node: ArithNode, schema: MathSchema, context: str) -> ir.Expr:
             if len(node.args) != 1 or len(node.kwargs) != 1:
                 raise RelationalBuildError(f'{context}: {node.name}() expects {node.name}(<expr>, <dim>=<n>)')
             ((dim, shift_node),) = node.kwargs.items()
-            if dim not in schema.dimensions:
-                raise RelationalBuildError(f"{context}: {node.name}() dimension '{dim}' is not declared")
             sign = 1
             if isinstance(shift_node, UnaryOpNode) and shift_node.op == '-':
                 sign, shift_node = -1, shift_node.operand
@@ -362,43 +374,51 @@ def _lower_bound(value: float | str) -> ir.Expr:
 # ---------------------------------------------------------------------------
 
 
-def _lower_where(text: str | None, schema: MathSchema, context: str) -> ir.Pred | None:
-    if text is None:
+def _lower_where(text: str | None, ns: Namespace, context: str) -> ir.Pred | None:
+    node = where_of(text, ns, context)
+    if node is None:
         return None
-    pred = _lower_where_node(parse_where(text), schema, context)
+    pred = _lower_where_node(node, context)
     if isinstance(pred, ir.Bool) and pred.value:
         return None  # True is equivalent to no mask
     return pred
 
 
-def _lower_where_node(node: WhereNode, schema: MathSchema, context: str) -> ir.Pred:
+def _lower_where_node(node: WhereNode, context: str) -> ir.Pred:
     if isinstance(node, BoolLiteral):
         return ir.Bool(node.value)
 
-    if isinstance(node, ExistenceCheck):
-        # eager parity: an existence check on an unknown parameter is False
-        if node.name not in schema.parameters:
-            return ir.Bool(False)
+    if isinstance(node, ParamDefined):
         return ir.Defined(node.name)
 
-    if isinstance(node, Comparison):
-        if node.name in schema.parameters:
-            return ir.Cmp(node.name, node.op, node.value)
-        if node.name in schema.dimensions:
-            return ir.DimCmp(node.name, node.op, node.value)
-        raise RelationalBuildError(f"{context}: where references '{node.name}', which is not a declared parameter")
+    if isinstance(node, DimDefined):
+        # a bare dimension name is true over its whole index
+        return ir.Bool(True)
+
+    if isinstance(node, ParamCmp):
+        return ir.Cmp(node.name, node.op, node.value)
+
+    if isinstance(node, DimCmp):
+        return ir.DimCmp(node.name, node.op, node.value)
+
+    if isinstance(node, (ExistenceCheck, Comparison)):
+        msg = (
+            f'{type(node).__name__} reached lowering unresolved. Where strings '
+            f'must go through resolution.where_of() first.'
+        )
+        raise AssertionError(msg)
 
     if isinstance(node, NotNode):
-        return ir.Not(_lower_where_node(node.operand, schema, context))
+        return ir.Not(_lower_where_node(node.operand, context))
     if isinstance(node, AndNode):
         return ir.And(
-            _lower_where_node(node.left, schema, context),
-            _lower_where_node(node.right, schema, context),
+            _lower_where_node(node.left, context),
+            _lower_where_node(node.right, context),
         )
     if isinstance(node, OrNode):
         return ir.Or(
-            _lower_where_node(node.left, schema, context),
-            _lower_where_node(node.right, schema, context),
+            _lower_where_node(node.left, context),
+            _lower_where_node(node.right, context),
         )
 
     assert_never(node)

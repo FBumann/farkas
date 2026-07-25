@@ -21,7 +21,6 @@ from linopy_yaml.relational import (
     RelationalBuildError,
 )
 from linopy_yaml.relational.ir import (
-    Bool,
     Cmp,
     Defined,
     DimCmp,
@@ -30,6 +29,7 @@ from linopy_yaml.relational.ir import (
     Var,
 )
 from linopy_yaml.schema import MathSchema
+from tests.conftest import resolved
 from tests.oracle import compat
 
 RTOL = 1e-9
@@ -119,36 +119,45 @@ def test_lower_program_structure(dispatch_schema):
 
 def test_where_lowering(dispatch_schema):
     from linopy_yaml.lowering import _lower_where
+    from linopy_yaml.resolution import Namespace
 
-    schema = dispatch_schema
-    assert _lower_where(None, schema, 't') is None
-    assert _lower_where('True', schema, 't') is None  # True == no mask
-    assert _lower_where('p_max', schema, 't') == Defined('p_max')
-    assert _lower_where('no_such_param', schema, 't') == Bool(False)
-    pred = _lower_where('p_max > 0 AND NOT load == 0', schema, 't')
+    ns = Namespace.of(dispatch_schema)
+    assert _lower_where(None, ns, 't') is None
+    assert _lower_where('True', ns, 't') is None  # True == no mask
+    assert _lower_where('p_max', ns, 't') == Defined('p_max')
+    pred = _lower_where('p_max > 0 AND NOT load == 0', ns, 't')
     assert pred is not None
 
     # dimension coordinates compare like parameters (ROADMAP 5b)
-    assert _lower_where('snapshot > 5', schema, 't') == DimCmp('snapshot', '>', 5)
+    assert _lower_where('snapshot > 5', ns, 't') == DimCmp('snapshot', '>', 5)
+
+
+def test_unknown_where_name_is_an_error_in_both_lanes(dispatch_schema):
+    """It used to be a scalar-False mask in the eager lane: a model that
+    builds, solves, and is silently empty. Resolution makes it a load error."""
+    from linopy_yaml.lowering import _lower_where
+    from linopy_yaml.relational.executor import RelationalBuildError
+    from linopy_yaml.resolution import Namespace
+
+    with pytest.raises(RelationalBuildError, match="'no_such_param' not found"):
+        _lower_where('no_such_param', Namespace.of(dispatch_schema), 't')
 
 
 def test_sum_over_absent_dim_is_noop(dispatch_schema):
     # eager parity: sum(load, over=generator) leaves load unchanged
-    from linopy_yaml.expression_parser import parse_expression
     from linopy_yaml.lowering import _lower_expr
 
-    ast = parse_expression('sum(load, over=generator)')
+    ast = resolved('sum(load, over=generator)', dispatch_schema)
     assert _lower_expr(ast, dispatch_schema, 't') == Param('load')
 
 
 def test_unsupported_features_rejected(dispatch_schema):
-    from linopy_yaml.expression_parser import parse_expression
     from linopy_yaml.lowering import _lower_expr
 
     # roll/shift are supported since ir.Shift, binary/integer since vtype;
     # '**' and custom Python helpers remain outside the relational subset
     with pytest.raises(RelationalBuildError, match=r"operator '\*\*'"):
-        _lower_expr(parse_expression('p ** 2'), dispatch_schema, 't')
+        _lower_expr(resolved('p ** 2', dispatch_schema), dispatch_schema, 't')
 
     # binary is eligible now and lowers to vtype (see also test_router)
     schema_dict = pyyaml.safe_load(Path(DISPATCH_YAML).read_text())

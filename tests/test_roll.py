@@ -26,6 +26,7 @@ from linopy_yaml.relational.ir import (
     Var,
 )
 from linopy_yaml.schema import MathSchema
+from tests.conftest import resolved
 from tests.oracle import compat
 
 RTOL = 1e-9
@@ -93,26 +94,22 @@ def test_storage_yaml_differential(storage_inputs, tmp_path):
 
 def test_roll_lowering_structure():
     schema = MathSchema(**pyyaml.safe_load(Path(STORAGE_YAML).read_text()))
-    from linopy_yaml.expression_parser import parse_expression
     from linopy_yaml.lowering import _lower_expr
 
-    ast = parse_expression('roll(soc, snapshot=1)')
-    assert _lower_expr(ast, schema, 't') == Shift(Var('soc'), 'snapshot', 1)
+    assert _lower_expr(resolved('roll(soc, snapshot=1)', schema), schema, 't') == Shift(Var('soc'), 'snapshot', 1)
 
     # negative shifts work (look-ahead)
-    ast = parse_expression('roll(soc, snapshot=-2)')
-    assert _lower_expr(ast, schema, 't') == Shift(Var('soc'), 'snapshot', -2)
+    assert _lower_expr(resolved('roll(soc, snapshot=-2)', schema), schema, 't') == Shift(Var('soc'), 'snapshot', -2)
 
 
 def test_roll_lowering_errors():
     schema = MathSchema(**pyyaml.safe_load(Path(STORAGE_YAML).read_text()))
-    from linopy_yaml.expression_parser import parse_expression
     from linopy_yaml.lowering import _lower_expr
 
-    with pytest.raises(RelationalBuildError, match="dimension 'nope' is not declared"):
-        _lower_expr(parse_expression('roll(soc, nope=1)'), schema, 't')
+    with pytest.raises(RelationalBuildError, match=r'roll\(nope=\.\.\.\) does not name a declared dimension'):
+        _lower_expr(resolved('roll(soc, nope=1)', schema), schema, 't')
     with pytest.raises(RelationalBuildError, match='but the expression has dims'):
-        _lower_expr(parse_expression('roll(load, generator=1)'), schema, 't')
+        _lower_expr(resolved('roll(load, generator=1)', schema), schema, 't')
 
 
 def test_shift_acyclic_differential(storage_inputs, tmp_path):
@@ -157,11 +154,11 @@ def test_shift_acyclic_differential(storage_inputs, tmp_path):
 
 def test_shift_lowering_structure():
     schema = MathSchema(**pyyaml.safe_load(Path(STORAGE_YAML).read_text()))
-    from linopy_yaml.expression_parser import parse_expression
     from linopy_yaml.lowering import _lower_expr
 
-    ast = parse_expression('shift(soc, snapshot=1)')
-    assert _lower_expr(ast, schema, 't') == Shift(Var('soc'), 'snapshot', 1, wrap=False)
+    assert _lower_expr(resolved('shift(soc, snapshot=1)', schema), schema, 't') == Shift(
+        Var('soc'), 'snapshot', 1, wrap=False
+    )
 
 
 def test_roll_unsorted_string_coords_differential(tmp_path):

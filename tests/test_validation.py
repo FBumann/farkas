@@ -71,8 +71,10 @@ class TestValidateExpressions:
         with pytest.raises(ValueError, match='Failed to parse where string'):
             validate_expressions(schema)
 
-    def test_unknown_name_in_where_is_allowed(self):
-        """Unknown names in a where evaluate to False by design — not errors."""
+    def test_unknown_name_in_where_is_an_error(self):
+        """It used to evaluate to False, which built an empty model in the
+        eager lane and raised in the relational one — one language, two
+        answers. Resolution makes it a load error for both."""
         schema = _schema(
             constraints={
                 'cap': {
@@ -82,7 +84,8 @@ class TestValidateExpressions:
                 }
             },
         )
-        validate_expressions(schema)
+        with pytest.raises(ValueError, match="'not_a_param' not found"):
+            validate_expressions(schema)
 
     def test_dim_name_kwarg_not_flagged(self):
         """Keyword-arg names are dimension names, not data references."""

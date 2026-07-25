@@ -43,11 +43,14 @@ from linopy_yaml.expression_parser import (
     ArithNode,
     BinOpNode,
     CompareNode,
+    DimRefNode,
     ExprNode,
     FuncCallNode,
     NameNode,
     NumberNode,
+    ParamNode,
     UnaryOpNode,
+    VarNode,
     parse_expression,
 )
 
@@ -109,7 +112,7 @@ def _descend(node: ArithNode, recurse: Callable[[ArithNode], ArithNode]) -> Arit
     differ only in what they do at NameNode and FuncCallNode, and duplicating
     the other four cases is how the two drift apart.
     """
-    if isinstance(node, NumberNode | NameNode):
+    if isinstance(node, NumberNode | NameNode | VarNode | ParamNode | DimRefNode):
         return node
     if isinstance(node, UnaryOpNode):
         return UnaryOpNode(node.op, recurse(node.operand))

@@ -15,26 +15,32 @@ import numpy as np
 import xarray as xr
 
 from linopy_yaml._notes import note
-from linopy_yaml.expansion import parse_and_expand
 from linopy_yaml.expression_parser import (
     ArithNode,
     BinOpNode,
     CompareNode,
+    DimRefNode,
     FuncCallNode,
     NameNode,
     NumberNode,
+    ParamNode,
     UnaryOpNode,
+    VarNode,
 )
 from linopy_yaml.helpers import unknown_helper_message
+from linopy_yaml.resolution import Namespace, expression_of, where_of
 from linopy_yaml.where_parser import (
     AndNode,
     BoolLiteral,
     Comparison,
+    DimCmp,
+    DimDefined,
     ExistenceCheck,
     NotNode,
     OrNode,
+    ParamCmp,
+    ParamDefined,
     WhereNode,
-    parse_where,
 )
 
 if TYPE_CHECKING:
@@ -61,6 +67,8 @@ class EvalContext:
     model: linopy.Model
     dataset: xr.Dataset
     master_coords: dict[str, pd.Index]
+    schema: MathSchema
+    ns: Namespace
 
 
 def build_model(
@@ -74,9 +82,10 @@ def build_model(
     This mutates *model* in-place, adding variables, constraints, and
     objectives as declared in *schema*.
     """
-    _build_variables(model, schema, dataset, master_coords)
-    _build_constraints(model, schema, dataset, master_coords)
-    _build_objectives(model, schema, dataset, master_coords)
+    ctx = EvalContext(model, dataset, master_coords, schema, Namespace.of(schema, list(model.variables)))
+    _build_variables(ctx)
+    _build_constraints(ctx)
+    _build_objectives(ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -84,24 +93,19 @@ def build_model(
 # ---------------------------------------------------------------------------
 
 
-def _build_variables(
-    model: linopy.Model,
-    schema: MathSchema,
-    dataset: xr.Dataset,
-    master_coords: dict[str, pd.Index],
-) -> None:
-    for vname, vdef in schema.variables.items():
+def _build_variables(ctx: EvalContext) -> None:
+    for vname, vdef in ctx.schema.variables.items():
         with note(f"while building variable '{vname}'"):
-            coords = {d: master_coords[d] for d in vdef.foreach}
+            coords = {d: ctx.master_coords[d] for d in vdef.foreach}
 
             # Resolve bounds
-            lower = _resolve_bound(vdef.bounds.lower, dataset)
-            upper = _resolve_bound(vdef.bounds.upper, dataset)
+            lower = _resolve_bound(vdef.bounds.lower, ctx.dataset)
+            upper = _resolve_bound(vdef.bounds.upper, ctx.dataset)
 
-            # Evaluate where mask
-            mask = evaluate_where(vdef.where, dataset, master_coords)
+            where = where_of(vdef.where, ctx.ns, f"variable '{vname}'")
+            mask = evaluate_where(where, ctx.dataset, ctx.master_coords)
 
-            model.add_variables(
+            ctx.model.add_variables(
                 lower=lower,
                 upper=upper,
                 coords=coords,
@@ -144,27 +148,22 @@ def _as_linopy_mask(mask: xr.DataArray) -> xr.DataArray | None:
 # ---------------------------------------------------------------------------
 
 
-def _build_constraints(
-    model: linopy.Model,
-    schema: MathSchema,
-    dataset: xr.Dataset,
-    master_coords: dict[str, pd.Index],
-) -> None:
-    ctx = EvalContext(model, dataset, master_coords)
-    for cname, cdef in schema.constraints.items():
+def _build_constraints(ctx: EvalContext) -> None:
+    for cname, cdef in ctx.schema.constraints.items():
         with note(f"while building constraint '{cname}'"):
-            # Evaluate constraint-level where mask
-            constraint_mask = evaluate_where(cdef.where, dataset, master_coords)
+            c_where = where_of(cdef.where, ctx.ns, f"constraint '{cname}'")
+            constraint_mask = evaluate_where(c_where, ctx.dataset, ctx.master_coords)
 
             n_eqs = len(cdef.equations)
 
             for i, eq in enumerate(cdef.equations):
+                eq_name = cname if n_eqs == 1 else f'{cname}_{i}'
                 # Per-equation where mask (ANDed with constraint mask)
-                eq_mask = evaluate_where(eq.where, dataset, master_coords)
+                eq_where = where_of(eq.where, ctx.ns, f"constraint '{eq_name}'")
+                eq_mask = evaluate_where(eq_where, ctx.dataset, ctx.master_coords)
                 mask = constraint_mask & eq_mask
 
-                # Parse expression and expand named expressions / macros
-                ast = parse_and_expand(eq.expression, schema, f"constraint '{cname}'")
+                ast = expression_of(eq.expression, ctx.schema, ctx.ns, f"constraint '{eq_name}'")
                 if not isinstance(ast, CompareNode):
                     msg = (
                         f'Equation {i}: expression must contain exactly one '
@@ -178,10 +177,7 @@ def _build_constraints(
                 rhs = _eval_ast(ast.right, ctx)
                 sign = _SIGN_MAP[ast.op]
 
-                # Name: single equation uses constraint name directly
-                eq_name = cname if n_eqs == 1 else f'{cname}_{i}'
-
-                model.add_constraints(lhs, sign, rhs, name=eq_name, mask=_as_linopy_mask(mask))
+                ctx.model.add_constraints(lhs, sign, rhs, name=eq_name, mask=_as_linopy_mask(mask))
 
 
 # ---------------------------------------------------------------------------
@@ -189,17 +185,11 @@ def _build_constraints(
 # ---------------------------------------------------------------------------
 
 
-def _build_objectives(
-    model: linopy.Model,
-    schema: MathSchema,
-    dataset: xr.Dataset,
-    master_coords: dict[str, pd.Index],
-) -> None:
-    ctx = EvalContext(model, dataset, master_coords)
-    for oname, odef in schema.objectives.items():
+def _build_objectives(ctx: EvalContext) -> None:
+    for oname, odef in ctx.schema.objectives.items():
         with note(f"while building objective '{oname}'"):
             eq = odef.equations[0]
-            ast = parse_and_expand(eq.expression, schema, f"objective '{oname}'")
+            ast = expression_of(eq.expression, ctx.schema, ctx.ns, f"objective '{oname}'")
 
             if isinstance(ast, CompareNode):
                 msg = f'Expression must not contain a comparison operator. Got: {eq.expression!r}'
@@ -208,7 +198,7 @@ def _build_objectives(
             expr = _eval_ast(ast, ctx)
 
             sense = 'min' if odef.sense == 'minimize' else 'max'
-            model.add_objective(expr, overwrite=True, sense=sense)
+            ctx.model.add_objective(expr, overwrite=True, sense=sense)
 
 
 # ---------------------------------------------------------------------------
@@ -224,8 +214,19 @@ def _eval_ast(
     if isinstance(node, NumberNode):
         return node.value
 
-    if isinstance(node, NameNode):
-        return _resolve_name(node.name, ctx)
+    if isinstance(node, VarNode):
+        return ctx.model.variables[node.name]
+
+    if isinstance(node, ParamNode):
+        return ctx.dataset[node.name]
+
+    if isinstance(node, (NameNode, DimRefNode)):
+        msg = (
+            f'{type(node).__name__}({node.name!r}) reached the evaluator. '
+            f'Expressions must go through resolution.expression_of() first '
+            f'(ARCHITECTURE.md hard rule 1).'
+        )
+        raise AssertionError(msg)
 
     if isinstance(node, UnaryOpNode):
         operand = _eval_ast(node.operand, ctx)
@@ -262,43 +263,15 @@ def _eval_ast(
         helper = _HELPERS[node.name]
         # Evaluate positional args
         args = [_eval_ast(a, ctx) for a in node.args]
-        # Evaluate keyword args — NameNodes become strings (for dim names)
         kwargs = {}
         for k, v in node.kwargs.items():
-            if isinstance(v, NameNode):
-                kwargs[k] = v.name  # dimension names stay as strings
+            if isinstance(v, DimRefNode):
+                kwargs[k] = v.name
             else:
                 kwargs[k] = _eval_ast(v, ctx)
         return helper(*args, **kwargs)
 
     assert_never(node)
-
-
-def _resolve_name(
-    name: str,
-    ctx: EvalContext,
-) -> Any:
-    """Resolve a name: check variables first, then parameters."""
-    # Check linopy variables. Variables is iterable but defines no __contains__,
-    # so `in` would fall back to iteration anyway — materialise once and reuse.
-    var_names = list(ctx.model.variables)
-    if name in var_names:
-        return ctx.model.variables[name]
-
-    # Check parameters
-    if name in ctx.dataset:
-        return ctx.dataset[name]
-
-    # Helpful error
-    param_names = sorted(map(str, ctx.dataset.data_vars))
-    msg = (
-        f"'{name}' not found.\n"
-        f'  Variables:  {var_names}\n'
-        f'  Parameters: {param_names}\n'
-        f"Check for typos, or ensure '{name}' is declared as a variable "
-        f'or parameter.'
-    )
-    raise NameError(msg)
 
 
 # ---------------------------------------------------------------------------
@@ -409,27 +382,30 @@ _HELPERS: dict[str, Callable[..., Any]] = {
 # Where-mask evaluation
 # ---------------------------------------------------------------------------
 #
-# The eager reading of a where AST. It lives here rather than in
+# The eager reading of a *resolved* where AST. It lives here rather than in
 # where_parser.py because it is xarray-only: the relational lane reads the
 # same AST through lowering._lower_where and never wants this code.
 
 
 def evaluate_where(
-    text: str | None,
+    node: WhereNode | None,
     dataset: xr.Dataset,
     master_coords: dict[str, pd.Index],
 ) -> xr.DataArray:
-    """Evaluate a where string against a parameter dataset.
+    """Evaluate a **resolved** where AST against a parameter dataset.
 
-    Always returns a boolean DataArray mask. Degenerate cases (no where
-    string, unknown names, literals) come back 0-dimensional, so callers
-    can combine masks with ``&``/``|`` without case analysis.
+    Takes a node, not a string: resolution (``resolution.resolve_where``) has
+    already decided what every name refers to, so this function performs no
+    lookups and cannot disagree with the relational lane about scoping.
+
+    Always returns a boolean DataArray mask. The no-mask case comes back
+    0-dimensional, so callers combine masks with ``&``/``|`` without case
+    analysis.
     """
-    if text is None:
+    if node is None:
         return xr.DataArray(True)
 
-    ast = parse_where(text)
-    return _eval_node(ast, dataset, master_coords)
+    return _eval_node(node, dataset, master_coords)
 
 
 def _eval_node(
@@ -440,39 +416,35 @@ def _eval_node(
     if isinstance(node, BoolLiteral):
         return xr.DataArray(node.value)
 
-    if isinstance(node, ExistenceCheck):
-        # Check parameters first
-        if node.name in dataset:
-            arr = dataset[node.name]
-            return arr.notnull() & np.isfinite(arr)
-        # Check if it's a dimension name — return all True for that dim
-        if node.name in master_coords:
-            return xr.DataArray(
-                True,
-                coords={node.name: master_coords[node.name]},
-                dims=[node.name],
-            )
-        return xr.DataArray(False)
+    if isinstance(node, (ExistenceCheck, Comparison)):
+        msg = (
+            f'{type(node).__name__} reached the evaluator unresolved. '
+            f'Where strings must go through resolution.resolve_where() first.'
+        )
+        raise AssertionError(msg)
 
-    if isinstance(node, Comparison):
-        # Get the array to compare
-        if node.name in dataset:
+    if isinstance(node, ParamDefined):
+        arr = dataset[node.name]
+        return arr.notnull() & np.isfinite(arr)
+
+    if isinstance(node, DimDefined):
+        return xr.DataArray(
+            True,
+            coords={node.name: master_coords[node.name]},
+            dims=[node.name],
+        )
+
+    if isinstance(node, (ParamCmp, DimCmp)):
+        if isinstance(node, ParamCmp):
             arr = dataset[node.name]
-        elif node.name in master_coords:
-            # Dimension coordinate comparison (e.g. "snapshot > 0")
+        else:
             arr = xr.DataArray(
                 master_coords[node.name],
                 coords={node.name: master_coords[node.name]},
                 dims=[node.name],
             )
-        else:
-            return xr.DataArray(False)
 
-        val = node.value
-        # If val is a string, try to resolve as parameter or keep as string
-        if isinstance(val, str) and val in dataset:
-            val = dataset[val]
-            # else keep as string for coordinate comparison
+        val = node.value  # a literal: resolution rejected parameter/variable RHS
 
         ops = {
             '==': lambda a, b: a == b,

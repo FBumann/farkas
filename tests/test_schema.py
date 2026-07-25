@@ -78,7 +78,7 @@ def test_undeclared_bound_parameter():
         'dimensions': {'x': {'values': [1]}},
         'variables': {'v': {'foreach': ['x'], 'bounds': {'upper': 'nonexistent'}}},
     }
-    with pytest.raises(ValidationError, match="undeclared parameter 'nonexistent'"):
+    with pytest.raises(ValidationError, match="'nonexistent' is not a declared parameter"):
         MathSchema.model_validate(raw)
 
 

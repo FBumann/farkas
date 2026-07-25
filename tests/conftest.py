@@ -15,6 +15,25 @@ import pytest
 EXAMPLES_DIR = Path(__file__).parent.parent / 'examples'
 
 
+def resolved(text, schema):
+    """Parse + expand + resolve — exactly what a backend receives.
+
+    Tests that call `_lower_expr` or `evaluate_where` directly must go through
+    this: a raw `parse_expression` result still holds NameNodes, and both
+    backends now assert those never reach them (resolution.py).
+    """
+    from linopy_yaml.resolution import Namespace, expression_of
+
+    return expression_of(text, schema, Namespace.of(schema), 't')
+
+
+def resolved_where(text, schema):
+    """Parse + resolve a where string."""
+    from linopy_yaml.resolution import Namespace, where_of
+
+    return where_of(text, Namespace.of(schema), 't')
+
+
 @pytest.fixture
 def dispatch_yaml() -> Path:
     return EXAMPLES_DIR / 'dispatch.yaml'

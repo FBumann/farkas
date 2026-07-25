@@ -98,7 +98,7 @@ def test_named_expression_no_comparison():
 
 
 def test_name_collision_rejected_at_schema_level():
-    with pytest.raises(ValueError, match='collides with a declared parameter'):
+    with pytest.raises(ValueError, match='collides with the parameter of the same name'):
         make_schema({'load': 'p * cost'})
 
 
@@ -177,13 +177,16 @@ def test_macro_cycle_raises():
 
 
 def test_macro_collisions_rejected():
-    with pytest.raises(ValueError, match='collides with a declared parameter'):
+    with pytest.raises(ValueError, match='collides with the parameter of the same name'):
         make_schema(macros={'load': {'args': ['a'], 'template': 'a'}})
-    with pytest.raises(ValueError, match='collides with a named expression'):
+    with pytest.raises(ValueError, match='collides with the named expression'):
         make_schema({'thing': 'p * cost'}, macros={'thing': {'args': ['a'], 'template': 'a'}})
-    schema = make_schema(macros={'sum': {'args': ['a'], 'template': 'a'}})
-    with pytest.raises(ValueError, match='collides with a helper'):
-        validate_expressions(schema)
+    # helper names are reserved for every kind of declaration, not just macros,
+    # and the collision is caught building the schema rather than validating it
+    with pytest.raises(ValueError, match="collides with the built-in helper 'sum'"):
+        make_schema(macros={'sum': {'args': ['a'], 'template': 'a'}})
+    with pytest.raises(ValueError, match="collides with the built-in helper 'sum'"):
+        MathSchema(dimensions={'sum': {'values': [1]}})
 
 
 def test_duplicate_formals_rejected():

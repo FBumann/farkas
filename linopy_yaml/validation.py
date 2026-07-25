@@ -1,29 +1,47 @@
 """Load-time validation of expression and where strings.
 
-Parses every expression and where string in a schema before any linopy
-call, so typos and malformed math fail at load time with the offending
-component named — not mid-build.
+Every expression and where string in a schema is parsed, expanded and
+**resolved** before any backend runs, so typos and malformed math fail at load
+time with the offending component named — not mid-build, and not differently
+in each lane.
 
-Where strings are only checked for syntax: unknown names in a where
-evaluate to False by design (see SPEC section 6.2), so they are not
-name-checked here.
+Resolution is the substance here (``resolution.py``): this module walks the
+schema and hands each string to the same pass the backends use, collecting
+every problem rather than raising on the first. Name *checking* is not a
+separate implementation of name *resolution* — that duplication is what let
+the two lanes disagree about scoping in the first place.
+
+Macro templates are the one thing checked without being resolved: their free
+names include formals, which are not model names. They are name-checked
+against the schema plus their own formals, so an unused macro still fails at
+load time if its body references something that does not exist.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, assert_never
 
-from linopy_yaml.expansion import expand, parse_and_expand, parse_template
+from linopy_yaml.expansion import expand, parse_template
 from linopy_yaml.expression_parser import (
     ArithNode,
     BinOpNode,
     CompareNode,
+    DimRefNode,
     FuncCallNode,
     NameNode,
     NumberNode,
+    ParamNode,
     UnaryOpNode,
+    VarNode,
 )
 from linopy_yaml.helpers import BUILTIN_NAMES, unknown_helper_message
+from linopy_yaml.resolution import (
+    _DIM_KEY_HELPERS,
+    _DIM_VALUE_KWARGS,
+    Namespace,
+    resolve_expression,
+    resolve_where,
+)
 from linopy_yaml.where_parser import parse_where
 
 if TYPE_CHECKING:
@@ -37,15 +55,17 @@ def validate_expressions(
     *,
     known_variables: Iterable[str] = (),
 ) -> None:
-    """Validate all expression and where strings in *schema*.
+    """Validate and resolve every expression and where string in *schema*.
 
     Checks, per constraint/objective equation:
 
     - the expression parses;
     - constraints contain exactly one comparison, objectives none;
-    - every referenced name is a declared variable or parameter;
-    - every helper function is a built-in;
-    - where strings (constraint-, equation-, and variable-level) parse.
+    - every referenced name resolves to a declared variable or parameter;
+    - every helper function is a built-in, and its dimension arguments name
+      declared dimensions;
+    - where strings parse *and* resolve — an unknown name in a where is an
+      error, not a silently-empty mask.
 
     Parameters
     ----------
@@ -62,89 +82,82 @@ def validate_expressions(
     ValueError
         Listing every problem found, one per line.
     """
-    variables = set(schema.variables) | set(known_variables)
-    parameters = set(schema.parameters)
-    dimensions = set(schema.dimensions)
-
+    ns = Namespace.of(schema, known_variables)
     errors: list[str] = []
 
     for mname, macro in schema.macros.items():
         context = f"Macro '{mname}'"
-        if mname in BUILTIN_NAMES:
-            errors.append(f'{context}: collides with a helper function of the same name.')
         try:
-            body_ast = parse_template(mname, macro, context)
-            body_ast = expand(body_ast, schema, context)
+            body_ast = expand(parse_template(mname, macro, context), schema, context)
+            assert not isinstance(body_ast, CompareNode)
         except ValueError as e:
             errors.append(str(e) if str(e).startswith(context) else f'{context}: {e}')
             continue
-        # macros are schema-local, so every free name in the template must be
-        # a formal or a name declared in *this* schema — checkable even for
-        # macros the current model never calls
+        # Formals may shadow model names but not a declared dimension:
+        # `over=snapshot` under a formal `snapshot` cannot say which it means.
         formals = {*macro.args, *macro.kwargs}
-        _check_names(
-            body_ast,
-            macro.template,
-            context,
-            variables | formals,
-            parameters | formals,
-            dimensions | formals,
-            errors,
+        errors.extend(
+            f"{context}: formal '{f}' collides with declared dimension '{f}'. "
+            f'Rename the formal — a dimension name inside a template is '
+            f'ambiguous with the dimension itself.'
+            for f in sorted(formals & ns.dimensions)
         )
+        _check_template_names(body_ast, macro.template, context, ns, formals, errors)
 
     for ename, body in schema.expressions.items():
         context = f"Named expression '{ename}'"
-        ast = _check_parse(body, schema, context, errors)
+        ast = _parse_expand(body, schema, context, errors)
         if ast is None:
             continue
         if isinstance(ast, CompareNode):
             errors.append(f'{context}: must not contain a comparison operator.\nGot: {body!r}')
             continue
-        _check_names(ast, body, context, variables, parameters, dimensions, errors)
+        resolve_expression(ast, ns, context, errors)
 
     for vname, vdef in schema.variables.items():
-        _check_where(vdef.where, f"Variable '{vname}'", errors)
+        _check_where(vdef.where, ns, f"Variable '{vname}'", errors)
 
     for cname, cdef in schema.constraints.items():
-        _check_where(cdef.where, f"Constraint '{cname}'", errors)
+        _check_where(cdef.where, ns, f"Constraint '{cname}'", errors)
         for i, eq in enumerate(cdef.equations):
-            where = f"Constraint '{cname}', equation {i}"
-            _check_where(eq.where, where, errors)
-            ast = _check_parse(eq.expression, schema, where, errors)
+            context = f"Constraint '{cname}', equation {i}"
+            _check_where(eq.where, ns, context, errors)
+            ast = _parse_expand(eq.expression, schema, context, errors)
             if ast is None:
                 continue
             if not isinstance(ast, CompareNode):
                 errors.append(
-                    f'{where}: expression must contain exactly one '
+                    f'{context}: expression must contain exactly one '
                     f'comparison operator (<=, >=, ==).\n'
                     f'Got: {eq.expression!r}'
                 )
                 continue
-            _check_names(ast.left, eq.expression, where, variables, parameters, dimensions, errors)
-            _check_names(ast.right, eq.expression, where, variables, parameters, dimensions, errors)
+            resolve_expression(ast, ns, context, errors)
 
     for oname, odef in schema.objectives.items():
         for i, eq in enumerate(odef.equations):
-            where = f"Objective '{oname}', equation {i}"
-            _check_where(eq.where, where, errors)
-            ast = _check_parse(eq.expression, schema, where, errors)
+            context = f"Objective '{oname}', equation {i}"
+            _check_where(eq.where, ns, context, errors)
+            ast = _parse_expand(eq.expression, schema, context, errors)
             if ast is None:
                 continue
             if isinstance(ast, CompareNode):
-                errors.append(f'{where}: expression must not contain a comparison operator.\nGot: {eq.expression!r}')
+                errors.append(f'{context}: expression must not contain a comparison operator.\nGot: {eq.expression!r}')
                 continue
-            _check_names(ast, eq.expression, where, variables, parameters, dimensions, errors)
+            resolve_expression(ast, ns, context, errors)
 
     if errors:
         raise ValueError('\n'.join(errors))
 
 
-def _check_parse(
+def _parse_expand(
     expression: str,
     schema: MathSchema,
     context: str,
     errors: list[str],
 ) -> ArithNode | CompareNode | None:
+    from linopy_yaml.expansion import parse_and_expand
+
     try:
         return parse_and_expand(expression, schema, context)
     except ValueError as e:
@@ -154,86 +167,81 @@ def _check_parse(
 
 def _check_where(
     text: str | None,
+    ns: Namespace,
     context: str,
     errors: list[str],
 ) -> None:
     if text is None:
         return
     try:
-        parse_where(text)
+        node = parse_where(text)
     except ValueError as e:
         errors.append(f'{context}: {e}')
+        return
+    resolve_where(node, ns, context, errors)
 
 
-#: helpers whose keyword *value* names a dimension — ``sum(x, over=snapshot)``
-_DIM_VALUE_KWARGS: dict[str, tuple[str, ...]] = {'sum': ('over',), 'group_sum': ('into',)}
-#: helpers whose keyword *key* names a dimension — ``roll(x, snapshot=1)``
-_DIM_KEY_HELPERS = frozenset({'roll', 'shift'})
-
-
-def _undeclared_dim(context: str, helper: str, shown: str, name: str, dimensions: set[str]) -> str:
-    return (
-        f'{context}: {helper}({shown}) does not name a declared dimension.\n'
-        f'  Dimensions: {sorted(dimensions)}\n'
-        f"Declare '{name}' under 'dimensions:', or fix the typo — an unknown "
-        f'dimension makes {helper}() a silent no-op rather than an error.'
-    )
-
-
-def _check_names(
+def _check_template_names(
     node: ArithNode,
-    expression: str,
+    template: str,
     context: str,
-    variables: set[str],
-    parameters: set[str],
-    dimensions: set[str],
+    ns: Namespace,
+    formals: set[str],
     errors: list[str],
 ) -> None:
-    """Collect unknown names and unknown helpers under *node*."""
-    if isinstance(node, NumberNode):
+    """Name-check a macro body, treating formals as bound.
+
+    Not resolution: a formal has no kind until the call site substitutes an
+    argument for it, so the body cannot be typed. This catches the free names
+    that are *not* formals, which is what makes an uncalled macro still fail
+    at load time.
+    """
+    if isinstance(node, (NumberNode, VarNode, ParamNode, DimRefNode)):
         return
 
     if isinstance(node, NameNode):
-        if node.name not in variables and node.name not in parameters:
+        if node.name not in formals and ns.kind(node.name) is None:
             errors.append(
-                f"{context}: '{node.name}' not found in expression "
-                f'{expression!r}.\n'
-                f'  Variables:  {sorted(variables)}\n'
-                f'  Parameters: {sorted(parameters)}\n'
-                f"Check for typos, or ensure '{node.name}' is declared as "
-                f'a variable or parameter.'
+                f"{context}: '{node.name}' not found in template {template!r}.\n"
+                f'  Formals:    {sorted(formals)}\n'
+                f'  Variables:  {sorted(ns.variables)}\n'
+                f'  Parameters: {sorted(ns.parameters)}\n'
+                f"Check for typos, or ensure '{node.name}' is declared."
             )
         return
 
     if isinstance(node, UnaryOpNode):
-        _check_names(node.operand, expression, context, variables, parameters, dimensions, errors)
+        _check_template_names(node.operand, template, context, ns, formals, errors)
         return
 
     if isinstance(node, BinOpNode):
-        _check_names(node.left, expression, context, variables, parameters, dimensions, errors)
-        _check_names(node.right, expression, context, variables, parameters, dimensions, errors)
+        _check_template_names(node.left, template, context, ns, formals, errors)
+        _check_template_names(node.right, template, context, ns, formals, errors)
         return
 
     if isinstance(node, FuncCallNode):
         if node.name not in BUILTIN_NAMES:
             errors.append(f'{context}: {unknown_helper_message(node.name)}')
         for arg in node.args:
-            _check_names(arg, expression, context, variables, parameters, dimensions, errors)
-        # Keyword-arg NameNodes are dimension names, not data references: the
-        # evaluator passes them through as strings. They still have to name a
-        # *declared* dimension — an unknown one is not an error at build time,
-        # it silently makes the call a no-op (ROADMAP item 5c).
+            _check_template_names(arg, template, context, ns, formals, errors)
+        # a formal may be bound to a dimension at the call site (ROADMAP 5c)
+        known_dims = ns.dimensions | formals
         for kwarg in _DIM_VALUE_KWARGS.get(node.name, ()):
             value = node.kwargs.get(kwarg)
-            if isinstance(value, NameNode) and value.name not in dimensions:
-                errors.append(_undeclared_dim(context, node.name, f'{kwarg}={value.name}', value.name, dimensions))
+            if isinstance(value, NameNode) and value.name not in known_dims:
+                errors.append(
+                    f'{context}: {node.name}({kwarg}={value.name}) does not name a '
+                    f'declared dimension or a formal of this macro.'
+                )
         if node.name in _DIM_KEY_HELPERS:
             errors.extend(
-                _undeclared_dim(context, node.name, f'{key}=...', key, dimensions)
+                f'{context}: {node.name}({key}=...) does not name a declared dimension.'
                 for key in node.kwargs
-                if key not in dimensions
+                if key not in known_dims
             )
         for value in node.kwargs.values():
             if not isinstance(value, NameNode):
-                _check_names(value, expression, context, variables, parameters, dimensions, errors)
+                _check_template_names(value, template, context, ns, formals, errors)
         return
+
+    assert_never(node)
