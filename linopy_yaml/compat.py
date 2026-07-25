@@ -40,12 +40,14 @@ try:
     import linopy
     import pandas as pd
     import xarray  # noqa: F401 — guarded here so the message covers it
-    import yaml
 except ModuleNotFoundError as exc:  # linopy / xarray absent
     msg = 'The linopy compatibility layer requires the [compat] extra: pip install "linopy-yaml[compat]"'
     raise ModuleNotFoundError(msg) from exc
 
+import pydantic
+
 from linopy_yaml._notes import note
+from linopy_yaml._source import SourceMap, annotate, read_yaml
 from linopy_yaml.builder import build_model
 from linopy_yaml.loader import build_master_coords, load_parameters
 from linopy_yaml.piecewise import expand_piecewise, validate_piecewise_data
@@ -76,14 +78,14 @@ def build(
     ------
     ValueError
         For any validation failure (missing dimensions, parameters, etc.).
-    pydantic.ValidationError
-        If the YAML structure is invalid.
+    ValueError
+        If the YAML structure is invalid — the message carries the line.
     """
     path = Path(path)
     with note(f"while loading YAML '{path}'"):
-        original = _read(path)
+        original, source = _read(path)
         schema = expand_piecewise(original)
-        validate_expressions(schema)
+        validate_expressions(schema, source=source)
 
         master_coords = build_master_coords(schema, coords)
         dataset = load_parameters(schema, data, master_coords)
@@ -118,9 +120,9 @@ def extend(
     """
     path = Path(path)
     with note(f"while extending with YAML '{path}'"):
-        original = _read(path)
+        original, source = _read(path)
         schema = expand_piecewise(original)
-        validate_expressions(schema, known_variables=list(model.variables))
+        validate_expressions(schema, known_variables=list(model.variables), source=source)
 
         known = _infer_coords(model)
         if coords is not None:
@@ -153,8 +155,12 @@ def extend(
         build_model(model, schema, dataset, master_coords)
 
 
-def _read(path: Path) -> MathSchema:
-    return MathSchema.model_validate(yaml.safe_load(path.read_text()) or {})
+def _read(path: Path) -> tuple[MathSchema, SourceMap]:
+    raw, source = read_yaml(path)
+    try:
+        return MathSchema.model_validate(raw), source
+    except pydantic.ValidationError as exc:
+        raise ValueError(annotate(exc.errors(), source)) from exc
 
 
 def _infer_coords(model: linopy.Model) -> dict[str, pd.Index]:

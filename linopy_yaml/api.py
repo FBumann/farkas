@@ -28,8 +28,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import yaml as _yaml
+from pydantic import ValidationError
 
+from linopy_yaml._source import SourceMap, annotate, read_yaml
 from linopy_yaml.lowering import lower_program, tidy_sources
 from linopy_yaml.relational.executor import DuckdbExecutor, RelationalBuildError, Solution
 from linopy_yaml.schema import MathSchema
@@ -57,13 +58,23 @@ def load_schema(model: str | Path | dict[str, Any] | MathSchema) -> MathSchema:
         )
         raise NotImplementedError(msg)
     if isinstance(model, MathSchema):
-        schema = model
-    elif isinstance(model, dict):
-        schema = MathSchema(**model)
-    else:
-        raw = _yaml.safe_load(Path(model).read_text())
-        schema = MathSchema(**(raw or {}))
-    validate_expressions(schema)
+        return _validated(model, SourceMap.none())
+    if isinstance(model, dict):
+        return _validated(_schema_from(model, SourceMap.none()), SourceMap.none())
+    raw, source = read_yaml(Path(model))
+    return _validated(_schema_from(raw, source), source)
+
+
+def _schema_from(raw: dict[str, Any], source: SourceMap) -> MathSchema:
+    """Build the schema, re-raising shape errors with the line they came from."""
+    try:
+        return MathSchema(**raw)
+    except ValidationError as exc:
+        raise ValueError(annotate(exc.errors(), source)) from exc
+
+
+def _validated(schema: MathSchema, source: SourceMap) -> MathSchema:
+    validate_expressions(schema, source=source)
     return schema
 
 

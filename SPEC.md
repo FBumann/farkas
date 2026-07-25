@@ -140,7 +140,7 @@ Runtime — installed by `pip install linopy-yaml`:
 | `numpy`     | array operations, NaN handling                                 |
 | `pyparsing` | expression and where-string parsing                            |
 | `pydantic`  | YAML schema validation                                         |
-| `pyyaml`    | YAML file loading                                              |
+| `pyyaml`    | YAML file loading; its node marks back the line numbers in load errors |
 
 Compat/oracle only — the `[compat]` extra, never imported by the streaming lane (ARCHITECTURE.md hard rule 2, enforced by `tests/test_architecture.py` and CI's bare-install job):
 
@@ -165,6 +165,31 @@ expressions:  ...   # named sub-expressions      (§3.6, pure substitution)
 macros:       ...   # parameterised templates    (§3.7, pure substitution)
 piecewise:    ...   # λ-formulation blocks       (§3.8, schema-level expansion)
 ```
+
+### 3.0 How a file is read
+
+The loader composes the node tree once, records the source position of every
+key and list item, and constructs the document from that same tree. Errors
+raised any time afterwards — schema shape, an unparseable expression, an
+unresolved name — carry the position of the declaration they came from:
+
+```
+model.yaml:15: Constraint 'balance', equation 0: sum(over=generatr) does not name a declared dimension.
+```
+
+Two YAML 1.1 behaviours are corrected while the nodes are in hand, because
+both silently change what a file means:
+
+- **Booleans are the 1.2 set.** Only `true`/`false` resolve to a boolean.
+  `on`, `off`, `yes`, `no`, `y`, `n` are strings — they are ordinary dimension
+  labels, and coercing them makes the rows they key vanish from the model.
+- **Duplicate keys are an error.** YAML would keep the last one and discard a
+  declaration the file plainly contains.
+
+Two 1.1 coercions deliberately remain: the implicit timestamp (`2024-01-01` →
+a date) and sexagesimal integers (`12:30` → `750`). Both interact with the
+`dtype: datetime` that §3.1 accepts but does not yet implement, so they are
+handled by a dtype guard rather than by the loader.
 
 ### 3.1 `dimensions`
 
@@ -865,6 +890,10 @@ Two routes replace it, in this order:
 1. What went wrong (the specific parameter, dimension, or expression).
 1. What the user needs to do to fix it.
 1. When helpful, what valid options look like.
+1. Where in the file it is — `model.yaml:15`, from the node marks the loader
+   keeps (§3.0). Positions are best-effort: an error that cannot be placed
+   degrades to the nearest enclosing declaration and then to the file name,
+   and is still reported.
 
 ### 8.1 Error message templates
 
