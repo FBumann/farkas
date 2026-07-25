@@ -1074,6 +1074,8 @@ Removed. There is no `register()` decorator and no helper registry: the built-in
 
 **Solver configuration.** Solver selection, options, and result parsing are deliberately thin: the native path exposes what the streaming sinks support (see [#28](https://github.com/FBumann/linopy-yaml/issues/28)); the compat shim leaves solving to linopy entirely.
 
+**Solver breadth.** linopy speaks most commercial and open solvers; we speak **HiGHS** through `solver_direct`, with Gurobi planned on the same path, and **LP files for everything else**. The LP route costs the float→text→parse round trip `solver_direct` exists to remove, so a fast path is per-solver binding work rather than a property of the engine. Stated because anyone arriving from linopy will assume solver-agnosticism.
+
 **SOS constraints.** Not exposed through the YAML interface. (Piecewise-linear relationships *are* — see §3.8 `piecewise` — via λ-formulation expansion; a native SOS2 stream is tracked in [#23](https://github.com/FBumann/linopy-yaml/issues/23).)
 
 **Multiple objectives / multi-objective optimisation.** Only one objective is added to the linopy model. Defining multiple objectives in YAML is not an error, but only the last one takes effect.
@@ -1193,7 +1195,11 @@ Boundaries:
 - **The eager linopy path stays.** It is the correctness oracle (differential
   tests: same model through both backends must produce equivalent solves) and
   it remains the right tool for interactive/incremental use. The relational
-  path is batch build-and-solve; incremental model editing is out of scope.
+  path is batch build-and-solve. *Structural* editing — adding or removing
+  variables and constraints — is out of scope, because it invalidates the
+  label contract that makes `var_label` the solver column index. *Value-only*
+  editing (bounds, RHS) is in scope and nearly free for the same reason: see
+  ROADMAP "Track 2c".
 - In the `solver_direct` path, linopy is not in the loop at all: the solver is
   driven through its own API (highspy / gurobipy), and solution read-back is a
   join of the solver's label-indexed arrays against the label tables.

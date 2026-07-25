@@ -226,6 +226,45 @@ decides whether a request can ever be met:
 | **Budget-bounded** | the escape label budget | global operators, arbitrary Python, non-relational manipulation | already movable — that is what an island is |
 | **Design-bounded** | our choice of where work belongs | data prep, domain helpers, Python declaring structure | movable any time; we don't want to |
 
+### What the table does not rank
+
+It ranks **expressiveness**, and expressiveness is not where linopy's value
+mostly sits. Three axes it says nothing about, each of which decides whether
+someone can actually work here:
+
+| Axis | linopy | us |
+|---|---|---|
+| **Post-solve object** | labelled DataArrays — `.sel`, resample, plot immediately | tidy tables (better for slicing and joining, worse for array math); `Solution.to_xarray()` bridges |
+| **Debugging** | IIS via Gurobi, labelled back to constraints; `print()` of a row | status code and a model too large to materialise — until the queries below exist |
+| **Lifecycle** | mutate, re-solve, warm start, callbacks | build-and-solve; value-only re-solve is in scope, structural editing is not |
+
+None of these are ceiling questions, so none of them appear above. All of them
+are *cheaper* here than in linopy once written, because the model is a set of
+tables and the answers are queries — which is exactly why they need
+scheduling rather than assuming they follow from the architecture.
+
+### The oracle has a ceiling, and it is linopy's
+
+The differential harness validates a construct by building it both ways. It
+can therefore only validate constructs **linopy can also build**. The closure
+above admits operators linopy does not expose — and unlike the Calliope/PyPSA
+comparison, where that is scope we simply do not want, here it costs
+*verification*: such a primitive ships either unverified, or with an eager
+implementation written for no reason except to be the oracle.
+
+That is a slow drift from "linopy is not a runtime dependency" to "linopy is a
+test-time dependency, and we maintain a shim inside it". The line we defend:
+
+- **The compat lane is a product feature**, justified by models already in
+  memory (hard rule 3) — not by the harness. It must not grow eager
+  implementations whose only consumer is a test.
+- A primitive that is admissible here but awkward in linopy is verified
+  **against a hand-checked fixture**, not by growing the shim. Divergence
+  risk is then bounded by the primitive rather than by the shim's size.
+- If a primitive can only be verified by writing linopy code we would not
+  otherwise ship, that is evidence to reconsider the primitive, not to write
+  the code.
+
 An escape returns affine COO rows, so it buys back the *relational* and
 *local* rules — a running-sum island still emits affine rows, just O(T²) of
 them, which is exactly what the budget is for. It cannot buy back **degree**,
@@ -268,6 +307,13 @@ Rules that follow:
   component types) lives in a thin programmatic layer that emits **more rows
   or more templates — never per-instance YAML**. Keep that residue small and
   streaming stays intact.
+- **That layer currently has nothing to call.** Hard rule 6 refuses a Python
+  modeling API and treats the IR as internal, while this section forbids
+  generated YAML — so the residue has no supported seam. Composition forces
+  the IR-construction contract earlier than the roadmap has it: not a general
+  modeling API, but a narrow, versioned way to emit declarations. Until it
+  exists, a library that needs the residue has to reach past hard rule 6 or
+  do the thing this section forbids.
 
 ## Module map
 
