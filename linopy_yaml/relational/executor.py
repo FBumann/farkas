@@ -1,4 +1,6 @@
-"""Duckdb executor for the logical-plan IR (SPEC.md §12.5-12.6).
+"""Duckdb executor for the logical-plan IR.
+
+The lane is described in ARCHITECTURE.md, "The relational lane".
 
 Compiles a :class:`~linopy_yaml.relational.ir.Program` into tidy tables inside
 a file-backed duckdb database under a hard ``memory_limit``, then streams the

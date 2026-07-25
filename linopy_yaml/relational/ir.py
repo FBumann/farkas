@@ -1,4 +1,6 @@
-"""Logical-plan IR for relational LP construction (SPEC.md §12.4).
+"""Logical-plan IR for relational LP construction.
+
+The lane is described in ARCHITECTURE.md, "The relational lane".
 
 Frozen dataclasses only — no execution logic, no engine imports. A `Program`
 is a complete declarative description of a linear program over named tidy
