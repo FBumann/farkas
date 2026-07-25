@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any
 
 import yaml as _yaml
 
+from linopy_yaml.dimensions import check_schema
 from linopy_yaml.lowering import lower_program, tidy_sources
 from linopy_yaml.relational.executor import DuckdbExecutor, RelationalBuildError, Solution
 from linopy_yaml.schema import MathSchema
@@ -64,6 +65,7 @@ def load_schema(model: str | Path | dict[str, Any] | MathSchema) -> MathSchema:
         raw = _yaml.safe_load(Path(model).read_text())
         schema = MathSchema(**(raw or {}))
     validate_expressions(schema)
+    check_schema(schema)
     return schema
 
 

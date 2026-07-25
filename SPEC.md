@@ -669,6 +669,47 @@ expression: p_in - p_out * (1 - loss) == 0
 expression: sum(p * cost, over=generator) == total_cost_var
 ```
 
+### 5.7 Dimension rules
+
+Parameter `dims` are declared, variable `foreach` is declared, and helper
+dimension arguments are name-checked — so **every node's dim set is computable
+before any data is bound**. `linopy_yaml/dimensions.py` computes it, at load
+time, on the resolved core AST, which is what makes both lanes agree by
+construction rather than by differential test.
+
+The type of an expression is a set of dim names:
+
+| Node | Dim set | Error |
+|---|---|---|
+| number | `{}` | |
+| parameter `p` | its declared `dims` | |
+| variable `v` | its `foreach` | |
+| `-x`, `+x` | `dims(x)` | |
+| `a + b`, `a * b`, `a / b` | `dims(a) ∪ dims(b)` | unless one contains the other |
+| `sum(x, over=d)` | `dims(x) − {d}` | if `d ∉ dims(x)` |
+| `group_sum(x, m, into=g)` | `(dims(x) − dims(m)) ∪ {g}` | unless `dims(m) ⊆ dims(x)` |
+| `roll(x, d=n)`, `shift(x, d=n)` | `dims(x)` | if `d ∉ dims(x)` |
+
+The binary-operator rule is **subset, not union**: `p * cost` is fine because
+`cost`'s dims are contained in `p`'s, but combining two operands whose dims
+merely overlap is rejected. The result would carry both dim sets and build a
+model larger than either operand reads as.
+
+At the declaration level:
+
+- **constraint** — `dims(lhs) ∪ dims(rhs)` must **equal** `foreach`. A stray
+  dim multiplies the rows the constraint builds; a `foreach` dim the equation
+  never uses repeats one row across it. Both are nearly always typos.
+- **where** — the predicate's dims must not exceed the frame.
+- **bounds** — the bound parameter's dims must not exceed the variable's
+  `foreach`.
+
+The stray-dim rule is the one that matters under a memory budget: a dim the
+frame does not declare broadcasts silently in the eager lane and adds
+coordinate columns in the relational one, so the file quietly builds a bigger
+model than it reads as. Requiring equality costs nothing — every model in
+`examples/` and the test suite already satisfies it.
+
 -----
 
 ## 6. Where Strings
@@ -720,7 +761,7 @@ and test that.
 
 ### 6.3 Interaction with foreach
 
-The where mask is evaluated against the parameter dataset (which has the master coordinates) and then broadcast onto the `foreach` grid. If a mask dimension is not in `foreach`, it is reduced by `any()` over that dimension before broadcasting.
+The where mask is evaluated against the parameter dataset (which has the master coordinates) and then broadcast onto the `foreach` grid. A mask dimension that is not in `foreach` is a **load error** (§5.7). It was previously reduced with `any()` before broadcasting, which fails *open*: one true value anywhere along the reduced dim silently includes every coordinate.
 
 For variables, the mask is passed directly to linopy's `mask=` argument. For constraints, the mask restricts which constraint rows are built.
 
@@ -765,7 +806,11 @@ expression: sum(p * cost, over=generator)   # arithmetic in positional arg
 | `array`  | arithmetic expression | The expression to sum.     |
 | `over`   | dimension name        | The dimension to sum over. |
 
-If the array does not have the named dimension, it is returned unchanged (no error).
+If the array does not carry the named dimension, that is a **load error**
+(§5.7). It used to be returned unchanged — a no-op that built and solved a
+model in which nothing was summed. This is the same class of mistake as
+`sum(p, over=snapshto)`, which §7's preamble already catches; the two are now
+handled the same way.
 
 Works with both `xr.DataArray` and `linopy.Variable`/`LinearExpression` (calls `.sum(dim)` on the underlying object).
 
