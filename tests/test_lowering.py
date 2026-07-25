@@ -114,7 +114,9 @@ def test_lower_program_structure(dispatch_schema):
     assert c.rhs == Param('load')
 
     assert program.objective.sense == 'min'
-    assert program.objective.expr == Sum(Var('p') * Param('cost'), ('generator',))
+    # no sum: an objective totals every dim it carries, so writing one would
+    # only restate what the objective already is
+    assert program.objective.expr == Var('p') * Param('cost')
 
 
 def test_where_lowering(dispatch_schema):

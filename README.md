@@ -96,7 +96,7 @@ objectives:
   total_cost:
     sense: minimize
     equations:
-      - expression: sum(p * cost, over=generator)
+      - expression: p * cost
 ```
 
 ```python
