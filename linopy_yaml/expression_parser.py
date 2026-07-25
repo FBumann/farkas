@@ -78,7 +78,9 @@ def _build_grammar() -> pp.ParserElement:
     arith = pp.Forward()
 
     # Atoms
-    integer = pp.Regex(r'-?\d+').set_parse_action(lambda t: NumberNode(int(t[0])))
+    # float, not int: NumberNode.value is declared float, and an int stored here
+    # is invisible to the type checker, so every consumer has to re-coerce.
+    integer = pp.Regex(r'-?\d+').set_parse_action(lambda t: NumberNode(float(t[0])))
     real = pp.Regex(r'-?\d+\.\d*([eE][+-]?\d+)?').set_parse_action(lambda t: NumberNode(float(t[0])))
     inf_literal = (pp.Literal('.inf') | pp.Literal('inf')).set_parse_action(lambda: NumberNode(float('inf')))
     number = real | inf_literal | integer

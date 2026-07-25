@@ -321,7 +321,7 @@ class DuckdbExecutor:
         def walk(p: ir.Pred) -> str:
             if isinstance(p, ir.Cmp):
                 alias = join_param(p.param)
-                val = f"'{p.value}'" if isinstance(p.value, str) else repr(float(p.value))
+                val = f"'{p.value}'" if isinstance(p.value, str) else repr(p.value)
                 op = '=' if p.op == '==' else p.op
                 return f'({alias}.value {op} {val})'
             if isinstance(p, ir.DimCmp):
@@ -330,7 +330,7 @@ class DuckdbExecutor:
                         f"where-comparison on dimension '{p.dim}' is outside the foreach dims "
                         f'{list(dims)} — reducing a mask over an unlisted dim is not supported'
                     )
-                val = f"'{p.value}'" if isinstance(p.value, str) else repr(float(p.value))
+                val = f"'{p.value}'" if isinstance(p.value, str) else repr(p.value)
                 op = '=' if p.op == '==' else p.op
                 return f'(t_{p.dim}.val {op} {val})'
             if isinstance(p, ir.Defined):
@@ -822,6 +822,9 @@ def _release(con: Any, workdir: Path | None) -> None:
 def _lit(v: float) -> str:
     if math.isinf(v):
         return "('infinity'::DOUBLE)" if v > 0 else "('-infinity'::DOUBLE)"
+    # int is assignable to float, so _lit(0) type-checks and would emit '0' —
+    # duckdb reads that as INTEGER, not DOUBLE.
+    # pyrefly: ignore[unnecessary-type-conversion]
     return repr(float(v))
 
 

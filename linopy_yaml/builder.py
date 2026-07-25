@@ -352,7 +352,7 @@ def _helper_group_sum(array: Any, mapping: Any, *, into: str) -> Any:
     raise TypeError(msg)
 
 
-def _shift_amount(helper: str, kwargs: dict[str, int]) -> tuple[str, int]:
+def _shift_amount(helper: str, kwargs: dict[str, float]) -> tuple[str, int]:
     """Unpack and check the shared ``<dim>=<n>`` signature of roll/shift."""
     if len(kwargs) != 1:
         msg = f'{helper}() expects exactly one keyword argument (dim=n), got {len(kwargs)}: {kwargs}'
@@ -364,7 +364,7 @@ def _shift_amount(helper: str, kwargs: dict[str, int]) -> tuple[str, int]:
     return dim, int(n)
 
 
-def _helper_shift(array: Any, **kwargs: int) -> Any:
+def _helper_shift(array: Any, **kwargs: float) -> Any:
     """Non-cyclic shift along a dimension; vacated positions contribute zero.
 
     Usage in YAML: ``shift(soc, snapshot=1)`` — the value at *t-1*, with the
@@ -379,7 +379,7 @@ def _helper_shift(array: Any, **kwargs: int) -> Any:
     raise TypeError(msg)
 
 
-def _helper_roll(array: Any, **kwargs: int) -> Any:
+def _helper_roll(array: Any, **kwargs: float) -> Any:
     """Roll (circular shift) *array* along a dimension.
 
     Usage in YAML: ``roll(soc, snapshot=1)``

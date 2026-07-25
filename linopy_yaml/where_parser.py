@@ -79,7 +79,8 @@ def _build_where_grammar() -> pp.ParserElement:
 
     # Numbers
     real = pp.Regex(r'-?\d+\.\d*([eE][+-]?\d+)?').set_parse_action(lambda t: float(t[0]))
-    integer = pp.Regex(r'-?\d+').set_parse_action(lambda t: int(t[0]))
+    # float, not int — see the note in expression_parser._build_grammar
+    integer = pp.Regex(r'-?\d+').set_parse_action(lambda t: float(t[0]))
     number = real | integer
 
     # Names

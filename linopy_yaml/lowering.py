@@ -199,7 +199,7 @@ def tidy_sources(
 
 def _lower_expr(node: ArithNode, schema: MathSchema, context: str) -> ir.Expr:
     if isinstance(node, NumberNode):
-        return ir.Const(float(node.value))
+        return ir.Const(node.value)
 
     if isinstance(node, NameNode):
         if node.name in schema.variables:
@@ -354,7 +354,7 @@ def _dims_of(expr: ir.Expr, schema: MathSchema) -> frozenset[str]:
 def _lower_bound(value: float | str) -> ir.Expr:
     if isinstance(value, str):
         return ir.Param(value)
-    return ir.Const(float(value))
+    return ir.Const(value)
 
 
 # ---------------------------------------------------------------------------
