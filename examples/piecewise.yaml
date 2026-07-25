@@ -55,4 +55,4 @@ objectives:
   total_cost:
     sense: minimize
     equations:
-      - expression: sum(op_cost, over=generator)
+      - expression: op_cost

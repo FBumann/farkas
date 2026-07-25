@@ -67,7 +67,7 @@ objectives:
   total_cost:
     sense: minimize
     equations:
-      - expression: sum(p * cost, over=generator)
+      - expression: p * cost
 ```
 
 Python call site:
@@ -316,12 +316,21 @@ constraints:
 
 Declares the objective function. Typically one, but multiple may be defined (only the last one added to the model takes effect unless using `extend()`).
 
+**An objective is a scalar by definition**, so every dim the expression carries is summed. That total is not a choice — a "vector objective" is not a model (multi-objective is out of scope, §10) — so writing the sums out says nothing the objective does not already say:
+
+```yaml
+- expression: p * cost                              # this
+- expression: sum(sum(p * cost, over=generator), over=snapshot)   # means exactly this
+```
+
+Earlier versions of these examples wrote `sum(p * cost, over=generator)`, which was misleading: it read as though `over=generator` selected something, when `generator` would have been summed either way. Inside a *constraint* a `sum` does carry information — `sum(p, over=generator) == load` is a different model from `p == load` — but there is no such distinction here.
+
 ```yaml
 objectives:
   total_cost:
     sense: minimize             # minimize | maximize. Default: minimize
     equations:
-      - expression: sum(p * cost, over=generator)
+      - expression: p * cost      # totalled over every dim it carries
 ```
 
 **Fields:**
@@ -330,7 +339,7 @@ objectives:
 |---------------------------|------|------------|------------------------------------------------------------------------------------------------|
 | `sense`                   | str  | `minimize` | Optimisation direction. One of `minimize`, `maximize`.                                         |
 | `equations`               | list | required   | Currently only the first equation is used.                                                     |
-| `equations[0].expression` | str  | required   | Arithmetic expression (no comparison operator). Must produce a scalar linopy LinearExpression. |
+| `equations[0].expression` | str  | required   | Arithmetic expression (no comparison operator). Every dim it carries is totalled — see below. |
 
 
 ### 3.6 `expressions`
@@ -1209,7 +1218,8 @@ Declarations (frozen dataclasses in `linopy_yaml/relational/ir.py`):
 - `ConstraintDecl(name, dims, lhs, sense, rhs)` — `sense ∈ {==, <=, >=}`;
   both sides are affine expressions, the executor normalises constants to the
   right-hand side
-- `ObjectiveDecl(sense, expr)` — remaining dims are implicitly summed
+- `ObjectiveDecl(sense, expr)` — every dim the expression carries is summed;
+  an objective is a scalar, so there is nothing else it could mean (§3.5)
 
 Affine expressions:
 
