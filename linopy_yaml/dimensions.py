@@ -8,20 +8,19 @@ construction rather than by differential test.
 
 The rules::
 
-    Number, Const           -> {}
-    Param(p)                -> declared dims
-    Var(v)                  -> its foreach
-    -x, +x                  -> dims(x)
-    a + b, a * b, a / b     -> subset rule: one side's dims must contain the
-                               other's; result is the union
-    sum(x, over=d)          -> dims(x) - {d};   error if d not in dims(x)
-    group_sum(x, m, into=g) -> (dims(x) - dims(m)) | {g};
-                               error unless dims(m) subset dims(x)
-    roll/shift(x, d=n)      -> dims(x);         error if d not in dims(x)
+    number                  -> no dims
+    parameter p             -> its declared dims
+    variable v              -> its foreach
+    -x, +x                  -> same dims as x
+    a + b, a * b, a / b     -> every dim either side carries (set union)
+    sum(x, over=d)          -> x's dims without d;  error if x has no d
+    group_sum(x, m, into=g) -> x's dims, minus the mapping's, plus g;
+                               error unless the mapping's dims are all in x's
+    roll/shift(x, d=n)      -> same dims as x;      error if x has no d
 
 and at the declaration level::
 
-    constraint  -> dims(lhs) | dims(rhs) must *equal* foreach
+    constraint  -> the dims of both sides together must *equal* foreach
     where       -> the predicate's dims must not exceed the frame
     bounds      -> the bound parameter's dims must not exceed foreach
 
@@ -36,6 +35,7 @@ nothing: every model in `examples/` and the test suite already satisfies it.
 
 from __future__ import annotations
 
+from types import MappingProxyType
 from typing import TYPE_CHECKING, assert_never
 
 from linopy_yaml.expression_parser import (
@@ -65,6 +65,8 @@ from linopy_yaml.where_parser import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
     from linopy_yaml.schema import MathSchema
 
 
@@ -72,14 +74,29 @@ class DimError(ValueError):
     """A dim-set rule was violated. Raised at load time, before any data."""
 
 
-def dims_of(node: ExprNode, schema: MathSchema, context: str) -> frozenset[str]:
-    """The dim set of a resolved expression, checking every rule on the way."""
+def dims_of(
+    node: ExprNode,
+    schema: MathSchema,
+    context: str,
+    external: Mapping[str, Sequence[str]] = MappingProxyType({}),
+) -> frozenset[str]:
+    """The dim set of a resolved expression, checking every rule on the way.
+
+    ``external`` gives the dims of variables that live on a model rather than
+    in this schema — ``compat.extend()``'s case, mirroring how
+    ``known_variables`` widens the namespace.
+    """
     if isinstance(node, CompareNode):
-        return _dims(node.left, schema, context) | _dims(node.right, schema, context)
-    return _dims(node, schema, context)
+        return _dims(node.left, schema, context, external) | _dims(node.right, schema, context, external)
+    return _dims(node, schema, context, external)
 
 
-def _dims(node: ArithNode, schema: MathSchema, context: str) -> frozenset[str]:
+def _dims(
+    node: ArithNode,
+    schema: MathSchema,
+    context: str,
+    external: Mapping[str, Sequence[str]],
+) -> frozenset[str]:
     if isinstance(node, NumberNode):
         return frozenset()
 
@@ -87,36 +104,40 @@ def _dims(node: ArithNode, schema: MathSchema, context: str) -> frozenset[str]:
         return frozenset(schema.parameters[node.name].dims)
 
     if isinstance(node, VarNode):
-        return frozenset(schema.variables[node.name].foreach)
+        if node.name in schema.variables:
+            return frozenset(schema.variables[node.name].foreach)
+        return frozenset(external[node.name])  # a variable already on the model
 
     if isinstance(node, (NameNode, DimRefNode)):
         msg = f'{type(node).__name__} reached the dim checker; resolve the expression first.'
         raise AssertionError(msg)
 
     if isinstance(node, UnaryOpNode):
-        return _dims(node.operand, schema, context)
+        return _dims(node.operand, schema, context, external)
 
     if isinstance(node, BinOpNode):
-        left = _dims(node.left, schema, context)
-        right = _dims(node.right, schema, context)
-        if not (left <= right or right <= left):
-            raise DimError(
-                f'{context}: cannot combine dims {sorted(left)} with {sorted(right)} '
-                f"using '{node.op}' — neither side's dims contain the other's, so the "
-                f'result would carry {sorted(left | right)} and silently build a larger '
-                f'model than either operand. Sum or group one side down first.'
-            )
-        return left | right
+        # Union, not subset. An outer product is legitimate when the frame
+        # declares the result — the convex-piecewise epigraph multiplies a
+        # per-segment slope by a per-snapshot variable and wants one row per
+        # (snapshot, generator, segment). What must not be silent is the
+        # *declaration* disagreeing, and `dims == foreach` catches that at the
+        # point where model size is actually decided.
+        return _dims(node.left, schema, context, external) | _dims(node.right, schema, context, external)
 
     if isinstance(node, FuncCallNode):
-        return _dims_call(node, schema, context)
+        return _dims_call(node, schema, context, external)
 
     assert_never(node)
 
 
-def _dims_call(node: FuncCallNode, schema: MathSchema, context: str) -> frozenset[str]:
+def _dims_call(
+    node: FuncCallNode,
+    schema: MathSchema,
+    context: str,
+    external: Mapping[str, Sequence[str]],
+) -> frozenset[str]:
     if node.name == 'sum':
-        inner = _dims(node.args[0], schema, context)
+        inner = _dims(node.args[0], schema, context, external)
         over = node.kwargs['over']
         assert isinstance(over, DimRefNode)
         if over.name not in inner:
@@ -129,7 +150,7 @@ def _dims_call(node: FuncCallNode, schema: MathSchema, context: str) -> frozense
         return inner - {over.name}
 
     if node.name == 'group_sum':
-        inner = _dims(node.args[0], schema, context)
+        inner = _dims(node.args[0], schema, context, external)
         mapping = node.args[1]
         into = node.kwargs['into']
         assert isinstance(mapping, ParamNode)
@@ -144,7 +165,7 @@ def _dims_call(node: FuncCallNode, schema: MathSchema, context: str) -> frozense
         return (inner - mdims) | {into.name}
 
     if node.name in ('roll', 'shift'):
-        inner = _dims(node.args[0], schema, context)
+        inner = _dims(node.args[0], schema, context, external)
         ((dim, _),) = node.kwargs.items()
         if dim not in inner:
             raise DimError(f"{context}: {node.name}() along '{dim}' but the expression has dims {sorted(inner)}.")
@@ -159,11 +180,19 @@ def _dims_call(node: FuncCallNode, schema: MathSchema, context: str) -> frozense
 # ---------------------------------------------------------------------------
 
 
-def check_schema(schema: MathSchema) -> None:
-    """Check every declaration's dim rules. Raises :class:`DimError`."""
+def check_schema(
+    schema: MathSchema,
+    external: Mapping[str, Sequence[str]] = MappingProxyType({}),
+) -> None:
+    """Check every declaration's dim rules. Raises :class:`DimError`.
+
+    ``external`` maps variables already on a model to their dims, so
+    ``compat.extend()`` can reference them (hard rule 5 keeps parameters
+    schema-local, but variables legitimately come from the model argument).
+    """
     from linopy_yaml.resolution import Namespace, expression_of, where_of
 
-    ns = Namespace.of(schema)
+    ns = Namespace.of(schema, external)
 
     for vname, vdef in schema.variables.items():
         frame = frozenset(vdef.foreach)
@@ -187,7 +216,7 @@ def check_schema(schema: MathSchema) -> None:
         for i, eq in enumerate(cdef.equations):
             context = f"Constraint '{cname}'" if n_eqs == 1 else f"Constraint '{cname}', equation {i}"
             _check_where_dims(where_of(eq.where, ns, context), schema, frame, context)
-            got = dims_of(expression_of(eq.expression, schema, ns, context), schema, context)
+            got = dims_of(expression_of(eq.expression, schema, ns, context), schema, context, external)
             if got != frame:
                 stray, missing = sorted(got - frame), sorted(frame - got)
                 detail = (
@@ -203,7 +232,7 @@ def check_schema(schema: MathSchema) -> None:
 
     for oname, odef in schema.objectives.items():
         context = f"Objective '{oname}'"
-        dims_of(expression_of(odef.equations[0].expression, schema, ns, context), schema, context)
+        dims_of(expression_of(odef.equations[0].expression, schema, ns, context), schema, context, external)
 
 
 def _check_where_dims(

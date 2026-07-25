@@ -19,8 +19,10 @@ load time if its body references something that does not exist.
 
 from __future__ import annotations
 
+from types import MappingProxyType
 from typing import TYPE_CHECKING, assert_never
 
+from linopy_yaml.dimensions import check_schema
 from linopy_yaml.expansion import expand, parse_template
 from linopy_yaml.expression_parser import (
     ArithNode,
@@ -45,7 +47,7 @@ from linopy_yaml.resolution import (
 from linopy_yaml.where_parser import parse_where
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Mapping, Sequence
 
     from linopy_yaml.schema import MathSchema
 
@@ -53,7 +55,7 @@ if TYPE_CHECKING:
 def validate_expressions(
     schema: MathSchema,
     *,
-    known_variables: Iterable[str] = (),
+    known_variables: Mapping[str, Sequence[str]] = MappingProxyType({}),
 ) -> None:
     """Validate and resolve every expression and where string in *schema*.
 
@@ -65,16 +67,18 @@ def validate_expressions(
     - every helper function is a built-in, and its dimension arguments name
       declared dimensions;
     - where strings parse *and* resolve — an unknown name in a where is an
-      error, not a silently-empty mask.
+      error, not a silently-empty mask;
+    - every dim rule (``dimensions.check_schema``), once names resolve.
 
     Parameters
     ----------
     schema : MathSchema
         The schema to validate.
-    known_variables : Iterable[str]
-        Names valid in addition to those declared in *schema* — used by
-        ``compat.extend()``, where expressions may reference variables
-        already present on the model. Parameters get no such widening: a
+    known_variables : Mapping[str, Sequence[str]]
+        Variables valid in addition to those declared in *schema*, mapped to
+        their dims — used by ``compat.extend()``, where expressions may
+        reference variables already present on the model. The dims are needed
+        for the same reason the names are: dim checking is a language rule. Parameters get no such widening: a
         YAML file declares every parameter it uses (hard rule 5).
 
     Raises
@@ -148,6 +152,12 @@ def validate_expressions(
 
     if errors:
         raise ValueError('\n'.join(errors))
+
+    # Dim rules are language rules, not backend rules, so they run here rather
+    # than at either entry point — compat.build/extend and api.load_schema all
+    # arrive through this function, and a lane that could skip them would be a
+    # lane with a different language (hard rule 3).
+    check_schema(schema, known_variables)
 
 
 def _parse_expand(

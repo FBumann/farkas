@@ -120,7 +120,11 @@ def extend(
     with note(f"while extending with YAML '{path}'"):
         original = _read(path)
         schema = expand_piecewise(original)
-        validate_expressions(schema, known_variables=list(model.variables))
+        validate_expressions(
+            schema,
+            # linopy dims are Hashable; the language's are names
+            known_variables={n: [str(d) for d in model.variables[n].dims] for n in model.variables},
+        )
 
         known = _infer_coords(model)
         if coords is not None:
