@@ -52,13 +52,6 @@ class ParamDefined:
 
 
 @dataclass
-class DimDefined:
-    """A bare dimension name: true over its whole coordinate index."""
-
-    name: str
-
-
-@dataclass
 class ParamCmp:
     """Compare a parameter against a literal, element-wise."""
 
@@ -97,18 +90,7 @@ class OrNode:
 # before this line — that works only because `from __future__ import
 # annotations` makes annotations strings. Don't remove that future-import
 # unless you also reorder these definitions.
-WhereNode = (
-    BoolLiteral
-    | ExistenceCheck
-    | Comparison
-    | ParamDefined
-    | DimDefined
-    | ParamCmp
-    | DimCmp
-    | NotNode
-    | AndNode
-    | OrNode
-)
+WhereNode = BoolLiteral | ExistenceCheck | Comparison | ParamDefined | ParamCmp | DimCmp | NotNode | AndNode | OrNode
 
 
 # ---------------------------------------------------------------------------

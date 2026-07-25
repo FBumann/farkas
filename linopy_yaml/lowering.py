@@ -46,7 +46,6 @@ from linopy_yaml.where_parser import (
     BoolLiteral,
     Comparison,
     DimCmp,
-    DimDefined,
     ExistenceCheck,
     NotNode,
     OrNode,
@@ -390,10 +389,6 @@ def _lower_where_node(node: WhereNode, context: str) -> ir.Pred:
 
     if isinstance(node, ParamDefined):
         return ir.Defined(node.name)
-
-    if isinstance(node, DimDefined):
-        # a bare dimension name is true over its whole index
-        return ir.Bool(True)
 
     if isinstance(node, ParamCmp):
         return ir.Cmp(node.name, node.op, node.value)

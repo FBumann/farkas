@@ -34,7 +34,6 @@ from linopy_yaml.where_parser import (
     BoolLiteral,
     Comparison,
     DimCmp,
-    DimDefined,
     ExistenceCheck,
     NotNode,
     OrNode,
@@ -426,13 +425,6 @@ def _eval_node(
     if isinstance(node, ParamDefined):
         arr = dataset[node.name]
         return arr.notnull() & np.isfinite(arr)
-
-    if isinstance(node, DimDefined):
-        return xr.DataArray(
-            True,
-            coords={node.name: master_coords[node.name]},
-            dims=[node.name],
-        )
 
     if isinstance(node, (ParamCmp, DimCmp)):
         if isinstance(node, ParamCmp):
