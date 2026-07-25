@@ -62,7 +62,7 @@ objectives:
   total_cost:
     sense: minimize
     equations:
-      - expression: sum(p * cost, over=generator) + sum(u * fix_cost, over=generator)
+      - expression: sum(sum(p * cost, over=generator) + sum(u * fix_cost, over=generator), over=snapshot)
 """
 
 

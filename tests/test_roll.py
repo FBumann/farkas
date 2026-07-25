@@ -235,7 +235,7 @@ objectives:
   total_cost:
     sense: minimize
     equations:
-      - expression: sum(p * cost, over=generator)
+      - expression: sum(sum(p * cost, over=generator), over=snapshot)
 """
     yaml_file = tmp_path / 'ramp.yaml'
     yaml_file.write_text(yaml_text)

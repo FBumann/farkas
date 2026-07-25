@@ -34,7 +34,12 @@ BASE = {
             'equations': [{'expression': 'group_sum(p, gen_bus, into=bus) == load'}],
         }
     },
-    'objectives': {'total': {'sense': 'minimize', 'equations': [{'expression': 'sum(p * cost, over=generator)'}]}},
+    'objectives': {
+        'total': {
+            'sense': 'minimize',
+            'equations': [{'expression': 'sum(sum(p * cost, over=generator), over=snapshot)'}],
+        }
+    },
 }
 
 
@@ -174,3 +179,29 @@ def test_shipped_examples_typecheck(tmp_path):
     for path in sorted(Path('examples').glob('*.yaml')):
         schema = MathSchema(**pyyaml.safe_load(path.read_text()))
         check_schema(schema)
+
+
+# ---------------------------------------------------------------------------
+# the objective reduces to a number
+# ---------------------------------------------------------------------------
+
+
+def test_objective_must_be_scalar():
+    """Remaining dims used to be summed implicitly, which made the explicit
+    `over=generator` decorative — the implicit sum would have done it anyway,
+    and any dim error that survived the expression got swallowed with it."""
+    schema = _schema(**{'objectives.total.equations': [{'expression': 'sum(p * cost, over=generator)'}]})
+    with pytest.raises(DimError, match=r"carries dims \['snapshot'\]; an objective must reduce"):
+        check_schema(schema)
+
+
+def test_objective_error_shows_the_expression_you_meant():
+    schema = _schema(**{'objectives.total.equations': [{'expression': 'sum(p * cost, over=generator)'}]})
+    with pytest.raises(DimError, match=r"'sum\(sum\(p \* cost, over=generator\), over=snapshot\)'"):
+        check_schema(schema)
+
+
+def test_a_fully_summed_objective_passes():
+    check_schema(
+        _schema(**{'objectives.total.equations': [{'expression': 'sum(sum(p * cost, over=generator), over=snapshot)'}]})
+    )

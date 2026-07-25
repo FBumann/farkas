@@ -23,6 +23,7 @@ and at the declaration level::
     constraint  -> the dims of both sides together must *equal* foreach
     where       -> the predicate's dims must not exceed the frame
     bounds      -> the bound parameter's dims must not exceed foreach
+    objective   -> no dims at all: every one summed out explicitly
 
 The direction that matters most is the *stray* dim: one the frame does not
 declare broadcasts silently in the eager lane and adds coordinate columns in
@@ -232,7 +233,13 @@ def check_schema(
 
     for oname, odef in schema.objectives.items():
         context = f"Objective '{oname}'"
-        dims_of(expression_of(odef.equations[0].expression, schema, ns, context), schema, context, external)
+        got = dims_of(expression_of(odef.equations[0].expression, schema, ns, context), schema, context, external)
+        if got:
+            raise DimError(
+                f'{context}: the expression carries dims {sorted(got)}; an objective '
+                f'must reduce to a single number. Sum them out explicitly — '
+                f'{_nested_sum_hint(odef.equations[0].expression, got)}.'
+            )
 
 
 def _check_where_dims(
@@ -273,3 +280,11 @@ def _check_where_dims(
         raise AssertionError(msg)
     elif not isinstance(node, BoolLiteral):
         assert_never(node)
+
+
+def _nested_sum_hint(expression: str, dims: frozenset[str]) -> str:
+    """Show the writer the expression they meant."""
+    hint = expression
+    for d in sorted(dims):
+        hint = f'sum({hint}, over={d})'
+    return f'e.g. {hint!r}'

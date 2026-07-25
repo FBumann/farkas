@@ -92,7 +92,7 @@ def test_out_of_language_is_a_build_error(dispatch_yaml, dispatch_inputs):
     from linopy_yaml.relational import RelationalBuildError
 
     raw = pyyaml.safe_load(Path(dispatch_yaml).read_text())
-    raw['objectives']['total_cost']['equations'] = [{'expression': 'sum(p ** 2, over=generator)'}]
+    raw['objectives']['total_cost']['equations'] = [{'expression': 'sum(sum(p ** 2, over=generator), over=snapshot)'}]
     sources, coords = dispatch_inputs
     with pytest.raises(RelationalBuildError, match='operator'):
         ly.build(raw, sources, coords=coords)
@@ -140,7 +140,7 @@ def test_check_reports_language_errors(dispatch_yaml):
     import yaml as pyyaml
 
     raw = pyyaml.safe_load(Path(dispatch_yaml).read_text())
-    raw['objectives']['total_cost']['equations'] = [{'expression': 'sum(p ** 2, over=generator)'}]
+    raw['objectives']['total_cost']['equations'] = [{'expression': 'sum(sum(p ** 2, over=generator), over=snapshot)'}]
     with pytest.raises(ly.LanguageError, match=r"operator '\*\*'"):
         ly.check(raw)
 
@@ -195,6 +195,6 @@ def test_check_rejects_degree_two_without_data(dispatch_yaml):
     import yaml as pyyaml
 
     raw = pyyaml.safe_load(Path(dispatch_yaml).read_text())
-    raw['objectives']['total_cost']['equations'] = [{'expression': 'sum(p * p, over=generator)'}]
+    raw['objectives']['total_cost']['equations'] = [{'expression': 'sum(sum(p * p, over=generator), over=snapshot)'}]
     with pytest.raises(ly.LanguageError, match='degree 2'):
         ly.check(raw)

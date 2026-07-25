@@ -25,7 +25,12 @@ MODEL = {
     'constraints': {
         'balance': {'foreach': ['snapshot'], 'equations': [{'expression': 'sum(p, over=generator) == load'}]}
     },
-    'objectives': {'total': {'sense': 'minimize', 'equations': [{'expression': 'sum(p * cost, over=generator)'}]}},
+    'objectives': {
+        'total': {
+            'sense': 'minimize',
+            'equations': [{'expression': 'sum(sum(p * cost, over=generator), over=snapshot)'}],
+        }
+    },
 }
 
 

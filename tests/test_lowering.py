@@ -114,7 +114,8 @@ def test_lower_program_structure(dispatch_schema):
     assert c.rhs == Param('load')
 
     assert program.objective.sense == 'min'
-    assert program.objective.expr == Sum(Var('p') * Param('cost'), ('generator',))
+    # the objective sums every dim explicitly now — nothing is implicit
+    assert program.objective.expr == Sum(Sum(Var('p') * Param('cost'), ('generator',)), ('snapshot',))
 
 
 def test_where_lowering(dispatch_schema):

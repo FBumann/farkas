@@ -57,7 +57,7 @@ objectives:
   total_cost:
     sense: minimize
     equations:
-      - expression: sum(gen_cost, over=generator)
+      - expression: sum(sum(gen_cost, over=generator), over=snapshot)
 """
 
 

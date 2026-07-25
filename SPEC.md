@@ -67,7 +67,7 @@ objectives:
   total_cost:
     sense: minimize
     equations:
-      - expression: sum(p * cost, over=generator)
+      - expression: sum(sum(p * cost, over=generator), over=snapshot)
 ```
 
 Python call site:
@@ -330,7 +330,7 @@ objectives:
 |---------------------------|------|------------|------------------------------------------------------------------------------------------------|
 | `sense`                   | str  | `minimize` | Optimisation direction. One of `minimize`, `maximize`.                                         |
 | `equations`               | list | required   | Currently only the first equation is used.                                                     |
-| `equations[0].expression` | str  | required   | Arithmetic expression (no comparison operator). Must produce a scalar linopy LinearExpression. |
+| `equations[0].expression` | str  | required   | Arithmetic expression (no comparison operator). Must reduce to a **single number** — every dim summed out explicitly (§5.7). |
 
 
 ### 3.6 `expressions`
@@ -705,6 +705,14 @@ At the declaration level:
 - **where** — the predicate's dims must not exceed the frame.
 - **bounds** — the bound parameter's dims must not exceed the variable's
   `foreach`.
+- **objective** — must reduce to no dims at all.
+
+The objective rule is why `sum` means something there. Remaining dims used to
+be summed implicitly, which made `over=generator` decorative — the implicit
+sum would have reduced that dim anyway — and swallowed any dim error that
+survived the expression. Writing
+`sum(sum(p * cost, over=generator), over=snapshot)` is longer, and it says
+what the objective actually is.
 
 The stray-dim rule is the one that matters under a memory budget: a dim the
 frame does not declare broadcasts silently in the eager lane and adds
@@ -1209,7 +1217,9 @@ Declarations (frozen dataclasses in `linopy_yaml/relational/ir.py`):
 - `ConstraintDecl(name, dims, lhs, sense, rhs)` — `sense ∈ {==, <=, >=}`;
   both sides are affine expressions, the executor normalises constants to the
   right-hand side
-- `ObjectiveDecl(sense, expr)` — remaining dims are implicitly summed
+- `ObjectiveDecl(sense, expr)` — the expression is scalar; §5.7 rejects
+  anything else at load time, so the executor's aggregation has nothing left
+  to reduce
 
 Affine expressions:
 

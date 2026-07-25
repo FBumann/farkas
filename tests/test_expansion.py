@@ -54,7 +54,7 @@ def make_schema(
         'objectives': {
             'total': {
                 'sense': 'minimize',
-                'equations': [{'expression': 'sum(p * cost, over=generator)'}],
+                'equations': [{'expression': 'sum(sum(p * cost, over=generator), over=snapshot)'}],
             }
         },
     }
@@ -245,7 +245,7 @@ objectives:
   total_cost:
     sense: minimize
     equations:
-      - expression: weighted_sum(p, cost, over=generator)
+      - expression: sum(weighted_sum(p, cost, over=generator), over=snapshot)
 """
     yaml_file = tmp_path / 'model.yaml'
     yaml_file.write_text(yaml_text)

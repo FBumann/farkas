@@ -249,7 +249,8 @@ class ConstraintDecl:
 
 @dataclass(frozen=True)
 class ObjectiveDecl:
-    """Objective; dims remaining after explicit Sums are implicitly summed."""
+    """Objective. The expression is scalar — ``dimensions.py`` rejects a
+    non-scalar objective at load time, so nothing is reduced implicitly here."""
 
     sense: ObjSense
     expr: Expr

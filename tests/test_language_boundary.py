@@ -73,7 +73,9 @@ def test_degree_two_is_a_load_error_not_a_build_error():
     up at build time. That made check() useless as the CI verb for exactly the
     rule it should enforce first.
     """
-    schema = _schema(**{'objectives.total_cost.equations': [{'expression': 'sum(p * p, over=generator)'}]})
+    schema = _schema(
+        **{'objectives.total_cost.equations': [{'expression': 'sum(sum(p * p, over=generator), over=snapshot)'}]}
+    )
     with pytest.raises(RelationalBuildError, match='degree 2'):
         lower_program(schema)
 
@@ -85,4 +87,8 @@ def test_variable_divisor_is_a_load_error():
 
 
 def test_affine_products_still_lower():
-    lower_program(_schema(**{'objectives.total_cost.equations': [{'expression': 'sum(p * cost, over=generator)'}]}))
+    lower_program(
+        _schema(
+            **{'objectives.total_cost.equations': [{'expression': 'sum(sum(p * cost, over=generator), over=snapshot)'}]}
+        )
+    )
