@@ -6,8 +6,10 @@ What a YAML file may contain and what it means. *Why* it is shaped this way:
 
 ## 1. File shape
 
-Eight optional top-level keys: `dimensions`, `parameters`, `variables`,
-`constraints`, `objectives` (§2), `expressions`, `macros` (§3), `piecewise` (§4).
+Eight top-level keys: `dimensions`, `parameters`, `variables`, `constraints`,
+`objectives` (§2), `expressions`, `macros` (§3), `piecewise` (§4). The schema
+accepts any subset, but `check`, `solve` and `write` require an objective —
+there is nothing for the streaming lane to optimise without one.
 
 **The schema is closed at every level.** An unrecognised key — top-level or
 inside any declaration — is a load error naming the near miss (`unknown key
@@ -106,10 +108,17 @@ piecewise:
     over: bp                  # breakpoint dimension
     links:
       - [power, power_bp]     # [expression, values-parameter]
-      - [fuel, fuel_bp, "<="] # optional sign: bounded by, not pinned to
+      - [fuel, fuel_bp]
       - [heat, heat_bp]
     convex: false             # true: pure-LP convex hull, no binaries
     active: null              # optional gating expression: formulation pinned to 0
+
+  # a two-link block may bound one side instead of pinning it
+  fuel_cap:
+    over: bp
+    links:
+      - [power, power_bp]
+      - [fuel, fuel_bp, "<="]
 ```
 
 *expression* is any affine expression (a bare variable name being the simplest);
@@ -242,9 +251,21 @@ sub-expression), and billed against a label budget before any Python runs.
 
 ## 8. Data binding
 
-**Master coordinates** are assembled per dimension before any parameter loads:
-the call site (`sources=` / `coords=`) wins over `values:` in the YAML, and
-neither present for a declared dimension is a load error.
+**Master coordinates** are resolved per dimension before any parameter loads,
+highest precedence first:
+
+1. a key in `sources` — a DataFrame carrying a column of that name, or a
+   parquet path; first occurrence of each value is its position
+2. `coords=` — anything `pd.Index()` accepts
+3. `values:` in the YAML
+4. *streaming lane only* — derived from the parameter tables that carry the
+   dim, as **sorted** distinct values
+
+Step 4 exists because a dim some parameter already spans needs no second
+declaration, but it costs the *declared order*, which `roll`/`shift` read
+positionally — so pass an explicit index whenever order matters. The compat
+lane has no step 4: a dimension with neither `coords=` nor `values:` raises
+there. A dim that no source names and no parameter carries raises on both.
 
 **Accepted per parameter** (declared `dims: [d1, d2]`): `int`/`float` as a
 scalar that broadcasts freely; `dict` and `pd.Series` for 1-D (keys / index
@@ -284,26 +305,45 @@ silent fallback, never a redirection to the other lane.
 
 ## 10. Python API
 
+Six names: `check`, `load_schema`, `build`, `solve`, `write`, `LanguageError`.
+
 ```python
 import linopy_yaml as ly
 
-ly.check("model.yaml")                       # parse → validate → lower, no data
-schema = ly.load_schema("model.yaml")        # MathSchema
-sol = ly.solve("model.yaml", sources={...})  # build + stream + solve
-ly.write_lp("model.yaml", "model.lp", sources={...})
+ly.check("model.yaml")                 # parse → validate → lower, no data bound
+schema = ly.load_schema("model.yaml")  # MathSchema
 
-sol.objective
-sol.primal("p")        # tidy DataFrame (dims…, value) — the native shape
-sol.to_dataarray("p")  # the same, labelled: .sel / resample / plot
-sol.to_dataset()       # every variable by default; names for a subset
-sol.to_parquet(dir)    # streamed to disk, never through this process
+with ly.solve("model.yaml", sources, memory_limit="512MB") as sol:
+    sol.status, sol.objective
+    sol.primal("p")            # tidy DataFrame (dims…, value) — the native shape
+    sol.to_dataarray("p")      # the same, labelled: .sel / resample / plot
+    sol.to_dataset()           # every variable by default; names for a subset
+    sol.to_parquet(directory)  # streamed to disk, never through this process
+
+ly.write("model.yaml", sources, "model.lp")   # sink chosen by the suffix
+```
+
+**Lifetime is explicit, because the model lives in duckdb, not in Python.**
+`Solution` holds the executor open — its label tables are what back `primal`
+and the `to_*` readers — so it is a context manager, and the readers are only
+valid inside the block. Without one, call `sol.close()`. `ly.build` returns the
+live executor for the same reason, when one build should feed more than one
+sink:
+
+```python
+with ly.build("model.yaml", sources, memory_limit="512MB") as ex:
+    ex.write_lp("model.lp")
+    sol = ex.solve()       # read sol here — closing ex invalidates it
 ```
 
 `sources` maps parameter and dimension names to parquet paths, pandas objects or
-scalars; nothing on this path imports linopy. `to_dataset` costs what it says —
-each variable arrives dense over its own dims, so a model built for the memory
-budget this engine exists for should name a subset or use `to_parquet`. Duals
-are not exposed yet (the solve path reads `col_value` only) — ROADMAP Track 2b.
+scalars; nothing on this path imports linopy. Build knobs, shared by all three
+entry points: `coords`, `memory_limit` (default `'1GB'`), `chunk_rows`,
+`threads`, `workdir`. `to_dataset` costs what it says — each variable arrives
+dense over its own dims, so a model built for the memory budget this engine
+exists for should name a subset or use `to_parquet`. Duals are not exposed yet
+(the solve path reads `col_value` only) — ROADMAP Track 2b. `.lp` is the only
+sink `write` supports today; `.mps` raises `NotImplementedError`.
 
 **Compat shim** (`linopy_yaml.compat`, `[compat]` extra) — two *pure producers*,
 YAML in, model out, nothing retained:
@@ -318,7 +358,8 @@ patched attributes — so nothing is lost across `pickle`, `deepcopy` or
 `to_netcdf`; to inspect the math, re-read the file with `ly.load_schema`.
 `extend` may reference variables already on the model (they come from the model
 argument, not from Python-side history), while the YAML must still declare every
-parameter it uses. Coords precedence for `extend`: the `coords=` kwarg, then
+parameter *and dimension* it uses — the declaration is required, the `values:`
+are not, since they can come from the model. Coords precedence for `extend`: the `coords=` kwarg, then
 coords inferred from the model's variables, then `values:` in the YAML, then
 error — a `values:` contradicting the model's existing coordinate is an error,
 not a silent override. There is no `register()` decorator and no helper registry.

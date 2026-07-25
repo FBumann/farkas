@@ -42,13 +42,19 @@ objectives:
 ```python
 import linopy_yaml as ly, pandas as pd
 
-sol = ly.solve("dispatch.yaml", sources={
-    "p_max":    pd.Series({"wind": 100, "solar": 60, "gas": 200}),
-    "load":     pd.Series([80, 120, 150, 180, 140, 100], name="snapshot"),
-    "cost":     pd.Series({"wind": 0, "solar": 0, "gas": 50}),
-    "snapshot": pd.RangeIndex(6, name="snapshot"),
-})
-sol.objective, sol.primal("p")
+sources = {
+    "p_max": pd.Series({"wind": 100.0, "solar": 60.0, "gas": 200.0}),
+    "cost":  pd.Series({"wind": 1.0, "solar": 2.0, "gas": 50.0}),
+    "load":  pd.Series([80, 120, 150, 180, 140, 100],
+                       index=pd.RangeIndex(6, name="snapshot")),
+}
+
+# the model lives in duckdb, so the Solution owns the executor that backs it
+with ly.solve("dispatch.yaml", sources,
+              coords={"snapshot": pd.RangeIndex(6, name="snapshot")},
+              memory_limit="512MB") as sol:
+    print(sol.objective)   # 1920.0
+    print(sol.primal("p"))
 ```
 
 ## Why
@@ -75,6 +81,9 @@ modification *is just math*, a file fixes all three:
 compat.extend(m, "ramp.yaml", data={"ramp_max": network.generators["ramp_max"]})
 ```
 ```yaml
+# ramp.yaml — `p` comes from the model; dims are declared here but their
+# coordinates are inferred from it, so no `values:` is needed
+dimensions: {snapshot: {dtype: int}, generator: {}}
 parameters: {ramp_max: {dims: [generator]}}
 constraints:
   ramp_up:

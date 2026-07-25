@@ -61,9 +61,11 @@ linopy_yaml/
 ```python
 import linopy_yaml as ly
 
-sol = ly.solve("model.yaml", sources={"p_max": "p_max.parquet", ...})
-sol.objective
-sol.primal("p")
+# Solution holds the duckdb executor that backs primal/to_* — use a with block
+# (or sol.close()); ly.build(...) returns the live executor for multiple sinks.
+with ly.solve("model.yaml", {"p_max": "p_max.parquet", ...}) as sol:
+    sol.objective
+    sol.primal("p")
 ```
 
 Compat lane — YAML math on a `linopy.Model` that already exists in memory
