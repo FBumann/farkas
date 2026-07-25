@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, field_validator, model_validator
+
+from linopy_yaml.helpers import BUILTIN_NAMES
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 class DimensionDef(BaseModel):
@@ -212,26 +217,36 @@ class MathSchema(BaseModel):
     def _validate_references(self) -> MathSchema:
         errors = []
 
-        # Named expressions and macros must not shadow other model names
-        for what, group in (
-            ('Named expression', self.expressions),
-            ('Macro', self.macros),
-        ):
-            errors.extend(
-                f"{what} '{ename}' collides with a declared {kind} of the same name. Rename one of them."
-                for ename in group
-                for kind, names in (
-                    ('parameter', self.parameters),
-                    ('variable', self.variables),
-                    ('dimension', self.dimensions),
-                )
-                if ename in names
-            )
-        errors.extend(
-            f"Macro '{mname}' collides with a named expression of the same name. Rename one of them."
-            for mname in self.macros
-            if mname in self.expressions
-        )
+        # One flat namespace. Resolving in a fixed order and letting the winner
+        # shadow the loser would make a file's meaning depend on which kinds of
+        # declaration happen to exist — adding a parameter named `snapshot`
+        # would silently change what an existing `where: "snapshot > 0"` means.
+        # See resolution.py.
+        kinds: list[tuple[str, Iterable[str]]] = [
+            ('dimension', self.dimensions),
+            ('parameter', self.parameters),
+            ('variable', self.variables),
+            ('named expression', self.expressions),
+            ('macro', self.macros),
+        ]
+        seen: dict[str, str] = {}
+        for kind, group in kinds:
+            for name in group:
+                if name in BUILTIN_NAMES:
+                    errors.append(
+                        f"{kind.capitalize()} '{name}' collides with the built-in helper "
+                        f"'{name}'. The helper set is closed and its names are reserved; "
+                        f'rename the {kind}.'
+                    )
+                if name in seen:
+                    errors.append(
+                        f"{kind.capitalize()} '{name}' collides with the {seen[name]} of "
+                        f'the same name. Names share one flat namespace — rename one of '
+                        f'them, so that every name in an expression or where string has '
+                        f'exactly one meaning.'
+                    )
+                else:
+                    seen[name] = kind
 
         # Referenced dimensions must be declared
         errors.extend(
@@ -246,12 +261,21 @@ class MathSchema(BaseModel):
             if d not in self.dimensions
         )
 
-        # Check variable bounds parameter references
+        # Bounds are a narrower language than expressions: a literal number or
+        # the name of a declared parameter, nothing else. It *looks* like the
+        # expression language, so say what it actually accepts.
         for vname, vdef in self.variables.items():
             for side in ('lower', 'upper'):
                 val = getattr(vdef.bounds, side)
                 if isinstance(val, str) and val not in self.parameters:
-                    errors.append(f"Variable '{vname}' bounds.{side} references undeclared parameter '{val}'.")
+                    looks_like_expression = not val.isidentifier()
+                    detail = (
+                        f'bounds accept a parameter name or a number, not an expression '
+                        f'(got {val!r}). Precompute it as a parameter'
+                        if looks_like_expression
+                        else f"'{val}' is not a declared parameter"
+                    )
+                    errors.append(f"Variable '{vname}' bounds.{side}: {detail}.")
 
         if errors:
             raise ValueError('\n'.join(errors))

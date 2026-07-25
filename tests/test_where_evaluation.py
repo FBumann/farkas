@@ -33,27 +33,41 @@ class TestWhereEvaluation:
         assert mask.ndim == 0
         assert bool(mask) is True
 
+    def _ns(self, parameters=('p_max',), dimensions=('g',)):
+        from linopy_yaml.resolution import Namespace
+
+        return Namespace((), parameters, dimensions)
+
+    def _where(self, text, ns=None):
+        """Resolve then evaluate — the evaluator no longer takes strings."""
+        from linopy_yaml.resolution import where_of
+
+        return where_of(text, ns or self._ns(), 'test')
+
     def test_existence_check(self):
-        mask = builder.evaluate_where('p_max', self._ds(), self._mc())
+        mask = builder.evaluate_where(self._where('p_max'), self._ds(), self._mc())
         assert isinstance(mask, xr.DataArray)
         assert mask.all()
 
     def test_comparison(self):
-        mask = builder.evaluate_where('p_max > 0', self._ds(), self._mc())
+        mask = builder.evaluate_where(self._where('p_max > 0'), self._ds(), self._mc())
         assert bool(mask.sel(g='wind')) is True
         assert bool(mask.sel(g='solar')) is False
         assert bool(mask.sel(g='gas')) is True
 
-    def test_missing_param_returns_scalar_false(self):
-        mask = builder.evaluate_where('nonexistent', self._ds(), self._mc())
-        assert isinstance(mask, xr.DataArray)
-        assert mask.ndim == 0
-        assert bool(mask) is False
+    def test_missing_param_is_a_load_error(self):
+        """Was: a scalar-False mask, i.e. a silently empty model. Resolution
+        makes an undeclared name a load error in both lanes."""
+        from linopy_yaml.relational.executor import RelationalBuildError
+
+        with pytest.raises(RelationalBuildError, match="'nonexistent' not found"):
+            self._where('nonexistent')
 
     def test_dimension_comparison(self):
         ds = xr.Dataset()
         mc = {'t': pd.Index([0, 1, 2], name='t')}
-        mask = builder.evaluate_where('t > 0', ds, mc)
+        node = self._where('t > 0', self._ns(parameters=(), dimensions=('t',)))
+        mask = builder.evaluate_where(node, ds, mc)
         assert isinstance(mask, xr.DataArray)
         assert bool(mask.sel(t=0)) is False
         assert bool(mask.sel(t=1)) is True

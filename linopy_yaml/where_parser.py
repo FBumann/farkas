@@ -30,13 +30,47 @@ class BoolLiteral:
 
 @dataclass
 class ExistenceCheck:
-    """True wherever the named parameter is non-null and finite."""
+    """A bare name — unresolved. ``resolution.py`` types it."""
 
     name: str
 
 
 @dataclass
 class Comparison:
+    """A comparison against an unresolved name. ``resolution.py`` types it."""
+
+    name: str
+    op: ComparisonOp
+    value: float | str
+
+
+@dataclass
+class ParamDefined:
+    """True wherever the named parameter is non-null and finite."""
+
+    name: str
+
+
+@dataclass
+class DimDefined:
+    """A bare dimension name: true over its whole coordinate index."""
+
+    name: str
+
+
+@dataclass
+class ParamCmp:
+    """Compare a parameter against a literal, element-wise."""
+
+    name: str
+    op: ComparisonOp
+    value: float | str
+
+
+@dataclass
+class DimCmp:
+    """Compare a dimension's own coordinates against a literal."""
+
     name: str
     op: ComparisonOp
     value: float | str
@@ -63,7 +97,18 @@ class OrNode:
 # before this line — that works only because `from __future__ import
 # annotations` makes annotations strings. Don't remove that future-import
 # unless you also reorder these definitions.
-WhereNode = BoolLiteral | ExistenceCheck | Comparison | NotNode | AndNode | OrNode
+WhereNode = (
+    BoolLiteral
+    | ExistenceCheck
+    | Comparison
+    | ParamDefined
+    | DimDefined
+    | ParamCmp
+    | DimCmp
+    | NotNode
+    | AndNode
+    | OrNode
+)
 
 
 # ---------------------------------------------------------------------------

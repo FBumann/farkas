@@ -26,6 +26,7 @@ from linopy_yaml.relational.ir import (
     Var,
 )
 from linopy_yaml.schema import MathSchema
+from tests.conftest import resolved
 from tests.oracle import compat, transport_eager_objective, xr
 
 RTOL = 1e-9
@@ -108,14 +109,16 @@ def _flatten(expr):
 
 def test_group_sum_lowering_errors():
     schema = MathSchema(**pyyaml.safe_load(Path(TRANSPORT_YAML).read_text()))
-    from linopy_yaml.expression_parser import parse_expression
     from linopy_yaml.lowering import _lower_expr
 
-    with pytest.raises(RelationalBuildError, match='mapping must name a declared parameter'):
-        _lower_expr(parse_expression('group_sum(p, nope, into=bus)'), schema, 't')
-    with pytest.raises(RelationalBuildError, match='must name a declared dimension'):
-        _lower_expr(parse_expression('group_sum(p, gen_bus, into=nope)'), schema, 't')
+    # an undeclared mapping or target dim is now caught in resolution, before
+    # lowering ever sees the call — the name simply has no kind
+    with pytest.raises(RelationalBuildError, match="'nope' not found"):
+        resolved('group_sum(p, nope, into=bus)', schema)
+    with pytest.raises(RelationalBuildError, match=r'into=nope\) does not name a declared dimension'):
+        resolved('group_sum(p, gen_bus, into=nope)', schema)
+    # shape errors stay at lowering: these names resolve, the arity does not fit
     with pytest.raises(RelationalBuildError, match='exactly one dim'):
-        _lower_expr(parse_expression('group_sum(p, load, into=bus)'), schema, 't')
+        _lower_expr(resolved('group_sum(p, load, into=bus)', schema), schema, 't')
     with pytest.raises(RelationalBuildError, match='but the expression'):
-        _lower_expr(parse_expression('group_sum(f, gen_bus, into=bus)'), schema, 't')
+        _lower_expr(resolved('group_sum(f, gen_bus, into=bus)', schema), schema, 't')

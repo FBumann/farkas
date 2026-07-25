@@ -19,7 +19,7 @@ thing. Every architectural rule below exists to protect that property.
 ```mermaid
 flowchart TB
     Y[YAML file] -->|"parse + validate<br/>(schema.py, validation.py)"| MS[MathSchema]
-    MS -->|"expand macros: / expressions: (expansion.py)<br/>expand piecewise: blocks (piecewise.py)<br/>— backends never see any of them"| AST["core AST<br/>= the only contract between layers"]
+    MS -->|"expand macros: / expressions: (expansion.py)<br/>expand piecewise: blocks (piecewise.py)<br/>resolve names to typed nodes (resolution.py)<br/>— backends never see any of them"| AST["core AST<br/>= the only contract between layers<br/>fully typed: no unresolved names"]
     AST -->|"api.py: build / solve / write_lp"| LOWER
     AST -.->|"linopy_yaml.compat<br/>(opt-in shim: build / extend)"| BUILD
     LOWER -->|"outside the language:<br/>RelationalBuildError naming the construct"| ERR["load error<br/>(no fallback)"]
@@ -57,7 +57,12 @@ as static checks, and CI's bare-install job proves the dependency claims.)*
 
 1. **Core AST is the whole language.** Both backends consume only core AST.
    Anything above it (named expressions, macros) is expanded away before
-   dispatch; anything below it (IR, SQL, xarray) is backend-private.
+   dispatch; anything below it (IR, SQL, xarray) is backend-private. The AST
+   crossing that seam is **fully resolved**: names are typed `Var`/`Param`/
+   `Dim` nodes, never raw tokens, so a backend cannot hold its own opinion
+   about what a name refers to. Both consumers assert on this rather than
+   re-implementing lookup — resolving independently is how the two lanes
+   silently disagreed about scoping before (`resolution.py`).
 2. **The relational lane is linopy-free.** `linopy_yaml/relational/` imports
    neither the eager builder nor linopy itself — the lane goes duckdb →
    highspy → solver with linopy's semantics as a spec to match, not code to
@@ -246,7 +251,8 @@ Rules that follow:
 | `schema.py` | pydantic schema incl. `expressions:` / `macros:` / `piecewise:` blocks |
 | `expression_parser.py`, `where_parser.py` | text → core AST — grammar and AST only, dependency-free |
 | `expansion.py` | named-expression / macro substitution (pre-dispatch) |
-| `validation.py` | load-time: parse, expand, name-check everything |
+| `resolution.py` | one flat namespace; `Name` → typed `Var`/`Param`/`Dim` nodes, so no unresolved name crosses the seam |
+| `validation.py` | load-time: parse, expand, resolve, check everything |
 | `piecewise.py` | `piecewise:` → λ-formulation declarations (schema-level expansion) + data-time curvature guard |
 | `api.py` | native entry point: `check` / `build` / `solve` / `write`, linopy-free |
 | `compat.py` | opt-in shim: `build` / `extend` on a `linopy.Model` (`[compat]` extra) — pure producers, nothing attached |

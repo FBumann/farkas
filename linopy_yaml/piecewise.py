@@ -149,12 +149,18 @@ def _expr_dims(schema: MathSchema, text: str, ctx: str) -> frozenset[str]:
     """Dims of an affine link expression, via the lowering machinery."""
     from linopy_yaml.lowering import _dims_of, _lower_expr
     from linopy_yaml.relational.executor import RelationalBuildError
+    from linopy_yaml.resolution import Namespace, resolve_expression
 
     ast = parse_expression(text)
     if isinstance(ast, CompareNode):
         raise PiecewiseExpansionError(f'{ctx}: link expressions must not contain a comparison, got {text!r}')
+    errors: list[str] = []
+    resolved = resolve_expression(ast, Namespace.of(schema), ctx, errors)
+    if resolved is None:
+        raise PiecewiseExpansionError('\n'.join(errors))
+    assert not isinstance(resolved, CompareNode)  # rejected above
     try:
-        return _dims_of(_lower_expr(ast, schema, ctx), schema)
+        return _dims_of(_lower_expr(resolved, schema, ctx), schema)
     except RelationalBuildError as exc:
         raise PiecewiseExpansionError(
             f'{ctx}: link expression {text!r} is not a core-subset affine expression: {exc}'

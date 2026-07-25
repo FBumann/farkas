@@ -266,7 +266,7 @@ variables:
 - `binary` and `integer` cannot both be true.
 - Omitting a bound means unbounded on that side, matching `linopy.Model.add_variables`.
   Non-negativity is a constraint like any other: write `lower: 0` to get it.
-- If `bounds.lower` or `bounds.upper` is a string, it must be the name of a declared parameter.
+- If `bounds.lower` or `bounds.upper` is a string, it must be the name of a declared parameter. Bounds are a *narrower* language than expressions — a name or a number, never arithmetic — and the error says so rather than reporting a parse failure. Full expressions here are tracked as Q4 / [#31](https://github.com/FBumann/linopy-yaml/issues/31).
 - A parameter used as a bound must be broadcastable onto the variable's `foreach` dimensions.
 
 ### 3.4 `constraints`
@@ -574,13 +574,53 @@ multiply the term out, or precompute it as a parameter.
 
 ### 5.3 Name resolution
 
-When a `NAME` token is encountered during evaluation:
+Resolution is a **load-time pass**, not an evaluation-time lookup
+(`resolution.py`). The parsers emit `Name` tokens; the pass rewrites each one
+into a typed node — `Var`, `Param`, or `Dim` — and the core AST that reaches
+either backend therefore contains **no unresolved names**. A backend receiving
+a `Param` node cannot hold an opinion about what it refers to.
 
-1. Check decision variables (the linopy Model's variable store). If found, return the `linopy.Variable`.
-1. Check parameters (the `xr.Dataset`). If found, return the `xr.DataArray`.
-1. If neither, raise `NameError` with the name and the lists of available variables and parameters.
+This is not a refactor of where a lookup lives; it is what makes scoping
+*structurally* identical across the lanes rather than identical by test. When
+each backend resolved for itself, they disagreed in three ways that all built
+a model on one lane and raised on the other: an unknown name in a `where` was
+a scalar-`False` mask eagerly and a load error relationally; a bare-name
+right-hand side (`p_max > other_param`) was a parameter comparison eagerly and
+a string comparison relationally; and each lane decided variable-vs-parameter
+precedence for itself.
 
-This ordering means a variable named `p` shadows a parameter named `p`. In practice, variable and parameter names should not overlap.
+**One flat namespace.** Dimensions, parameters, variables, named expressions,
+macros and built-in helper names share a single namespace, and a collision is
+a load error naming both declarations:
+
+```
+Parameter 'snapshot' collides with the dimension of the same name. Names share
+one flat namespace — rename one of them, so that every name in an expression
+or where string has exactly one meaning.
+```
+
+Ordered resolution with shadowing is the alternative, and it is wrong for a
+language whose contract is fail-loud: under it, *declaring* a parameter named
+`snapshot` would silently change what an existing `where: "snapshot > 0"`
+means. Nothing in the file would have changed except a declaration elsewhere.
+
+**Where each kind is legal:**
+
+| Position | Legal kinds |
+|---|---|
+| expression (`p * cost`) | variable, parameter |
+| helper dimension argument (`over=`, `into=`, `roll(x, snapshot=1)`) | dimension |
+| where string | parameter, dimension |
+| `bounds.lower` / `bounds.upper` | parameter name, or a number (§3.3) |
+
+A dimension in a value position is an error: it is a coordinate space, not
+data. To use its coordinates as data, declare a parameter over it.
+
+**Macro formals are the one scope.** Inside a template body, formals shadow
+model names (call-by-value expansion avoids capture — §3.7). They may not
+collide with a declared **dimension**: a formal named `snapshot` in a template
+that also writes `over=snapshot` is ambiguous with no way to say which was
+meant.
 
 ### 5.4 Type behaviour of arithmetic
 
@@ -656,9 +696,17 @@ value       ::= NUMBER | NAME_OR_STRING
 
 ### 6.2 Semantics
 
-**Plain name** (`"p_max"`): Evaluates to True wherever the parameter is defined (non-null) and finite. Equivalent to `p_max.notnull() & (p_max != inf) & (p_max != -inf)`. If the parameter does not exist in the dataset, evaluates to scalar False.
+**Plain name** (`"p_max"`): resolves to a parameter or a dimension (§5.3). A
+parameter is True wherever it is defined (non-null) and finite — equivalent to
+`p_max.notnull() & (p_max != inf) & (p_max != -inf)`. A dimension is True over
+its whole index. **An undeclared name is a load error**, in both lanes: it
+used to evaluate to scalar False, which built a model that solved and was
+silently empty.
 
-**Comparison** (`"p_max > 0"`): Evaluates the comparison element-wise. NaN values propagate as False.
+**Comparison** (`"p_max > 0"`): Evaluates the comparison element-wise. NaN values propagate as False. The right-hand side is a literal — a number, or a
+bare name treated as a string coordinate. Comparing two parameters is not in
+the language; precompute the comparison as a boolean parameter in data prep
+and test that.
 
 **Boolean operators**: Standard boolean logic. `AND` has higher precedence than `OR`. `NOT` has highest precedence.
 
@@ -854,10 +902,18 @@ Declare it under 'dimensions:' in the YAML.
 **Unknown name in expression:**
 
 ```
-'p_charge' not found in expression 'p_charge - p_discharge'.
-  Variables:  ['p', 'soc']
+Constraint 'balance', equation 0: 'p_charge' not found.
+  Variables: ['p', 'soc']
   Parameters: ['p_max', 'load', 'efficiency']
-Check for typos, or ensure 'p_charge' is declared as a variable or parameter.
+Check for typos, or ensure 'p_charge' is declared.
+```
+
+**Name collision (one flat namespace, §5.3):**
+
+```
+Parameter 'snapshot' collides with the dimension of the same name. Names share
+one flat namespace — rename one of them, so that every name in an expression
+or where string has exactly one meaning.
 ```
 
 **Unknown helper function:**

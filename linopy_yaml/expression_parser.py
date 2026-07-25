@@ -26,6 +26,39 @@ class NumberNode:
 
 @dataclass
 class NameNode:
+    """An unresolved token — a name whose *kind* is not yet known.
+
+    The parser cannot know whether ``p`` is a variable, a parameter or a
+    dimension; only the schema knows. ``resolution.py`` rewrites every one of
+    these into one of the typed nodes below, so a NameNode never reaches a
+    backend. If you find one there, resolution was skipped.
+    """
+
+    name: str
+
+
+@dataclass
+class VarNode:
+    """A resolved reference to a declared decision variable."""
+
+    name: str
+
+
+@dataclass
+class ParamNode:
+    """A resolved reference to a declared parameter."""
+
+    name: str
+
+
+@dataclass
+class DimRefNode:
+    """A resolved reference to a declared dimension.
+
+    Only legal in helper kwarg *values* (``sum(x, over=generator)``), never as
+    a value in arithmetic — a dimension is a coordinate space, not data.
+    """
+
     name: str
 
 
@@ -56,7 +89,11 @@ class FuncCallNode:
 # before this line — that works only because `from __future__ import
 # annotations` makes annotations strings. Don't remove that future-import
 # unless you also reorder these definitions.
-ArithNode = NumberNode | NameNode | UnaryOpNode | BinOpNode | FuncCallNode
+ArithNode = NumberNode | NameNode | VarNode | ParamNode | DimRefNode | UnaryOpNode | BinOpNode | FuncCallNode
+
+#: The subset a backend may see: resolution has removed every NameNode.
+#: Both consumers assert on this rather than re-implementing name lookup.
+RESOLVED_REFS = (VarNode, ParamNode, DimRefNode)
 
 
 @dataclass
