@@ -244,14 +244,14 @@ Rules that follow:
 | Module | Role |
 |---|---|
 | `schema.py` | pydantic schema incl. `expressions:` / `macros:` / `piecewise:` blocks |
-| `expression_parser.py`, `where_parser.py` | text → core AST |
+| `expression_parser.py`, `where_parser.py` | text → core AST — grammar and AST only, dependency-free |
 | `expansion.py` | named-expression / macro substitution (pre-dispatch) |
 | `validation.py` | load-time: parse, expand, name-check everything |
 | `piecewise.py` | `piecewise:` → λ-formulation declarations (schema-level expansion) + data-time curvature guard |
 | `api.py` | native entry point: `check` / `build` / `solve` / `write`, linopy-free |
 | `compat.py` | opt-in shim: `build` / `extend` on a `linopy.Model` (`[compat]` extra) — pure producers, nothing attached |
 | `loader.py` | compat/oracle lane: data coercion to xr.Dataset, master coords |
-| `builder.py` | eager backend: core AST → linopy.Model, incl. eager helper evaluation |
+| `builder.py` | eager backend: core AST → linopy.Model, incl. eager evaluation of helpers and where-masks |
 | `lowering.py` | core AST → IR (defines the relational subset) |
 | `relational/ir.py` | frozen logical-plan dataclasses |
 | `relational/executor.py` | duckdb execution + lp_file / solver_direct sinks |

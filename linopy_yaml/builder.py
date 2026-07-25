@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, assert_never
 
+import numpy as np
 import xarray as xr
 
 from linopy_yaml._notes import note
@@ -25,7 +26,16 @@ from linopy_yaml.expression_parser import (
     UnaryOpNode,
 )
 from linopy_yaml.helpers import unknown_helper_message
-from linopy_yaml.where_parser import evaluate_where
+from linopy_yaml.where_parser import (
+    AndNode,
+    BoolLiteral,
+    Comparison,
+    ExistenceCheck,
+    NotNode,
+    OrNode,
+    WhereNode,
+    parse_where,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -393,3 +403,100 @@ _HELPERS: dict[str, Callable[..., Any]] = {
     'shift': _helper_shift,
     'roll': _helper_roll,
 }
+
+
+# ---------------------------------------------------------------------------
+# Where-mask evaluation
+# ---------------------------------------------------------------------------
+#
+# The eager reading of a where AST. It lives here rather than in
+# where_parser.py because it is xarray-only: the relational lane reads the
+# same AST through lowering._lower_where and never wants this code.
+
+
+def evaluate_where(
+    text: str | None,
+    dataset: xr.Dataset,
+    master_coords: dict[str, pd.Index],
+) -> xr.DataArray:
+    """Evaluate a where string against a parameter dataset.
+
+    Always returns a boolean DataArray mask. Degenerate cases (no where
+    string, unknown names, literals) come back 0-dimensional, so callers
+    can combine masks with ``&``/``|`` without case analysis.
+    """
+    if text is None:
+        return xr.DataArray(True)
+
+    ast = parse_where(text)
+    return _eval_node(ast, dataset, master_coords)
+
+
+def _eval_node(
+    node: WhereNode,
+    dataset: xr.Dataset,
+    master_coords: dict[str, pd.Index],
+) -> xr.DataArray:
+    if isinstance(node, BoolLiteral):
+        return xr.DataArray(node.value)
+
+    if isinstance(node, ExistenceCheck):
+        # Check parameters first
+        if node.name in dataset:
+            arr = dataset[node.name]
+            return arr.notnull() & np.isfinite(arr)
+        # Check if it's a dimension name — return all True for that dim
+        if node.name in master_coords:
+            return xr.DataArray(
+                True,
+                coords={node.name: master_coords[node.name]},
+                dims=[node.name],
+            )
+        return xr.DataArray(False)
+
+    if isinstance(node, Comparison):
+        # Get the array to compare
+        if node.name in dataset:
+            arr = dataset[node.name]
+        elif node.name in master_coords:
+            # Dimension coordinate comparison (e.g. "snapshot > 0")
+            arr = xr.DataArray(
+                master_coords[node.name],
+                coords={node.name: master_coords[node.name]},
+                dims=[node.name],
+            )
+        else:
+            return xr.DataArray(False)
+
+        val = node.value
+        # If val is a string, try to resolve as parameter or keep as string
+        if isinstance(val, str) and val in dataset:
+            val = dataset[val]
+            # else keep as string for coordinate comparison
+
+        ops = {
+            '==': lambda a, b: a == b,
+            '!=': lambda a, b: a != b,
+            '<': lambda a, b: a < b,
+            '>': lambda a, b: a > b,
+            '<=': lambda a, b: a <= b,
+            '>=': lambda a, b: a >= b,
+        }
+        result = ops[node.op](arr, val)
+        # NaN propagates as False
+        return result.fillna(False).astype(bool)
+
+    if isinstance(node, NotNode):
+        return ~_eval_node(node.operand, dataset, master_coords)
+
+    if isinstance(node, AndNode):
+        left = _eval_node(node.left, dataset, master_coords)
+        right = _eval_node(node.right, dataset, master_coords)
+        return left & right
+
+    if isinstance(node, OrNode):
+        left = _eval_node(node.left, dataset, master_coords)
+        right = _eval_node(node.right, dataset, master_coords)
+        return left | right
+
+    assert_never(node)

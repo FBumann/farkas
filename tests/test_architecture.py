@@ -61,6 +61,41 @@ def test_runtime_lane_never_imports_linopy_or_xarray():
     )
 
 
+#: Modules outside the compat lane that may reach the oracle *lazily*, with
+#: the reason. Being on this list is a deliberate exception, not a default —
+#: an eager-only function living in a language module is what put
+#: ``evaluate_where`` in ``where_parser.py`` for as long as it did.
+LAZY_ORACLE_ALLOWED = {
+    'piecewise.py': 'convex curvature validation needs xarray broadcast (issue #27: make it numpy-only)',
+}
+
+
+def test_lazy_oracle_imports_stay_on_the_allowlist():
+    """Hard rule 3, the half a module-level check cannot see.
+
+    A lazy ``import xarray`` inside a function is still eager-lane code, and
+    it hides in a module the streaming lane imports. Every one has to be
+    declared, so adding another is a decision rather than an accident.
+    """
+    offenders = {}
+    for path in _all_modules():
+        if path.name in COMPAT_LANE or path.name in LAZY_ORACLE_ALLOWED:
+            continue
+        tree = ast.parse(path.read_text())
+        bad = set()
+        for node in ast.walk(tree):  # anywhere, at any nesting
+            if isinstance(node, ast.Import):
+                bad |= {a.name for a in node.names if a.name.split('.')[0] in FORBIDDEN_RUNTIME}
+            elif isinstance(node, ast.ImportFrom) and node.module and node.module.split('.')[0] in FORBIDDEN_RUNTIME:
+                bad.add(node.module)
+        if bad:
+            offenders[str(path.relative_to(PKG))] = sorted(bad)
+    assert not offenders, (
+        f'modules outside the compat lane reach the oracle lazily: {offenders} — '
+        f'move the code to the compat lane, or add it to LAZY_ORACLE_ALLOWED with a reason'
+    )
+
+
 def test_engine_is_isolated():
     """Hard rule 2: the relational engine imports nothing from the package
     outside its own subpackage — the IR is fed to it, it never reaches out."""

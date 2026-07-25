@@ -1,20 +1,20 @@
-"""pyparsing-based parser for where strings.
+"""pyparsing-based parser for where strings — grammar and AST only.
 
-Parses strings like ``"p_max > 0 AND NOT is_must_run"`` into an AST
-that can be evaluated against an xr.Dataset to produce boolean masks.
+Parses strings like ``"p_max > 0 AND NOT is_must_run"`` into an AST. What a
+mask *means* is each backend's business: the eager lane evaluates the AST
+against an xr.Dataset (``builder.evaluate_where``), the relational lane
+lowers it to SQL predicates (``lowering._lower_where``).
+
+Kept dependency-free on purpose — ``validation.py`` and ``lowering.py`` are
+linopy-free by hard rule 3, and they import this module.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, assert_never, cast
+from typing import Any, cast
 
-import numpy as np
 import pyparsing as pp
-
-if TYPE_CHECKING:
-    import pandas as pd
-    import xarray as xr
 
 # ---------------------------------------------------------------------------
 # AST nodes
@@ -141,100 +141,3 @@ def parse_where(text: str) -> WhereNode:
         raise ValueError(msg) from e
     # parseAll with a single top-level alternative: element 0 is the root node
     return cast('WhereNode', result[0])
-
-
-# ---------------------------------------------------------------------------
-# Evaluation
-# ---------------------------------------------------------------------------
-
-
-def evaluate_where(
-    text: str | None,
-    dataset: xr.Dataset,
-    master_coords: dict[str, pd.Index],
-) -> xr.DataArray:
-    """Evaluate a where string against a parameter dataset.
-
-    Always returns a boolean DataArray mask. Degenerate cases (no where
-    string, unknown names, literals) come back 0-dimensional, so callers
-    can combine masks with ``&``/``|`` without case analysis.
-    """
-    import xarray as xr
-
-    if text is None:
-        return xr.DataArray(True)
-
-    ast = parse_where(text)
-    return _eval_node(ast, dataset, master_coords)
-
-
-def _eval_node(
-    node: WhereNode,
-    dataset: xr.Dataset,
-    master_coords: dict[str, pd.Index],
-) -> xr.DataArray:
-    import xarray as xr
-
-    if isinstance(node, BoolLiteral):
-        return xr.DataArray(node.value)
-
-    if isinstance(node, ExistenceCheck):
-        # Check parameters first
-        if node.name in dataset:
-            arr = dataset[node.name]
-            return arr.notnull() & np.isfinite(arr)
-        # Check if it's a dimension name — return all True for that dim
-        if node.name in master_coords:
-            return xr.DataArray(
-                True,
-                coords={node.name: master_coords[node.name]},
-                dims=[node.name],
-            )
-        return xr.DataArray(False)
-
-    if isinstance(node, Comparison):
-        # Get the array to compare
-        if node.name in dataset:
-            arr = dataset[node.name]
-        elif node.name in master_coords:
-            # Dimension coordinate comparison (e.g. "snapshot > 0")
-            arr = xr.DataArray(
-                master_coords[node.name],
-                coords={node.name: master_coords[node.name]},
-                dims=[node.name],
-            )
-        else:
-            return xr.DataArray(False)
-
-        val = node.value
-        # If val is a string, try to resolve as parameter or keep as string
-        if isinstance(val, str) and val in dataset:
-            val = dataset[val]
-            # else keep as string for coordinate comparison
-
-        ops = {
-            '==': lambda a, b: a == b,
-            '!=': lambda a, b: a != b,
-            '<': lambda a, b: a < b,
-            '>': lambda a, b: a > b,
-            '<=': lambda a, b: a <= b,
-            '>=': lambda a, b: a >= b,
-        }
-        result = ops[node.op](arr, val)
-        # NaN propagates as False
-        return result.fillna(False).astype(bool)
-
-    if isinstance(node, NotNode):
-        return ~_eval_node(node.operand, dataset, master_coords)
-
-    if isinstance(node, AndNode):
-        left = _eval_node(node.left, dataset, master_coords)
-        right = _eval_node(node.right, dataset, master_coords)
-        return left & right
-
-    if isinstance(node, OrNode):
-        left = _eval_node(node.left, dataset, master_coords)
-        right = _eval_node(node.right, dataset, master_coords)
-        return left | right
-
-    assert_never(node)
