@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, assert_never
 
+from linopy_yaml._source import SourceMap
 from linopy_yaml.expansion import expand, parse_template
 from linopy_yaml.expression_parser import (
     ArithNode,
@@ -54,6 +55,7 @@ def validate_expressions(
     schema: MathSchema,
     *,
     known_variables: Iterable[str] = (),
+    source: SourceMap | None = None,
 ) -> None:
     """Validate and resolve every expression and where string in *schema*.
 
@@ -82,11 +84,12 @@ def validate_expressions(
     ValueError
         Listing every problem found, one per line.
     """
+    src = source or SourceMap.none()
     ns = Namespace.of(schema, known_variables)
     errors: list[str] = []
 
     for mname, macro in schema.macros.items():
-        context = f"Macro '{mname}'"
+        context = f"Macro '{mname}'" + src.where('macros', mname)
         try:
             body_ast = expand(parse_template(mname, macro, context), schema, context)
             assert not isinstance(body_ast, CompareNode)
@@ -105,7 +108,7 @@ def validate_expressions(
         _check_template_names(body_ast, macro.template, context, ns, formals, errors)
 
     for ename, body in schema.expressions.items():
-        context = f"Named expression '{ename}'"
+        context = f"Named expression '{ename}'" + src.where('expressions', ename)
         ast = _parse_expand(body, schema, context, errors)
         if ast is None:
             continue
@@ -115,12 +118,12 @@ def validate_expressions(
         resolve_expression(ast, ns, context, errors)
 
     for vname, vdef in schema.variables.items():
-        _check_where(vdef.where, ns, f"Variable '{vname}'", errors)
+        _check_where(vdef.where, ns, f"Variable '{vname}'" + src.where('variables', vname, 'where'), errors)
 
     for cname, cdef in schema.constraints.items():
-        _check_where(cdef.where, ns, f"Constraint '{cname}'", errors)
+        _check_where(cdef.where, ns, f"Constraint '{cname}'" + src.where('constraints', cname, 'where'), errors)
         for i, eq in enumerate(cdef.equations):
-            context = f"Constraint '{cname}', equation {i}"
+            context = f"Constraint '{cname}', equation {i}" + src.where('constraints', cname, 'equations', i)
             _check_where(eq.where, ns, context, errors)
             ast = _parse_expand(eq.expression, schema, context, errors)
             if ast is None:
@@ -136,7 +139,7 @@ def validate_expressions(
 
     for oname, odef in schema.objectives.items():
         for i, eq in enumerate(odef.equations):
-            context = f"Objective '{oname}', equation {i}"
+            context = f"Objective '{oname}', equation {i}" + src.where('objectives', oname, 'equations', i)
             _check_where(eq.where, ns, context, errors)
             ast = _parse_expand(eq.expression, schema, context, errors)
             if ast is None:

@@ -38,6 +38,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, assert_never
 
+from linopy_yaml._source import SourceMap
 from linopy_yaml.expression_parser import (
     ArithNode,
     BinOpNode,
@@ -159,15 +160,16 @@ def _dims_call(node: FuncCallNode, schema: MathSchema, context: str) -> frozense
 # ---------------------------------------------------------------------------
 
 
-def check_schema(schema: MathSchema) -> None:
+def check_schema(schema: MathSchema, *, source: SourceMap | None = None) -> None:
     """Check every declaration's dim rules. Raises :class:`DimError`."""
     from linopy_yaml.resolution import Namespace, expression_of, where_of
 
+    src = source or SourceMap.none()
     ns = Namespace.of(schema)
 
     for vname, vdef in schema.variables.items():
         frame = frozenset(vdef.foreach)
-        context = f"Variable '{vname}'"
+        context = f"Variable '{vname}'" + src.where('variables', vname)
         _check_where_dims(where_of(vdef.where, ns, context), schema, frame, context)
         for side in ('lower', 'upper'):
             bound = getattr(vdef.bounds, side)
@@ -182,10 +184,13 @@ def check_schema(schema: MathSchema) -> None:
 
     for cname, cdef in schema.constraints.items():
         frame = frozenset(cdef.foreach)
-        _check_where_dims(where_of(cdef.where, ns, f"Constraint '{cname}'"), schema, frame, f"Constraint '{cname}'")
+        cctx = f"Constraint '{cname}'" + src.where('constraints', cname)
+        _check_where_dims(where_of(cdef.where, ns, cctx), schema, frame, cctx)
         n_eqs = len(cdef.equations)
         for i, eq in enumerate(cdef.equations):
-            context = f"Constraint '{cname}'" if n_eqs == 1 else f"Constraint '{cname}', equation {i}"
+            context = (f"Constraint '{cname}'" if n_eqs == 1 else f"Constraint '{cname}', equation {i}") + src.where(
+                'constraints', cname, 'equations', i
+            )
             _check_where_dims(where_of(eq.where, ns, context), schema, frame, context)
             got = dims_of(expression_of(eq.expression, schema, ns, context), schema, context)
             if got != frame:
@@ -202,7 +207,7 @@ def check_schema(schema: MathSchema) -> None:
                 raise DimError(f'{context}: the expression {detail}.')
 
     for oname, odef in schema.objectives.items():
-        context = f"Objective '{oname}'"
+        context = f"Objective '{oname}'" + src.where('objectives', oname)
         dims_of(expression_of(odef.equations[0].expression, schema, ns, context), schema, context)
 
 
