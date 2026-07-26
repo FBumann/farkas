@@ -21,8 +21,8 @@ leaves it unmasked.
 1.1 — under 1.1 `on`/`off`/`yes`/`no`/`y`/`n` become booleans and silently
 destroy dimension labels that are country codes, so `values: [no, se, on]` is
 three labels here. The implicit timestamp (`2024-01-01`) and sexagesimal ints
-(`12:30` → `750`) deliberately survive; they belong with the `dtype: datetime`
-guard. A duplicate key is a load error naming both lines. `<<:` merge keys are
+(`12:30` → `750`) deliberately survive; the `dtype` guard below catches them
+wherever they were not meant. A duplicate key is a load error naming both lines. `<<:` merge keys are
 honoured, and a key the mapping declares itself overrides the merged value. The
 document must be a mapping.
 
@@ -31,7 +31,10 @@ document must be a mapping.
 **`dimensions`** — the master coordinate index. Every dimension named anywhere
 must be declared. `dtype` ∈ {`float`, `int`, `str`, `datetime`}, default `str`.
 `values` is a list or null; if null, coordinates must arrive via `sources=`
-(`coords=` on the compat lane), else loading fails.
+(`coords=` on the compat lane), else loading fails. Every declared value must
+be of the declared `dtype` — `values: [2024-01-01]` under the default
+`dtype: str` is a load error, because YAML resolved it to a date and a date
+does not join `'2024-01-01'` in the data.
 
 **`parameters`** — declared shape only; data binds by name at run time (§8).
 `dims` required (`[]` is a scalar); `dtype` ∈ {`float`, `int`, `bool`, `str`},

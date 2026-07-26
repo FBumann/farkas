@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime
+
 import pandas as pd
 import pytest
 
@@ -258,3 +260,33 @@ class TestDimensionKwargs:
             }
         )
         validate_expressions(schema)
+
+    @pytest.mark.parametrize(
+        ('dtype', 'values', 'match'),
+        [
+            ('str', [datetime.date(2024, 1, 1)], 'has type date'),
+            ('str', [750], 'has type int'),
+            ('int', ['alpha'], 'has type str'),
+            ('int', [True], 'has type bool'),
+        ],
+    )
+    def test_a_coordinate_must_be_its_declared_dtype(self, dtype, values, match):
+        """Nothing checked `values` against `dtype`, so a coordinate YAML had
+        resolved to another type failed to join the user's data — and row
+        absence is the structural zero, so the model solved a smaller problem.
+        """
+        schema = _schema(dimensions={'g': {'dtype': dtype, 'values': values}})
+        with pytest.raises(ValueError, match=match):
+            validate_expressions(schema)
+
+    @pytest.mark.parametrize(
+        ('dtype', 'values'),
+        [
+            ('str', ['no', 'se']),
+            ('datetime', [datetime.date(2024, 1, 1)]),
+            ('float', [1, 2.5]),
+            ('int', [0, 1]),
+        ],
+    )
+    def test_a_coordinate_of_the_declared_dtype_passes(self, dtype, values):
+        validate_expressions(_schema(dimensions={'g': {'dtype': dtype, 'values': values}}))
