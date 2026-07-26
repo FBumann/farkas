@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.0-alpha.13](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.12...v0.0.0-alpha.13) (2026-07-26)
+
+
+### Bug Fixes
+
+* quote caller-supplied paths in SQL ([#139](https://github.com/FBumann/farkas/issues/139)) ([61dfe5b](https://github.com/FBumann/farkas/commit/61dfe5b487585fa7acd68cc76ce5d75e4bd42d98))
+
 ## [0.0.0-alpha.12](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.11...v0.0.0-alpha.12) (2026-07-26)
 
 
