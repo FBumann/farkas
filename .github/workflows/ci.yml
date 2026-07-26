@@ -55,9 +55,12 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
         with:
-          python-version: "3.11"  # lowest supported; cached for the legs below
           enable-cache: true
-      - run: uv python install 3.12
+      # Deliberately no `python-version:` on setup-uv — it exports UV_PYTHON,
+      # which makes the bare leg's `uv pip install` hunt for a venv on that
+      # version instead of the 3.12 one `uv sync --python 3.12` just built.
+      # Each leg names its own interpreter instead.
+      - run: uv python install 3.11 3.12
 
       - name: "bare install: no linopy/xarray on disk"
         # Proves the runtime dependency claim and runs the native suite.
