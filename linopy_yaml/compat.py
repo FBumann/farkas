@@ -49,7 +49,7 @@ from linopy_yaml._notes import note
 from linopy_yaml._yaml import read_yaml
 from linopy_yaml.builder import build_model
 from linopy_yaml.errors import LanguageError
-from linopy_yaml.loader import build_master_coords, load_parameters
+from linopy_yaml.loader import build_dim_coords, build_master_coords, dim_index_of, load_parameters
 from linopy_yaml.piecewise import expand_piecewise, validate_piecewise_data
 from linopy_yaml.schema import MathSchema
 from linopy_yaml.validation import validate_expressions
@@ -88,11 +88,12 @@ def build(
         validate_expressions(schema)
 
         master_coords = build_master_coords(schema, coords)
+        dim_coords = build_dim_coords(schema, coords, master_coords)
         dataset = load_parameters(schema, data, master_coords)
         validate_piecewise_data(original, dataset)
 
         model = linopy.Model()
-        build_model(model, schema, dataset, master_coords)
+        build_model(model, schema, dataset, master_coords, dim_coords)
 
     return model
 
@@ -130,7 +131,7 @@ def extend(
 
         known = _infer_coords(model)
         if coords is not None:
-            known.update({k: pd.Index(v, name=k) for k, v in coords.items()})
+            known.update({k: dim_index_of(v, k) for k, v in coords.items()})
 
         # If this YAML declares values: for a dim the model already has, they
         # must match. Silent override would hide real bugs.
@@ -153,10 +154,11 @@ def extend(
         # ``known`` is the override, so any dim it covers beats this YAML's
         # ``values:``. Dims still missing fall through to ``values:`` or raise.
         master_coords = build_master_coords(schema, known)
+        dim_coords = build_dim_coords(schema, coords, master_coords)
         dataset = load_parameters(schema, data, master_coords)
         validate_piecewise_data(original, dataset)
 
-        build_model(model, schema, dataset, master_coords)
+        build_model(model, schema, dataset, master_coords, dim_coords)
 
 
 def _read(path: Path) -> MathSchema:

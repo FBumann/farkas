@@ -5,7 +5,7 @@ from __future__ import annotations
 import difflib
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from linopy_yaml.helpers import BUILTIN_NAMES
 
@@ -49,12 +49,43 @@ class _StrictBlock(BaseModel):
 
 
 class DimensionBlock(_StrictBlock):
-    """A declared dimension with optional dtype and values."""
+    """A declared dimension with optional dtype, values and coordinates.
+
+    ``coords`` names non-index coordinates carried alongside this dimension's
+    labels — a generator's bus, a line's endpoints, a snapshot's month. Each
+    maps a coordinate name to the dimension its *values* are labels of, which
+    is what makes ``group_sum(x, over=..., by=...)`` checkable: the values are
+    verified to be coordinates of that dimension once data is bound, instead of
+    being joined blind. Written either as a list, when the coordinate is named
+    after its target dimension::
+
+        generator:
+          coords: [bus]
+
+    or as a mapping, when it is not — including two coordinates onto one
+    dimension::
+
+        line:
+          coords: {from: bus, to: bus}
+    """
 
     _label: ClassVar[str] = 'a dimension declaration'
 
     dtype: str = 'str'
     values: list[Any] | None = None
+    coords: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator('coords', mode='before')
+    @classmethod
+    def _normalise_coords(cls, v: Any) -> Any:
+        """``[bus]`` is shorthand for ``{bus: bus}``."""
+        if isinstance(v, list):
+            bad = [x for x in v if not isinstance(x, str)]
+            if bad:
+                msg = f'coords list entries must be coordinate names, got {bad!r}'
+                raise ValueError(msg)
+            return {name: name for name in v}
+        return v
 
     @field_validator('dtype')
     @classmethod
@@ -313,6 +344,29 @@ class MathSchema(_StrictBlock):
             for d in dims_of(item)
             if d not in self.dimensions
         )
+
+        # A coordinate's target must be a declared dimension, and must not be
+        # the dimension carrying it: grouping a dim into itself is a no-op that
+        # would read as a reduction.
+        for dname, ddef in self.dimensions.items():
+            for cname, target in ddef.coords.items():
+                if target not in self.dimensions:
+                    errors.append(
+                        f"Dimension '{dname}' coordinate '{cname}' targets undeclared "
+                        f"dimension '{target}'. Declare it under 'dimensions:' — the "
+                        f'target is what the coordinate values are checked against.'
+                    )
+                elif target == dname:
+                    errors.append(
+                        f"Dimension '{dname}' coordinate '{cname}' targets '{dname}' "
+                        f'itself. A coordinate must map into a different dimension.'
+                    )
+                if cname in self.dimensions and cname != target:
+                    errors.append(
+                        f"Dimension '{dname}' coordinate '{cname}' shadows the dimension "
+                        f"of the same name while targeting '{target}'. Rename the "
+                        f'coordinate so a reader cannot mistake one for the other.'
+                    )
 
         # Bounds look like the expression language but are not it, so the
         # error says what they actually accept.

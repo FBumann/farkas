@@ -8,7 +8,7 @@ the relational side by lowering cases and SQL rather than shared code.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, assert_never
 
 import numpy as np
@@ -20,6 +20,7 @@ from linopy_yaml.expression_parser import (
     ArithmeticNode,
     BinaryOperatorNode,
     ComparisonNode,
+    CoordinateNode,
     DimensionNode,
     FunctionCallNode,
     NameNode,
@@ -69,6 +70,8 @@ class EvaluationContext:
     master_coords: dict[str, pd.Index]
     schema: MathSchema
     ns: Namespace
+    #: dim -> {coordinate name: values as a DataArray over that dim}
+    dim_coords: dict[str, dict[str, xr.DataArray]] = field(default_factory=dict)
 
 
 def build_model(
@@ -76,13 +79,21 @@ def build_model(
     schema: MathSchema,
     dataset: xr.Dataset,
     master_coords: dict[str, pd.Index],
+    dim_coords: dict[str, dict[str, xr.DataArray]] | None = None,
 ) -> None:
     """Populate a linopy Model from a parsed schema and loaded parameters.
 
     This mutates *model* in-place, adding variables, constraints, and
     objectives as declared in *schema*.
     """
-    ctx = EvaluationContext(model, dataset, master_coords, schema, Namespace.of(schema, list(model.variables)))
+    ctx = EvaluationContext(
+        model,
+        dataset,
+        master_coords,
+        schema,
+        Namespace.of(schema, list(model.variables)),
+        dim_coords or {},
+    )
     _build_variables(ctx)
     _build_constraints(ctx)
     _build_objectives(ctx)
@@ -220,7 +231,7 @@ def _eval_ast(
     if isinstance(node, ParameterNode):
         return ctx.dataset[node.name]
 
-    if isinstance(node, (NameNode, DimensionNode)):
+    if isinstance(node, (NameNode, DimensionNode, CoordinateNode)):
         msg = (
             f'{type(node).__name__}({node.name!r}) reached the evaluator. '
             f'Expressions must go through resolution.expression_of() first '
@@ -263,6 +274,13 @@ def _eval_ast(
         helper = _HELPERS[node.name]
         # Evaluate positional args
         args = [_eval_ast(a, ctx) for a in node.args]
+        if node.name == 'group_sum':
+            # the coordinate lives on the dimension, not in the parameter
+            # dataset, so it is looked up here rather than evaluated as an
+            # operand — the helper still sees a plain mapping array
+            by = node.kwargs['by']
+            assert isinstance(by, CoordinateNode)
+            return _helper_group_sum(args[0], _coordinate_array(by, ctx), into=by.into)
         kwargs = {}
         for k, v in node.kwargs.items():
             if isinstance(v, DimensionNode):
@@ -272,6 +290,19 @@ def _eval_ast(
         return helper(*args, **kwargs)
 
     assert_never(node)
+
+
+def _coordinate_array(by: CoordinateNode, ctx: EvaluationContext) -> Any:
+    """The declared coordinate ``by`` as an array over the dimension carrying it."""
+    try:
+        return ctx.dim_coords[by.dimension][by.name]
+    except KeyError:
+        msg = (
+            f"coordinate '{by.name}' on dimension '{by.dimension}' has no bound values. "
+            f"Pass coords={{'{by.dimension}': <DataFrame with '{by.dimension}' and "
+            f"'{by.name}' columns>}}."
+        )
+        raise DataError(msg) from None
 
 
 # ---------------------------------------------------------------------------
@@ -300,18 +331,19 @@ def _helper_sum(array: Any, *, over: str) -> Any:
 
 
 def _helper_group_sum(array: Any, mapping: Any, *, into: str) -> Any:
-    """Sum *array* through a mapping parameter, producing dimension *into*.
+    """Sum *array* through a declared coordinate, producing dimension *into*.
 
-    Usage in YAML: ``group_sum(p, gen_bus, into=bus)``
+    Usage in YAML: ``group_sum(p, over=generator, by=bus)``
 
-    *mapping* must be a one-dimensional parameter whose values are group
-    labels (e.g. ``gen_bus``: generator → bus). The mapping's dimension is
-    summed out; a new dimension named *into* holds the group labels.
+    *mapping* is the coordinate's values as a one-dimensional array over the
+    dim being grouped (``generator`` → bus labels), supplied by the caller from
+    ``EvaluationContext.dim_coords``. That dim is summed out; a new dimension
+    named *into* holds the group labels.
     """
     if not isinstance(mapping, xr.DataArray):
         msg = (
-            f'group_sum() mapping must be a parameter (got '
-            f'{type(mapping).__name__}). Usage: group_sum(expr, mapping, into=dim)'
+            f'group_sum() coordinate must be an array (got '
+            f'{type(mapping).__name__}). Usage: group_sum(expr, over=dim, by=coord)'
         )
         raise TypeError(msg)
     if mapping.ndim != 1:

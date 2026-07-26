@@ -18,20 +18,19 @@ from linopy_yaml.schema import MathSchema
 BASE = {
     'dimensions': {
         'snapshot': {'dtype': 'int'},
-        'generator': {'values': ['wind', 'gas']},
+        'generator': {'values': ['wind', 'gas'], 'coords': ['bus']},
         'bus': {'values': ['n', 's']},
     },
     'parameters': {
         'p_max': {'dims': ['generator']},
         'cost': {'dims': ['generator']},
-        'gen_bus': {'dims': ['generator'], 'dtype': 'str'},
         'load': {'dims': ['snapshot', 'bus']},
     },
     'variables': {'p': {'foreach': ['snapshot', 'generator'], 'bounds': {'lower': 0, 'upper': 'p_max'}}},
     'constraints': {
         'balance': {
             'foreach': ['snapshot', 'bus'],
-            'equations': [{'expression': 'group_sum(p, gen_bus, into=bus) == load'}],
+            'equations': [{'expression': 'group_sum(p, over=generator, by=bus) == load'}],
         }
     },
     'objectives': {'total': {'sense': 'minimize', 'equations': [{'expression': 'sum(p * cost, over=generator)'}]}},
@@ -73,7 +72,7 @@ def test_the_base_model_typechecks():
         ('p * cost', {'snapshot', 'generator'}),
         ('sum(p, over=generator)', {'snapshot'}),
         ('sum(p * cost, over=generator)', {'snapshot'}),
-        ('group_sum(p, gen_bus, into=bus)', {'snapshot', 'bus'}),
+        ('group_sum(p, over=generator, by=bus)', {'snapshot', 'bus'}),
         ('roll(p, snapshot=1)', {'snapshot', 'generator'}),
     ],
 )
@@ -88,9 +87,9 @@ def test_sum_over_an_absent_dim_is_an_error_not_a_noop():
         _dims('sum(p, over=bus)')
 
 
-def test_group_sum_requires_the_mapping_dim():
-    with pytest.raises(DimensionError, match="mapping 'gen_bus' has dims"):
-        _dims('group_sum(load, gen_bus, into=bus)')
+def test_group_sum_requires_the_grouped_dim():
+    with pytest.raises(DimensionError, match=r'group_sum\(over=generator\) but the expression has dims'):
+        _dims('group_sum(load, over=generator, by=bus)')
 
 
 def test_roll_requires_the_dim():

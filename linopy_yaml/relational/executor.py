@@ -231,6 +231,8 @@ class DuckdbExecutor:
             + [c.name for c in program.constraints]
             + [d for p in program.parameters for d in p.dims]
             + [d for v in program.variables for d in v.dims]
+            + [d.name for d in program.dimensions]
+            + [c for d in program.dimensions for pair in d.coordinates for c in pair]
         )
         for n in names:
             if not _IDENT.match(n):
@@ -283,12 +285,20 @@ class DuckdbExecutor:
             dims.update(p.dims)
 
         for d in sorted(dims):
+            coordinates = dict(program.dimension(d).coordinates)
             if d in sources:
                 # explicit index: ordinals follow declared/coords order, so
-                # Shift's positional semantics match xarray/linopy exactly
+                # Translate's positional semantics match xarray/linopy exactly
                 # even for non-monotonic or string coordinates
-                self._create_explicit_dim_table(d, sources[d])
+                self._create_explicit_dim_table(d, sources[d], coordinates)
             else:
+                if coordinates:
+                    raise DataError(
+                        f"dimension '{d}' declares coordinates {sorted(coordinates)} but has "
+                        f"no index source. Pass one under key '{d}' (a parquet path or frame "
+                        f'carrying columns {[d, *sorted(coordinates)]}) — a coordinate cannot '
+                        f'be inferred from the parameters that happen to use the dimension.'
+                    )
                 params = [p for p in program.parameters if d in p.dims]
                 if not params:
                     raise DataError(
@@ -303,27 +313,93 @@ class DuckdbExecutor:
                 )
             self._dim_card[d] = self._scalar(f'SELECT count(*) FROM dim_{d}')
 
-    def _create_explicit_dim_table(self, d: str, source: Any) -> None:
+        # Coordinate containment, once every dim table exists: a coordinate's
+        # values must be labels of the dimension it targets. This is the check
+        # that stops a mistyped label from vanishing in the inner join that
+        # places its terms — it built and solved, with the term silently gone.
+        for d in sorted(dims):
+            for cname, target in sorted(program.dimension(d).coordinates):
+                if target not in self._dim_card:
+                    raise DataError(
+                        f"dimension '{d}' coordinate '{cname}' targets '{target}', which "
+                        f'no declaration in this model uses, so it has no coordinate set '
+                        f'to check against'
+                    )
+                self._check_coordinate_containment(d, cname, target)
+
+    def _create_explicit_dim_table(self, d: str, source: Any, coordinates: Mapping[str, str]) -> None:
         import pandas as pd
 
+        # coordinate names are language identifiers, and SQL reserves some of
+        # them ("from" and "to" are the natural names for a line's endpoints),
+        # so every reference to one is quoted
+        names = sorted(coordinates)
         if isinstance(source, (str, Path)):
+            agg = ''.join(f', ANY_VALUE("{c}") AS "{c}"' for c in names)
+            outer = ''.join(f', "{c}"' for c in names)
             self._con.execute(
                 f'CREATE TABLE dim_{d} AS '
-                f'SELECT val, ROW_NUMBER() OVER (ORDER BY pos) - 1 AS ord FROM ('
-                f'SELECT {d} AS val, MIN(file_row_number) AS pos '
+                f'SELECT val, ROW_NUMBER() OVER (ORDER BY pos) - 1 AS ord{outer} FROM ('
+                f'SELECT {d} AS val, MIN(file_row_number) AS pos{agg} '
                 f"FROM read_parquet('{source}', file_row_number=true) GROUP BY {d})"
             )
+            self._check_coordinates_single_valued(d, names, f"read_parquet('{source}')")
             return
         if not isinstance(source, pd.DataFrame) or d not in source.columns:
             raise DataError(
                 f"explicit index for dimension '{d}' must be a DataFrame with a "
                 f"'{d}' column or a parquet path (got {type(source).__name__})"
             )
+        missing = [c for c in names if c not in source.columns]
+        if missing:
+            raise DataError(
+                f"index for dimension '{d}' is missing declared coordinate column(s) "
+                f'{missing} (has {list(source.columns)})'
+            )
         vals = pd.unique(source[d])  # first occurrence = positional order
         frame = pd.DataFrame({'val': vals, 'ord': range(len(vals))})
+        if names:
+            first = source.drop_duplicates(subset=[d]).set_index(d)
+            for c in names:
+                frame[c] = first[c].reindex(vals).to_numpy()
         self._con.register(f'dimsrc_{d}', frame)
-        self._con.execute(f'CREATE TABLE dim_{d} AS SELECT val, ord FROM dimsrc_{d}')
+        cols = ', '.join(['val', 'ord', *(f'"{c}"' for c in names)])
+        self._con.execute(f'CREATE TABLE dim_{d} AS SELECT {cols} FROM dimsrc_{d}')
         self._con.unregister(f'dimsrc_{d}')
+        self._con.register(f'dimraw_{d}', source)
+        self._check_coordinates_single_valued(d, names, f'dimraw_{d}')
+        self._con.unregister(f'dimraw_{d}')
+
+    def _check_coordinates_single_valued(self, d: str, names: list[str], relation: str) -> None:
+        """One label, one coordinate value — two rows disagreeing is a data bug."""
+        for c in names:
+            bad = self._scalar(
+                f'SELECT count(*) FROM (SELECT {d} FROM {relation} GROUP BY {d} HAVING count(DISTINCT "{c}") > 1)'
+            )
+            if bad:
+                raise DataError(
+                    f"dimension '{d}': {bad} label(s) carry more than one value for "
+                    f"coordinate '{c}'. A coordinate is single-valued per label — "
+                    f'reduce the source to one row per {d}, or model the relation as a '
+                    f'parameter instead.'
+                )
+
+    def _check_coordinate_containment(self, d: str, cname: str, target: str) -> None:
+        """Every coordinate value must be a label of the dimension it targets."""
+        bad = self._con.execute(
+            f'SELECT g."{cname}" FROM dim_{d} g LEFT JOIN dim_{target} t ON t.val = g."{cname}" '
+            f'WHERE t.val IS NULL GROUP BY g."{cname}" LIMIT 5'
+        ).fetchall()
+        if not bad:
+            return
+        shown = ', '.join(repr(r[0]) for r in bad)
+        raise DataError(
+            f"dimension '{d}' coordinate '{cname}' has value(s) that are not "
+            f"'{target}' coordinates: {shown}. Every value must be a declared "
+            f"'{target}' label — otherwise group_sum(over={d}, by={cname}) drops "
+            f'those terms in the join that places them, and the model builds and '
+            f'solves without them.'
+        )
 
     # ------------------------------------------------------------------
     # frames (masked coord products with partition-wise labels)
@@ -563,19 +639,20 @@ class DuckdbExecutor:
         return _TermFragment(keep, f'SELECT {cols} FROM ({p.sql})', p.is_term)
 
     def _group_fragment(self, p: _TermFragment, g: plan.GroupSum, context: str) -> _TermFragment:
-        assert self._program is not None
-        mdecl = self._program.parameter(g.mapping)
-        if len(mdecl.dims) != 1:
-            raise LanguageError(
-                f"in {context}: GroupSum mapping '{g.mapping}' must have exactly one dim (has {list(mdecl.dims)})"
-            )
-        d = mdecl.dims[0]
-        if d not in p.dims:
-            raise LanguageError(f"in {context}: GroupSum over '{d}' but the expression has dims {list(p.dims)}")
-        keep = tuple(x for x in p.dims if x != d)
+        """Relabel dim ``over`` to ``into`` through a declared coordinate.
+
+        No aggregate here: the fragment's dim tuple changes and duplicate
+        (row, col) pairs collapse in the terminal ``SUM(coeff)`` at assembly —
+        the same shape as :meth:`_sum_fragment` dropping a dim. The join is
+        against the dim table, whose coordinate column was checked for
+        containment at build time, so it cannot silently drop a term.
+        """
+        if g.over not in p.dims:
+            raise LanguageError(f"in {context}: GroupSum over '{g.over}' but the expression has dims {list(p.dims)}")
+        keep = tuple(x for x in p.dims if x != g.over)
         valcols = 't.var_label, t.coeff' if p.is_term else 't.cval'
-        keepcols = ', '.join([*(f't.{x}' for x in keep), f'm.value AS {g.into}', valcols])
-        sql = f'SELECT {keepcols} FROM ({p.sql}) t JOIN p_{g.mapping} m ON m.{d} = t.{d}'
+        keepcols = ', '.join([*(f't.{x}' for x in keep), f'g."{g.coordinate}" AS {g.into}', valcols])
+        sql = f'SELECT {keepcols} FROM ({p.sql}) t JOIN dim_{g.over} g ON g.val = t.{g.over}'
         return _TermFragment((*keep, g.into), sql, p.is_term)
 
     def _translate_fragment(self, p: _TermFragment, s: plan.Translate, context: str) -> _TermFragment:

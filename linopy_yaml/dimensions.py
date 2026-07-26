@@ -14,8 +14,9 @@ The rules::
     -x, +x                  -> same dims as x
     a + b, a * b, a / b     -> every dim either side carries (set union)
     sum(x, over=d)          -> x's dims without d;  error if x has no d
-    group_sum(x, m, into=g) -> x's dims, minus the mapping's, plus g;
-                               error unless the mapping's dims are all in x's
+    group_sum(x, over=d, by=c)
+                            -> x's dims without d, plus the dim c targets;
+                               error if x has no d, or d declares no coord c
     roll/shift(x, d=n)      -> same dims as x;      error if x has no d
 
 and at the declaration level::
@@ -43,6 +44,7 @@ from linopy_yaml.expression_parser import (
     ArithmeticNode,
     BinaryOperatorNode,
     ComparisonNode,
+    CoordinateNode,
     DimensionNode,
     ExpressionNode,
     FunctionCallNode,
@@ -105,7 +107,7 @@ def _dims(
             return frozenset(schema.variables[node.name].foreach)
         return frozenset(external[node.name])  # a variable already on the model
 
-    if isinstance(node, (NameNode, DimensionNode)):
+    if isinstance(node, (NameNode, DimensionNode, CoordinateNode)):
         msg = f'{type(node).__name__} reached the dim checker; resolve the expression first.'
         raise AssertionError(msg)
 
@@ -148,18 +150,17 @@ def _dims_call(
 
     if node.name == 'group_sum':
         inner = _dims(node.args[0], schema, context, external)
-        mapping = node.args[1]
-        into = node.kwargs['into']
-        assert isinstance(mapping, ParameterNode)
-        assert isinstance(into, DimensionNode)
-        mdims = frozenset(schema.parameters[mapping.name].dims)
-        if not mdims <= inner:
+        over = node.kwargs['over']
+        by = node.kwargs['by']
+        assert isinstance(over, DimensionNode)
+        assert isinstance(by, CoordinateNode)
+        if over.name not in inner:
             raise DimensionError(
-                f"{context}: group_sum() mapping '{mapping.name}' has dims "
-                f'{sorted(mdims)}, which the expression (dims {sorted(inner)}) does '
-                f'not carry.'
+                f'{context}: group_sum(over={over.name}) but the expression has dims '
+                f'{sorted(inner)}. Grouping a dim the operand does not carry cannot '
+                f'place its terms — drop the group_sum, or fix the dim.'
             )
-        return (inner - mdims) | {into.name}
+        return (inner - {over.name}) | {by.into}
 
     if node.name in ('roll', 'shift'):
         inner = _dims(node.args[0], schema, context, external)

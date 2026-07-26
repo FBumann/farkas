@@ -167,3 +167,52 @@ def test_equation_block_rejects_unknown_keys():
     }
     with pytest.raises(ValidationError, match="unknown key 'expresion' in an equation"):
         MathSchema.model_validate(raw)
+
+
+# ---------------------------------------------------------------------------
+# dimension coordinates
+# ---------------------------------------------------------------------------
+
+
+def test_coords_list_is_shorthand_for_a_self_named_mapping():
+    s = MathSchema.model_validate(
+        {'dimensions': {'bus': {'values': ['n']}, 'generator': {'values': ['w'], 'coords': ['bus']}}}
+    )
+    assert s.dimensions['generator'].coords == {'bus': 'bus'}
+
+
+def test_coords_mapping_allows_two_coordinates_onto_one_dimension():
+    s = MathSchema.model_validate(
+        {
+            'dimensions': {
+                'bus': {'values': ['n']},
+                'line': {'values': ['l1'], 'coords': {'from': 'bus', 'to': 'bus'}},
+            }
+        }
+    )
+    assert s.dimensions['line'].coords == {'from': 'bus', 'to': 'bus'}
+
+
+def test_a_coordinate_target_must_be_declared():
+    raw = {'dimensions': {'generator': {'values': ['w'], 'coords': ['bus']}}}
+    with pytest.raises(ValidationError, match="targets undeclared dimension 'bus'"):
+        MathSchema.model_validate(raw)
+
+
+def test_a_coordinate_may_not_target_its_own_dimension():
+    raw = {'dimensions': {'generator': {'values': ['w'], 'coords': {'g': 'generator'}}}}
+    with pytest.raises(ValidationError, match="targets 'generator' itself"):
+        MathSchema.model_validate(raw)
+
+
+def test_a_coordinate_may_not_shadow_a_different_dimension():
+    """`coords: {bus: zone}` would read as a bus coordinate and be a zone one."""
+    raw = {
+        'dimensions': {
+            'bus': {'values': ['n']},
+            'zone': {'values': ['z']},
+            'generator': {'values': ['w'], 'coords': {'bus': 'zone'}},
+        }
+    }
+    with pytest.raises(ValidationError, match='shadows the dimension of the same name'):
+        MathSchema.model_validate(raw)

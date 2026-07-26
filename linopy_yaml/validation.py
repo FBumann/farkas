@@ -30,6 +30,7 @@ from linopy_yaml.expression_parser import (
     ArithmeticNode,
     BinaryOperatorNode,
     ComparisonNode,
+    CoordinateNode,
     DimensionNode,
     FunctionCallNode,
     NameNode,
@@ -239,7 +240,7 @@ def _check_template_names(
     that are *not* formals, which is what makes an uncalled macro still fail
     at load time.
     """
-    if isinstance(node, (NumberNode, VariableNode, ParameterNode, DimensionNode)):
+    if isinstance(node, (NumberNode, VariableNode, ParameterNode, DimensionNode, CoordinateNode)):
         return
 
     if isinstance(node, NameNode):

@@ -1,7 +1,8 @@
 """Name resolution — the pass that makes the core AST fully typed.
 
 Parsers emit ``NameNode``: a token, not yet a meaning. This module rewrites
-each one into a typed node (``VariableNode`` / ``ParameterNode`` / ``DimensionNode``, and
+each one into a typed node (``VariableNode`` / ``ParameterNode`` / ``DimensionNode`` /
+``CoordinateNode``, and
 ``ParameterComparisonNode`` / ``DimensionComparisonNode`` / ``ParameterDefinedNode`` on the where
 side), so the AST reaching either backend holds no unresolved names.
 
@@ -22,6 +23,7 @@ from linopy_yaml.expression_parser import (
     ArithmeticNode,
     BinaryOperatorNode,
     ComparisonNode,
+    CoordinateNode,
     DimensionNode,
     ExpressionNode,
     FunctionCallNode,
@@ -46,12 +48,16 @@ from linopy_yaml.where_parser import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping
 
     from linopy_yaml.schema import MathSchema
 
 #: helper kwargs whose *value* names a dimension — ``sum(x, over=generator)``
-_DIM_VALUE_KWARGS: dict[str, tuple[str, ...]] = {'sum': ('over',), 'group_sum': ('into',)}
+_DIM_VALUE_KWARGS: dict[str, tuple[str, ...]] = {'sum': ('over',), 'group_sum': ('over',)}
+
+#: helper kwargs whose *value* names a coordinate on a sibling ``over=`` dim —
+#: ``group_sum(x, over=line, by=to)``
+_COORDINATE_VALUE_KWARGS: dict[str, tuple[str, ...]] = {'group_sum': ('by',)}
 
 
 class Namespace:
@@ -61,17 +67,21 @@ class Namespace:
     walk through several stores.
     """
 
-    __slots__ = ('dimensions', 'parameters', 'variables')
+    __slots__ = ('coordinates', 'dimensions', 'parameters', 'variables')
 
     def __init__(
         self,
         variables: Iterable[str],
         parameters: Iterable[str],
         dimensions: Iterable[str],
+        coordinates: Mapping[str, Mapping[str, str]] | None = None,
     ) -> None:
         self.variables = frozenset(variables)
         self.parameters = frozenset(parameters)
         self.dimensions = frozenset(dimensions)
+        #: dim -> {coordinate name: target dim}. Scoped, so it is not part of
+        #: :meth:`kind` — a coordinate name is only meaningful under its dim.
+        self.coordinates: dict[str, dict[str, str]] = {d: dict(c) for d, c in (coordinates or {}).items()}
 
     @classmethod
     def of(cls, schema: MathSchema, known_variables: Iterable[str] = ()) -> Namespace:
@@ -86,6 +96,7 @@ class Namespace:
             set(schema.variables) | set(known_variables),
             schema.parameters,
             schema.dimensions,
+            {d: dd.coords for d, dd in schema.dimensions.items()},
         )
 
     def kind(self, name: str) -> str | None:
@@ -179,7 +190,7 @@ def _resolve_arith(node: ArithmeticNode, ns: Namespace, context: str, errors: li
     if isinstance(node, NumberNode):
         return node
 
-    if isinstance(node, (VariableNode, ParameterNode, DimensionNode)):
+    if isinstance(node, (VariableNode, ParameterNode, DimensionNode, CoordinateNode)):
         return node  # idempotent: piecewise re-resolves expanded links
 
     if isinstance(node, NameNode):
@@ -220,15 +231,21 @@ def _resolve_arith(node: ArithmeticNode, ns: Namespace, context: str, errors: li
         args = [_resolve_arith(a, ns, context, errors) for a in node.args]
         kwargs: dict[str, ArithmeticNode] = {}
         dim_valued = _DIM_VALUE_KWARGS.get(node.name, ())
+        coordinate_valued = _COORDINATE_VALUE_KWARGS.get(node.name, ())
         for key, value in node.kwargs.items():
             # roll(x, snapshot=1): the dim is the key, so there is no node to type
             if node.name in _DIM_KEY_HELPERS and key not in ns.dimensions:
                 errors.append(_undeclared_dim(context, node.name, f'{key}=...', key, ns))
-            kwargs[key] = (
-                _resolve_dim_ref(value, ns, context, node.name, key, errors)
-                if key in dim_valued
-                else _resolve_arith(value, ns, context, errors)
-            )
+            if key in dim_valued:
+                kwargs[key] = _resolve_dim_ref(value, ns, context, node.name, key, errors)
+            elif key in coordinate_valued:
+                # scoped to the sibling over= dim, so that kwarg has to be read
+                # here rather than resolved on its own
+                kwargs[key] = _resolve_coordinate_ref(
+                    value, node.kwargs.get('over'), ns, context, node.name, key, errors
+                )
+            else:
+                kwargs[key] = _resolve_arith(value, ns, context, errors)
         return FunctionCallNode(node.name, args, kwargs)
 
     assert_never(node)
@@ -265,6 +282,44 @@ def _resolve_dim_ref(
         errors.append(_undeclared_dim(context, helper, f'{key}={value.name}', value.name, ns))
         return value
     return DimensionNode(value.name)
+
+
+def _resolve_coordinate_ref(
+    value: ArithmeticNode,
+    over: ArithmeticNode | None,
+    ns: Namespace,
+    context: str,
+    helper: str,
+    key: str,
+    errors: list[str],
+) -> ArithmeticNode:
+    """Resolve a helper kwarg naming a coordinate on the sibling ``over=`` dim."""
+    if isinstance(value, CoordinateNode):
+        return value
+    if not isinstance(value, (NameNode, DimensionNode)):
+        errors.append(f'{context}: {helper}({key}=...) must name a coordinate.')
+        return value
+    if not isinstance(over, (NameNode, DimensionNode)):
+        errors.append(
+            f'{context}: {helper}({key}={value.name}) needs a sibling over=<dim> '
+            f'naming the dimension that carries the coordinate.'
+        )
+        return value
+    declared = ns.coordinates.get(over.name, {})
+    if value.name not in declared:
+        listing = (
+            f'  Coordinates on {over.name}: {sorted(declared)}'
+            if declared
+            else f"  '{over.name}' declares no coordinates."
+        )
+        errors.append(
+            f'{context}: {helper}(over={over.name}, {key}={value.name}) does not name a '
+            f"coordinate of '{over.name}'.\n{listing}\n"
+            f"Declare it under 'dimensions.{over.name}.coords', naming the dimension "
+            f'its values are labels of.'
+        )
+        return value
+    return CoordinateNode(value.name, dimension=over.name, into=declared[value.name])
 
 
 # ---------------------------------------------------------------------------
