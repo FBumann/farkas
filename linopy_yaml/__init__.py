@@ -6,13 +6,15 @@ size — see ARCHITECTURE.md. linopy is not imported at runtime; it serves as
 the differential-test oracle and as an opt-in compatibility shim
 (``from linopy_yaml import compat`` — ``compat.build`` / ``compat.extend``).
 
+Example::
+
     import linopy_yaml as ly
 
     # Solution owns the duckdb executor backing primal/to_* — close it
-    with ly.solve("model.yaml", {"p_max": "p_max.parquet", "load": "load.parquet"}) as sol:
+    with ly.solve('model.yaml', {'p_max': 'p_max.parquet', 'load': 'load.parquet'}) as sol:
         sol.objective
-        sol.primal("p")        # tidy DataFrame
-        sol.to_dataarray("p")  # labelled, for array post-processing
+        sol.primal('p')  # tidy DataFrame
+        sol.to_dataarray('p')  # labelled, for array post-processing
 """
 
 from importlib.metadata import PackageNotFoundError

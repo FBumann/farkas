@@ -8,22 +8,40 @@ module docstrings leaked the executor by never closing the ``Solution``. Three
 separate hand sweeps found three separate batches, which is the argument for
 this file: an example nobody runs is a claim nobody checked.
 
-Coverage cannot silently drop. Every fenced ``python`` and ``yaml`` block in
-the tracked docs must be handled by one of the tests below, or carry an
-explicit ``<!-- doctest: skip -->``; a new block that fits neither fails
-:func:`test_every_block_is_covered` rather than being quietly ignored.
+Coverage cannot silently drop, and that claim needs two guards, not one.
+:func:`test_every_block_is_covered` polices blocks that were *matched*; it is
+blind to a fence the regex failed to recognise, which is the same silent loss
+by another route. :func:`test_every_fence_is_seen` closes that by scanning for
+fences language-agnostically and asserting every ``python``/``yaml`` one was
+matched — so an unclosed fence, or a style the regex has not learned, fails
+loudly instead of quietly shrinking the sweep.
+
+A block may therefore be indented inside a list item, carry an info string
+after the language (``python title="a.py"``), or use tilde fences — all are
+matched, and the code is dedented before parsing.
 
 Annotations go in an HTML comment on the line before the fence, so they are
 invisible in rendered markdown:
 
     <!-- doctest: wrap=constraints -->   nest the block under that schema key
     <!-- doctest: skip -->               excluded, and the reason belongs in a comment
+
+A YAML block with no annotation is validated whole, which means it must
+resolve its own cross-references: a lone ``parameters:`` section naming a
+dimension it does not declare is a failure, and the fix is usually ``wrap=``
+or ``skip`` rather than a bigger example.
+
+In module docstrings, an example is an indented run introduced by ``::`` —
+the reST literal-block marker. Guessing instead ("a run that mentions ``ly.``")
+reads an indented English sentence as code and fails it as a syntax error,
+which would stop prose from naming the API it documents.
 """
 
 from __future__ import annotations
 
 import ast
 import re
+import textwrap
 from dataclasses import fields, is_dataclass
 from pathlib import Path
 from typing import Any, NamedTuple, get_args
@@ -71,10 +89,37 @@ def _unresolvable(code: str) -> set[str]:
 
 _EXTRA = 'needs the [compat] extra to check {}'
 
+# A fence may be ``` or ~~~, three or more, indented (inside a list item), and
+# may carry an info string after the language (```python title="a.py"). Matching
+# only the bare form is how a block goes unchecked *without* tripping the
+# coverage guard, which only ever inspects blocks it already matched —
+# `test_every_fence_is_seen` is what actually closes that.
 _FENCE = re.compile(
-    r'(?:<!--\s*doctest:\s*(?P<note>[^>]*?)\s*-->\s*\n)?```(?P<lang>python|yaml)\n(?P<code>.*?)```',
-    re.DOTALL,
+    r'(?:^[ \t]*<!--\s*doctest:\s*(?P<note>[^>]*?)\s*-->[ \t]*\n)?'
+    r'^[ \t]*(?P<fence>`{3,}|~{3,})[ \t]*(?P<lang>python|yaml)\b[^\n]*\n'
+    r'(?P<code>.*?)'
+    r'^[ \t]*(?P=fence)[ \t]*$',
+    re.DOTALL | re.MULTILINE,
 )
+
+# Any fenced block, whatever its language — used only to prove _FENCE saw
+# every block it should have.
+_ANY_FENCE = re.compile(r'^[ \t]*(?P<fence>`{3,}|~{3,})[ \t]*(?P<info>[^\n]*)$', re.MULTILINE)
+
+
+def _fence_openings(text: str) -> list[tuple[int, str]]:
+    """(line, language) for every opening fence, by walking open/close pairs."""
+    out: list[tuple[int, str]] = []
+    open_delim: str | None = None
+    for m in _ANY_FENCE.finditer(text):
+        delim, info = m.group('fence'), m.group('info').strip()
+        line = text.count('\n', 0, m.start()) + 1
+        if open_delim is None:
+            open_delim = delim
+            out.append((line, info.split()[0] if info else ''))
+        elif delim == open_delim:
+            open_delim = None  # closing fence
+    return out
 
 
 class Block(NamedTuple):
@@ -104,9 +149,13 @@ def _blocks(lang: str | None = None) -> list[Block]:
                     doc=doc,
                     lang=got,
                     index=i,
-                    code=m.group('code'),
+                    # a block nested in a list item is indented; dedent it, or
+                    # every such example fails on `unexpected indent` instead
+                    # of on anything a reader would call a mistake
+                    code=textwrap.dedent(m.group('code')),
                     note=(m.group('note') or '').strip(),
-                    line=text.count('\n', 0, m.start()) + 1,
+                    # the fence itself, not the doctest comment above it
+                    line=text.count('\n', 0, m.start('fence')) + 1,
                 )
             )
     return [b for b in out if lang is None or b.lang == lang]
@@ -228,12 +277,41 @@ def test_yaml_block_validates(block: Block) -> None:
     try:
         MathSchema.model_validate(doc)
     except Exception as exc:
-        pytest.fail(f'{block.where} does not validate:\n{exc}')
+        pytest.fail(
+            f'{block.where} does not validate:\n{exc}\n\n'
+            'If the block is not meant to be a complete model — a section shown '
+            'on its own still has to resolve its cross-references, so a lone '
+            '`parameters:` must declare the dims it names — annotate the fence '
+            'instead:\n'
+            '  <!-- doctest: wrap=<section> -->  a single entry of that section\n'
+            '  <!-- doctest: skip -->            not a model, or wrong on purpose'
+        )
 
 
 # --------------------------------------------------------------------------
 # the anti-rot guard
 # --------------------------------------------------------------------------
+
+
+def test_every_fence_is_seen() -> None:
+    """`_FENCE` must match every python/yaml block that exists.
+
+    The other guard below can only inspect blocks that were matched, so a fence
+    it fails to recognise is *invisible* rather than reported — coverage drops
+    with nothing to show for it. That is the failure this file exists to
+    prevent, so it is checked directly against a language-agnostic scan.
+    """
+    missed = []
+    for doc in TRACKED:
+        text = (REPO / doc).read_text()
+        seen = {b.line for b in _blocks() if b.doc == doc}
+        for line, lang in _fence_openings(text):
+            if lang in ('python', 'yaml') and line not in seen:
+                missed.append(f'{doc}:{line} (```{lang})')
+    assert not missed, (
+        'these blocks exist but _FENCE did not match them, so nothing checks '
+        'them and no other test would notice:\n  ' + '\n  '.join(missed)
+    )
 
 
 def test_every_block_is_covered() -> None:
@@ -262,32 +340,39 @@ DOCSTRING_MODULES = ['linopy_yaml/__init__.py', 'linopy_yaml/api.py', 'linopy_ya
 
 
 def _docstring_examples(path: Path) -> list[str]:
-    """Indented runs inside a module docstring that use our API.
+    """Indented runs introduced by ``::`` — reST literal blocks.
 
-    A run must *parse* once it mentions a known root — prose that merely looks
-    indented is ignored, but an example is never allowed to be unparseable.
+    The marker is the author's own statement that a run is code, which is why
+    it is used instead of guessing. Guessing by "mentions a known root" reads
+    an indented English sentence containing ``ly.solve`` as an example and
+    fails it as a syntax error, so prose could not mention the API it
+    documents.
     """
     tree = ast.parse(path.read_text())
     doc = ast.get_docstring(tree) or ''
-    runs, current = [], []
+    runs: list[tuple[str, list[str]]] = []
+    current: list[str] = []
+    lead = ''  # the last non-blank unindented line before the current run
+    prev = ''
     for line in doc.splitlines():
         if not line.strip() or line.startswith('    '):
+            if not current:
+                lead = prev
             current.append(line)
             continue
         if current:
-            runs.append(current)
+            runs.append((lead, current))
             current = []
+        prev = line
     if current:
-        runs.append(current)
+        runs.append((lead, current))
 
     out = []
-    for run in runs:
+    for lead, run in runs:
         text = '\n'.join(run).strip('\n')
-        if not text.strip():
+        if not text.strip() or not lead.rstrip().endswith('::'):
             continue
-        dedented = '\n'.join(ln.removeprefix('    ') for ln in text.splitlines())
-        if any(f'{root}.' in dedented for root in ROOT_NAMES):
-            out.append(dedented)
+        out.append(textwrap.dedent(text))
     return out
 
 
