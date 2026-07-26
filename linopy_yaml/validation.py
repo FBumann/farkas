@@ -19,6 +19,7 @@ load time if its body references something that does not exist.
 
 from __future__ import annotations
 
+import datetime
 from types import MappingProxyType
 from typing import TYPE_CHECKING, assert_never
 
@@ -90,6 +91,8 @@ def validate_expressions(
     ns = Namespace.of(schema, known_variables)
     errors: list[str] = []
 
+    _check_dimension_values(schema, errors)
+
     for mname, macro in schema.macros.items():
         context = f"Macro '{mname}'"
         try:
@@ -159,6 +162,35 @@ def validate_expressions(
     # arrive through this function, and a lane that could skip them would be a
     # lane with a different language (hard rule 3).
     check_schema(schema, known_variables)
+
+
+#: What each declared dimension ``dtype`` accepts as a coordinate value. ``bool``
+#: is excluded from ``int``/``float`` on purpose, being a Python int by accident.
+_DTYPE_TYPES: dict[str, tuple[type, ...]] = {
+    'str': (str,),
+    'int': (int,),
+    'float': (int, float),
+    'datetime': (datetime.date,),
+}
+
+
+def _check_dimension_values(schema: MathSchema, errors: list[str]) -> None:
+    """Reject a declared coordinate that is not the dtype the file declares.
+
+    YAML resolves unquoted scalars by shape, and a coerced label does not join
+    against the user's data — the rows vanish, and row absence is the structural
+    zero, so the model solves a smaller problem without a word.
+    """
+    for dname, ddef in schema.dimensions.items():
+        accepted = _DTYPE_TYPES[ddef.dtype]
+        errors.extend(
+            f"Dimension '{dname}': value {value!r} has type "
+            f"{type(value).__name__}, but dtype is '{ddef.dtype}'.\n"
+            f'YAML resolves unquoted scalars by shape (2024-01-01 → date, '
+            f'12:30 → int) — quote the label, or declare the dtype it really is.'
+            for value in ddef.values or ()
+            if isinstance(value, bool) or not isinstance(value, accepted)
+        )
 
 
 def _parse_expand(
