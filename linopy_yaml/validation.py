@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, assert_never
 
 from linopy_yaml.dimensions import check_schema
 from linopy_yaml.errors import SchemaError
-from linopy_yaml.expansion import expand, parse_template
+from linopy_yaml.expansion import expand, parse_and_expand, parse_template
 from linopy_yaml.expression_parser import (
     ArithmeticNode,
     BinaryOperatorNode,
@@ -202,8 +202,6 @@ def _parse_expand(
     context: str,
     errors: list[str],
 ) -> ArithmeticNode | ComparisonNode | None:
-    from linopy_yaml.expansion import parse_and_expand
-
     try:
         return parse_and_expand(expression, schema, context)
     except ValueError as e:

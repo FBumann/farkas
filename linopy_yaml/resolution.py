@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, assert_never
 
+from linopy_yaml.errors import LanguageError
+from linopy_yaml.expansion import parse_and_expand
 from linopy_yaml.expression_parser import (
     ArithmeticNode,
     BinaryOperatorNode,
@@ -33,7 +35,7 @@ from linopy_yaml.expression_parser import (
     UnaryOperatorNode,
     VariableNode,
 )
-from linopy_yaml.helpers import BUILTINS, call_shape_error
+from linopy_yaml.helpers import BUILTINS, call_shape_error, unknown_helper_message
 from linopy_yaml.where_parser import (
     AndNode,
     BooleanLiteralNode,
@@ -45,6 +47,7 @@ from linopy_yaml.where_parser import (
     UnresolvedComparisonNode,
     UnresolvedNameNode,
     WhereNode,
+    parse_where,
 )
 
 if TYPE_CHECKING:
@@ -126,9 +129,6 @@ def expression_of(text: str, schema: MathSchema, ns: Namespace, context: str) ->
     known to be clean; calling it again is how the backend gets a *typed* tree
     without duplicating the pass.
     """
-    from linopy_yaml.errors import LanguageError
-    from linopy_yaml.expansion import parse_and_expand
-
     errors: list[str] = []
     resolved = resolve_expression(parse_and_expand(text, schema, context), ns, context, errors)
     if errors:
@@ -139,9 +139,6 @@ def expression_of(text: str, schema: MathSchema, ns: Namespace, context: str) ->
 
 def where_of(text: str | None, ns: Namespace, context: str) -> WhereNode | None:
     """Parse and resolve a where string; ``None`` stays ``None``."""
-    from linopy_yaml.errors import LanguageError
-    from linopy_yaml.where_parser import parse_where
-
     if text is None:
         return None
     errors: list[str] = []
@@ -221,8 +218,6 @@ def _resolve_arith(node: ArithmeticNode, ns: Namespace, context: str, errors: li
 
     if isinstance(node, FunctionCallNode):
         if node.name not in BUILTINS:
-            from linopy_yaml.helpers import unknown_helper_message
-
             errors.append(f'{context}: {unknown_helper_message(node.name)}')
             return node
         builtin = BUILTINS[node.name]

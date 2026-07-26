@@ -256,3 +256,53 @@ def test_every_schema_model_is_strict():
     assert not loose, (
         f'schema models {loose} inherit BaseModel directly and so accept unknown keys — inherit _StrictBlock instead'
     )
+
+
+#: Every in-function ``linopy_yaml`` import in the package, with why it is one.
+#: A lazy import is a real tool here — it is how the one genuine cycle is
+#: broken — which is exactly why the decorative ones had to go: a reader
+#: cannot tell load-bearing from leftover if both are present.
+DELIBERATE_LAZY_IMPORTS = {
+    ('lowering.py', 'linopy_yaml.piecewise'): (
+        'formulations expand before lowering, and expanding needs the subset '
+        'test that lowering defines — piecewise imports lowering at module '
+        'level, so this direction has to stay lazy'
+    ),
+}
+
+
+def test_lazy_intra_package_imports_are_all_declared():
+    """Hard rule 1, mechanically: the layers are ordered, bar one declared edge.
+
+    An undeclared in-function import is either a cycle nobody noticed or a
+    leftover. Both are worth a line of explanation, so both fail here.
+    """
+    found = {}
+    for path in _all_modules():
+        tree = ast.parse(path.read_text())
+        module_level = set()
+        stack = list(tree.body)
+        while stack:
+            node = stack.pop()
+            module_level.add(id(node))
+            if isinstance(node, ast.Try):
+                stack += [*node.body, *node.orelse, *node.finalbody]
+                stack += [b for h in node.handlers for b in h.body]
+            elif isinstance(node, ast.If):
+                stack += [*node.body, *node.orelse]
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module
+                and node.module.startswith('linopy_yaml')
+                and id(node) not in module_level
+            ):
+                found[(str(path.relative_to(PKG)), node.module)] = node.lineno
+
+    undeclared = {k: v for k, v in found.items() if k not in DELIBERATE_LAZY_IMPORTS}
+    assert not undeclared, (
+        f'undeclared in-function imports {undeclared} — hoist them to module level, '
+        f'or add them to DELIBERATE_LAZY_IMPORTS with the cycle they break'
+    )
+    stale = set(DELIBERATE_LAZY_IMPORTS) - set(found)
+    assert not stale, f'DELIBERATE_LAZY_IMPORTS lists imports that no longer exist: {stale}'

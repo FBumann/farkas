@@ -17,7 +17,7 @@ import pytest
 import yaml as pyyaml
 
 from linopy_yaml.errors import LanguageError
-from linopy_yaml.lowering import lower_program, tidy_sources
+from linopy_yaml.lowering import lower_program
 from linopy_yaml.relational import (
     DuckdbExecutor,
 )
@@ -26,6 +26,7 @@ from linopy_yaml.relational.plan import (
     Variable,
 )
 from linopy_yaml.schema import MathSchema
+from linopy_yaml.sources import tidy_sources
 from tests.conftest import resolved
 from tests.oracle import compat
 
@@ -209,8 +210,9 @@ def test_differential_where_on_dimension_coordinates(tmp_path):
     duckdb = pytest.importorskip('duckdb')  # noqa: F841
     highspy = pytest.importorskip('highspy')  # noqa: F841
 
-    from linopy_yaml.lowering import lower_program, tidy_sources
+    from linopy_yaml.lowering import lower_program
     from linopy_yaml.relational import DuckdbExecutor
+    from linopy_yaml.sources import tidy_sources
 
     yaml_text = """
 dimensions:

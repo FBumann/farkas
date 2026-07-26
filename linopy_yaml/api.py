@@ -34,10 +34,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from linopy_yaml._yaml import read_yaml
-from linopy_yaml.lowering import lower_program, tidy_sources
+from linopy_yaml.lowering import lower_program
 from linopy_yaml.piecewise import expand_piecewise
 from linopy_yaml.relational.executor import DuckdbExecutor, Solution
 from linopy_yaml.schema import MathSchema
+from linopy_yaml.sources import tidy_sources
 from linopy_yaml.validation import validate_expressions
 
 if TYPE_CHECKING:

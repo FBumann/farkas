@@ -54,6 +54,7 @@ from linopy_yaml.expression_parser import (
     UnaryOperatorNode,
     VariableNode,
 )
+from linopy_yaml.resolution import Namespace, expression_of, where_of
 from linopy_yaml.where_parser import (
     AndNode,
     BooleanLiteralNode,
@@ -188,8 +189,6 @@ def check_schema(
     ``compat.extend()`` can reference them (hard rule 5 keeps parameters
     schema-local, but variables legitimately come from the model argument).
     """
-    from linopy_yaml.resolution import Namespace, expression_of, where_of
-
     ns = Namespace.of(schema, external)
 
     for vname, vdef in schema.variables.items():

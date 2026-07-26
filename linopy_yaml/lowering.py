@@ -25,10 +25,10 @@ Semantics mirror the eager builder exactly:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, assert_never
+from typing import TYPE_CHECKING, assert_never
 
 from linopy_yaml.dimensions import dims_of
-from linopy_yaml.errors import DataError, LanguageError
+from linopy_yaml.errors import LanguageError
 from linopy_yaml.expression_parser import (
     ArithmeticNode,
     BinaryOperatorNode,
@@ -138,68 +138,17 @@ def lower_program(schema: MathSchema) -> plan.Program:
     return plan.Program(parameters, tuple(variables), tuple(constraints), objective, dimensions)
 
 
-def tidy_sources(
-    schema: MathSchema,
-    data: dict[str, object],
-    coords: dict[str, Any] | None = None,
-) -> dict[str, object]:
-    """Adapt the caller's ``data=``/``coords=`` inputs to executor sources.
+def check_core_subset(node: ArithmeticNode, schema: MathSchema, context: str) -> None:
+    """Raise :class:`LanguageError` unless *node* has a plan node.
 
-    Every in-memory source becomes a tidy :class:`pyarrow.Table` with columns
-    ``(dims…, value)``; parquet paths pass through untouched for duckdb to read
-    directly. Dimension indexes come from ``data``, ``coords``, declared YAML
-    values, or fall back to the executor's inference from parameter tables.
-
-    Normalising here rather than at the executor is what lets the piecewise
-    curvature guard see every in-memory shape alike (:mod:`relational.arrow`
-    is where the shapes are recognised).
+    The subset test *is* the lowering — there is no second definition of what
+    the engine accepts, which is what stops the two from drifting. This is the
+    same call with the result discarded, offered as a public name so that
+    ``piecewise.py`` can check a link expression against the language while
+    the error still points at the text the user wrote, rather than at the
+    declaration the formulation went on to generate.
     """
-    from pathlib import Path
-
-    from linopy_yaml.piecewise import validate_piecewise_data
-    from linopy_yaml.relational.arrow import as_table, labels_table
-
-    sources: dict[str, object] = {}
-    for pname, pdef in schema.parameters.items():
-        if pname not in data:
-            raise DataError(f"no data provided for parameter '{pname}'")
-        obj = data[pname]
-        if isinstance(obj, (str, Path)):
-            sources[pname] = obj  # parquet path — the executor reads it directly
-            continue
-        table = as_table(obj, pdef.dims)
-        if table is None:
-            raise DataError(
-                f"parameter '{pname}': cannot adapt {type(obj).__name__} to a tidy "
-                f'table — pass any Arrow-compatible table with columns '
-                f'{[*pdef.dims, "value"]} (pyarrow, polars, pandas), or a parquet path'
-            )
-        if any(d not in table.column_names for d in pdef.dims):
-            raise DataError(
-                f"parameter '{pname}': source columns {table.column_names} "
-                f'do not match its declared dims {list(pdef.dims)}. Rename them to the '
-                f'declared dims, or drop the index names to bind positionally.'
-            )
-        sources[pname] = table
-
-    for dname, ddef in schema.dimensions.items():
-        if dname in data:
-            src = data[dname]
-        elif coords and dname in coords:
-            src = coords[dname]
-        elif ddef.values is not None:
-            src = ddef.values
-        else:
-            continue
-        if isinstance(src, (str, Path)):
-            sources[dname] = src
-            continue
-        table = as_table(src, (dname,))
-        sources[dname] = table if table is not None else labels_table(dname, src)
-
-    validate_piecewise_data(schema, sources)
-
-    return sources
+    _lower_expr(node, schema, context)
 
 
 # ---------------------------------------------------------------------------

@@ -213,8 +213,9 @@ def test_macro_templates_validated_even_when_unused():
 
 def test_differential_named_expression_and_macro(tmp_path):
 
-    from linopy_yaml.lowering import lower_program, tidy_sources
+    from linopy_yaml.lowering import lower_program
     from linopy_yaml.relational import DuckdbExecutor
+    from linopy_yaml.sources import tidy_sources
 
     yaml_text = """
 dimensions:
