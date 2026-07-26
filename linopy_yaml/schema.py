@@ -48,6 +48,14 @@ class _StrictBlock(BaseModel):
         return f"unknown key '{key}' in {label}. {fix}"
 
 
+def _one_of(value: str, allowed: set[str], field: str) -> str:
+    """Check an enumerated string field, in one wording for all of them."""
+    if value not in allowed:
+        msg = f"{field} must be one of {allowed}, got '{value}'"
+        raise ValueError(msg)
+    return value
+
+
 class DimensionBlock(_StrictBlock):
     """A declared dimension with optional dtype, values and coordinates.
 
@@ -90,11 +98,7 @@ class DimensionBlock(_StrictBlock):
     @field_validator('dtype')
     @classmethod
     def _check_dtype(cls, v: str) -> str:
-        allowed = {'float', 'int', 'str', 'datetime'}
-        if v not in allowed:
-            msg = f"dtype must be one of {allowed}, got '{v}'"
-            raise ValueError(msg)
-        return v
+        return _one_of(v, {'float', 'int', 'str', 'datetime'}, 'dtype')
 
 
 class ParameterBlock(_StrictBlock):
@@ -108,11 +112,7 @@ class ParameterBlock(_StrictBlock):
     @field_validator('dtype')
     @classmethod
     def _check_dtype(cls, v: str) -> str:
-        allowed = {'float', 'int', 'bool', 'str'}
-        if v not in allowed:
-            msg = f"dtype must be one of {allowed}, got '{v}'"
-            raise ValueError(msg)
-        return v
+        return _one_of(v, {'float', 'int', 'bool', 'str'}, 'dtype')
 
 
 class BoundsBlock(_StrictBlock):
@@ -158,48 +158,45 @@ class EquationBlock(_StrictBlock):
     where: str | None = None
 
 
-class ConstraintBlock(_StrictBlock):
+class _EquationsBlock(_StrictBlock):
+    """The shared shape of the two declarations that carry equations.
+
+    ``constraints:`` and ``objectives:`` differ in what their equations *mean*
+    — one is compared, the other minimised — not in how they hold them, and an
+    empty list is the same mistake in both.
+    """
+
+    equations: list[EquationBlock]
+
+    @field_validator('equations')
+    @classmethod
+    def _at_least_one(cls, v: list[EquationBlock]) -> list[EquationBlock]:
+        if not v:
+            msg = f'{cls._label} must have at least one equation.'
+            raise ValueError(msg)
+        return v
+
+
+class ConstraintBlock(_EquationsBlock):
     """A declared constraint with foreach, where, and equations."""
 
     _label: ClassVar[str] = 'a constraint declaration'
 
     foreach: list[str]
     where: str | None = None
-    equations: list[EquationBlock]
-
-    @field_validator('equations')
-    @classmethod
-    def _at_least_one(cls, v: list[EquationBlock]) -> list[EquationBlock]:
-        if not v:
-            msg = 'A constraint must have at least one equation.'
-            raise ValueError(msg)
-        return v
 
 
-class ObjectiveBlock(_StrictBlock):
+class ObjectiveBlock(_EquationsBlock):
     """A declared objective function."""
 
     _label: ClassVar[str] = 'an objective declaration'
 
     sense: str = 'minimize'
-    equations: list[EquationBlock]
 
     @field_validator('sense')
     @classmethod
     def _check_sense(cls, v: str) -> str:
-        allowed = {'minimize', 'maximize'}
-        if v not in allowed:
-            msg = f"sense must be one of {allowed}, got '{v}'"
-            raise ValueError(msg)
-        return v
-
-    @field_validator('equations')
-    @classmethod
-    def _at_least_one(cls, v: list[EquationBlock]) -> list[EquationBlock]:
-        if not v:
-            msg = 'An objective must have at least one equation.'
-            raise ValueError(msg)
-        return v
+        return _one_of(v, {'minimize', 'maximize'}, 'sense')
 
 
 class MacroBlock(_StrictBlock):
@@ -284,6 +281,17 @@ class PiecewiseBlock(_StrictBlock):
             msg = "a non-'==' sign is only supported with exactly two links."
             raise ValueError(msg)
         return v
+
+
+def equation_name(constraint: str, index: int, count: int) -> str:
+    """The model-level name of equation *index* of *count* under *constraint*.
+
+    A single-equation constraint keeps the constraint's own name; the rest get
+    ``_{i}`` suffixes. Both lanes name rows through this function, because a
+    naming rule written out twice is one the two lanes can come to disagree
+    about — and the name is what a solution is read back by.
+    """
+    return constraint if count == 1 else f'{constraint}_{index}'
 
 
 class MathSchema(_StrictBlock):
