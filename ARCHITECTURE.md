@@ -164,44 +164,17 @@ capability findings below.
 
 The ceiling above is about **streamability** and is solver-independent. What a
 *sink* can ingest is a separate axis, and conflating the two let one solver's
-limits read as architectural law. Measured, not assumed:
+limits read as architectural law — "no sink carries the stream" described
+HiGHS, not the architecture. Two findings, measured in
+[docs/benchmarks.md](docs/benchmarks.md#sink-capabilities): SOS is
+**solver-bounded** (HiGHS has no SOS concept at all, while `lp_file` carries it
+as a text section and Gurobi natively), and what blocks quadratic is a
+**conjunction** — HiGHS has integrality *and* a Hessian and refuses the pair —
+so capability is not a flat set. The whole-Hessian handoff is an implementation
+difference, not a rule-4 violation.
 
-| | `lp_file` | HiGHS direct | Gurobi direct |
-|---|---|---|---|
-| affine rows, COO, integrality | text | native | native |
-| semi-continuous | text | `kSemiContinuous` | native |
-| SOS1 / SOS2 | text section | **no concept** — `HighsLp` has no SOS field | `addSOS` |
-| indicator | text section | **no concept** | `addGenConstrIndicator` |
-| quadratic objective | text section | `passHessian` — but **`Hessian + integrality` errors**, so no MIQP | native, incl. MIQP |
-
-Two consequences the old "no sink carries the stream" framing hid. SOS is
-**solver-bounded, not architecture-bounded** — it is one `COPY` from a
-`sos_sets` table on `lp_file`, and native on Gurobi. And what blocks quadratic
-is the **conjunction**, not the memory: HiGHS has integrality *and* a Hessian
-and refuses them together, so capability is not a flat set.
-
-The whole-Hessian handoff is an implementation difference, not a rule-4
-violation, and it is worth being precise about why. Under the aligned-only
-scope (`variable × variable` at the same coordinates) `Q` is **diagonal**, so
-it costs 16 bytes per quadratic column — 0.57 GB at 35.6M, against a measured
-`solver_direct` peak of 5.76 GB already dominated by HiGHS's own model, which
-rule 4 exempts. On `lp_file`, where nothing is exempt, a quadratic objective is
-a text section and streams like any other. **That argument depends entirely on
-the aligned restriction**: general bilinear `Q` is not diagonal, and then peak
-stops tracking the budget — a second, independent reason the restriction is
-load-bearing rather than convenient.
-
-Making this an explicit, declared per-sink capability set — with `check` taking
-an optional sink — is [ROADMAP Track 4](ROADMAP.md#track-4--sink-capabilities).
-
-**The oracle has a ceiling too, and it is linopy's.** The differential harness
-can only validate constructs linopy can also build, while the closure admits
-operators linopy does not expose. The compat lane is a product feature justified
-by models already in memory (rule 3), not by the harness, and must not grow
-eager implementations whose only consumer is a test; a primitive admissible here
-but awkward in linopy is verified against a hand-checked fixture. If it can only
-be verified by writing linopy code we would not otherwise ship, that is evidence
-to reconsider the primitive.
+Making this a declared per-sink capability set, with `check` taking an optional
+sink, is [ROADMAP Track 4](ROADMAP.md#track-4--sink-capabilities).
 
 ## The relational lane
 
