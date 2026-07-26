@@ -74,15 +74,37 @@ validates both. Fixing a title is an edit to the PR, not a branch rewrite.
 ## Branch protection
 
 `main` is covered by a repository ruleset: no deletion, no force-push,
-squash-only merges through a PR, and two required checks — `CI ok` (from
-[`ci.yml`](.github/workflows/ci.yml), aggregating `native` and the `full`
-matrix) and `Conventional commit subject`. `CI ok` exists so the ruleset never
-names matrix legs directly: requiring `full (3.11)` would mean adding a Python
-version leaves it unrequired, and dropping one blocks every PR on a check that
-can no longer report. A required check must exist on `main` before it is
-required — land the workflow first, then add it to the ruleset. Approvals are
-not required (solo repo); a review count of 0 still forces the PR, the squash
-and the checks.
+squash-only merges through a PR, and three required checks — `test` and
+`compat` (from [`ci.yml`](.github/workflows/ci.yml)) and `Conventional commit
+subject`. Both CI jobs have fixed names and no matrix, so the ruleset can name
+them directly; keep it that way. If a Python matrix ever comes back, put an
+aggregating gate job in front of it rather than naming legs — requiring
+`full (3.11)` would mean adding a version leaves it unrequired, and dropping
+one blocks every PR on a check that can no longer report.
+
+### Relaxed while in early development
+
+While the project is on the `0.0.0-alpha.N` stream there are no downstream users
+to break, and runner minutes are the scarcer resource, so CI deliberately trades
+some coverage for cost. Three things are looser than they should be at 1.0:
+
+- **`compat` is skipped on pushes to `main`.** A squash merge lands the tree the
+  PR already proved; only `test` re-runs as the net for semantic conflicts
+  between concurrently merged PRs.
+- **The PR-title check does not re-run on `synchronize`.** A force-push that
+  leaves a PR at exactly one commit with a non-conventional subject is not
+  re-validated. The cost is a missing CHANGELOG line, not a broken release.
+- **Python 3.12 is only covered by the bare-install leg**, not by a full
+  lint/type/test pass of its own.
+
+Tighten all three before the first non-alpha release — that is the point where a
+missed regression reaches somebody. Until then, prefer spending minutes on the
+suite over spending them on matrix breadth.
+
+`compat` runs on `pull_request` only, which is where the ruleset reads it. A
+required check must exist on `main` before it is required — land the workflow
+first, then add it to the ruleset. Approvals are not required (solo repo); a
+review count of 0 still forces the PR, the squash and the checks.
 
 ## Overriding the version
 

@@ -14,7 +14,12 @@ name: PR title
 
 on:
   pull_request:
-    types: [opened, edited, reopened, synchronize]
+    # Deliberately no `synchronize`: a title does not change when commits do, and
+    # re-running on every push made this a third of the CI bill. The one case it
+    # gives up is a force-push that leaves a PR at exactly one commit with a
+    # non-conventional subject — that costs a CHANGELOG line, and editing the
+    # title (which does re-trigger) fixes it.
+    types: [opened, edited, reopened]
 
 permissions:
   contents: read
