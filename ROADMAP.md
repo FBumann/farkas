@@ -35,28 +35,30 @@ we ship assumes affine rows.
 **What would have to hold to move it.** The old list said "sinks carry a
 quadratic stream", and that condition is already met — HiGHS `passHessian` and
 Gurobi `setMObjective` both exist, and linopy's `QuadraticExpression` means the
-oracle covers it. The blockers are elsewhere, and both are sharper:
+oracle covers it. What remains is one blocker and one cost:
 
-1. **The Hessian is passed whole.** Neither API has an incremental counterpart
-   to pair with batched `addCols`/`addRows`, so the quadratic part must be
-   materialised contiguously — which is hard rule 4, the invariant the project
-   exists for, not a capability gap. Mitigation, measured: HiGHS accepts
-   `dim_ < num_col`, so ordering quadratic variables first bounds the Hessian to
-   that block rather than the model. At 10⁷ quadratic columns ≈ 160 MB; at 10⁸ ≈
-   1.6 GB and the budget promise is gone.
-2. **MIQP is excluded on the default solver.** Measured: HiGHS returns `kError`
-   for `Hessian + integrality`. Since `binary:`/`integer:` and nonconvex
-   `piecewise:` are already in the language, quadratic would be a feature that
-   conflicts with shipped ones — needing a cross-feature load-time rule
-   ("a quadratic objective forbids integrality anywhere"), which is an awkward
-   thing to say in a language whose refusals are otherwise local to one
-   construct. Gurobi has no such exclusion, so this is a capability question
-   (Track 4), not a language one.
+1. **MIQP is excluded on the default solver** — the blocker. Measured: HiGHS
+   returns `kError` for `Hessian + integrality`. Since `binary:`/`integer:` and
+   nonconvex `piecewise:` are already in the language, quadratic would be a
+   feature that conflicts with shipped ones. Gurobi has no such exclusion, so
+   this is a **capability** question and quadratic is the motivating case for
+   Track 4's conjunction-exclusion axis, not an exception to it.
+2. **The Hessian is passed whole** — a cost, not a rule-4 violation. Neither
+   direct API has an incremental counterpart to batched `addCols`/`addRows`, so
+   the quadratic part is one contiguous handoff. Under the aligned-only scope
+   `Q` is diagonal: 16 bytes per quadratic column, 0.57 GB at 35.6M, against a
+   measured `solver_direct` peak of 5.76 GB already dominated by HiGHS's own
+   model. On `lp_file` it is a text section and streams. Two caveats: HiGHS
+   accepts `dim_ < num_col`, so order quadratic variables first and the Hessian
+   spans that block rather than the model; and the diagonal argument dies with
+   the aligned restriction, which is why that restriction is load-bearing.
 
-Plus, as before: a data-time convexity guard. **The question that actually
-decides it** is whether the demand is LP-only — if the fuel-curve users also
-want unit-commitment binaries, (2) kills it on the default path regardless of
-how cheap the plumbing is, and `piecewise: {convex: true}` stays the answer.
+Plus, as before: a data-time convexity guard, and a new IR node, lowering case
+and label-ordering change — a bigger diff than SOS, which is a declaration and
+needs none of that. **The question that actually decides it** is whether the
+demand is LP-only: if the fuel-curve users also want unit-commitment binaries,
+(1) kills it on the default path regardless of how cheap the plumbing is, and
+`piecewise: {convex: true}` stays the answer.
 
 An escape cannot lift degree either way: islands return affine COO rows.
 **Scope if it lands**, fixed in advance: degree ≤ 2, factors
@@ -149,6 +151,12 @@ The shape, adopted:
   not refused — `piecewise:` is already exactly this shape, so the line against
   reimplementing linopy's reformulation passes is thinner than it reads.
 
+**In scope: quadratic**, as the case that forces the exclusion axis —
+`QUADRATIC_OBJECTIVE` is `native` on both direct sinks, and what differs is
+that HiGHS excludes it in conjunction with integrality. A flat feature set
+reports MIQP as available and the failure surfaces at `run()`. Sequenced after
+SOS on effort, not on principle (see [the degree axis](#the-degree-axis)).
+
 First spike: **SOS2 on `lp_file`** — it exercises the whole capability model
 with no new dependency, no license question and no memory risk, since the
 section is a `COPY` from a `sos_sets` table. If the descriptor survives that,
@@ -158,6 +166,14 @@ Gurobi-only capability cannot meet the done-condition in CI), and whether
 HiGHS's LP *reader* accepts the sections we would write — if not, `write_lp`
 output stops round-tripping through the default solver, which is how the
 differential oracle works today.
+
+## Track 5 — in-memory executor
+
+The same IR executed without duckdb, so small models skip the engine entirely
+(folding in the CSR deferred-groupby prototype). Listed because it is also the
+worked example for hard rule 4's wording: the invariant is that peak tracks the
+*budget*, not that nothing is ever fully resident — for a model the budget
+comfortably exceeds, holding everything is the point rather than a violation.
 
 ## Deliberate non-primitives
 
@@ -170,7 +186,7 @@ shapes escape.
 
 | Request | Why not | Instead | Escape? |
 |---|---|---|---|
-| Quadratic / bilinear terms | degree pinned at 1 | `piecewise:` (`convex: true`) or the epigraph pattern | **banned today**, and the *harder* of the two: the solvers take it, but only as a whole Hessian, which is a hard-rule-4 problem no capability model fixes |
+| Quadratic / bilinear terms | degree pinned at 1 | `piecewise:` (`convex: true`) or the epigraph pattern | **banned today**, blocked by the QP∧MILP exclusion on the default solver — a Track 4 capability question, and the bigger diff of the two (new IR node, lowering, convexity guard) |
 | SOS / indicator (#23) | the default solver has no such concept | `piecewise:` λ-formulation (SOS2's usual purpose); big-M for indicator, given bounds | **banned today**, and the *easier* one: `lp_file` carries it as a text section and Gurobi natively — it needs Track 4, not a new invariant |
 | Cumulative / running sums, normalisations | **global** — breaks partition-wise execution | state-variable recurrence (a storage SOC balance *is* the rewrite) | billed — but the rewrite is still right at scale, O(T) vs O(T²) |
 | Conditionals, iteration, data-dependent structure | destroys the closed AST | `where` masks + `foreach` dims; computation → data prep | billed — inside an island only |

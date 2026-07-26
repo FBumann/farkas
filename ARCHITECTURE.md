@@ -73,10 +73,16 @@ static checks and CI's bare-install job proves the dependency claims.*
    tests an oracle rather than a comparison of dialects. A construct outside the
    language is a load error naming the construct and its rewrite, never a
    redirection to the other lane.
-4. **The full model never resides in this process's memory** on the relational
-   path — not as dense arrays, not as a full CSR. Build under a duckdb
-   `memory_limit`, hand off in batches, read back by label join. The solver's
-   internal copy is the only irreducible full-model residency.
+4. **Peak memory is a function of the configured budget, not of model size.**
+   That is the invariant; "nothing full-model in process" is the *mechanism*
+   that delivers it at scale — build under a duckdb `memory_limit`, hand off in
+   batches, read back by label join, never materialise dense arrays or a full
+   CSR. Two residencies are exempt because neither scales with the budget's
+   purpose: the solver's own model when solving in-process, and a model small
+   enough that the budget exceeds it (the planned in-memory executor holds
+   everything by design — ROADMAP Track 5). A new feature is judged against the
+   invariant, not the mechanism: the question is whether peak still tracks the
+   budget, not whether some array was briefly contiguous.
 5. **Backend-visible YAML files are self-contained.** No Python-side state
    (registries, session objects) may change what a file means.
 6. **The public interface is YAML.** The Python surface is the runner (`api.py`).
@@ -162,12 +168,20 @@ limits read as architectural law. Measured, not assumed:
 
 Two consequences the old "no sink carries the stream" framing hid. SOS is
 **solver-bounded, not architecture-bounded** — it is one `COPY` from a
-`sos_sets` table on `lp_file`, and native on Gurobi. And quadratic is the
-*harder* one, not the easier one: both direct APIs take the Hessian whole
-(`passHessian`, `setMObjective`), with no incremental counterpart to pair with
-batched `addCols`/`addRows` — so it is hard rule 4, not capability, that blocks
-it. Capability is also not a flat set: HiGHS has integrality *and* a Hessian
-and still refuses their conjunction.
+`sos_sets` table on `lp_file`, and native on Gurobi. And what blocks quadratic
+is the **conjunction**, not the memory: HiGHS has integrality *and* a Hessian
+and refuses them together, so capability is not a flat set.
+
+The whole-Hessian handoff is an implementation difference, not a rule-4
+violation, and it is worth being precise about why. Under the aligned-only
+scope (`variable × variable` at the same coordinates) `Q` is **diagonal**, so
+it costs 16 bytes per quadratic column — 0.57 GB at 35.6M, against a measured
+`solver_direct` peak of 5.76 GB already dominated by HiGHS's own model, which
+rule 4 exempts. On `lp_file`, where nothing is exempt, a quadratic objective is
+a text section and streams like any other. **That argument depends entirely on
+the aligned restriction**: general bilinear `Q` is not diagonal, and then peak
+stops tracking the budget — a second, independent reason the restriction is
+load-bearing rather than convenient.
 
 Making this an explicit, declared per-sink capability set — with `check` taking
 an optional sink — is [ROADMAP Track 4](ROADMAP.md#track-4--sink-capabilities).
