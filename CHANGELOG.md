@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.0-alpha.12](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.11...v0.0.0-alpha.12) (2026-07-26)
+
+
+### Bug Fixes
+
+* a null coordinate means "no group", not a typo ([#135](https://github.com/FBumann/farkas/issues/135)) ([9a672b4](https://github.com/FBumann/farkas/commit/9a672b42be9753a7e69ff0f6b76948a0352461a0))
+
 ## [0.0.0-alpha.11](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.10...v0.0.0-alpha.11) (2026-07-26)
 
 
