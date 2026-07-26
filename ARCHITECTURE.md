@@ -227,11 +227,15 @@ bounds-as-expressions (#31).
 
 Whatever genuinely is not data (variable port counts, runtime-unknown component
 types) belongs in a thin layer emitting **more rows or more templates, never
-per-instance YAML** — but **that layer currently has nothing to call**, since
-rule 6 refuses a Python modeling API and this section forbids generated YAML.
-Composition therefore forces the IR-construction contract earlier than the
-roadmap has it: not a general modeling API, but a narrow, versioned way to emit
-declarations.
+per-instance YAML** — but **that layer has nothing *supported* to call**. A seam
+does exist: `api.load_schema` accepts `dict | MathSchema`, so a programmatically
+built model already goes through validation, expansion, resolution and dim
+checking. It is just undocumented and unversioned, while rule 6 refuses a Python
+modeling API and this section forbids generated YAML. Composition therefore
+forces that contract earlier than the roadmap has it: not a general modeling API,
+but a narrow, versioned way to emit declarations — at the schema level rather
+than the IR level, which is
+[#83](https://github.com/FBumann/linopy-yaml/issues/83).
 
 ## Module map
 

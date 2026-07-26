@@ -83,26 +83,40 @@ because a dimension in a *kwarg key* cannot be parameterised by a macro.
 
 ## Tracks 2–3 — untaxed
 
-Nothing here touches the build path or either lane's semantics.
+Nothing here touches the build path or either lane's semantics, with one flagged
+exception noted under 2b.
 
 - **2 — post-solve stage.** Declared derived results (LCOE, curtailment,
   emissions by group) are SQL over solution tables we already materialise.
   Sequenced after Track 1 items 1–4.
-- **2b — the operational surface.** Queries, but the work that decides whether
-  the engine is usable at 3am. Headline: **elastic relaxation**, the
-  infeasibility answer — HiGHS has no IIS, so `solver_direct` returns a status
-  code for a model too large to open in an editor; slack variables with penalty
-  costs, then a query of nonzero slacks grouped by constraint block, needs no
-  solver feature, works on every sink, and points at *which* constraints
-  conflict rather than at a minimal set. Then: algebraic rendering of a row,
-  IIS read-back where a solver provides one, model statistics and
-  coefficient-range diagnostics, dual read-back (the same join as `primal`).
+- **2b — the operational surface.** Mostly queries, and the work that decides
+  whether the engine is usable at 3am: algebraic rendering of a row, IIS
+  read-back where a solver provides one, model statistics and coefficient-range
+  diagnostics, and dual read-back — the same join as `primal`, and `getSolution()`
+  is already called with only `col_value` taken, so `row_dual` is simply never
+  fetched ([#78](https://github.com/FBumann/linopy-yaml/issues/78)). The headline
+  item is **elastic relaxation**, the infeasibility answer — HiGHS has no IIS, so
+  `solver_direct` returns a status code for a model too large to open in an
+  editor; slack variables with penalty costs, then a query of nonzero slacks
+  grouped by constraint block, needs no solver feature, works on every sink, and
+  points at *which* constraints conflict rather than at a minimal set. It is the
+  exception on this track: adding slacks means **new variables**, so it needs a
+  schema-level expansion pass the way `piecewise:` does, and is taxed like a
+  primitive rather than free ([#80](https://github.com/FBumann/linopy-yaml/issues/80)).
 - **2c — value-only re-solve.** In scope, because `var_label` *is* the solver
   column index with no remapping: changing a bound or an RHS is a label query
   plus `changeColsBounds`/`changeRowsBounds`, which is what rolling horizon,
-  sweeps and Benders need. Structural editing stays out — it invalidates the
-  label contract. Related gap: warm starts, which `solver_direct` would need to
-  set through highspy.
+  sweeps and Benders need. With one precondition: "value-only" has to be a
+  property of the *model*, not of the user's intent. `var_label` is a
+  `ROW_NUMBER()` over the rows that survive the `where` mask, so a parameter read
+  by a `where` changes which rows exist and every later label shifts — an
+  in-place bound update then writes to the wrong columns. A changed `group_sum`
+  mapping leaves the labels alone but rewrites `A`, which a bounds-only update
+  cannot express at all. Both are decidable off the resolved AST, and that check
+  ships with the feature
+  ([#82](https://github.com/FBumann/linopy-yaml/issues/82)). Structural editing
+  stays out — it invalidates the label contract. Related gap: warm starts, which
+  `solver_direct` would need to set through highspy.
 - **3 — AST consumers** (#21): **math → LaTeX** (a tree walk, no data — the
   product *is* the declarative math, so it should render as typeset
   documentation), CLI `check`/`solve`/`write` (#35), observability (#34).
