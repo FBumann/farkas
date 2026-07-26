@@ -52,6 +52,7 @@ from farkas.errors import DataError, LanguageError, LinopyYamlError
 from farkas.relational import plan, sinks
 from farkas.relational.arrow import as_table
 from farkas.relational.compiler import SqlCompiler
+from farkas.relational.sql import path_literal
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -179,7 +180,7 @@ class DuckdbExecutor:
 
         self._con = duckdb.connect(str(self.workdir / 'model.duckdb'))
         self._con.execute(f"SET memory_limit='{memory_limit}'")
-        self._con.execute(f"SET temp_directory='{self.workdir / 'tmp'}'")
+        self._con.execute(f'SET temp_directory={path_literal(self.workdir / "tmp")}')
         self._con.execute('SET preserve_insertion_order=false')
         if threads:
             self._con.execute(f'SET threads={threads}')
@@ -266,7 +267,7 @@ class DuckdbExecutor:
 
     def _source_relation(self, name: str, source: Any) -> str:
         if isinstance(source, (str, Path)):
-            return f"read_parquet('{source}')"
+            return f'read_parquet({path_literal(source)})'
         table = as_table(source)
         if table is not None:
             self._con.register(f'src_{name}', table)
@@ -352,9 +353,9 @@ class DuckdbExecutor:
                 f'CREATE TABLE dim_{d} AS '
                 f'SELECT val, ROW_NUMBER() OVER (ORDER BY pos) - 1 AS ord{outer} FROM ('
                 f'SELECT {d} AS val, MIN(file_row_number) AS pos{agg} '
-                f"FROM read_parquet('{source}', file_row_number=true) GROUP BY {d})"
+                f'FROM read_parquet({path_literal(source)}, file_row_number=true) GROUP BY {d})'
             )
-            self._check_coordinates_single_valued(d, names, f"read_parquet('{source}')")
+            self._check_coordinates_single_valued(d, names, f'read_parquet({path_literal(source)})')
             return
         source = as_table(source)
         if source is None or d not in source.column_names:
@@ -571,7 +572,7 @@ class DuckdbExecutor:
         written: dict[str, Path] = {}
         for v in self._program.variables:
             out = directory / f'{v.name}.parquet'
-            self._con.execute(f"COPY ({self._solution_sql(v.name)}) TO '{out}' (FORMAT parquet)")
+            self._con.execute(f'COPY ({self._solution_sql(v.name)}) TO {path_literal(out)} (FORMAT parquet)')
             written[v.name] = out
         return written
 

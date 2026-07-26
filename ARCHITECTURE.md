@@ -296,6 +296,7 @@ native schema merge (#30) is what would force the question.
 | `relational/plan.py` | frozen logical-plan dataclasses |
 | `relational/arrow.py` | the Arrow boundary — caller tables in, via the PyCapsule protocol |
 | `relational/compiler.py` | plan → SQL text; pure, no connection |
+| `relational/sql.py` | how a value is spelled in SQL — quoting for caller-supplied paths |
 | `relational/executor.py` | duckdb: bind sources, label, assemble the tables |
 | `relational/sinks/` | how a built model leaves: `lp_file`, `solver_direct` (one module each, [README](src/farkas/relational/sinks/README.md)) |
 | `linopy/__init__.py` | opt-in shim: `build` / `extend` on a `linopy.Model` |

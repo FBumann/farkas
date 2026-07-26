@@ -18,6 +18,8 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from farkas.relational.sql import path_literal
+
 if TYPE_CHECKING:
     from farkas.relational.sinks.tables import ModelTables
 
@@ -37,7 +39,9 @@ def write_lp_file(model: ModelTables, path: str | Path) -> None:
     parts.mkdir(exist_ok=True)
     con = model.connection
 
-    con.execute(f"COPY (SELECT printf('%+.17g x%d', coeff, col) FROM obj) TO '{parts / 'obj'}' {_COPY_OPTS}")
+    con.execute(
+        f"COPY (SELECT printf('%+.17g x%d', coeff, col) FROM obj) TO {path_literal(parts / 'obj')} {_COPY_OPTS}"
+    )
 
     nnz = model.scalar('SELECT count(*) FROM A')
     avg = max(1, nnz // max(1, model.row_count))
@@ -55,7 +59,7 @@ def write_lp_file(model: ModelTables, path: str | Path) -> None:
                 FROM rows r LEFT JOIN A a USING (row)
                 WHERE r.row >= {lo} AND r.row < {hi}
                 GROUP BY r.row, r.sense, r.rhs
-            ) TO '{part}' {_COPY_OPTS}
+            ) TO {path_literal(part)} {_COPY_OPTS}
             """
         )
 
@@ -66,7 +70,7 @@ def write_lp_file(model: ModelTables, path: str | Path) -> None:
                    || printf(' <= x%d <= ', col)
                    || CASE WHEN ub = 'infinity'::DOUBLE THEN '+infinity' ELSE printf('%.17g', ub) END
             FROM cols
-        ) TO '{parts / 'bounds'}' {_COPY_OPTS}
+        ) TO {path_literal(parts / 'bounds')} {_COPY_OPTS}
         """
     )
 
@@ -76,7 +80,8 @@ def write_lp_file(model: ModelTables, path: str | Path) -> None:
             part = parts / keyword
             integrality_sections.append((keyword, part))
             con.execute(
-                f"COPY (SELECT printf('x%d', col) FROM cols WHERE vtype = '{variable_type}') TO '{part}' {_COPY_OPTS}"
+                f"COPY (SELECT printf('x%d', col) FROM cols WHERE vtype = '{variable_type}') "
+                f'TO {path_literal(part)} {_COPY_OPTS}'
             )
 
     sense = b'min' if model.objective_sense == 'min' else b'max'
