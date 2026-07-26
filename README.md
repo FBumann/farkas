@@ -76,6 +76,9 @@ with ly.solve("dispatch.yaml", sources,
     print(sol.primal("p"))
 ```
 
+Sources can also be polars or pyarrow tables, or parquet paths — anything
+exposing the Arrow PyCapsule protocol is accepted without conversion.
+
 ## Why
 
 - **Declarative math** — readable without knowing the implementation, and
@@ -126,7 +129,7 @@ pip install "linopy-yaml[compat]"  # adds linopy + xarray for the shim and oracl
 ```
 
 Not a solver wrapper, not a domain package, not a data-loading layer — bring
-pandas/xarray objects or parquet paths. MIT licensed.
+pandas/xarray objects, Arrow tables, or parquet paths. MIT licensed.
 
 ## Status
 

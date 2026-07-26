@@ -196,8 +196,10 @@ def _caps(names):
 
 def _tidy_cap(names):
     schema = MathSchema(**NETWORK)
-    df = tidy_sources(schema, {'cap': _caps(names)})['cap']
-    return {(r.from_bus, r.to_bus): r.value for r in df.itertuples()}
+    # tidy_sources normalises to Arrow, so read the columns back by name —
+    # which is the point: a transposition would show up as swapped values
+    table = tidy_sources(schema, {'cap': _caps(names)})['cap'].to_pydict()
+    return dict(zip(zip(table['from_bus'], table['to_bus'], strict=True), table['value'], strict=True))
 
 
 def test_a_named_index_binds_by_name_not_position():

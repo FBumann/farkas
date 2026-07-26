@@ -298,13 +298,18 @@ positionally — so pass an explicit index whenever order matters. The compat
 lane has no step 4: a dimension with neither `coords=` nor `values:` raises
 there. A dim that no source names and no parameter carries raises on both.
 
-**Accepted per parameter** (declared `dims: [d1, d2]`): `int`/`float` as a
-scalar that broadcasts freely; `dict` and `pd.Series` for 1-D (keys / index
-values become coordinates);
+**Accepted per parameter** (declared `dims: [d1, d2]`), streaming lane: a
+parquet path; any table exposing the Arrow PyCapsule protocol with columns
+`d1, d2, value`; `int`/`float` for a 0-D parameter. `pd.Series` and
+`xr.DataArray` keep their dims in an *index* rather than in columns, so they
+are unwrapped first — but only if that library is already imported, never by
+importing it.
+
+Compat lane (`data=`): `int`/`float` as a scalar that broadcasts freely; `dict`
+and `pd.Series` for 1-D (keys / index values become coordinates);
 `pd.DataFrame` for 2-D (index name → `d1`, column name → `d2`); `xr.DataArray`
-directly, with dim names a subset of the declared dims; parquet paths on the
-streaming lane (columns are the dims plus `value`). `np.ndarray` and `list` have
-no named axes, so only 0-D or 1-D matching one declared dim is accepted —
+directly, with dim names a subset of the declared dims. `np.ndarray` and `list`
+have no named axes, so only 0-D or 1-D matching one declared dim is accepted —
 anything else is refused with a message asking for a named object.
 
 Index names are optional but **binding**: an unnamed index binds positionally
@@ -374,8 +379,12 @@ with ly.build("model.yaml", sources, memory_limit="512MB") as ex:
     sol = ex.solve()       # read sol here — closing ex invalidates it
 ```
 
-`sources` maps parameter and dimension names to parquet paths, pandas objects or
-scalars; nothing on this path imports linopy. Build knobs, shared by all three
+`sources` maps parameter and dimension names to parquet paths, scalars, or any
+table exposing the Arrow PyCapsule protocol — pyarrow, polars and pandas all
+qualify, and the recogniser imports none of them. Nothing on this path imports
+linopy. What the *readers* return is unsettled and tracked separately
+([#105](https://github.com/FBumann/linopy-yaml/issues/105)); today `primal`
+returns a pandas DataFrame. Build knobs, shared by all three
 entry points: `coords`, `memory_limit` (default `'1GB'`), `chunk_rows`,
 `threads`, `workdir`. `to_dataset` costs what it says — each variable arrives
 dense over its own dims, so a model built for the memory budget this engine
