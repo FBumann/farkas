@@ -110,9 +110,11 @@ static checks and CI's bare-install job proves the dependency claims.*
    budget, not whether some array was briefly contiguous.
 5. **Backend-visible YAML files are self-contained.** No Python-side state
    (registries, session objects) may change what a file means.
-6. **The public interface is YAML.** The Python surface is the runner (`api.py`).
-   The plan is internal; a stable plan-construction API is a possible later addition,
-   not a current contract.
+6. **The public interface is a declared model, not a Python API.** YAML is the
+   format we ship and document; the contract underneath it is `MathSchema`, and
+   whether that seam is ever blessed is open (see Composition). The Python
+   surface is the runner (`api.py`); the plan is internal, and a stable
+   plan-construction API is a later possibility, not a current contract.
 
 ## Two tiers, and the ceiling
 

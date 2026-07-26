@@ -6,10 +6,16 @@ build-backend = "hatchling.build"
 name = "farkas"
 # the git tag is the version — see RELEASING.md. Never hardcode it here.
 dynamic = ["version"]
-description = "Declarative optimisation: YAML math on a streaming relational engine"
+description = "Self-documenting optimisation models at any scale: declarative LP/MILP on a streaming relational engine"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
+# YAML lives here rather than in the description: it is the format we ship, not
+# the contract (that is MathSchema), but it is still how people search.
+keywords = [
+    "optimisation", "optimization", "linear-programming", "mixed-integer",
+    "declarative", "yaml", "duckdb", "highs", "operations-research",
+]
 classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
