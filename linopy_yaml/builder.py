@@ -457,6 +457,8 @@ def _eval_node(
 
     if isinstance(node, ParameterDefinedNode):
         arr = dataset[node.name]
+        if arr.dtype == bool:
+            return arr
         return arr.notnull() & np.isfinite(arr)
 
     if isinstance(node, (ParameterComparisonNode, DimensionComparisonNode)):

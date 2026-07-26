@@ -177,3 +177,36 @@ def test_a_constraint_row_left_with_no_variables(tmp_path, data, coords):
         relational_status = ex.solve().status
 
     assert eager_status.lower() == relational_status.lower()
+
+
+BOOL_MASK_MODEL = {
+    'dimensions': {'t': {'dtype': 'int', 'values': [0, 1, 2]}},
+    'parameters': {'active': {'dims': ['t'], 'dtype': 'bool'}, 'cap': {'dims': ['t']}},
+    'variables': {'x': {'foreach': ['t'], 'bounds': {'lower': 0, 'upper': 'cap'}}},
+    'constraints': {'floor': {'foreach': ['t'], 'equations': [{'expression': 'x >= cap', 'where': 'active'}]}},
+    'objectives': {'total': {'sense': 'minimize', 'equations': [{'expression': 'sum(x, over=t)'}]}},
+}
+
+
+def test_a_bool_parameter_is_a_mask_on_both_lanes(tmp_path):
+    """A bool parameter reads as its own value: true masks in, false masks out,
+    and an absent row masks out. Was: the relational lane raised
+    `isfinite(BOOLEAN)` at build, and the eager lane read false as true.
+    """
+    import pandas as pd
+
+    path = tmp_path / 'm.yaml'
+    path.write_text(pyyaml.safe_dump(BOOL_MASK_MODEL))
+    data = {
+        'active': pd.Series({0: True, 1: False}),
+        'cap': pd.Series({0: 1.0, 1: 1.0, 2: 1.0}),
+    }
+
+    m = compat.build(path, data=data)
+    m.solve(solver_name='highs')
+    eager = float(m.objective.value)
+
+    with ly.solve(path, data) as sol:
+        relational = sol.objective
+
+    assert eager == relational == 1.0

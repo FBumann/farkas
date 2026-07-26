@@ -194,6 +194,7 @@ class DuckdbExecutor:
         self._finalizer = weakref.finalize(self, _release, self._con, self.workdir if self._own_workdir else None)
 
         self._program: plan.Program | None = None
+        self._bool_params: set[str] = set()
         self._dim_card: dict[str, int] = {}
         self._n_cols = 0
         self._n_rows = 0
@@ -251,6 +252,12 @@ class DuckdbExecutor:
             )
         collist = ', '.join(cols)
         self._con.execute(f'CREATE TABLE p_{p.name} AS SELECT {collist} FROM {rel}')
+        if self._value_type(f'p_{p.name}') == 'BOOLEAN':
+            self._bool_params.add(p.name)
+
+    def _value_type(self, table: str) -> str:
+        rows = self._con.execute(f"SELECT column_type FROM (DESCRIBE {table}) WHERE column_name = 'value'").fetchall()
+        return str(rows[0][0]) if rows else ''
 
     def _source_relation(self, name: str, source: Any) -> str:
         import pandas as pd
@@ -464,6 +471,8 @@ class DuckdbExecutor:
                 return f'(t_{p.dimension}.val {op} {val})'
             if isinstance(p, plan.ParameterDefined):
                 alias = join_param(p.parameter)
+                if p.parameter in self._bool_params:
+                    return f'({alias}.value IS NOT NULL AND {alias}.value)'
                 return f'({alias}.value IS NOT NULL AND isfinite({alias}.value))'
             if isinstance(p, plan.BooleanConstant):
                 return 'TRUE' if p.value else 'FALSE'

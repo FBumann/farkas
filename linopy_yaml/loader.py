@@ -178,6 +178,8 @@ def load_parameters(
                     dims=pdef.dims,
                     coords=reindex_coords,
                 )
+            elif arr.dtype == bool:
+                arr = arr.reindex(reindex_coords, fill_value=False)
             else:
                 arr = arr.reindex(reindex_coords)
 
