@@ -122,7 +122,7 @@ def test_both_lanes_build_the_same_model(tmp_path, data, coords, where):
 def test_every_resolved_predicate_is_parity_tested():
     """The guard that would have caught the DimDefined hole.
 
-    `DimDefined` shipped in #62 lowering to `ir.BooleanConstant(True)`, which discarded
+    `DimDefined` shipped in #62 lowering to `plan.BooleanConstant(True)`, which discarded
     the dimension — so unlike `DimensionComparisonNode`, nothing checked it against the frame's
     dims, and a bare dimension name outside `foreach` raised eagerly and built
     relationally. No test touched it. This one fails if any resolved predicate

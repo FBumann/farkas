@@ -3,7 +3,7 @@
 examples/storage.yaml is dispatch plus a cyclic battery:
 soc == roll(soc, snapshot=1) + charge * 0.9 - discharge. The eager backend
 implements roll with linopy's circular .roll(); the relational backend lowers
-it to ir.Shift — a pointwise ord-join remap.
+it to plan.Shift — a pointwise ord-join remap.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from linopy_yaml.lowering import lower_program, tidy_sources
 from linopy_yaml.relational import (
     DuckdbExecutor,
 )
-from linopy_yaml.relational.ir import (
+from linopy_yaml.relational.plan import (
     Translate,
     Variable,
 )

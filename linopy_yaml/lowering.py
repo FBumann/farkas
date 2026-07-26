@@ -1,9 +1,9 @@
-"""Lower a parsed YAML schema (typed AST) to the relational logical-plan IR.
+"""Lower a parsed YAML schema (typed AST) to the relational logical plan.
 
 This is the lowering seam (ARCHITECTURE.md, "The relational lane"): it
 consumes the same typed AST the
 eager builder evaluates (`expression_parser` / `where_parser` nodes) and emits
-a :class:`~linopy_yaml.relational.ir.Program`. It lives on the language side —
+a :class:`~linopy_yaml.relational.plan.Program`. It lives on the language side —
 the engine subpackage stays free of YAML knowledge, and this module never
 imports the eager builder.
 
@@ -40,7 +40,7 @@ from linopy_yaml.expression_parser import (
     VariableNode,
 )
 from linopy_yaml.helpers import BUILTIN_NAMES
-from linopy_yaml.relational import ir
+from linopy_yaml.relational import plan
 from linopy_yaml.resolution import Namespace, expression_of, where_of
 from linopy_yaml.where_parser import (
     AndNode,
@@ -61,21 +61,21 @@ if TYPE_CHECKING:
 _SENSES = {'==', '<=', '>='}
 
 
-def lower_program(schema: MathSchema) -> ir.Program:
-    """Compile a validated :class:`MathSchema` into an IR :class:`Program`."""
+def lower_program(schema: MathSchema) -> plan.Program:
+    """Compile a validated :class:`MathSchema` into a :class:`Program`."""
     from linopy_yaml.piecewise import expand_piecewise
 
     schema = expand_piecewise(schema)
     ns = Namespace.of(schema)
-    parameters = tuple(ir.ParameterDeclaration(name, tuple(pdef.dims)) for name, pdef in schema.parameters.items())
+    parameters = tuple(plan.ParameterDeclaration(name, tuple(pdef.dims)) for name, pdef in schema.parameters.items())
 
     variables = []
     for vname, vdef in schema.variables.items():
-        lower: ir.Expression
-        upper: ir.Expression
+        lower: plan.Expression
+        upper: plan.Expression
         if vdef.binary:
             # binary implies fixed 0/1 bounds, matching linopy's binary=True
-            variable_type, lower, upper = 'binary', ir.Constant(0.0), ir.Constant(1.0)
+            variable_type, lower, upper = 'binary', plan.Constant(0.0), plan.Constant(1.0)
         elif vdef.integer:
             variable_type = 'integer'
             lower = _lower_bound(vdef.bounds.lower)
@@ -85,7 +85,7 @@ def lower_program(schema: MathSchema) -> ir.Program:
             lower = _lower_bound(vdef.bounds.lower)
             upper = _lower_bound(vdef.bounds.upper)
         variables.append(
-            ir.VariableDeclaration(
+            plan.VariableDeclaration(
                 vname,
                 tuple(vdef.foreach),
                 where=_lower_where(vdef.where, ns, f"variable '{vname}'"),
@@ -113,7 +113,7 @@ def lower_program(schema: MathSchema) -> ir.Program:
             if ast.op not in _SENSES:
                 raise LanguageError(f"constraint '{eq_name}': unsupported sense '{ast.op}'")
             constraints.append(
-                ir.ConstraintDeclaration(
+                plan.ConstraintDeclaration(
                     eq_name,
                     tuple(cdef.foreach),
                     lhs=_lower_expr(ast.left, schema, f"constraint '{eq_name}'"),
@@ -129,12 +129,12 @@ def lower_program(schema: MathSchema) -> ir.Program:
     ast = expression_of(odef.equations[0].expression, schema, ns, f"objective '{oname}'")
     if isinstance(ast, ComparisonNode):
         raise LanguageError(f"objective '{oname}': expression must not contain a comparison operator")
-    objective = ir.ObjectiveDeclaration(
+    objective = plan.ObjectiveDeclaration(
         'min' if odef.sense == 'minimize' else 'max',
         _lower_expr(ast, schema, f"objective '{oname}'"),
     )
 
-    return ir.Program(parameters, tuple(variables), tuple(constraints), objective)
+    return plan.Program(parameters, tuple(variables), tuple(constraints), objective)
 
 
 def tidy_sources(
@@ -204,15 +204,15 @@ def tidy_sources(
 # ---------------------------------------------------------------------------
 
 
-def _lower_expr(node: ArithmeticNode, schema: MathSchema, context: str) -> ir.Expression:
+def _lower_expr(node: ArithmeticNode, schema: MathSchema, context: str) -> plan.Expression:
     if isinstance(node, NumberNode):
-        return ir.Constant(node.value)
+        return plan.Constant(node.value)
 
     if isinstance(node, VariableNode):
-        return ir.Variable(node.name)
+        return plan.Variable(node.name)
 
     if isinstance(node, ParameterNode):
-        return ir.Parameter(node.name)
+        return plan.Parameter(node.name)
 
     if isinstance(node, (NameNode, DimensionNode)):
         msg = (
@@ -224,16 +224,16 @@ def _lower_expr(node: ArithmeticNode, schema: MathSchema, context: str) -> ir.Ex
 
     if isinstance(node, UnaryOperatorNode):
         inner = _lower_expr(node.operand, schema, context)
-        return ir.Negate(inner) if node.op == '-' else inner
+        return plan.Negate(inner) if node.op == '-' else inner
 
     if isinstance(node, BinaryOperatorNode):
         left = _lower_expr(node.left, schema, context)
         right = _lower_expr(node.right, schema, context)
         match node.op:
             case '+':
-                return ir.Add(left, right)
+                return plan.Add(left, right)
             case '-':
-                return ir.Add(left, ir.Negate(right))
+                return plan.Add(left, plan.Negate(right))
             case '*':
                 if _has_var(left) and _has_var(right):
                     raise LanguageError(
@@ -242,14 +242,14 @@ def _lower_expr(node: ArithmeticNode, schema: MathSchema, context: str) -> ir.Ex
                         f'model the curve with a piecewise: block — see ROADMAP, '
                         f'"The degree axis".'
                     )
-                return ir.Multiply(left, right)
+                return plan.Multiply(left, right)
             case '/':
                 if _has_var(right):
                     raise LanguageError(
                         f'{context}: the divisor contains variables, which is not affine. '
                         f'Divide by a parameter, or precompute the reciprocal as one.'
                     )
-                return ir.Divide(left, right)
+                return plan.Divide(left, right)
             case _:
                 raise LanguageError(
                     f"{context}: operator '{node.op}' is not in the language. Multiply the "
@@ -268,7 +268,7 @@ def _lower_expr(node: ArithmeticNode, schema: MathSchema, context: str) -> ir.Ex
             # eager parity: summing over a dim the operand does not carry is a no-op
             if over_node.name not in _dims_of(inner, schema):
                 return inner
-            return ir.Sum(inner, (over_node.name,))
+            return plan.Sum(inner, (over_node.name,))
 
         if node.name == 'group_sum':
             if len(node.args) != 2 or set(node.kwargs) != {'into'}:
@@ -292,7 +292,7 @@ def _lower_expr(node: ArithmeticNode, schema: MathSchema, context: str) -> ir.Ex
                     f"{context}: group_sum() over '{mdims[0]}' but the expression "
                     f'has dims {sorted(_dims_of(inner, schema))}'
                 )
-            return ir.GroupSum(inner, mapping=mapping_node.name, into=into_node.name)
+            return plan.GroupSum(inner, mapping=mapping_node.name, into=into_node.name)
 
         if node.name in ('roll', 'shift'):
             wrap = node.name == 'roll'
@@ -310,7 +310,7 @@ def _lower_expr(node: ArithmeticNode, schema: MathSchema, context: str) -> ir.Ex
                     f"{context}: {node.name}() along '{dim}' but the expression "
                     f'has dims {sorted(_dims_of(inner, schema))}'
                 )
-            return ir.Translate(inner, dim, by=sign * int(shift_node.value), wrap=wrap)
+            return plan.Translate(inner, dim, by=sign * int(shift_node.value), wrap=wrap)
 
         raise LanguageError(
             f"{context}: helper '{node.name}' has no lowering. The language's "
@@ -322,55 +322,55 @@ def _lower_expr(node: ArithmeticNode, schema: MathSchema, context: str) -> ir.Ex
     assert_never(node)
 
 
-def _has_var(expr: ir.Expression) -> bool:
+def _has_var(expr: plan.Expression) -> bool:
     """Whether *expr* contains a decision variable.
 
     Degree 1 is the first clause of the expressive ceiling, so it has to be
     decidable without data — that is what makes ``ly.check()`` a real gate.
-    The executor repeats the check when it compiles terms, for hand-built IR.
+    The executor repeats the check when it compiles terms, for hand-built plans.
     """
-    if isinstance(expr, ir.Variable):
+    if isinstance(expr, plan.Variable):
         return True
-    if isinstance(expr, (ir.Constant, ir.Parameter)):
+    if isinstance(expr, (plan.Constant, plan.Parameter)):
         return False
-    if isinstance(expr, ir.Negate):
+    if isinstance(expr, plan.Negate):
         return _has_var(expr.operand)
-    if isinstance(expr, (ir.Add, ir.Multiply)):
+    if isinstance(expr, (plan.Add, plan.Multiply)):
         return _has_var(expr.left) or _has_var(expr.right)
-    if isinstance(expr, ir.Divide):
+    if isinstance(expr, plan.Divide):
         return _has_var(expr.numerator) or _has_var(expr.divisor)
-    if isinstance(expr, (ir.Sum, ir.Translate, ir.GroupSum)):
+    if isinstance(expr, (plan.Sum, plan.Translate, plan.GroupSum)):
         return _has_var(expr.operand)
     raise LanguageError(f'cannot decide degree of {type(expr).__name__}')
 
 
-def _dims_of(expr: ir.Expression, schema: MathSchema) -> frozenset[str]:
-    if isinstance(expr, ir.Constant):
+def _dims_of(expr: plan.Expression, schema: MathSchema) -> frozenset[str]:
+    if isinstance(expr, plan.Constant):
         return frozenset()
-    if isinstance(expr, ir.Parameter):
+    if isinstance(expr, plan.Parameter):
         return frozenset(schema.parameters[expr.name].dims)
-    if isinstance(expr, ir.Variable):
+    if isinstance(expr, plan.Variable):
         return frozenset(schema.variables[expr.name].foreach)
-    if isinstance(expr, ir.Negate):
+    if isinstance(expr, plan.Negate):
         return _dims_of(expr.operand, schema)
-    if isinstance(expr, (ir.Add, ir.Multiply)):
+    if isinstance(expr, (plan.Add, plan.Multiply)):
         return _dims_of(expr.left, schema) | _dims_of(expr.right, schema)
-    if isinstance(expr, ir.Divide):
+    if isinstance(expr, plan.Divide):
         return _dims_of(expr.numerator, schema) | _dims_of(expr.divisor, schema)
-    if isinstance(expr, ir.Sum):
+    if isinstance(expr, plan.Sum):
         return _dims_of(expr.operand, schema) - set(expr.over)
-    if isinstance(expr, ir.Translate):
+    if isinstance(expr, plan.Translate):
         return _dims_of(expr.operand, schema)
-    if isinstance(expr, ir.GroupSum):
+    if isinstance(expr, plan.GroupSum):
         d = schema.parameters[expr.mapping].dims[0]
         return (_dims_of(expr.operand, schema) - {d}) | {expr.into}
     raise LanguageError(f'cannot infer dims of {type(expr).__name__}')
 
 
-def _lower_bound(value: float | str) -> ir.Expression:
+def _lower_bound(value: float | str) -> plan.Expression:
     if isinstance(value, str):
-        return ir.Parameter(value)
-    return ir.Constant(value)
+        return plan.Parameter(value)
+    return plan.Constant(value)
 
 
 # ---------------------------------------------------------------------------
@@ -378,28 +378,28 @@ def _lower_bound(value: float | str) -> ir.Expression:
 # ---------------------------------------------------------------------------
 
 
-def _lower_where(text: str | None, ns: Namespace, context: str) -> ir.Predicate | None:
+def _lower_where(text: str | None, ns: Namespace, context: str) -> plan.Predicate | None:
     node = where_of(text, ns, context)
     if node is None:
         return None
     pred = _lower_where_node(node, context)
-    if isinstance(pred, ir.BooleanConstant) and pred.value:
+    if isinstance(pred, plan.BooleanConstant) and pred.value:
         return None  # True is equivalent to no mask
     return pred
 
 
-def _lower_where_node(node: WhereNode, context: str) -> ir.Predicate:
+def _lower_where_node(node: WhereNode, context: str) -> plan.Predicate:
     if isinstance(node, BooleanLiteralNode):
-        return ir.BooleanConstant(node.value)
+        return plan.BooleanConstant(node.value)
 
     if isinstance(node, ParameterDefinedNode):
-        return ir.ParameterDefined(node.name)
+        return plan.ParameterDefined(node.name)
 
     if isinstance(node, ParameterComparisonNode):
-        return ir.ParameterComparison(node.name, node.op, node.value)
+        return plan.ParameterComparison(node.name, node.op, node.value)
 
     if isinstance(node, DimensionComparisonNode):
-        return ir.DimensionComparison(node.name, node.op, node.value)
+        return plan.DimensionComparison(node.name, node.op, node.value)
 
     if isinstance(node, (UnresolvedNameNode, UnresolvedComparisonNode)):
         msg = (
@@ -409,14 +409,14 @@ def _lower_where_node(node: WhereNode, context: str) -> ir.Predicate:
         raise AssertionError(msg)
 
     if isinstance(node, NotNode):
-        return ir.Not(_lower_where_node(node.operand, context))
+        return plan.Not(_lower_where_node(node.operand, context))
     if isinstance(node, AndNode):
-        return ir.And(
+        return plan.And(
             _lower_where_node(node.left, context),
             _lower_where_node(node.right, context),
         )
     if isinstance(node, OrNode):
-        return ir.Or(
+        return plan.Or(
             _lower_where_node(node.left, context),
             _lower_where_node(node.right, context),
         )
@@ -424,9 +424,9 @@ def _lower_where_node(node: WhereNode, context: str) -> ir.Predicate:
     assert_never(node)
 
 
-def _and_preds(a: ir.Predicate | None, b: ir.Predicate | None) -> ir.Predicate | None:
+def _and_preds(a: plan.Predicate | None, b: plan.Predicate | None) -> plan.Predicate | None:
     if a is None:
         return b
     if b is None:
         return a
-    return ir.And(a, b)
+    return plan.And(a, b)

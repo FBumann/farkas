@@ -50,8 +50,8 @@ linopy_yaml/
 ├── validation.py        # load-time: parse, expand, name-check everything
 ├── piecewise.py         # piecewise: → λ-formulation declarations
 ├── helpers.py           # built-in helpers — a CLOSED set, no registry
-├── lowering.py          # core AST → IR (defines the streaming subset)
-├── relational/          # ir.py + executor.py (duckdb; linopy-free)
+├── lowering.py          # core AST → logical plan (defines the streaming subset)
+├── relational/          # plan.py + executor.py (duckdb; linopy-free)
 ├── compat.py            # opt-in linopy patching ([compat] extra)
 ├── compat.py, loader.py, builder.py                # compat/oracle lane (opt-in)
 ```

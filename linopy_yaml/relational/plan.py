@@ -1,4 +1,8 @@
-"""Logical-plan IR for relational LP construction.
+"""The logical plan: relational LP construction, one step above SQL.
+
+An intermediate representation in the compiler sense — the module is named
+for what it *is* to this engine (duckdb, Calcite and Spark all call this
+shape a logical plan) rather than for the generic category.
 
 The lane is described in ARCHITECTURE.md, "The relational lane".
 

@@ -1,8 +1,8 @@
-"""Duckdb executor for the logical-plan IR.
+"""Duckdb executor for the logical plan.
 
 The lane is described in ARCHITECTURE.md, "The relational lane".
 
-Compiles a :class:`~linopy_yaml.relational.ir.Program` into tidy tables inside
+Compiles a :class:`~linopy_yaml.relational.plan.Program` into tidy tables inside
 a file-backed duckdb database under a hard ``memory_limit``, then streams the
 model out through a sink: ``write_lp`` (portability / differential oracle) or
 ``solve`` (solver_direct — batched HiGHS ``addCols``/``addRows``; the full
@@ -19,7 +19,7 @@ duckdb cannot spill:
 
 Everything else — joins, scaling, masks, and the numeric hash aggregates that
 assemble ``A`` — delegates to duckdb's own spilling under ``memory_limit``.
-Future IR operators should be classified by coordinate locality: pointwise
+Future plan operators should be classified by coordinate locality: pointwise
 (joins/masks/group_sum) and bounded-halo (roll: t±k, which still works under
 label chunking because terms join the *global* variable table) compose freely;
 genuinely global operators (running sums, normalisations) must be rejected at
@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from linopy_yaml.errors import DataError, LanguageError, LinopyYamlError
-from linopy_yaml.relational import ir
+from linopy_yaml.relational import plan
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -193,7 +193,7 @@ class DuckdbExecutor:
         # safety net: temp state is released even if the caller forgets close()
         self._finalizer = weakref.finalize(self, _release, self._con, self.workdir if self._own_workdir else None)
 
-        self._program: ir.Program | None = None
+        self._program: plan.Program | None = None
         self._dim_card: dict[str, int] = {}
         self._n_cols = 0
         self._n_rows = 0
@@ -204,7 +204,7 @@ class DuckdbExecutor:
     # build
     # ------------------------------------------------------------------
 
-    def build(self, program: ir.Program, sources: Mapping[str, Any]) -> None:
+    def build(self, program: plan.Program, sources: Mapping[str, Any]) -> None:
         """Load sources, create dim/parameter tables, variables, constraints."""
         self._program = program
         self._validate_names(program)
@@ -224,7 +224,7 @@ class DuckdbExecutor:
             self._build_constraint(c)
         self._build_objective(program.objective)
 
-    def _validate_names(self, program: ir.Program) -> None:
+    def _validate_names(self, program: plan.Program) -> None:
         names = (
             [p.name for p in program.parameters]
             + [v.name for v in program.variables]
@@ -236,7 +236,7 @@ class DuckdbExecutor:
             if not _IDENT.match(n):
                 raise LanguageError(f"name '{n}' is not a valid identifier ([A-Za-z_][A-Za-z0-9_]*)")
 
-    def _create_param_table(self, p: ir.ParameterDeclaration, sources: Mapping[str, Any]) -> None:
+    def _create_param_table(self, p: plan.ParameterDeclaration, sources: Mapping[str, Any]) -> None:
         if p.name not in sources:
             raise DataError(f"no source bound for parameter '{p.name}'")
         rel = self._source_relation(p.name, sources[p.name])
@@ -272,7 +272,7 @@ class DuckdbExecutor:
         assert row is not None
         return row[0]
 
-    def _create_dim_tables(self, program: ir.Program, sources: Mapping[str, Any]) -> None:
+    def _create_dim_tables(self, program: plan.Program, sources: Mapping[str, Any]) -> None:
         assert self._program is not None
         dims: set[str] = set()
         for v in program.variables:
@@ -329,7 +329,7 @@ class DuckdbExecutor:
     # frames (masked coord products with partition-wise labels)
     # ------------------------------------------------------------------
 
-    def _frame_sql(self, dims: tuple[str, ...], where: ir.Predicate | None) -> tuple[str, str, str]:
+    def _frame_sql(self, dims: tuple[str, ...], where: plan.Predicate | None) -> tuple[str, str, str]:
         """FROM/WHERE clauses of the (masked) coord product and its order key.
 
         Returns ``(from_clause, where_clause, order_key)``; the select list can
@@ -349,7 +349,7 @@ class DuckdbExecutor:
         order_key = ', '.join(f't_{d}.ord' for d in dims)
         return from_clause, where_clause, order_key
 
-    def _pred_sql(self, pred: ir.Predicate, dims: tuple[str, ...]) -> tuple[list[str], str]:
+    def _pred_sql(self, pred: plan.Predicate, dims: tuple[str, ...]) -> tuple[list[str], str]:
         assert self._program is not None
         joins: dict[str, str] = {}
 
@@ -371,13 +371,13 @@ class DuckdbExecutor:
             joins[alias] = f'LEFT JOIN p_{param} {alias} ON {on}'
             return alias
 
-        def walk(p: ir.Predicate) -> str:
-            if isinstance(p, ir.ParameterComparison):
+        def walk(p: plan.Predicate) -> str:
+            if isinstance(p, plan.ParameterComparison):
                 alias = join_param(p.parameter)
                 val = f"'{p.value}'" if isinstance(p.value, str) else repr(p.value)
                 op = '=' if p.op == '==' else p.op
                 return f'({alias}.value {op} {val})'
-            if isinstance(p, ir.DimensionComparison):
+            if isinstance(p, plan.DimensionComparison):
                 if p.dimension not in dims:
                     raise LanguageError(
                         f"where-comparison on dimension '{p.dimension}' is outside the foreach dims "
@@ -386,16 +386,16 @@ class DuckdbExecutor:
                 val = f"'{p.value}'" if isinstance(p.value, str) else repr(p.value)
                 op = '=' if p.op == '==' else p.op
                 return f'(t_{p.dimension}.val {op} {val})'
-            if isinstance(p, ir.ParameterDefined):
+            if isinstance(p, plan.ParameterDefined):
                 alias = join_param(p.parameter)
                 return f'({alias}.value IS NOT NULL AND isfinite({alias}.value))'
-            if isinstance(p, ir.BooleanConstant):
+            if isinstance(p, plan.BooleanConstant):
                 return 'TRUE' if p.value else 'FALSE'
-            if isinstance(p, ir.And):
+            if isinstance(p, plan.And):
                 return f'({walk(p.left)} AND {walk(p.right)})'
-            if isinstance(p, ir.Or):
+            if isinstance(p, plan.Or):
                 return f'({walk(p.left)} OR {walk(p.right)})'
-            if isinstance(p, ir.Not):
+            if isinstance(p, plan.Not):
                 return f'(NOT COALESCE({walk(p.operand)}, FALSE))'
             raise LanguageError(f'unsupported predicate node {type(p).__name__}')
 
@@ -409,7 +409,7 @@ class DuckdbExecutor:
         per_chunk = max(1, int(self.chunk_rows // max(1.0, other_card)))
         return [(s, min(s + per_chunk, card)) for s in range(0, card, per_chunk)]
 
-    def _build_variable(self, v: ir.VariableDeclaration) -> None:
+    def _build_variable(self, v: plan.VariableDeclaration) -> None:
         if not v.dims:
             raise LanguageError(f"variable '{v.name}' has no dims (scalars: use dims of size 1)")
         collist = ', '.join(f't_{d}.val AS {d}' for d in v.dims)
@@ -444,16 +444,16 @@ class DuckdbExecutor:
                 f'is missing values for some coordinates'
             )
 
-    def _bound_sql(self, expr: ir.Expression, v: ir.VariableDeclaration) -> tuple[str, list[str]]:
+    def _bound_sql(self, expr: plan.Expression, v: plan.VariableDeclaration) -> tuple[str, list[str]]:
         """Compile a variable-free bound expression to a scalar SQL expression
         over alias ``f`` (the variable frame), returning (sql, join clauses)."""
         assert self._program is not None
         joins: dict[str, str] = {}
 
-        def walk(e: ir.Expression) -> str:
-            if isinstance(e, ir.Constant):
+        def walk(e: plan.Expression) -> str:
+            if isinstance(e, plan.Constant):
                 return _lit(e.value)
-            if isinstance(e, ir.Parameter):
+            if isinstance(e, plan.Parameter):
                 decl = self._program.parameter(e.name)
                 extra = set(decl.dims) - set(v.dims)
                 if extra:
@@ -465,11 +465,11 @@ class DuckdbExecutor:
                 on = ' AND '.join(f'{alias}.{d} = f.{d}' for d in decl.dims) or 'TRUE'
                 joins[alias] = f'LEFT JOIN p_{e.name} {alias} ON {on}'
                 return f'{alias}.value'
-            if isinstance(e, ir.Negate):
+            if isinstance(e, plan.Negate):
                 return f'(-({walk(e.operand)}))'
-            if isinstance(e, ir.Add):
+            if isinstance(e, plan.Add):
                 return f'({walk(e.left)} + {walk(e.right)})'
-            if isinstance(e, ir.Multiply):
+            if isinstance(e, plan.Multiply):
                 return f'({walk(e.left)} * {walk(e.right)})'
             raise LanguageError(
                 f"unsupported node {type(e).__name__} in bounds of variable '{v.name}' "
@@ -482,31 +482,31 @@ class DuckdbExecutor:
     # expression compilation → pieces
     # ------------------------------------------------------------------
 
-    def _compile(self, expr: ir.Expression, context: str) -> _CompiledExpression:
+    def _compile(self, expr: plan.Expression, context: str) -> _CompiledExpression:
         assert self._program is not None
         prog = self._program
 
-        def ev(e: ir.Expression) -> _CompiledExpression:
-            if isinstance(e, ir.Constant):
+        def ev(e: plan.Expression) -> _CompiledExpression:
+            if isinstance(e, plan.Constant):
                 return _CompiledExpression((), (_TermFragment((), f'SELECT {_lit(e.value)} AS cval', False),))
-            if isinstance(e, ir.Parameter):
+            if isinstance(e, plan.Parameter):
                 d = prog.parameter(e.name).dims
                 cols = ', '.join([*d, 'value AS cval']) if d else 'value AS cval'
                 return _CompiledExpression((), (_TermFragment(d, f'SELECT {cols} FROM p_{e.name}', False),))
-            if isinstance(e, ir.Variable):
+            if isinstance(e, plan.Variable):
                 d = prog.variable(e.name).dims
                 cols = ', '.join([*d, 'var_label', '1.0 AS coeff'])
                 return _CompiledExpression((_TermFragment(d, f'SELECT {cols} FROM var_{e.name}', True),), ())
-            if isinstance(e, ir.Negate):
+            if isinstance(e, plan.Negate):
                 inner = ev(e.operand)
                 return _CompiledExpression(
                     tuple(_negate(p) for p in inner.terms),
                     tuple(_negate(p) for p in inner.consts),
                 )
-            if isinstance(e, ir.Add):
+            if isinstance(e, plan.Add):
                 a, b = ev(e.left), ev(e.right)
                 return _CompiledExpression(a.terms + b.terms, a.consts + b.consts)
-            if isinstance(e, ir.Multiply):
+            if isinstance(e, plan.Multiply):
                 a, b = ev(e.left), ev(e.right)
                 if a.terms and b.terms:
                     raise LanguageError(f'nonlinear product in {context}: both factors contain variables')
@@ -515,7 +515,7 @@ class DuckdbExecutor:
                 terms = tuple(_join_mul(t, c, is_term=True) for t in a.terms for c in b.consts)
                 consts = tuple(_join_mul(x, c, is_term=False) for x in a.consts for c in b.consts)
                 return _CompiledExpression(terms, consts)
-            if isinstance(e, ir.Divide):
+            if isinstance(e, plan.Divide):
                 a, b = ev(e.numerator), ev(e.divisor)
                 if b.terms:
                     raise LanguageError(f'nonlinear quotient in {context}: the divisor contains variables')
@@ -528,17 +528,17 @@ class DuckdbExecutor:
                 terms = tuple(_join_mul(t, inv, is_term=True, op='/') for t in a.terms)
                 consts = tuple(_join_mul(x, inv, is_term=False, op='/') for x in a.consts)
                 return _CompiledExpression(terms, consts)
-            if isinstance(e, ir.Sum):
+            if isinstance(e, plan.Sum):
                 inner = ev(e.operand)
                 terms = tuple(self._sum_fragment(p, e.over, context) for p in inner.terms)
                 consts = tuple(self._sum_fragment(p, e.over, context) for p in inner.consts)
                 return _CompiledExpression(terms, consts)
-            if isinstance(e, ir.GroupSum):
+            if isinstance(e, plan.GroupSum):
                 inner = ev(e.operand)
                 terms = tuple(self._group_fragment(p, e, context) for p in inner.terms)
                 consts = tuple(self._group_fragment(p, e, context) for p in inner.consts)
                 return _CompiledExpression(terms, consts)
-            if isinstance(e, ir.Translate):
+            if isinstance(e, plan.Translate):
                 inner = ev(e.operand)
                 terms = tuple(self._translate_fragment(p, e, context) for p in inner.terms)
                 consts = tuple(self._translate_fragment(p, e, context) for p in inner.consts)
@@ -562,7 +562,7 @@ class DuckdbExecutor:
         cols = ', '.join([*keep, valcols]) if keep else valcols
         return _TermFragment(keep, f'SELECT {cols} FROM ({p.sql})', p.is_term)
 
-    def _group_fragment(self, p: _TermFragment, g: ir.GroupSum, context: str) -> _TermFragment:
+    def _group_fragment(self, p: _TermFragment, g: plan.GroupSum, context: str) -> _TermFragment:
         assert self._program is not None
         mdecl = self._program.parameter(g.mapping)
         if len(mdecl.dims) != 1:
@@ -578,7 +578,7 @@ class DuckdbExecutor:
         sql = f'SELECT {keepcols} FROM ({p.sql}) t JOIN p_{g.mapping} m ON m.{d} = t.{d}'
         return _TermFragment((*keep, g.into), sql, p.is_term)
 
-    def _translate_fragment(self, p: _TermFragment, s: ir.Translate, context: str) -> _TermFragment:
+    def _translate_fragment(self, p: _TermFragment, s: plan.Translate, context: str) -> _TermFragment:
         """Translation = a pointwise remap of the dim through its ord:
         a row at ord *o* contributes to the output coord at ord ``(o + by) %
         card``. No window function involved — bounded-halo locality."""
@@ -606,7 +606,7 @@ class DuckdbExecutor:
     # constraints and objective
     # ------------------------------------------------------------------
 
-    def _build_constraint(self, c: ir.ConstraintDeclaration) -> None:
+    def _build_constraint(self, c: plan.ConstraintDeclaration) -> None:
         if not c.dims:
             raise LanguageError(f"constraint '{c.name}' has no dims")
         lhs = self._compile(c.lhs, f"constraint '{c.name}' lhs")
@@ -668,7 +668,7 @@ class DuckdbExecutor:
         cond = ' AND '.join(f'q.{d} = f.{d}' for d in p.dims) or 'TRUE'
         return f'SELECT SUM(q.cval) FROM ({p.sql}) q WHERE {cond}'
 
-    def _build_objective(self, o: ir.ObjectiveDeclaration) -> None:
+    def _build_objective(self, o: plan.ObjectiveDeclaration) -> None:
         comp = self._compile(o.expression, 'objective')
         for p in comp.consts:
             if p.dims:

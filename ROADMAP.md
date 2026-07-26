@@ -23,7 +23,7 @@ is measured separately ([benchmarks](docs/benchmarks.md)).
 ## The degree axis
 
 Of the three admissibility rules, degree is the only *scope choice*; relational
-and local fall out of the architecture. **The IR is affine-by-design, quadratic
+and local fall out of the architecture. **The plan is affine-by-design, quadratic
 out of scope** — a decision with a revisit condition, not an axiom. It holds
 because demand is almost entirely quadratic *objectives*, and for convex 1-D
 curves we ship the substitutes practitioners prefer (`piecewise:` with
@@ -48,7 +48,7 @@ oracle covers it. What remains is one blocker and one cost:
    own model. The arithmetic and its two caveats are in
    [docs/benchmarks.md](docs/benchmarks.md#sink-capabilities).
 
-Plus a data-time convexity guard, a new IR node, a lowering case and a
+Plus a data-time convexity guard, a new plan node, a lowering case and a
 label-ordering change — a bigger diff than SOS, which is a declaration and needs
 none of it. **The question that actually decides it** is whether the demand is
 LP-only: if the fuel-curve users also want unit-commitment binaries, (1) kills
@@ -150,7 +150,7 @@ Full design, work breakdown and open questions:
 
 ## Track 5 — in-memory executor
 
-The same IR executed without duckdb, so small models skip the engine entirely
+The same plan executed without duckdb, so small models skip the engine entirely
 (folding in the CSR deferred-groupby prototype). Listed because it is also the
 worked example for hard rule 4's wording: the invariant is that peak tracks the
 *budget*, not that nothing is ever fully resident — for a model the budget
@@ -167,7 +167,7 @@ shapes escape.
 
 | Request | Why not | Instead | Escape? |
 |---|---|---|---|
-| Quadratic / bilinear terms | degree pinned at 1 | `piecewise:` (`convex: true`) or the epigraph pattern | **banned today**, blocked by the QP∧MILP exclusion on the default solver — a Track 4 capability question, and the bigger diff of the two (new IR node, lowering, convexity guard) |
+| Quadratic / bilinear terms | degree pinned at 1 | `piecewise:` (`convex: true`) or the epigraph pattern | **banned today**, blocked by the QP∧MILP exclusion on the default solver — a Track 4 capability question, and the bigger diff of the two (new plan node, lowering, convexity guard) |
 | SOS / indicator (#23) | the default solver has no such concept | `piecewise:` λ-formulation (SOS2's usual purpose); big-M for indicator, given bounds | **banned today**, and the *easier* one: `lp_file` carries it as a text section and Gurobi natively — it needs Track 4, not a new invariant |
 | Cumulative / running sums, normalisations | **global** — breaks partition-wise execution | state-variable recurrence (a storage SOC balance *is* the rewrite) | billed — but the rewrite is still right at scale, O(T) vs O(T²) |
 | Conditionals, iteration, data-dependent structure | destroys the closed AST | `where` masks + `foreach` dims; computation → data prep | billed — inside an island only |

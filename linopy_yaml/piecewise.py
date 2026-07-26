@@ -3,7 +3,7 @@
 This is schema-level expansion (SPEC §12.4): a ``piecewise:`` block becomes
 ordinary affine declarations *before* anything is built, so both backends —
 eager and relational — receive identical schemas and stay differential-
-testable. Formulations never enter the IR as expression nodes.
+testable. Formulations never enter the plan as expression nodes.
 
 The λ convex-combination method is used because it is expansion-pure: it
 needs only the breakpoint coordinate parameters themselves, no derived data

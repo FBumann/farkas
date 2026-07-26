@@ -1,4 +1,4 @@
-"""Phase-3 gate: YAML lowers to the IR and matches the eager backend.
+"""Phase-3 gate: YAML lowers to the logical plan and matches the eager backend.
 
 The dispatch example YAML runs through both backends with the same data:
 eager `compat.build(...).solve()` is the oracle; the lowered Program
@@ -20,7 +20,7 @@ from linopy_yaml.lowering import lower_program, tidy_sources
 from linopy_yaml.relational import (
     DuckdbExecutor,
 )
-from linopy_yaml.relational.ir import (
+from linopy_yaml.relational.plan import (
     DimensionComparison,
     Parameter,
     ParameterComparison,
@@ -155,7 +155,7 @@ def test_sum_over_absent_dim_is_noop(dispatch_schema):
 def test_unsupported_features_rejected(dispatch_schema):
     from linopy_yaml.lowering import _lower_expr
 
-    # roll/shift are supported via ir.Translate, binary/integer via variable_type;
+    # roll/shift are supported via plan.Translate, binary/integer via variable_type;
     # '**' and custom Python helpers remain outside the relational subset
     with pytest.raises(LanguageError, match=r"operator '\*\*'"):
         _lower_expr(resolved('p ** 2', dispatch_schema), dispatch_schema, 't')

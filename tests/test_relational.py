@@ -17,7 +17,7 @@ from linopy_yaml.errors import DataError, LanguageError
 from linopy_yaml.relational import (
     DuckdbExecutor,
 )
-from linopy_yaml.relational.ir import (
+from linopy_yaml.relational.plan import (
     Constant,
     ConstraintDeclaration,
     GroupSum,

@@ -1,12 +1,12 @@
 """The runner: bind data to a YAML model and execute it. Not a modeling API.
 
 Math is defined in YAML only — there is no Python API for constructing
-models, and the relational IR is internal (a stable IR-construction API may
+models, and the logical plan is internal (a stable plan-construction API may
 come later). This module's job is exactly three verbs: ``build`` (YAML +
 sources → live executor), ``solve``, and ``write``.
 
 This is the product path (ARCHITECTURE.md). The language is validated at load
-time, lowered to the IR — anything outside the streaming subset raises
+time, lowered to the plan — anything outside the streaming subset raises
 :class:`~linopy_yaml.errors.LanguageError` naming the construct — and executed relationally
 under a hard memory budget.
 

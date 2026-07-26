@@ -60,7 +60,7 @@ def test_real_booleans_still_parse(tmp_path):
 
 
 def test_the_loader_yields_plain_types(tmp_path):
-    """No loader wrapper may reach the schema, the AST, the IR, or duckdb."""
+    """No loader wrapper may reach the schema, the AST, the plan, or duckdb."""
     raw = read_yaml(_write(tmp_path, MODEL))
     assert type(raw) is dict
 

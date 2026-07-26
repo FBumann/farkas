@@ -21,7 +21,7 @@ from linopy_yaml.lowering import lower_program, tidy_sources
 from linopy_yaml.relational import (
     DuckdbExecutor,
 )
-from linopy_yaml.relational.ir import (
+from linopy_yaml.relational.plan import (
     GroupSum,
     Variable,
 )
@@ -95,7 +95,7 @@ def test_group_sum_lowering_structure():
 
 
 def _flatten(expr):
-    from linopy_yaml.relational.ir import (
+    from linopy_yaml.relational.plan import (
         Add,
         Negate,
     )
