@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+import farkas as fk
 from farkas.errors import DataError, LanguageError
 from farkas.relational import (
     DuckdbExecutor,
@@ -282,3 +283,39 @@ def test_out_of_foreach_dims_rejected(dispatch_data):
     )
     with DuckdbExecutor() as ex, pytest.raises(LanguageError, match='missing a Sum'):
         ex.build(bad, dispatch_sources(gens, load))
+
+
+def test_a_quote_in_a_path_does_not_end_the_statement(tmp_path):
+    """Paths come from the calling program, so no language rule constrains them.
+
+    `o'brien` is a legal directory name; interpolated raw it closed the SQL
+    string literal and duckdb raised a ParserException — which is not even a
+    LinopyYamlError, so it escaped the package's own exception tree. Every
+    path-carrying sink and source is exercised here: a parquet source, an
+    explicit index source, the LP writer's workdir, and the parquet sink.
+    """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    odd = tmp_path / "o'brien"
+    odd.mkdir()
+    pq.write_table(pa.table({'snapshot': [0, 1], 'value': [1.0, 2.0]}), odd / 'load.parquet')
+    pq.write_table(pa.table({'snapshot': [0, 1]}), odd / 'index.parquet')
+
+    model = {
+        'dimensions': {'snapshot': {'dtype': 'int'}},
+        'parameters': {'load': {'dims': ['snapshot']}},
+        'variables': {'p': {'foreach': ['snapshot'], 'bounds': {'lower': 0}}},
+        'constraints': {'meet': {'foreach': ['snapshot'], 'equations': [{'expression': 'p >= load'}]}},
+        'objectives': {'c': {'sense': 'minimize', 'equations': [{'expression': 'sum(p, over=snapshot)'}]}},
+    }
+    sources = {'load': str(odd / 'load.parquet'), 'snapshot': str(odd / 'index.parquet')}
+
+    with fk.solve(model, sources, workdir=str(odd / 'work')) as solution:
+        assert solution.status == 'Optimal'
+        assert solution.objective == pytest.approx(3.0)
+        written = solution.to_parquet(odd / 'out')
+        assert written['p'].exists()
+
+    fk.write(model, sources, odd / 'model.lp')
+    assert (odd / 'model.lp').stat().st_size > 0
