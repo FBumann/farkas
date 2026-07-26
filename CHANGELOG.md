@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.0-alpha.10](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.9...v0.0.0-alpha.10) (2026-07-26)
+
+
+### Bug Fixes
+
+* py.typed ships with the package it describes ([#131](https://github.com/FBumann/farkas/issues/131)) ([52529de](https://github.com/FBumann/farkas/commit/52529de80f4dd2c713c2fac2437855eee865f480))
+
 ## [0.0.0-alpha.9](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.8...v0.0.0-alpha.9) (2026-07-26)
 
 
