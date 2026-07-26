@@ -126,5 +126,18 @@ pip install "linopy-yaml[compat]"  # adds linopy + xarray for the shim and oracl
 ```
 
 Not a solver wrapper, not a domain package, not a data-loading layer — bring
-pandas/xarray objects or parquet paths. Pre-1.0; both lanes round-trip real
-models through solve with differentially verified results. MIT licensed.
+pandas/xarray objects or parquet paths. MIT licensed.
+
+## Status
+
+Alpha, pre-1.0. **Breaking changes land without a deprecation cycle.** When a
+construct is named wrong, a default is wrong, or a permissive input turns out
+to hide a silent wrong answer, it gets fixed rather than aliased — carrying a
+compatibility shim for every earlier spelling would defeat the point of a small
+language.
+
+In practice: pin an exact version if you depend on this, and read the
+[CHANGELOG](CHANGELOG.md) before upgrading — breaking commits are marked `!`,
+and every one names the rewrite. What exists is tested; both lanes round-trip
+real models through solve, differentially verified against linopy. It is the
+*surface* that is not yet frozen, not the behaviour.
