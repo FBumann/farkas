@@ -67,6 +67,14 @@ dim in generated math is the same error as a stray dim in a written one.
 *Enforced, not aspirational: `tests/test_architecture.py` encodes these as
 static checks and CI's bare-install job proves the dependency claims.*
 
+0. **The layers are ordered, and imports prove it.** Every module imports only
+   downward, at module level, with exactly one declared exception: `lowering.py`
+   reaches `piecewise.py` lazily, because a formulation must expand *before*
+   lowering while expanding needs the subset test lowering defines.
+   `DELIBERATE_LAZY_IMPORTS` in `tests/test_architecture.py` is the whole list,
+   and an undeclared in-function import fails the build — a lazy import is how
+   the one real cycle is broken, so decorative ones cannot be allowed to hide
+   it.
 1. **Core AST is the whole language.** Both backends consume only core AST;
    macros, named expressions and `piecewise:` are expanded away before dispatch,
    and the plan/SQL/xarray are backend-private. The AST crossing that seam is **fully
@@ -279,6 +287,7 @@ native schema merge (#30) is what would force the question.
 | `validation.py` | load-time: parse, expand, resolve, check everything |
 | `piecewise.py` | `piecewise:` → λ-formulation declarations + curvature guard |
 | `api.py` | native entry point: `check` / `solve` / `write`, linopy-free |
+| `sources.py` | bind runtime data (parquet paths / Arrow tables) to a validated schema |
 | `lowering.py` | core AST → logical plan (defines the relational subset) |
 | `helpers.py` | the closed set of built-in operators: their *names* and *call shapes* — no registry |
 | `errors.py` | the exception hierarchy; the one module the engine may import |

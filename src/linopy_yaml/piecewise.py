@@ -42,8 +42,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from linopy_yaml.errors import PiecewiseExpansionError
+from linopy_yaml.dimensions import dims_of
+from linopy_yaml.errors import LanguageError, PiecewiseExpansionError
 from linopy_yaml.expression_parser import ComparisonNode, parse_expression
+from linopy_yaml.lowering import check_core_subset
+from linopy_yaml.relational.arrow import as_table
+from linopy_yaml.resolution import Namespace, resolve_expression
 from linopy_yaml.schema import MathSchema, PiecewiseBlock
 
 if TYPE_CHECKING:
@@ -149,11 +153,6 @@ def _expr_dims(schema: MathSchema, text: str, ctx: str) -> frozenset[str]:
     no plan node for — and ``dimensions`` is the dim set, which is a language
     property rather than a lowering by-product.
     """
-    from linopy_yaml.dimensions import dims_of
-    from linopy_yaml.errors import LanguageError
-    from linopy_yaml.lowering import _lower_expr
-    from linopy_yaml.resolution import Namespace, resolve_expression
-
     ast = parse_expression(text)
     if isinstance(ast, ComparisonNode):
         raise PiecewiseExpansionError(f'{ctx}: link expressions must not contain a comparison, got {text!r}')
@@ -163,7 +162,7 @@ def _expr_dims(schema: MathSchema, text: str, ctx: str) -> frozenset[str]:
         raise PiecewiseExpansionError('\n'.join(errors))
     assert not isinstance(resolved, ComparisonNode)
     try:
-        _lower_expr(resolved, schema, ctx)
+        check_core_subset(resolved, schema, ctx)
         return dims_of(resolved, schema, ctx)
     except LanguageError as exc:
         raise PiecewiseExpansionError(
@@ -236,8 +235,6 @@ def _as_dataarray(schema: MathSchema, pname: str, values: Mapping[str, Any] | An
     numpy-only (issue #27), which would retire this function.
     """
     import xarray as xr
-
-    from linopy_yaml.relational.arrow import as_table
 
     if pname not in values:
         raise KeyError(pname)
