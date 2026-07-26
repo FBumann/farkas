@@ -1,9 +1,10 @@
 name: CI
 
-# Billing is per job, rounded up to the minute, and every job here finishes in
-# well under one. So the cost of CI is the number of jobs, not their duration —
-# the suite itself is ~5s. Keep the job count low; do not split a job to make
-# the wall clock look better, it only makes the bill worse.
+# Billing is per job, rounded up to the minute, and the suite takes ~5s. So the
+# cost of CI is the number of jobs, not their duration: five jobs doing ninety
+# seconds of work cost five minutes. Hence one job, one Python, two installs.
+# Do not split a step out into a job of its own to parallelise it — that trades
+# a few seconds of wall clock for a whole billed minute.
 
 on:
   push:
@@ -15,70 +16,47 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    # The everyday signal: lint, format, types and the suite on one Python.
-    # Required by the branch ruleset.
+  ci:
+    # The single required check. Fixed name, no matrix, so the branch ruleset can
+    # name it directly and never needs updating.
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
         with:
-          python-version: "3.13"
+          # The floor, and the only version we test. If it works on the oldest
+          # supported interpreter it almost certainly works on the newer ones;
+          # the common real breakage is reaching for a 3.12+ stdlib feature,
+          # which is exactly what this catches. Note that this leaves the 3.12
+          # and 3.13 classifiers in pyproject.toml as untested claims — see the
+          # early-development section of RELEASING.md.
+          python-version: "3.11"
           enable-cache: true
+
+      # Current dependencies, dev group: lint, format, types, suite.
       - run: uv sync --group dev
       - run: uv run --no-sync ruff check .
       - run: uv run --no-sync ruff format --check .
-      # Only here, not in the bare leg of `compat`: missing-import is an error,
-      # and the linopy lane imports linopy/xarray, which a bare install lacks.
+      # Only meaningful here, not below: missing-import is an error, and the
+      # linopy lane imports linopy/xarray, which a bare install deliberately lacks.
       - run: uv run --no-sync pyrefly check --output-format=github
       - run: uv run --no-sync pytest -q
 
-  compat:
-    # The three install shapes that `test` cannot see, on one runner. Each leg
-    # re-syncs the venv in place; they are sequential because three jobs would
-    # cost three billed minutes to do ~90s of work.
-    #
-    # Sharing one checkout is safe: `uv.lock` is gitignored, so it is a byproduct
-    # of each sync rather than a committed pin, and uv records the resolution
-    # strategy in it — the floors leg re-resolves instead of inheriting the
-    # versions the leg above it locked. Verified: it installs pandas 2.2.0 /
-    # numpy 1.26.0 / pyarrow 16.0.0 either way. Do not add a `--frozen` here.
-    #
-    # Skipped on push: a squash merge lands the tree the PR already proved, and
-    # nothing about the install shapes changes between the two. `test` still
-    # runs on main as the net for semantic conflicts between concurrent merges.
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-      # Deliberately no `python-version:` on setup-uv — it exports UV_PYTHON,
-      # which makes the bare leg's `uv pip install` hunt for a venv on that
-      # version instead of the 3.12 one `uv sync --python 3.12` just built.
-      # Each leg names its own interpreter instead.
-      - run: uv python install 3.11 3.12
-
-      - name: "bare install: no linopy/xarray on disk"
-        # Proves the runtime dependency claim and runs the native suite.
+      # Re-sync the same checkout into the shipped shape, at the declared floors.
+      # Two claims in one install:
+      #   1. the streaming product runs with no linopy/xarray on disk;
+      #   2. the lower bounds in pyproject.toml are real. Without this they are
+      #      decoration — `>=1.0` on duckdb was five minor versions below the
+      #      first release with `to_arrow_reader`, and nothing noticed.
+      # Safe to share the checkout: uv.lock is gitignored, so it is a byproduct
+      # of each sync rather than a committed pin, and uv records the resolution
+      # strategy in it — this re-resolves instead of inheriting what the sync
+      # above locked. Verified: pandas 2.2.0 / numpy 1.26.0 / pyarrow 16.0.0 /
+      # duckdb 1.5.0 / pydantic 2.0. Do not add `--frozen`.
+      - name: bare install, at the dependency floors
         run: |
-          uv sync --no-default-groups --no-editable --python 3.12
+          uv sync --no-default-groups --no-editable --resolution lowest-direct
           uv pip install pytest
           uv run --no-sync python -c "import importlib.util, sys; sys.exit(importlib.util.find_spec('linopy') is not None)"
-          uv run --no-sync pytest -q
-
-      - name: lowest supported Python, current dependencies
-        run: |
-          uv sync --group dev --python 3.11
-          uv run --no-sync pytest -q
-
-      - name: the declared dependency floors, actually installed
-        # Without this the lower bounds are decoration: `>=1.0` on duckdb was
-        # five minor versions below the first release with `to_arrow_reader`,
-        # and nothing noticed.
-        run: |
-          uv sync --group dev --python 3.11 --resolution lowest-direct
           uv run --no-sync pytest -q
