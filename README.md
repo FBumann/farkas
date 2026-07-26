@@ -3,8 +3,9 @@
 Declarative optimisation: define the math in YAML, supply data at runtime, solve.
 
 Models build on a **relational/streaming engine** — tidy tables in duckdb under
-a hard `memory_limit`, streamed straight to the solver, so the full model never
-exists in process memory. [linopy](https://github.com/PyPSA/linopy) is not a
+a hard `memory_limit`, streamed straight to the solver, so build peak memory
+tracks that budget rather than the size of the model.
+[linopy](https://github.com/PyPSA/linopy) is not a
 runtime dependency; it is kept as an opt-in **compat shim** (YAML math onto a
 `linopy.Model` already built in Python) and as the **oracle** every language
 feature is differentially tested against. There is no routing and no fallback:

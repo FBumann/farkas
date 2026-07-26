@@ -1,17 +1,18 @@
 """Declarative optimisation: YAML math on a streaming engine.
 
 Models build relationally (duckdb under a hard ``memory_limit``) and stream
-to the solver — see ARCHITECTURE.md. linopy is not imported at runtime; it
-serves as the differential-test oracle and as an opt-in compatibility shim
+to the solver, so build peak memory tracks that budget rather than the model
+size — see ARCHITECTURE.md. linopy is not imported at runtime; it serves as
+the differential-test oracle and as an opt-in compatibility shim
 (``from linopy_yaml import compat`` — ``compat.build`` / ``compat.extend``).
 
     import linopy_yaml as ly
 
-    sol = ly.solve("model.yaml", sources={"p_max": "p_max.parquet", ...})
-    sol.objective
-    sol.primal("p")      # tidy DataFrame
-    sol.to_dataarray("p")   # labelled, for array post-processing
-    sol.primal("p")
+    # Solution owns the duckdb executor backing primal/to_* — close it
+    with ly.solve("model.yaml", {"p_max": "p_max.parquet", ...}) as sol:
+        sol.objective
+        sol.primal("p")        # tidy DataFrame
+        sol.to_dataarray("p")  # labelled, for array post-processing
 """
 
 from importlib.metadata import PackageNotFoundError

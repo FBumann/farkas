@@ -140,17 +140,25 @@ request can ever be met:
 | Tier | Bounded by | Members | Can it move? |
 |---|---|---|---|
 | **Capability-bounded** | what a given sink can ingest | SOS / indicator (#23); quadratic | per sink — see below |
-| **Budget-bounded** | the escape label budget | global operators, arbitrary Python, non-relational manipulation | already movable — that is what an island is |
+| **Budget-bounded** | the escape *label* budget — a cap on emitted rows and columns, not `memory_limit` | global operators, arbitrary Python, non-relational manipulation | already movable — that is what an island is |
 | **Design-bounded** | our choice of where work belongs | data prep, domain helpers, Python declaring structure | movable any time; we don't want to |
 
 Impossible **in the symbolic plan**: conditionals, iteration, any data-dependent
-structure inside expressions. The invariant is *boundedness*, not purity — the
-plan must know every component's extent before data is touched. That is why an
-`escape:` island (#38) is admissible where a registered Python helper was not:
-its footprint is fixed by the preceding `where` mask, it is terminal, and it is
-named in the file. An escape buys back the *relational* and *local* rules (it
-returns affine COO rows — a running-sum island still emits affine rows, just
-O(T²) of them) but never **degree**, because affine COO is what it returns.
+structure inside expressions. What is protected here is *static* boundedness —
+the plan must know every component's extent before data is touched — which is a
+different property from rule 4's memory invariant, though the two meet at the
+escape hatch. That is why an `escape:` island (#38) is admissible where a
+registered Python helper was not: its extent is fixed by the preceding `where`
+mask, it is terminal, and it is named in the file. Its **label budget is how it
+satisfies rule 4** — the same "peak tracks a declared budget" bargain the rest
+of the engine makes, denominated in labels rather than bytes, and enforced
+before any Python runs rather than after it allocates.
+
+An escape buys back the *relational* and *local* rules (it returns affine COO
+rows — a running-sum island still emits affine rows, just O(T²) of them) but
+never **degree**, because affine COO is what it returns. That refusal stands on
+what an island *emits*, not on what a sink accepts, so it is unaffected by the
+capability findings below.
 
 ### Capability is not the ceiling
 
