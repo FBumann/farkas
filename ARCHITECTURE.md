@@ -40,8 +40,8 @@ flowchart TB
 
     subgraph EAGER["Compat/oracle lane — opt-in via linopy_yaml.compat · the ONLY lane with linopy · not a runtime dependency"]
         direction TB
-        DE[("data<br/>parquet paths / pandas")] --> LOAD["loader.py<br/>coerce data → xr.Dataset"]
-        LOAD --> BUILD["builder.py<br/>evaluate AST"]
+        DE[("data<br/>parquet paths / pandas")] --> LOAD["compat/loader.py<br/>coerce data → xr.Dataset"]
+        LOAD --> BUILD["compat/builder.py<br/>evaluate AST"]
         BUILD --> MODEL[linopy.Model] --> SOLVE["linopy solve / writers"]
     end
 
@@ -72,10 +72,15 @@ static checks and CI's bare-install job proves the dependency claims.*
    resolved** — names are typed `Variable`/`Parameter`/`Dimension` nodes — so a backend cannot
    hold its own opinion about what a name refers to. Resolving independently is
    how the two lanes silently disagreed about scoping before.
-2. **The relational lane is linopy-free.** `linopy_yaml/relational/` imports
-   neither the eager builder nor linopy: duckdb → highspy → solver, with
-   linopy's semantics as a spec to match rather than code to share.
-   Engine-internal naming encodes neither "duckdb" nor "yaml".
+2. **The engine knows nothing about linopy, xarray or YAML.**
+   `linopy_yaml/relational/` goes duckdb → highspy → solver, with linopy's
+   semantics as a spec to match rather than code to share; it never sees the
+   schema, the AST, or the eager builder. Engine-internal naming encodes
+   neither "duckdb" nor "yaml". Enforced *more* strictly than stated — the
+   engine imports nothing from the package at all, bar declared
+   dependency-free leaves (`errors.py` today, listed in `ENGINE_MAY_IMPORT`)
+   — because a near-zero import surface is what keeps the subpackage
+   extractable. Widening that list is a decision, not an accident.
 3. **One language, two lanes — not fast-vs-slow versions of each other.** The
    streaming engine builds models declared in YAML; the compat lane attaches
    YAML math to a `linopy.Model` already in memory, which is structurally eager.
@@ -264,14 +269,21 @@ than the plan level, which is
 | `validation.py` | load-time: parse, expand, resolve, check everything |
 | `piecewise.py` | `piecewise:` → λ-formulation declarations + curvature guard |
 | `api.py` | native entry point: `check` / `solve` / `write`, linopy-free |
-| `compat.py` | opt-in shim: `build` / `extend` on a `linopy.Model` |
-| `loader.py` | compat lane: data coercion to `xr.Dataset`, master coords |
-| `builder.py` | eager backend: core AST → `linopy.Model` |
 | `lowering.py` | core AST → logical plan (defines the relational subset) |
-| `relational/plan.py` | frozen logical-plan dataclasses |
-| `relational/executor.py` | duckdb execution + `lp_file` / `solver_direct` sinks |
 | `helpers.py` | the closed set of built-in operators: their *names* and *call shapes* — no registry |
 | `errors.py` | the exception hierarchy; the one module the engine may import |
+| `relational/plan.py` | frozen logical-plan dataclasses |
+| `relational/executor.py` | duckdb execution + `lp_file` / `solver_direct` sinks |
+| `compat/__init__.py` | opt-in shim: `build` / `extend` on a `linopy.Model` |
+| `compat/loader.py` | data coercion to `xr.Dataset`, master coords |
+| `compat/builder.py` | eager backend: core AST → `linopy.Model` |
+
+Two subpackages, and the directory *is* the rule in both cases. Everything
+under `relational/` is the engine and imports nothing else from the package;
+everything under `compat/` is the opt-in linopy lane and is the only code
+allowed to import linopy or xarray. `tests/test_architecture.py` reads
+membership off the path, so neither fence can be stepped over by naming a
+file differently.
 
 ### Naming across the layers
 

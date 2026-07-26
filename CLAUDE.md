@@ -51,9 +51,10 @@ linopy_yaml/
 ├── piecewise.py         # piecewise: → λ-formulation declarations
 ├── helpers.py           # built-in helpers — a CLOSED set, no registry
 ├── lowering.py          # core AST → logical plan (defines the streaming subset)
+├── errors.py            # the exception hierarchy (LinopyYamlError root)
 ├── relational/          # plan.py + executor.py (duckdb; linopy-free)
-├── compat.py            # opt-in linopy patching ([compat] extra)
-├── compat.py, loader.py, builder.py                # compat/oracle lane (opt-in)
+└── compat/              # opt-in linopy lane ([compat] extra): the ONLY code
+                         # importing linopy/xarray — __init__.py, builder.py, loader.py
 ```
 
 ## API
