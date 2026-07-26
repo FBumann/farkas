@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling>=1.27", "hatch-vcs"]  # 1.27 is the first with PEP 639 license fields
 build-backend = "hatchling.build"
 
 [project]
@@ -8,13 +8,13 @@ name = "linopy-yaml"
 dynamic = ["version"]
 description = "Declarative optimisation: YAML math on a streaming relational engine"
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Development Status :: 3 - Alpha",
-    "License :: OSI Approved :: MIT License",
 ]
 requires-python = ">=3.11"
 dependencies = [
@@ -48,10 +48,10 @@ source = "vcs"
 fallback-version = "0.0.0"
 
 [tool.hatch.build.targets.wheel]
-packages = ["linopy_yaml"]
+packages = ["src/linopy_yaml"]
 
 [tool.hatch.build.targets.sdist]
-include = ["linopy_yaml/", "tests/", "LICENSE", "README.md", "ARCHITECTURE.md", "SPEC.md", "ROADMAP.md"]
+include = ["/src"]
 
 [dependency-groups]
 dev = [
@@ -100,7 +100,7 @@ extend-fixable = ["B", "SIM", "RUF", "C4", "UP"]
 
 [tool.ruff.lint.per-file-ignores]
 "examples/**/*.py" = ["T20"]  # the walkthrough's whole output is its point
-"linopy_yaml/where_parser.py" = ["N806"]  # grammar tokens (NOT/AND/OR) are named after keywords
+"src/linopy_yaml/where_parser.py" = ["N806"]  # grammar tokens (NOT/AND/OR) are named after keywords
 
 [tool.ruff.format]
 quote-style = "single"
@@ -122,7 +122,7 @@ testpaths = ["tests"]
 # check against the *lowest* supported interpreter, so 3.12+ syntax and stdlib
 # additions are caught here rather than by the 3.11 leg of the CI matrix.
 python-version = "3.11"
-project-includes = ["linopy_yaml"]
+project-includes = ["src/linopy_yaml"]
 preset = "strict"
 
 # Warn-by-default rules promoted to error, so a regression fails CI instead of

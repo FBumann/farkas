@@ -10,7 +10,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-PKG = Path(__file__).parent.parent / 'linopy_yaml'
+REPO = Path(__file__).parent.parent
+PKG = REPO / 'src' / 'linopy_yaml'
 
 FORBIDDEN_RUNTIME = {'linopy', 'xarray'}
 
@@ -223,7 +224,7 @@ def test_every_module_is_documented_somewhere():
     instead: it is what you read when you open the directory, and it stays
     next to the thing it describes.
     """
-    architecture = (PKG.parent / 'ARCHITECTURE.md').read_text()
+    architecture = (REPO / 'ARCHITECTURE.md').read_text()
     missing = []
     for path in _all_modules():
         name = path.name
