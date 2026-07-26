@@ -201,12 +201,52 @@ def _phase_build(cfg: dict[str, Any]) -> dict[str, Any]:
         return {'build_seconds': build_seconds, 'total_seconds': time.perf_counter() - started}
 
 
+def _phase_build_eager(cfg: dict[str, Any]) -> dict[str, Any]:
+    """The same model through the linopy lane, for the comparison that survives.
+
+    The interesting claim in docs/benchmarks.md is comparative — streaming beats
+    an eager build by enough to change what fits on a machine — and it is the
+    one claim that does not depend on the budget being a bound. Measuring both
+    arms in one harness on one box is what keeps it from resting on numbers
+    nobody can reproduce.
+
+    Ignores every budget knob: there is nothing to configure on this side, which
+    is the point being made.
+    """
+    import pandas as pd
+    import pyarrow.parquet as pq
+    import yaml
+
+    from farkas import linopy as farkas_linopy
+
+    def column(name: str, dim: str) -> pd.Series:
+        return pq.read_table(cfg['sources'][name]).to_pandas().set_index(dim)['value']
+
+    data = {
+        'p_max': column('p_max', 'generator'),
+        'cost': column('cost', 'generator'),
+        'load': column('load', 'snapshot'),
+    }
+    snapshots = pq.read_table(cfg['sources']['snapshot']).to_pandas()['snapshot']
+    coords = {'snapshot': pd.Index(snapshots, name='snapshot')}
+
+    with tempfile.TemporaryDirectory(dir=cfg['tmp_root']) as directory:
+        path = Path(directory) / 'model.yaml'
+        path.write_text(yaml.safe_dump(dispatch_schema(cfg['generators'])))
+        started = time.perf_counter()
+        model = farkas_linopy.build(path, data=data, coords=coords)
+        build_seconds = time.perf_counter() - started
+        del model
+    return {'build_seconds': build_seconds, 'total_seconds': build_seconds}
+
+
 PHASES = {
     'interpreter': _phase_interpreter,
     'import': _phase_import,
     'connect': _phase_connect,
     'prep': _phase_prep,
     'build': _phase_build,
+    'build_eager': _phase_build_eager,
 }
 
 
@@ -270,6 +310,9 @@ def main() -> int:
     parser.add_argument('--chunk-rows', type=int, default=25_000)
     parser.add_argument('--threads', type=int, nargs='+', default=[0], help='0 = duckdb default')
     parser.add_argument('--sink', choices=['none', 'lp'], default='none')
+    parser.add_argument(
+        '--eager', action='store_true', help='also build each size through the linopy lane ([linopy] extra)'
+    )
     parser.add_argument('--data-dir', default=None, help='cache the generated parquet here')
     parser.add_argument('--tmp-root', default=None, help='parent of each build workdir (spill lives here)')
     parser.add_argument('--json', default=None, help='write the raw records here')
@@ -332,6 +375,21 @@ def main() -> int:
                 sources = {n: str(data_dir / f'{n}.parquet') for n in ('p_max', 'cost', 'load', 'snapshot')}
 
             variables = snapshots * active_generators(args.generators)
+
+            if args.eager:
+                rec = run_child(
+                    'build_eager', {'sources': sources, 'generators': args.generators, 'tmp_root': args.tmp_root}
+                )
+                rec.update(phase='build_eager', snapshots=snapshots, generators=args.generators, variables=variables)
+                records.append(rec)
+                if 'error' in rec:
+                    print(f'| {snapshots:,} | {variables:,} | — | *eager* | **{rec["error"][:60]}** | | | |')
+                else:
+                    print(
+                        f'| {snapshots:,} | {variables:,} | — | *eager* | {_mib(rec["peak_rss"])} | '
+                        f'{_mib(rec["peak_rss"] - baseline)} | n/a | {rec["build_seconds"]:.1f} |'
+                    )
+
             for threads in args.threads:
                 for budget in args.budgets:
                     cfg = {
