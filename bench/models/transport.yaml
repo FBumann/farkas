@@ -1,0 +1,50 @@
+# examples/transport.yaml verbatim, kept here so a bench model never changes
+# because an example was edited for documentation reasons. Three group_sum
+# calls per balance row: the join-heavy shape.
+dimensions:
+  snapshot:
+    dtype: int
+  generator:
+    dtype: str
+    coords: [bus]           # every generator sits on a bus
+  bus:
+    dtype: str
+  line:
+    dtype: str
+    coords: {from: bus, to: bus}   # both endpoints are buses
+
+parameters:
+  p_max:
+    dims: [generator]
+  cost:
+    dims: [generator]
+  cap:
+    dims: [line]
+  neg_cap:
+    dims: [line]
+  load:
+    dims: [snapshot, bus]
+
+variables:
+  p:
+    foreach: [snapshot, generator]
+    bounds:
+      lower: 0
+      upper: p_max
+  f:
+    foreach: [snapshot, line]
+    bounds:
+      lower: neg_cap
+      upper: cap
+
+constraints:
+  balance:
+    foreach: [snapshot, bus]
+    equations:
+      - expression: group_sum(p, over=generator, by=bus) + group_sum(f, over=line, by=to) - group_sum(f, over=line, by=from) == load
+
+objectives:
+  total_cost:
+    sense: minimize
+    equations:
+      - expression: p * cost

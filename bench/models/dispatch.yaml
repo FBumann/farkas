@@ -1,0 +1,36 @@
+# The scaling twin of examples/dispatch.yaml: `generator` takes its members from
+# data instead of a literal list, so both axes (snapshots x generators) are a
+# knob. The math is identical — pointwise bounds, one sum() per snapshot.
+dimensions:
+  snapshot:
+    dtype: int
+  generator:
+    dtype: str
+
+parameters:
+  p_max:
+    dims: [generator]
+  load:
+    dims: [snapshot]
+  cost:
+    dims: [generator]
+
+variables:
+  p:
+    foreach: [snapshot, generator]
+    where: "p_max > 0"
+    bounds:
+      lower: 0
+      upper: p_max
+
+constraints:
+  power_balance:
+    foreach: [snapshot]
+    equations:
+      - expression: sum(p, over=generator) == load
+
+objectives:
+  total_cost:
+    sense: minimize
+    equations:
+      - expression: p * cost
