@@ -133,7 +133,7 @@ request can ever be met:
 
 | Tier | Bounded by | Members | Can it move? |
 |---|---|---|---|
-| **Sink-bounded** | what the sinks ingest — vtypes, affine rows, COO | degree ≥ 2; SOS / indicator (#23) | only by adding a stream to *every* sink |
+| **Capability-bounded** | what a given sink can ingest | SOS / indicator (#23); quadratic | per sink — see below |
 | **Budget-bounded** | the escape label budget | global operators, arbitrary Python, non-relational manipulation | already movable — that is what an island is |
 | **Design-bounded** | our choice of where work belongs | data prep, domain helpers, Python declaring structure | movable any time; we don't want to |
 
@@ -144,8 +144,33 @@ plan must know every component's extent before data is touched. That is why an
 its footprint is fixed by the preceding `where` mask, it is terminal, and it is
 named in the file. An escape buys back the *relational* and *local* rules (it
 returns affine COO rows — a running-sum island still emits affine rows, just
-O(T²) of them) but never **degree** or SOS, because no sink carries those
-streams. Sink-bounded is the real ceiling; everything else is priced or chosen.
+O(T²) of them) but never **degree**, because affine COO is what it returns.
+
+### Capability is not the ceiling
+
+The ceiling above is about **streamability** and is solver-independent. What a
+*sink* can ingest is a separate axis, and conflating the two let one solver's
+limits read as architectural law. Measured, not assumed:
+
+| | `lp_file` | HiGHS direct | Gurobi direct |
+|---|---|---|---|
+| affine rows, COO, integrality | text | native | native |
+| semi-continuous | text | `kSemiContinuous` | native |
+| SOS1 / SOS2 | text section | **no concept** — `HighsLp` has no SOS field | `addSOS` |
+| indicator | text section | **no concept** | `addGenConstrIndicator` |
+| quadratic objective | text section | `passHessian` — but **`Hessian + integrality` errors**, so no MIQP | native, incl. MIQP |
+
+Two consequences the old "no sink carries the stream" framing hid. SOS is
+**solver-bounded, not architecture-bounded** — it is one `COPY` from a
+`sos_sets` table on `lp_file`, and native on Gurobi. And quadratic is the
+*harder* one, not the easier one: both direct APIs take the Hessian whole
+(`passHessian`, `setMObjective`), with no incremental counterpart to pair with
+batched `addCols`/`addRows` — so it is hard rule 4, not capability, that blocks
+it. Capability is also not a flat set: HiGHS has integrality *and* a Hessian
+and still refuses their conjunction.
+
+Making this an explicit, declared per-sink capability set — with `check` taking
+an optional sink — is [ROADMAP Track 4](ROADMAP.md#track-4--sink-capabilities).
 
 **The oracle has a ceiling too, and it is linopy's.** The differential harness
 can only validate constructs linopy can also build, while the closure admits
@@ -182,11 +207,14 @@ be file-backed. The measurements behind those rules — and the operators that
 OOM instead of spilling — are in
 [docs/benchmarks.md](docs/benchmarks.md#operational-findings).
 
-**Sinks are capped, explicitly.** Today they express columns with bounds,
-objective coefficients and integrality; affine rows; and COO coefficients —
-nothing else. The documented upgrade path is five streams: `cols` (gaining a
-semi-continuous threshold), `rows`, `A`, `sos_sets`, `genconstr`. Anything a
-stream cannot carry is outside the language for *both* lanes.
+**Sinks are capped, explicitly.** Today every sink expresses the same three
+streams and no more: `cols` (bounds, objective coefficients, integrality),
+`rows`, and `A` in COO. The upgrade path is two further streams — `sos_sets`
+and `genconstr` — plus a semi-continuous threshold on `cols`. Unlike the three
+that exist, those two would land *unevenly*, because the destinations differ
+per sink (see "Capability is not the ceiling"); that unevenness is what
+[Track 4](ROADMAP.md#track-4--sink-capabilities) exists to make declared rather
+than discovered at solve time.
 
 ## Composition (component libraries)
 

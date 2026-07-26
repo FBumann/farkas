@@ -370,7 +370,7 @@ not a silent override. There is no `register()` decorator and no helper registry
 |---|---|
 | time-series processing (resample, cluster, interpolate, align), file IO, units | data prep; pass a parameter |
 | solver breadth | HiGHS via `solver_direct`, Gurobi planned on the same path, LP files for everything else ([#28](https://github.com/FBumann/linopy-yaml/issues/28)) |
-| SOS and indicator constraints | `piecewise:` (§4); a native SOS2 stream is [#23](https://github.com/FBumann/linopy-yaml/issues/23) |
+| SOS and indicator constraints | `piecewise:` (§4) covers SOS2's usual purpose; the streaming lane's default solver has no SOS or indicator concept at all, so this is a *sink capability* question rather than a language one — [#23](https://github.com/FBumann/linopy-yaml/issues/23), ROADMAP Track 4 |
 | multi-objective | one objective; the last defined wins |
 | schema migrations | — |
 | arbitrary array ops (`merge`, `reindex`, `apply_ufunc`) | data prep, or a declared `escape:` island — the closed AST is what makes streaming possible |

@@ -30,15 +30,36 @@ curves we ship the substitutes practitioners prefer (`piecewise:` with
 `convex: true`, and the epigraph pattern in plain YAML) which keep LP duals,
 warm starts and MILP compatibility that a quadratic objective gives up.
 Quadratic *constraints* are a class HiGHS cannot solve at all, and every sink
-assumes affine rows.
+we ship assumes affine rows.
 
-**All four would have to hold to move it:** (1) a model where the
-*approximation* is the problem — in practice bilinear terms across dimensions,
-where PWL is exponential in breakpoints; (2) sinks carrying a quadratic stream;
-(3) a data-time convexity guard; (4) the oracle covering it, which linopy's
-`QuadraticExpression` already does. An escape cannot lift this one: islands
-return affine COO rows into the same sinks, so (2) is load-bearing for *any*
-route to degree 2. **Scope if it lands**, fixed in advance: degree ≤ 2, factors
+**What would have to hold to move it.** The old list said "sinks carry a
+quadratic stream", and that condition is already met — HiGHS `passHessian` and
+Gurobi `setMObjective` both exist, and linopy's `QuadraticExpression` means the
+oracle covers it. The blockers are elsewhere, and both are sharper:
+
+1. **The Hessian is passed whole.** Neither API has an incremental counterpart
+   to pair with batched `addCols`/`addRows`, so the quadratic part must be
+   materialised contiguously — which is hard rule 4, the invariant the project
+   exists for, not a capability gap. Mitigation, measured: HiGHS accepts
+   `dim_ < num_col`, so ordering quadratic variables first bounds the Hessian to
+   that block rather than the model. At 10⁷ quadratic columns ≈ 160 MB; at 10⁸ ≈
+   1.6 GB and the budget promise is gone.
+2. **MIQP is excluded on the default solver.** Measured: HiGHS returns `kError`
+   for `Hessian + integrality`. Since `binary:`/`integer:` and nonconvex
+   `piecewise:` are already in the language, quadratic would be a feature that
+   conflicts with shipped ones — needing a cross-feature load-time rule
+   ("a quadratic objective forbids integrality anywhere"), which is an awkward
+   thing to say in a language whose refusals are otherwise local to one
+   construct. Gurobi has no such exclusion, so this is a capability question
+   (Track 4), not a language one.
+
+Plus, as before: a data-time convexity guard. **The question that actually
+decides it** is whether the demand is LP-only — if the fuel-curve users also
+want unit-commitment binaries, (2) kills it on the default path regardless of
+how cheap the plumbing is, and `piecewise: {convex: true}` stays the answer.
+
+An escape cannot lift degree either way: islands return affine COO rows.
+**Scope if it lands**, fixed in advance: degree ≤ 2, factors
 coordinate-aligned, objective only, convex-guarded — aligned products are a
 pointwise self-join; general bilinear coupling is a cross join with |terms|²
 rows and is excluded permanently.
@@ -89,6 +110,55 @@ Nothing here touches the build path or either lane's semantics.
   product *is* the declarative math, so it should render as typeset
   documentation), CLI `check`/`solve`/`write` (#35), observability (#34).
 
+## Track 4 — sink capabilities
+
+**Decision: the ceiling and sink capability are two axes, not one.** The
+closure (affine ∩ relational ∩ local) is about streamability and is
+solver-independent. What a sink can *ingest* is separate, and treating them as
+one let HiGHS's limits read as architectural law — see
+[ARCHITECTURE](ARCHITECTURE.md#capability-is-not-the-ceiling) for the measured
+table.
+
+The shape, adopted:
+
+- **Declared capability per sink**, modelled on linopy's `SolverFeature` /
+  `Solver.features` — the enum already carries `QUADRATIC_OBJECTIVE`,
+  `SOS_CONSTRAINTS`, `INDICATOR_CONSTRAINTS`, `SEMI_CONTINUOUS_VARIABLES`,
+  `INTEGER_VARIABLES`. Ours is a *sink* table rather than a solver table:
+  `lp_file` is not a solver but has capabilities, and it is the one that can
+  carry SOS today with no new dependency.
+- **Two divergences from linopy's model, both deliberate.** Capability entries
+  are three-valued (`native` / `reformulated` / `absent`) rather than set
+  membership, so the reformulation option below is additive later instead of a
+  refactor. And the model must express **conjunction exclusions**: linopy
+  declares HiGHS with `INTEGER_VARIABLES` *and* `QUADRATIC_OBJECTIVE` in one
+  flat `frozenset`, while HiGHS refuses their conjunction — a flat set says
+  MIQP works and the failure surfaces at `run()`.
+- **`check(model, sink=...)` with the sink optional.** Bare `check` asks "is
+  this sayable and lowerable?" — the closure, sink-independent, because the IR
+  is. With a sink it also asks "will that sink ingest it?". Most models never
+  leave the common subset, so the default stays silent about portability.
+  The capability check is a pure function over the `Program`, so it stays
+  data-free and CI can still compile-check a repository against a named sink.
+- **The refusal contract extends** from "name the construct and its rewrite" to
+  "name the construct, the sink, and the sinks that do take it". Naming another
+  *sink* is not the lane redirection hard rule 3 forbids: rule 3 is about lanes
+  accepting the same language, and both still accept the closure.
+- **Later, optionally:** a sink may satisfy a capability by *reformulation*
+  rather than natively (SOS2 → `piecewise:` λ, indicator → big-M). Deferred,
+  not refused — `piecewise:` is already exactly this shape, so the line against
+  reimplementing linopy's reformulation passes is thinner than it reads.
+
+First spike: **SOS2 on `lp_file`** — it exercises the whole capability model
+with no new dependency, no license question and no memory risk, since the
+section is a `COPY` from a `sos_sets` table. If the descriptor survives that,
+Gurobi is plumbing. Two things to confirm before committing: whether Gurobi's
+size-limited free license covers the differential-test models (or a
+Gurobi-only capability cannot meet the done-condition in CI), and whether
+HiGHS's LP *reader* accepts the sections we would write — if not, `write_lp`
+output stops round-tripping through the default solver, which is how the
+differential oracle works today.
+
 ## Deliberate non-primitives
 
 **Billed vs banned**: an `escape:` island (#38) returns affine COO rows, so it
@@ -100,8 +170,8 @@ shapes escape.
 
 | Request | Why not | Instead | Escape? |
 |---|---|---|---|
-| Quadratic / bilinear terms | degree pinned at 1 | `piecewise:` (`convex: true`) or the epigraph pattern | **banned today**, but reachable — HiGHS exposes a Hessian and the oracle already covers it |
-| SOS / indicator (#23) | no sink carries the stream | `piecewise:` λ-formulation (SOS2's usual purpose) | **banned**, and harder: the oracle exists, the stream does not |
+| Quadratic / bilinear terms | degree pinned at 1 | `piecewise:` (`convex: true`) or the epigraph pattern | **banned today**, and the *harder* of the two: the solvers take it, but only as a whole Hessian, which is a hard-rule-4 problem no capability model fixes |
+| SOS / indicator (#23) | the default solver has no such concept | `piecewise:` λ-formulation (SOS2's usual purpose); big-M for indicator, given bounds | **banned today**, and the *easier* one: `lp_file` carries it as a text section and Gurobi natively — it needs Track 4, not a new invariant |
 | Cumulative / running sums, normalisations | **global** — breaks partition-wise execution | state-variable recurrence (a storage SOC balance *is* the rewrite) | billed — but the rewrite is still right at scale, O(T) vs O(T²) |
 | Conditionals, iteration, data-dependent structure | destroys the closed AST | `where` masks + `foreach` dims; computation → data prep | billed — inside an island only |
 | Resampling, clustering, IO, units | data layer, not math | preprocess; pass a parameter | n/a — free in Python already |
