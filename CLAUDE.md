@@ -41,7 +41,7 @@ uv run pre-commit install
 See `ARCHITECTURE.md` for the authoritative module map. In brief:
 
 ```
-linopy_yaml/
+src/linopy_yaml/
 ├── api.py               # native entry point: check / build / solve / write — linopy-free
 ├── schema.py            # pydantic schema (incl. expressions:, macros:, piecewise:)
 ├── expression_parser.py # pyparsing grammar for math expressions

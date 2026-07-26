@@ -336,7 +336,7 @@ def test_every_block_is_covered() -> None:
 # module docstrings — where the executor leak actually lived
 # --------------------------------------------------------------------------
 
-DOCSTRING_MODULES = ['linopy_yaml/__init__.py', 'linopy_yaml/api.py', 'linopy_yaml/compat/__init__.py']
+DOCSTRING_MODULES = ['src/linopy_yaml/__init__.py', 'src/linopy_yaml/api.py', 'src/linopy_yaml/compat/__init__.py']
 
 
 def _docstring_examples(path: Path) -> list[str]:

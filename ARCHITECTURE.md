@@ -74,7 +74,7 @@ static checks and CI's bare-install job proves the dependency claims.*
    hold its own opinion about what a name refers to. Resolving independently is
    how the two lanes silently disagreed about scoping before.
 2. **The engine knows nothing about linopy, xarray or YAML.**
-   `linopy_yaml/relational/` goes duckdb → highspy → solver, with linopy's
+   `src/linopy_yaml/relational/` goes duckdb → highspy → solver, with linopy's
    semantics as a spec to match rather than code to share; it never sees the
    schema, the AST, or the eager builder. Engine-internal naming encodes
    neither "duckdb" nor "yaml". Enforced *more* strictly than stated — the
@@ -286,7 +286,7 @@ native schema merge (#30) is what would force the question.
 | `relational/arrow.py` | the Arrow boundary — caller tables in, via the PyCapsule protocol |
 | `relational/compiler.py` | plan → SQL text; pure, no connection |
 | `relational/executor.py` | duckdb: bind sources, label, assemble the tables |
-| `relational/sinks/` | how a built model leaves: `lp_file`, `solver_direct` (one module each, [README](linopy_yaml/relational/sinks/README.md)) |
+| `relational/sinks/` | how a built model leaves: `lp_file`, `solver_direct` (one module each, [README](src/linopy_yaml/relational/sinks/README.md)) |
 | `compat/__init__.py` | opt-in shim: `build` / `extend` on a `linopy.Model` |
 | `compat/loader.py` | data coercion to `xr.Dataset`, master coords |
 | `compat/builder.py` | eager backend: core AST → `linopy.Model` |
