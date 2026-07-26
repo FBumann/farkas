@@ -99,7 +99,8 @@ storage_balance:
 **`objectives`** — `sense` ∈ {`minimize`, `maximize`}, default `minimize`. An
 objective is a scalar by definition, so **every dim the expression carries is
 summed**; writing the sums out says nothing extra. Only `equations[0]` is used.
-Multiple objectives are not an error, but only the last added takes effect.
+Declaring more than one objective is a load error — combine them into one
+expression, or keep one per file.
 
 ## 3. `expressions` and `macros`
 

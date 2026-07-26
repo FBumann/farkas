@@ -297,3 +297,16 @@ class TestDimensionKwargs:
     )
     def test_a_coordinate_of_the_declared_dtype_passes(self, dtype, values):
         validate_expressions(_schema(dimensions={'g': {'dtype': dtype, 'values': values}}))
+
+    def test_a_second_objective_is_a_load_error(self):
+        """Was: `lowering` took the last declaration and dropped the rest, so a
+        file declaring cost and emissions solved for emissions without a word.
+        """
+        schema = _schema(
+            objectives={
+                'cost': {'sense': 'minimize', 'equations': [{'expression': 'sum(p, over=g)'}]},
+                'emissions': {'sense': 'maximize', 'equations': [{'expression': 'sum(p, over=g)'}]},
+            },
+        )
+        with pytest.raises(ValueError, match='2 objectives declared'):
+            validate_expressions(schema)

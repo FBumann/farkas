@@ -19,7 +19,7 @@ Semantics mirror the eager builder exactly:
 - a single-equation constraint keeps the constraint name, multiple equations
   get ``_{i}`` suffixes;
 - constraint-level and equation-level where strings are ANDed;
-- of multiple objectives, the last one wins; only ``equations[0]`` is used.
+- a file declares one objective, and only its ``equations[0]`` is used.
 """
 
 from __future__ import annotations
@@ -126,7 +126,7 @@ def lower_program(schema: MathSchema) -> plan.Program:
 
     if not schema.objectives:
         raise LanguageError('the relational backend requires an objective')
-    oname, odef = next(reversed(schema.objectives.items()))  # last one wins (eager parity)
+    oname, odef = next(iter(schema.objectives.items()))
     ast = expression_of(odef.equations[0].expression, schema, ns, f"objective '{oname}'")
     if isinstance(ast, ComparisonNode):
         raise LanguageError(f"objective '{oname}': expression must not contain a comparison operator")
