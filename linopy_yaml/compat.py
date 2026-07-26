@@ -27,7 +27,8 @@ For models declared entirely in YAML, use the native API — it streams::
 
     import linopy_yaml as ly
 
-    sol = ly.solve('model.yaml', sources={...})
+    with ly.solve('model.yaml', {...}) as sol:
+        sol.primal('p')
 """
 
 from __future__ import annotations

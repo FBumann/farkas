@@ -73,10 +73,16 @@ static checks and CI's bare-install job proves the dependency claims.*
    tests an oracle rather than a comparison of dialects. A construct outside the
    language is a load error naming the construct and its rewrite, never a
    redirection to the other lane.
-4. **The full model never resides in this process's memory** on the relational
-   path — not as dense arrays, not as a full CSR. Build under a duckdb
-   `memory_limit`, hand off in batches, read back by label join. The solver's
-   internal copy is the only irreducible full-model residency.
+4. **Peak memory is a function of the configured budget, not of model size.**
+   That is the invariant; "nothing full-model in process" is the *mechanism*
+   that delivers it at scale — build under a duckdb `memory_limit`, hand off in
+   batches, read back by label join, never materialise dense arrays or a full
+   CSR. Two residencies are exempt because neither scales with the budget's
+   purpose: the solver's own model when solving in-process, and a model small
+   enough that the budget exceeds it (the planned in-memory executor holds
+   everything by design — ROADMAP Track 5). A new feature is judged against the
+   invariant, not the mechanism: the question is whether peak still tracks the
+   budget, not whether some array was briefly contiguous.
 5. **Backend-visible YAML files are self-contained.** No Python-side state
    (registries, session objects) may change what a file means.
 6. **The public interface is YAML.** The Python surface is the runner (`api.py`).
@@ -133,28 +139,42 @@ request can ever be met:
 
 | Tier | Bounded by | Members | Can it move? |
 |---|---|---|---|
-| **Sink-bounded** | what the sinks ingest — vtypes, affine rows, COO | degree ≥ 2; SOS / indicator (#23) | only by adding a stream to *every* sink |
-| **Budget-bounded** | the escape label budget | global operators, arbitrary Python, non-relational manipulation | already movable — that is what an island is |
+| **Capability-bounded** | what a given sink can ingest | SOS / indicator (#23); quadratic | per sink — see below |
+| **Budget-bounded** | the escape *label* budget — a cap on emitted rows and columns, not `memory_limit` | global operators, arbitrary Python, non-relational manipulation | already movable — that is what an island is |
 | **Design-bounded** | our choice of where work belongs | data prep, domain helpers, Python declaring structure | movable any time; we don't want to |
 
 Impossible **in the symbolic plan**: conditionals, iteration, any data-dependent
-structure inside expressions. The invariant is *boundedness*, not purity — the
-plan must know every component's extent before data is touched. That is why an
-`escape:` island (#38) is admissible where a registered Python helper was not:
-its footprint is fixed by the preceding `where` mask, it is terminal, and it is
-named in the file. An escape buys back the *relational* and *local* rules (it
-returns affine COO rows — a running-sum island still emits affine rows, just
-O(T²) of them) but never **degree** or SOS, because no sink carries those
-streams. Sink-bounded is the real ceiling; everything else is priced or chosen.
+structure inside expressions. What is protected here is *static* boundedness —
+the plan must know every component's extent before data is touched — which is a
+different property from rule 4's memory invariant, though the two meet at the
+escape hatch. That is why an `escape:` island (#38) is admissible where a
+registered Python helper was not: its extent is fixed by the preceding `where`
+mask, it is terminal, and it is named in the file. Its **label budget is how it
+satisfies rule 4** — the same "peak tracks a declared budget" bargain the rest
+of the engine makes, denominated in labels rather than bytes, and enforced
+before any Python runs rather than after it allocates.
 
-**The oracle has a ceiling too, and it is linopy's.** The differential harness
-can only validate constructs linopy can also build, while the closure admits
-operators linopy does not expose. The compat lane is a product feature justified
-by models already in memory (rule 3), not by the harness, and must not grow
-eager implementations whose only consumer is a test; a primitive admissible here
-but awkward in linopy is verified against a hand-checked fixture. If it can only
-be verified by writing linopy code we would not otherwise ship, that is evidence
-to reconsider the primitive.
+An escape buys back the *relational* and *local* rules (it returns affine COO
+rows — a running-sum island still emits affine rows, just O(T²) of them) but
+never **degree**, because affine COO is what it returns. That refusal stands on
+what an island *emits*, not on what a sink accepts, so it is unaffected by the
+capability findings below.
+
+### Capability is not the ceiling
+
+The ceiling above is about **streamability** and is solver-independent. What a
+*sink* can ingest is a separate axis, and conflating the two let one solver's
+limits read as architectural law — "no sink carries the stream" described
+HiGHS, not the architecture. Two findings, measured in
+[docs/benchmarks.md](docs/benchmarks.md#sink-capabilities): SOS is
+**solver-bounded** (HiGHS has no SOS concept at all, while `lp_file` carries it
+as a text section and Gurobi natively), and what blocks quadratic is a
+**conjunction** — HiGHS has integrality *and* a Hessian and refuses the pair —
+so capability is not a flat set. The whole-Hessian handoff is an implementation
+difference, not a rule-4 violation.
+
+Making this a declared per-sink capability set, with `check` taking an optional
+sink, is [ROADMAP Track 4](ROADMAP.md#track-4--sink-capabilities).
 
 ## The relational lane
 
@@ -182,11 +202,14 @@ be file-backed. The measurements behind those rules — and the operators that
 OOM instead of spilling — are in
 [docs/benchmarks.md](docs/benchmarks.md#operational-findings).
 
-**Sinks are capped, explicitly.** Today they express columns with bounds,
-objective coefficients and integrality; affine rows; and COO coefficients —
-nothing else. The documented upgrade path is five streams: `cols` (gaining a
-semi-continuous threshold), `rows`, `A`, `sos_sets`, `genconstr`. Anything a
-stream cannot carry is outside the language for *both* lanes.
+**Sinks are capped, explicitly.** Today every sink expresses the same three
+streams and no more: `cols` (bounds, objective coefficients, integrality),
+`rows`, and `A` in COO. The upgrade path is two further streams — `sos_sets`
+and `genconstr` — plus a semi-continuous threshold on `cols`. Unlike the three
+that exist, those two would land *unevenly*, because the destinations differ
+per sink (see "Capability is not the ceiling"); that unevenness is what
+[Track 4](ROADMAP.md#track-4--sink-capabilities) exists to make declared rather
+than discovered at solve time.
 
 ## Composition (component libraries)
 

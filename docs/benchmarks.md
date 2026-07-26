@@ -72,3 +72,49 @@ resulting rules and this is the evidence behind them.
    peak RSS as the gate metric; memray for attribution only.
 5. **A file-backed duckdb database** (not `:memory:`) is required for the buffer
    pool to spill table data under `memory_limit`.
+
+## Sink capabilities
+
+What each sink can ingest, measured against the shipped solvers rather than
+assumed. The architectural reading is in
+[ARCHITECTURE.md](../ARCHITECTURE.md#capability-is-not-the-ceiling); the plan is
+[ROADMAP Track 4](../ROADMAP.md#track-4--sink-capabilities).
+
+| | `lp_file` | HiGHS direct | Gurobi direct |
+|---|---|---|---|
+| affine rows, COO, integrality | text | native | native |
+| semi-continuous | text | `kSemiContinuous` | native |
+| SOS1 / SOS2 | text section | **no concept** — `HighsLp` has no SOS field, no `addSos` | `addSOS` |
+| indicator | text section | **no concept** | `addGenConstrIndicator` |
+| quadratic objective | text section | `passHessian` — but `Hessian + integrality` returns `kError`, so no MIQP | native, incl. MIQP |
+
+HiGHS results are measured here; Gurobi's are from the API and linopy's
+`SolverFeature` table, and want a spike before they are relied on. linopy
+declares HiGHS with `INTEGER_VARIABLES` *and* `QUADRATIC_OBJECTIVE` in one flat
+`frozenset`, so its own model reports MIQP as available — the conjunction is
+what a capability descriptor has to express.
+
+### The quadratic handoff
+
+Neither direct API has an incremental counterpart to batched
+`addCols`/`addRows`: `passHessian` and `setMObjective` take the quadratic part
+whole. Under the aligned-only scope (`variable × variable` at the same
+coordinates) `Q` is **diagonal**, so it costs 16 bytes per quadratic column:
+
+| quadratic cols | diagonal Hessian |
+|---|---|
+| 10⁷ | 0.16 GB |
+| 3.56×10⁷ | 0.57 GB |
+| 10⁸ | 1.60 GB |
+
+Against the measured `solver_direct` peak of 5.76 GB at 35.6M variables —
+already dominated by HiGHS's own model, which hard rule 4 exempts — 0.57 GB is
+~10%. On `lp_file`, where nothing is exempt, a quadratic objective is a text
+section and streams like any other. So this is a cost, not an invariant
+violation. Two caveats:
+
+- HiGHS accepts `dim_ < num_col` (verified), so ordering quadratic variables
+  first bounds the Hessian to that block rather than the whole model.
+- **The diagonal argument dies with the aligned restriction.** General bilinear
+  `Q` is not diagonal, and then peak stops tracking the budget — a second,
+  independent reason that restriction is load-bearing.
