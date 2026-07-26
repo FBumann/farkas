@@ -52,9 +52,15 @@ dimensions:
 
 The target must be a declared dimension, must not be the dimension carrying
 the coordinate, and a coordinate must not be named after a *different*
-dimension. A coordinate is single-valued per label, and its values are checked
-to be coordinates of the target once data is bound (§8) — that check is what
-makes `group_sum` safe. A dimension declaring `coords` needs an index source
+dimension. A coordinate is single-valued per label, and its non-null values are
+checked to be coordinates of the target once data is bound (§8) — that check is
+what makes `group_sum` safe.
+
+A coordinate may be **partial**: a null value says the label belongs to no
+group, and `group_sum` places its terms nowhere. That is the same row-absence
+idiom the language uses everywhere else for "not present" — a generator on no
+bus, a line with one open end — and it is distinct from a *wrong* label, which
+is still an error. Null means "no group"; an unknown non-null value is a typo. A dimension declaring `coords` needs an index source
 carrying those columns; they are never inferred from the parameters that use
 the dimension, because inferring them would let a mistyped label extend the
 label space instead of being rejected.

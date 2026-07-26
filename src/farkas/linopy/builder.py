@@ -365,6 +365,15 @@ def _helper_group_sum(array: Any, mapping: Any, *, into: str) -> Any:
         raise LanguageError(msg)
 
     group = mapping.rename(into)
+    # A null coordinate says the label belongs to no group, so its terms
+    # contribute nowhere. The relational lane gets that for free — a NULL group
+    # key joins no constraint row — but linopy refuses to group by NaN at all,
+    # so the members have to be dropped before grouping rather than after.
+    present = group.notnull()
+    if not bool(present.all()):
+        dim = str(group.dims[0])
+        group = group.isel({dim: present.to_numpy()})
+        array = array.isel({dim: present.to_numpy()})
     if isinstance(array, xr.DataArray) or hasattr(array, 'groupby'):
         return array.groupby(group).sum()
     msg = f"group_sum() does not support type '{type(array).__name__}'."

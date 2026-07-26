@@ -110,7 +110,9 @@ def build_dim_coords(
                 raise DataError(msg)
             series = first[cname].reindex(labels)
             known = set(master_coords[target])
-            unknown = sorted({str(v) for v in series if v not in known})[:5]
+            # a null value means "this label belongs to no group" — row absence,
+            # not a typo; see the relational lane's containment check
+            unknown = sorted({str(v) for v in series if not pd.isna(v) and v not in known})[:5]
             if unknown:
                 msg = (
                     f"Dimension '{dim_name}' coordinate '{cname}' has value(s) that are "
