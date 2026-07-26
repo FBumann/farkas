@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+import farkas as fk
 from farkas.errors import DataError, LanguageError
 from farkas.relational import (
     DuckdbExecutor,
@@ -282,3 +283,74 @@ def test_out_of_foreach_dims_rejected(dispatch_data):
     )
     with DuckdbExecutor() as ex, pytest.raises(LanguageError, match='missing a Sum'):
         ex.build(bad, dispatch_sources(gens, load))
+
+
+# --------------------------------------------------------------------------
+# the objective's GROUP BY is skipped only where it is provably dead weight
+# --------------------------------------------------------------------------
+
+
+def _objective_model(expression: str) -> dict:
+    return {
+        'dimensions': {'snapshot': {'dtype': 'int'}, 'generator': {'dtype': 'str'}},
+        'parameters': {
+            'p_max': {'dims': ['generator']},
+            'cost': {'dims': ['generator']},
+            'cost2': {'dims': ['generator']},
+            'load': {'dims': ['snapshot']},
+        },
+        'variables': {'p': {'foreach': ['snapshot', 'generator'], 'bounds': {'lower': 0, 'upper': 'p_max'}}},
+        'constraints': {
+            'balance': {
+                'foreach': ['snapshot'],
+                'equations': [{'expression': 'sum(p, over=generator) == load'}],
+            }
+        },
+        'objectives': {'total': {'sense': 'minimize', 'equations': [{'expression': expression}]}},
+    }
+
+
+def _objective_sources():
+    return {
+        'p_max': pd.DataFrame({'generator': ['w', 's'], 'value': [100.0, 60.0]}),
+        'cost': pd.DataFrame({'generator': ['w', 's'], 'value': [1.0, 2.0]}),
+        'cost2': pd.DataFrame({'generator': ['w', 's'], 'value': [3.0, 4.0]}),
+        'load': pd.DataFrame({'snapshot': [0, 1], 'value': [50.0, 70.0]}),
+    }
+
+
+@pytest.mark.parametrize(
+    ('expression', 'skips_aggregate', 'objective'),
+    [
+        # one fragment, one variable, fragment dims == variable dims
+        ('p * cost', True, 120.0),
+        # two fragments land on the same column: the sum is the objective
+        ('p * cost + p * cost2', False, 480.0),
+        # the sum drops a dim, so the fragment's dims are not the variable's
+        ('sum(p, over=generator)', False, 120.0),
+        # Divide spells its operands numerator/divisor, not left/right — a
+        # walker that assumes otherwise raises instead of matching
+        ('p / cost', True, 65.0),
+    ],
+)
+def test_objective_aggregate_skipped_only_when_columns_are_unique(monkeypatch, expression, skips_aggregate, objective):
+    """Skipping ``GROUP BY col`` is only sound when no column can repeat.
+
+    The value assertions are the real guard: were the fast path taken for a
+    shape that does repeat a column, the objective would silently lose terms
+    rather than fail.
+    """
+    seen: list[bool] = []
+    original = DuckdbExecutor._objective_is_one_row_per_column
+
+    def spy(self, expr, comp):
+        seen.append(original(self, expr, comp))
+        return seen[-1]
+
+    monkeypatch.setattr(DuckdbExecutor, '_objective_is_one_row_per_column', spy)
+
+    with fk.solve(_objective_model(expression), _objective_sources()) as solution:
+        assert solution.status == 'Optimal'
+        assert solution.objective == pytest.approx(objective)
+
+    assert seen == [skips_aggregate]

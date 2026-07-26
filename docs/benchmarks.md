@@ -23,74 +23,94 @@ reports, one process per measurement.
 
 ## Results
 
-macOS 26.2, M-series, 24 GB RAM · python 3.13.2 · farkas 0.0.0a13, linopy 0.9.0,
-duckdb 1.5.5, polars 1.43.0, xarray 2026.7.0. Parity gate: both cases agree to
-0 relative (bit-identical objectives). Best of two repeats; wall time excludes
+Linux 6.18.5 x86-64 · python 3.11.15 · farkas 0.0.0a13, linopy 0.9.0, duckdb
+1.5.5, polars 1.43.0, xarray 2026.7.0. Parity gate: all three cases agree to 0
+relative (bit-identical objectives). Best of two repeats; wall time excludes
 import.
+
+*These replace an earlier set measured on macOS/M-series. Do not compare the
+two: different hardware, and the label frame changed underneath them.*
 
 ### dispatch — pointwise bounds + one `sum` per row
 
 | variables | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
 |---|---|---|---|---|---|---|---|---|
-| 10k | 100 | 0.05 s | 0.18 s | 0.26x | 0.16 GB | 0.21 GB | 0.74x | 1 MB |
-| 100k | 1k | 0.19 s | 0.22 s | 0.85x | 0.18 GB | 0.26 GB | 0.69x | 7 MB |
-| 1M | 10k | 0.82 s | 0.40 s | 2.04x | 0.40 GB | 0.59 GB | 0.67x | 74 MB |
-| 10M | 100k | 6.67 s | 3.19 s | 2.09x | 0.88 GB | 2.19 GB | 0.40x | 768 MB |
+| 10k | 100 | 0.18 s | 0.28 s | 0.65x | 0.18 GB | 0.23 GB | 0.78x | 1 MB |
+| 100k | 1k | 0.41 s | 0.39 s | 1.04x | 0.20 GB | 0.28 GB | 0.74x | 7 MB |
+| 1M | 10k | 0.99 s | 1.04 s | 0.95x | 0.31 GB | 0.67 GB | 0.46x | 74 MB |
+| 10M | 100k | 10.08 s | 10.08 s | 1.00x | 0.62 GB | 2.17 GB | 0.28x | 767 MB |
+
+### sparse — the same math behind a 2-D `where` that keeps ~20%
+
+| variables | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
+|---|---|---|---|---|---|---|---|---|
+| 2.065k | 100 | 0.15 s | 0.30 s | 0.49x | 0.18 GB | 0.23 GB | 0.79x | 0 MB |
+| 20.888k | 1k | 0.28 s | 0.36 s | 0.77x | 0.19 GB | 0.25 GB | 0.76x | 1 MB |
+| 208.416k | 10k | 0.81 s | 0.77 s | 1.05x | 0.23 GB | 0.50 GB | 0.47x | 15 MB |
+| 2.08094M | 100k | 3.74 s | 6.54 s | 0.57x | 0.44 GB | 2.24 GB | 0.20x | 159 MB |
 
 ### transport — three `group_sum` joins per row
 
 | variables | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
 |---|---|---|---|---|---|---|---|---|
-| 9.8k | 1.4k | 0.08 s | 0.34 s | 0.24x | 0.17 GB | 0.22 GB | 0.76x | 1 MB |
-| 98k | 14k | 0.24 s | 0.36 s | 0.66x | 0.20 GB | 0.28 GB | 0.71x | 7 MB |
-| 980k | 140k | 1.41 s | 0.56 s | 2.53x | 0.40 GB | 0.65 GB | 0.63x | 76 MB |
-| 9.8M | 1.4M | 9.25 s | 3.96 s | 2.34x | 1.35 GB | 1.88 GB | 0.72x | 794 MB |
+| 9.8k | 1.4k | 0.23 s | 0.39 s | 0.60x | 0.18 GB | 0.23 GB | 0.80x | 1 MB |
+| 98k | 14k | 0.52 s | 0.51 s | 1.02x | 0.22 GB | 0.30 GB | 0.72x | 7 MB |
+| 980k | 140k | 1.56 s | 1.10 s | 1.41x | 0.35 GB | 0.74 GB | 0.48x | 76 MB |
+| 9.8M | 1.4M | 11.25 s | 9.31 s | 1.21x | 1.00 GB | 2.08 GB | 0.48x | 794 MB |
 
 ### Peak RSS against the budget
 
-farkas at three `memory_limit` settings, 16× apart end to end:
+farkas at three `memory_limit` settings, 16x apart end to end:
 
 | case | variables | `256MB` | `1GB` | `4GB` | linopy |
 |---|---|---|---|---|---|
-| dispatch | 10k | 0.16 GB | 0.16 GB | 0.16 GB | 0.21 GB |
-| dispatch | 100k | 0.18 GB | 0.18 GB | 0.18 GB | 0.26 GB |
-| dispatch | 1M | 0.39 GB | 0.40 GB | 0.41 GB | 0.59 GB |
-| dispatch | 10M | 0.77 GB | 0.88 GB | 0.90 GB | 2.19 GB |
-| transport | 9.8k | 0.17 GB | 0.17 GB | 0.16 GB | 0.22 GB |
-| transport | 98k | 0.20 GB | 0.20 GB | 0.20 GB | 0.28 GB |
-| transport | 980k | 0.39 GB | 0.40 GB | 0.42 GB | 0.65 GB |
-| transport | 9.8M | **OOM** | 1.35 GB | 1.34 GB | 1.88 GB |
+| dispatch | 10k | 0.18 GB | 0.18 GB | 0.18 GB | 0.23 GB |
+| dispatch | 100k | 0.20 GB | 0.20 GB | 0.21 GB | 0.28 GB |
+| dispatch | 1M | 0.31 GB | 0.31 GB | 0.31 GB | 0.67 GB |
+| dispatch | 10M | 0.52 GB | 0.62 GB | 0.61 GB | 2.17 GB |
+| sparse | 2.065k | 0.18 GB | 0.18 GB | 0.18 GB | 0.23 GB |
+| sparse | 20.888k | 0.19 GB | 0.19 GB | 0.19 GB | 0.25 GB |
+| sparse | 208.416k | 0.23 GB | 0.23 GB | 0.24 GB | 0.50 GB |
+| sparse | 2.08094M | 0.44 GB | 0.44 GB | 0.46 GB | 2.24 GB |
+| transport | 9.8k | 0.19 GB | 0.18 GB | 0.18 GB | 0.23 GB |
+| transport | 98k | 0.22 GB | 0.22 GB | 0.22 GB | 0.30 GB |
+| transport | 980k | 0.35 GB | 0.35 GB | 0.35 GB | 0.74 GB |
+| transport | 9.8M | 0.57 GB | 1.00 GB | 0.99 GB | 2.08 GB |
 
 ## What the numbers say
 
-**The memory win is real but modest at these sizes, and it widens with the
-model.** 0.74× at 10k is nothing but a fixed import floor (~0.16 GB of python +
-duckdb + pyarrow, which the eager lane pays too, plus xarray). At 10M variables
-dispatch is 2.5× better; the earlier spike measured 13.6× at 35.6M, and the trend
-here is consistent with that even though the absolute numbers are not comparable.
+**The wall-time gap is gone on two cases of three.** dispatch is 1.00x at 10M
+variables and transport 1.21x; the earlier "~2x slower over 10⁶ variables" was
+real, but it was one statement. Build was 6–10x slower while emit was already at
+parity, and inside build the cost was the sort in the label frame's
+`ROW_NUMBER() OVER (ORDER BY …)`. Where the mask does not read the leading dim
+that sort is avoidable at identical labels, which is what closed it. transport
+is the one still behind, and its `group_sum` fan-in is where to look next.
 
-**farkas is ~2× slower to build once the model is over ~10⁶ variables, and
-faster below ~10⁵** — the crossover is linopy's fixed overhead, not anything
-about the engines. This matches the earlier finding and is the honest headline:
-the trade is memory for wall time.
+**Masks are the qualitative axis, and they were not being measured.**
+`dispatch` masks on `p_max > 0` against a p_max that is always positive, so its
+`where` removes nothing — the ladder measured a fully dense coord product, which
+is the eager lane's best case and ours worst. The `sparse` case keeps ~20% of a
+2-D product and the shape inverts: **0.57x wall and 0.20x peak** at 2.1M live
+variables. Row absence costs what the surviving rows cost; NaN padding costs
+what the dense product costs.
 
-**Peak does not track the budget.** Across a 16× range of `memory_limit`, peak
-RSS at 10M variables moves 0.77 → 0.90 GB — under 20%, and 2–3× the budget
-itself. Whatever dominates at this scale is outside duckdb's accounting (LP text
-buffers, Arrow batches, and the label tables are the candidates), so hard rule 4
-is currently supported in its *comparative* form (peak is flat in model size
-relative to the eager lane) and **not** in its literal one (peak is a function of
-the budget). Wall time is likewise budget-insensitive, which the earlier harness
-also found.
+**The memory win widens with the model, as before.** 0.78x at 10k is a fixed
+import floor. At the top rung it is 0.28x on dispatch, 0.48x on transport, 0.20x
+on sparse.
 
-**One shape OOMs instead of spilling.** `transport` at 9.8M variables under
-256 MB dies in the terminal `SUM(coeff) GROUP BY row, col` assembly
-(`executor.py::_build_constraint`) — the one place the code comments assert that
-"joins and the plain numeric hash aggregate spill under `memory_limit` on their
-own — no chunking needed". At the same size `dispatch` is fine, so the trigger is
-the `group_sum` join fan-in, not scale alone. Operational finding 1 said not every
-operator spills; this is the same class, now in a shape the shipped executor does
-not chunk.
+**Peak still does not track the budget.** Across 16x of `memory_limit`, peak at
+dispatch/10M moves 0.52 → 0.61 GB and transport/9.8M 0.57 → 1.00 GB. Whatever
+dominates is outside duckdb's accounting (LP text buffers, Arrow batches, the
+label tables), so hard rule 4 holds in its *comparative* form — peak flat in
+model size relative to the eager lane — and not in its literal one. Wall time is
+likewise budget-insensitive.
+
+**The transport OOM did not reproduce.** The earlier run died at 9.8M under
+256 MB in the terminal `SUM(coeff) GROUP BY row, col`; here it completes at
+0.57 GB. Different machine *and* a changed label frame, so this is not evidence
+the shape is fixed — it is evidence the failure is marginal, and it should be
+re-run on the machine that saw it before the finding is retired.
 
 ## Earlier numbers, not reproducible
 
@@ -111,9 +131,12 @@ different code.
 | S=1.2M (107M vars) | linopy lp-polars | — | ~20 GB extrapolated — exceeds this machine | — | — |
 | S=1.2M | duckdb | 512 MB / chunk 25k | 0.57 GB | 74 s | 7.99 GB |
 
-Runtime there was dominated by fixed work — re-scanning the vars table per
-section, ~100M `printf` calls, a 2.6 GB CSV write — not by spilling, which is why
-a bigger budget did not help. End-to-end `solver_direct` (batched HiGHS
+Runtime there was attributed to fixed emit-side work — re-scanning the vars
+table per section, ~100M `printf` calls, a 2.6 GB CSV write. The phase timings
+above say that attribution was wrong: emit was already at parity with linopy's
+writer and the gap was entirely in build. The conclusion it supported — that a
+bigger budget does not help — still holds, for the different reason that the
+cost was a sort, not spilling. End-to-end `solver_direct` (batched HiGHS
 `addCols`/`addRows`, no LP file) at 35.6M variables: solve 30.5 s, Optimal,
 objective identical to the oracle; process peak 5.76 GB dominated by HiGHS's own
 model and simplex workspace, the residency hard rule 4 exempts.
@@ -122,11 +145,14 @@ model and simplex workspace, the residency hard rule 4 exempts.
 
 In rough order of what would change a decision: `solver_direct` end-to-end (the
 shipped path, where the LP file is not written at all); `storage` (`roll`, the
-bounded-halo self-join); a MILP, where solve time dwarfs build; a `where`-density
-sweep, since masks are row absence here and NaN-dense in xarray — the one axis
-where the gap should be qualitative rather than 2×; and a hand-written
-highspy/CSR arm as the speed-of-light floor, without which "2× slower than
-linopy" has no denominator.
+bounded-halo self-join); a MILP, where solve time dwarfs build; and a
+hand-written highspy/CSR arm as the speed-of-light floor, without which a ratio
+against linopy has no denominator.
+
+The `where`-density axis has moved off this list — it is the `sparse` case
+above, and it was the one that mattered: it was predicted to be "qualitative
+rather than 2×" and it is, in our favour. A *sweep* over density is still worth
+having; one point is not a curve.
 
 ## Operational findings
 

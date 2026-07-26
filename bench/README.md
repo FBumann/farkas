@@ -67,9 +67,14 @@ verdict off the SQL"), not to cover the language:
 | case | shape | why |
 |---|---|---|
 | `dispatch` | pointwise bounds + one `sum` per row | raw throughput, and the case a dense eager broadcast is best at — so our worst ratio |
+| `sparse` | the same math behind a 2-D `where` | the mask itself: row absence against NaN-padding. `dispatch`'s `where: p_max > 0` removes *nothing* — the generated p_max is always positive — so without this case the ladder only ever measured a dense coord product |
 | `transport` | three `group_sum` joins per row | the mapping-table path, where the eager lane must materialise a bus x generator product |
 
-Both scale on snapshots; `bench/cases.py` holds the ladders. Data is generated
+`sparse` also earns its keep on our side of the fence: its mask reads the
+leading dim, which puts the label frame on the general sorted path rather than
+the arithmetic one, so the ladder covers both.
+
+All three scale on snapshots; `bench/cases.py` holds the ladders. Data is generated
 deterministically (a blake2b digest of the shape seeds the RNG — `hash()` is
 salted per process and would give the two arms different numbers), cached under
 `bench/.cache/`, and feasible by construction: every bus can serve its own load

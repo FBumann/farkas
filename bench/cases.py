@@ -139,6 +139,62 @@ def _dispatch_eager(paths: dict[str, str]) -> tuple[dict[str, Any], dict[str, An
 
 
 # --------------------------------------------------------------------------
+# sparse — the same dispatch math with a mask that actually removes rows
+
+#: Fraction of the (snapshot, generator) product `available` keeps. Low enough
+#: that row absence and NaN-padding are doing visibly different work; high
+#: enough that every snapshot can still meet its load.
+SPARSE_DENSITY = 0.2
+
+
+def _sparse_data(shape: Shape, dest: Path) -> dict[str, str]:
+    rng = _seed(shape)
+    n_snap, n_gen = shape.sizes['snapshot'], shape.sizes['generator']
+    gens = [f'g{i:05d}' for i in range(n_gen)]
+
+    p_max = rng.uniform(50.0, 150.0, n_gen)
+    cost = rng.uniform(10.0, 100.0, n_gen)
+    available = (rng.random((n_snap, n_gen)) < SPARSE_DENSITY).astype(float)
+    # every snapshot needs at least one generator, or the model is infeasible
+    # and the parity gate cannot compare two objectives
+    available[np.arange(n_snap), rng.integers(0, n_gen, n_snap)] = 1.0
+
+    # load against the capacity actually reachable in the tightest snapshot,
+    # so feasibility does not depend on the draw
+    reachable = (available * p_max).sum(axis=1)
+    load = reachable.min() * 0.5 * (0.8 + 0.4 * rng.random(n_snap))
+
+    return _dump(
+        {
+            'available': pd.DataFrame(
+                {
+                    'snapshot': np.repeat(np.arange(n_snap), n_gen),
+                    'generator': np.tile(gens, n_snap),
+                    'value': available.reshape(-1),
+                }
+            ),
+            'p_max': pd.DataFrame({'generator': gens, 'value': p_max}),
+            'cost': pd.DataFrame({'generator': gens, 'value': cost}),
+            'load': pd.DataFrame({'snapshot': np.arange(n_snap), 'value': load}),
+        },
+        dest,
+    )
+
+
+def _sparse_eager(paths: dict[str, str]) -> tuple[dict[str, Any], dict[str, Any]]:
+    p_max = pd.read_parquet(paths['p_max']).set_index('generator')['value']
+    cost = pd.read_parquet(paths['cost']).set_index('generator')['value']
+    load = pd.read_parquet(paths['load']).set_index('snapshot')['value']
+    available = pd.read_parquet(paths['available']).set_index(['snapshot', 'generator'])['value'].unstack()
+    data = {'available': available, 'p_max': p_max, 'cost': cost, 'load': load}
+    coords = {
+        'generator': pd.Index(p_max.index, name='generator'),
+        'snapshot': pd.Index(load.index, name='snapshot'),
+    }
+    return data, coords
+
+
+# --------------------------------------------------------------------------
 # transport
 
 
@@ -219,6 +275,14 @@ CASES: dict[str, Case] = {
         ladder=_ladder({'generator': 100}, (100, 1_000, 10_000, 100_000), per_snapshot=100),
         write=_dispatch_data,
         eager_inputs=_dispatch_eager,
+    ),
+    'sparse': Case(
+        name='sparse',
+        model=MODELS / 'sparse.yaml',
+        # nominal counts are the full product; SPARSE_DENSITY of it survives
+        ladder=_ladder({'generator': 100}, (100, 1_000, 10_000, 100_000), per_snapshot=100),
+        write=_sparse_data,
+        eager_inputs=_sparse_eager,
     ),
     'transport': Case(
         name='transport',

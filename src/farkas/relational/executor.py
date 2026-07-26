@@ -46,12 +46,12 @@ import tempfile
 import weakref
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, get_args
 
 from farkas.errors import DataError, LanguageError, LinopyYamlError
 from farkas.relational import plan, sinks
 from farkas.relational.arrow import as_table
-from farkas.relational.compiler import SqlCompiler
+from farkas.relational.compiler import CompiledExpression, SqlCompiler
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -214,7 +214,12 @@ class DuckdbExecutor:
         # `defined` on a boolean parameter tests the value, not its finiteness
         self._compiler = SqlCompiler(program, dict(self._dim_card), frozenset(self._bool_params))
 
-        self._con.execute('CREATE TABLE cols (col BIGINT, lb DOUBLE, ub DOUBLE, vtype VARCHAR)')
+        # vtype is one of three literals repeated once per column. As VARCHAR that
+        # is the widest thing written per row; an ENUM stores the tag and keeps
+        # every `vtype = '...'` comparison in the sinks working unchanged.
+        types = ', '.join(f"'{t}'" for t in get_args(plan.VariableType))
+        self._con.execute(f'CREATE TYPE variable_type AS ENUM ({types})')
+        self._con.execute('CREATE TABLE cols (col BIGINT, lb DOUBLE, ub DOUBLE, vtype variable_type)')
         self._con.execute('CREATE TABLE obj (col BIGINT, coeff DOUBLE)')
         self._con.execute('CREATE TABLE rows (row BIGINT, sense VARCHAR, rhs DOUBLE)')
         self._con.execute('CREATE TABLE A (row BIGINT, col BIGINT, coeff DOUBLE)')
@@ -577,8 +582,36 @@ class DuckdbExecutor:
             self._obj_const += self._scalar(p.sql) or 0.0
         if comp.terms:
             union = ' UNION ALL '.join(f'SELECT var_label AS col, coeff FROM ({p.sql})' for p in comp.terms)
-            self._con.execute(f'INSERT INTO obj SELECT col, SUM(coeff) FROM ({union}) GROUP BY col')
+            if self._objective_is_one_row_per_column(o.expression, comp):
+                self._con.execute(f'INSERT INTO obj SELECT col, coeff FROM ({union})')
+            else:
+                self._con.execute(f'INSERT INTO obj SELECT col, SUM(coeff) FROM ({union}) GROUP BY col')
         self._obj_sense = o.sense
+
+    def _objective_is_one_row_per_column(self, expression: plan.Expression, comp: CompiledExpression) -> bool:
+        """Can the objective's ``GROUP BY col`` be skipped?
+
+        The aggregate exists because several terms can land on one column, and
+        an LP objective is the sum of them. It is dead weight in the common
+        shape — ``p * cost``, one fragment over one variable — where every
+        group holds exactly one row, and a hash aggregate over ten million
+        singleton groups is not free.
+
+        Safe exactly when there is one fragment, it mentions one variable, and
+        its dims are that variable's: rows are then keyed by
+        ``(variable dims…, var_label)``, and ``var_label`` already determines
+        the coordinates, so no column can repeat. Anything else — a second
+        term, a `sum` that drops a dim, a parameter widening the frame — keeps
+        the aggregate.
+        """
+        assert self._program is not None
+        if len(comp.terms) != 1:
+            return False
+        names = _variable_names(expression)
+        if len(names) != 1:
+            return False
+        declared = self._program.variable(next(iter(names))).dims
+        return set(comp.terms[0].dims) == set(declared)
 
     # ------------------------------------------------------------------
     # sinks — see relational/sinks/; the executor only supplies the tables
@@ -645,3 +678,21 @@ def _release(con: Any, workdir: Path | None) -> None:
         con.close()
     if workdir is not None:
         shutil.rmtree(workdir, ignore_errors=True)
+
+
+def _variable_names(expression: plan.Expression) -> frozenset[str]:
+    """Every variable an affine expression reads."""
+    match expression:
+        case plan.Variable(name=name):
+            return frozenset({name})
+        case plan.Constant() | plan.Parameter():
+            return frozenset()
+        case plan.Negate(operand=x) | plan.Sum(operand=x) | plan.Translate(operand=x):
+            return _variable_names(x)
+        case plan.GroupSum(operand=x):
+            return _variable_names(x)
+        case plan.Add(left=a, right=b) | plan.Multiply(left=a, right=b):
+            return _variable_names(a) | _variable_names(b)
+        case plan.Divide(numerator=a, divisor=b):
+            return _variable_names(a) | _variable_names(b)
+    raise LanguageError(f'unhandled expression {type(expression).__name__}')

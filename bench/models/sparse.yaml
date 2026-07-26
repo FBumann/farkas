@@ -1,0 +1,47 @@
+# dispatch, but the mask actually bites.
+#
+# `dispatch.yaml` masks on `p_max > 0` and the generated p_max is always
+# positive, so its `where` removes nothing: it measures a fully dense coord
+# product, which is the eager lane's best case and the relational lane's
+# worst. Here `available` carries BOTH dims and is zero for most coordinates,
+# so the two representations of a mask are what is under test — row absence
+# relationally, NaN-padding in a dense array.
+#
+# Reading the leading dim is deliberate: it also puts the label frame on the
+# general (sorted) path rather than the factored one, so the two paths are
+# both covered by the ladder.
+dimensions:
+  snapshot:
+    dtype: int
+  generator:
+    dtype: str
+
+parameters:
+  available:
+    dims: [snapshot, generator]
+  p_max:
+    dims: [generator]
+  load:
+    dims: [snapshot]
+  cost:
+    dims: [generator]
+
+variables:
+  p:
+    foreach: [snapshot, generator]
+    where: "available > 0"
+    bounds:
+      lower: 0
+      upper: p_max
+
+constraints:
+  power_balance:
+    foreach: [snapshot]
+    equations:
+      - expression: sum(p, over=generator) == load
+
+objectives:
+  total_cost:
+    sense: minimize
+    equations:
+      - expression: p * cost
