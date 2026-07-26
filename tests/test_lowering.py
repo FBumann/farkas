@@ -89,7 +89,7 @@ def test_dispatch_yaml_differential(dispatch_schema, dispatch_inputs, tmp_path):
 
         # primal agrees with the eager solution variable-by-variable
         eager_p = m.solution['p'].to_dataframe(name='value').reset_index()
-        rel_p = sol.primal('p')
+        rel_p = sol.primal('p').to_pandas()
         merged = eager_p.merge(rel_p, on=['snapshot', 'generator'], suffixes=('_eager', '_rel'))
         # masked (gas is unmasked; all p_max > 0 here) rows align 1:1
         assert len(merged) == len(rel_p)

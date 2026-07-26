@@ -72,9 +72,14 @@ sources = {
 with ly.solve("dispatch.yaml", sources,
               coords={"snapshot": pd.RangeIndex(6, name="snapshot")},
               memory_limit="512MB") as sol:
-    print(sol.objective)   # 1920.0
-    print(sol.primal("p"))
+    print(sol.objective)              # 1920.0
+    print(sol.primal("p"))            # tidy pyarrow.Table (snapshot, generator, value)
+    print(sol.primal("p").to_pandas())
 ```
+
+Sources can be anything Arrow-shaped — pyarrow, polars, pandas — or parquet
+paths; results come back as `pyarrow.Table`. No dataframe library is a
+dependency, so converting is the receiving library's own one-liner.
 
 ## Why
 
@@ -126,7 +131,7 @@ pip install "linopy-yaml[compat]"  # adds linopy + xarray for the shim and oracl
 ```
 
 Not a solver wrapper, not a domain package, not a data-loading layer — bring
-pandas/xarray objects or parquet paths. MIT licensed.
+Arrow-compatible tables (pyarrow, polars, pandas) or parquet paths. MIT licensed.
 
 ## Status
 

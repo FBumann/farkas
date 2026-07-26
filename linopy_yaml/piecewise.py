@@ -170,9 +170,12 @@ def validate_piecewise_data(schema: MathSchema, values: Mapping[str, Any] | Any)
     The hull relaxation is silently wrong for curves of mixed curvature, and
     ill-defined when the x-breakpoints are not strictly monotone — with the
     breakpoint values in hand (which the schema never has), both are
-    checkable. *values* maps parameter names to array-likes; entries are
-    coerced per the parameter's declared dims. Blocks whose parameters are
-    missing from *values* are skipped (their absence errors elsewhere).
+    checkable. *values* maps parameter names to whatever its lane holds: the
+    tidy ``pyarrow.Table`` / parquet path of
+    :func:`~linopy_yaml.lowering.tidy_sources`, or the compat lane's
+    ``xr.Dataset``. Blocks whose parameters are missing, or bound to a path
+    (not readable in process), are skipped; a missing parameter errors
+    elsewhere.
     """
     import numpy as np
 
@@ -216,18 +219,26 @@ def validate_piecewise_data(schema: MathSchema, values: Mapping[str, Any] | Any)
 
 
 def _as_dataarray(schema: MathSchema, pname: str, values: Mapping[str, Any] | Any) -> Any:
-    import pandas as pd
+    """One source as a DataArray indexed by its declared dims.
+
+    Two shapes reach here: the compat lane hands over its ``xr.Dataset``
+    entries directly, and the relational lane hands over the tidy Arrow tables
+    :func:`lowering.tidy_sources` normalised. Arrow's hop out costs no
+    dependency the caller has not taken — asking for a curvature check already
+    requires xarray, which brings pandas — but the check still wants to be
+    numpy-only (issue #27), which would retire this function.
+    """
     import xarray as xr
+
+    from linopy_yaml.relational.arrow import as_table
 
     if pname not in values:
         raise KeyError(pname)
     obj = values[pname]
     if isinstance(obj, xr.DataArray):
         return obj
-    if isinstance(obj, pd.DataFrame) and 'value' in obj.columns:
-        dims = list(schema.parameters[pname].dims)
-        return xr.DataArray.from_series(obj.set_index(dims)['value'])
-    if isinstance(obj, pd.Series):
-        dims = list(schema.parameters[pname].dims)
-        return xr.DataArray.from_series(obj.rename_axis(dims))
-    raise KeyError(pname)  # unrecognised source shape (e.g. parquet path): skip
+    dims = list(schema.parameters[pname].dims)
+    table = as_table(obj, tuple(dims))
+    if table is None or not dims or 'value' not in table.column_names:
+        raise KeyError(pname)  # a parquet path, or nothing to lay out: skip
+    return xr.DataArray.from_series(table.select([*dims, 'value']).to_pandas().set_index(dims)['value'])

@@ -106,7 +106,7 @@ def test_commitment_milp_differential(commitment_inputs, tmp_path):
         assert sol.objective == pytest.approx(oracle, rel=RTOL)
 
         # binary variables actually take integral 0/1 values
-        u = sol.primal('u')['value'].to_numpy()
+        u = sol.primal('u').to_pandas()['value'].to_numpy()
         assert np.allclose(u, np.round(u), atol=1e-6)
         assert set(np.round(u)) <= {0.0, 1.0}
 

@@ -146,26 +146,21 @@ def tidy_sources(
     data: dict[str, object],
     coords: dict[str, Any] | None = None,
 ) -> dict[str, object]:
-    """Adapt the eager path's ``data=``/``coords=`` inputs to executor sources.
+    """Adapt the caller's ``data=``/``coords=`` inputs to executor sources.
 
-    Parameters become tidy DataFrames ``(dims…, value)``; dimension indexes
-    come from declared YAML values, ``coords``, or fall back to the executor's
-    inference from parameter tables.
+    Every in-memory source becomes a tidy :class:`pyarrow.Table` with columns
+    ``(dims…, value)``; parquet paths pass through untouched for duckdb to read
+    directly. Dimension indexes come from ``data``, ``coords``, declared YAML
+    values, or fall back to the executor's inference from parameter tables.
+
+    Normalising here rather than at the executor is what lets the piecewise
+    curvature guard see every in-memory shape alike (:mod:`relational.arrow`
+    is where the shapes are recognised).
     """
-    import sys
     from pathlib import Path
 
-    import pandas as pd
-
-    # A DataArray argument implies the caller already imported xarray —
-    # consult sys.modules instead of importing (keeps the runtime xarray-free)
-    xr = sys.modules.get('xarray')
-
     from linopy_yaml.piecewise import validate_piecewise_data
-
-    # parquet paths cannot be curvature-checked in process; validate the rest
-    in_memory = {k: v for k, v in data.items() if not isinstance(v, (str, Path))}
-    validate_piecewise_data(schema, in_memory)
+    from linopy_yaml.relational.arrow import as_table, labels_table
 
     sources: dict[str, object] = {}
     for pname, pdef in schema.parameters.items():
@@ -175,32 +170,34 @@ def tidy_sources(
         if isinstance(obj, (str, Path)):
             sources[pname] = obj  # parquet path — the executor reads it directly
             continue
-        if xr is not None and isinstance(obj, xr.DataArray):
-            obj = obj.to_series()
-        if isinstance(obj, pd.Series):
-            df = obj.rename('value').rename_axis(pdef.dims).reset_index()
-        elif isinstance(obj, pd.DataFrame):
-            df = obj
-        elif isinstance(obj, (int, float)) and not pdef.dims:
-            df = pd.DataFrame({'value': [float(obj)]})
-        else:
+        table = as_table(obj, pdef.dims)
+        if table is None:
             raise DataError(
                 f"parameter '{pname}': cannot adapt {type(obj).__name__} to a tidy "
-                f'table — pass a Series indexed by {pdef.dims} or a DataFrame with '
-                f'columns {[*pdef.dims, "value"]}'
+                f'table — pass any Arrow-compatible table with columns '
+                f'{[*pdef.dims, "value"]} (pyarrow, polars, pandas), or a parquet path'
             )
-        sources[pname] = df
+        sources[pname] = table
 
     for dname, ddef in schema.dimensions.items():
         if dname in data:
-            sources[dname] = data[dname]  # explicit index source (path or frame)
+            src = data[dname]  # explicit index source (path or table)
         elif coords and dname in coords:
             src = coords[dname]
-            # a frame carries declared coordinate columns alongside the labels;
-            # flattening it to an index here would drop them
-            sources[dname] = src if isinstance(src, pd.DataFrame) else pd.DataFrame({dname: pd.Index(src)})
         elif ddef.values is not None:
-            sources[dname] = pd.DataFrame({dname: ddef.values})
+            src = ddef.values
+        else:
+            continue
+        if isinstance(src, (str, Path)):
+            sources[dname] = src
+            continue
+        # a table carries declared coordinate columns alongside the labels, so
+        # it is kept whole; a plain sequence is only the labels themselves
+        table = as_table(src, (dname,))
+        sources[dname] = table if table is not None else labels_table(dname, src)
+
+    # parquet paths cannot be curvature-checked in process; validate the rest
+    validate_piecewise_data(schema, sources)
 
     return sources
 

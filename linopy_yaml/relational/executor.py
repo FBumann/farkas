@@ -25,7 +25,11 @@ label chunking because terms join the *global* variable table) compose freely;
 genuinely global operators (running sums, normalisations) must be rejected at
 lowering with a rewrite hint (e.g. running sum → state-variable recurrence).
 
-duckdb, pyarrow, and highspy are imported lazily; pandas is a core dep.
+duckdb, pyarrow, numpy and highspy are imported lazily. Arrow is the only
+in-memory table this module knows: sources arrive as ``pyarrow.Table`` (or a
+parquet path) and results leave as ``pyarrow.Table``, so no dataframe library
+is a dependency of the lane. ``lowering.tidy_sources`` is where a caller's
+pandas/polars/xarray object is turned into one.
 """
 
 from __future__ import annotations
@@ -42,15 +46,21 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from linopy_yaml.errors import DataError, LanguageError, LinopyYamlError
 from linopy_yaml.relational import plan
+from linopy_yaml.relational.arrow import as_table
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    import pandas as pd
+    import pyarrow as pa
 
 _IDENT = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 
 _COPY_OPTS = "(FORMAT csv, HEADER false, QUOTE '', ESCAPE '')"
+
+#: Column an index table carries its row position in. The space makes it
+#: unrepresentable as a declared name (``_IDENT``), so it cannot collide with a
+#: dimension or coordinate the caller's table already has.
+_ROW_POSITION = '__row position__'
 
 
 #: Deprecated. The engine's failures are now split between
@@ -94,7 +104,14 @@ class Solution:
     objective: float
     _executor: DuckdbExecutor
 
-    def primal(self, name: str) -> pd.DataFrame:
+    def primal(self, name: str) -> pa.Table:
+        """The variable's solution as a tidy ``pyarrow.Table`` ``(dims…, value)``.
+
+        Arrow is the native shape because it is what duckdb already holds — no
+        dataframe library sits between the engine and the caller. Convert with
+        the receiving library's own reader when you want one:
+        ``.to_pandas()``, ``polars.from_arrow(...)``, or :meth:`to_dataarray`.
+        """
         return self._executor._primal(name)
 
     def to_dataarray(self, name: str) -> Any:
@@ -112,11 +129,12 @@ class Solution:
 
         Goes through ``pandas.DataFrame.to_xarray()`` rather than importing
         xarray here: the streaming lane is xarray-free (hard rule 2), and
-        pandas does the optional import for us. Requires xarray to be
-        installed (it ships with the ``[compat]`` extra); missing coordinate
-        combinations come back as NaN, since a masked variable has no row.
+        asking for a DataArray already implies xarray — which brings pandas
+        with it, so the hop costs no dependency the caller has not taken. Both
+        ship with the ``[compat]`` extra. Missing coordinate combinations come
+        back as NaN, since a masked variable has no row.
         """
-        frame = self.primal(name)
+        frame = self.primal(name).to_pandas()
         dims = [c for c in frame.columns if c != 'value']
         if not dims:
             return frame['value'].to_xarray().rename(name)
@@ -253,17 +271,17 @@ class DuckdbExecutor:
         self._con.execute(f'CREATE TABLE p_{p.name} AS SELECT {collist} FROM {rel}')
 
     def _source_relation(self, name: str, source: Any) -> str:
-        import pandas as pd
-
         if isinstance(source, (str, Path)):
             return f"read_parquet('{source}')"
-        if isinstance(source, pd.Series):
-            source = source.rename('value').reset_index()
-        if isinstance(source, pd.DataFrame):
-            self._con.register(f'src_{name}', source)
+        # already normalised when the caller came through the api verbs; doing
+        # it again here keeps a directly-driven executor as permissive as they are
+        table = as_table(source)
+        if table is not None:
+            self._con.register(f'src_{name}', table)
             return f'src_{name}'
         raise DataError(
-            f"source for '{name}' must be a parquet path, DataFrame, or Series (got {type(source).__name__})"
+            f"source for '{name}' must be a parquet path or an Arrow-compatible "
+            f'table — pyarrow, polars, pandas (got {type(source).__name__})'
         )
 
     def _relation_columns(self, rel: str) -> list[str]:
@@ -328,15 +346,16 @@ class DuckdbExecutor:
                 self._check_coordinate_containment(d, cname, target)
 
     def _create_explicit_dim_table(self, d: str, source: Any, coordinates: Mapping[str, str]) -> None:
-        import pandas as pd
+        import pyarrow as pa
 
         # coordinate names are language identifiers, and SQL reserves some of
         # them ("from" and "to" are the natural names for a line's endpoints),
         # so every reference to one is quoted
         names = sorted(coordinates)
+        agg = ''.join(f', ANY_VALUE("{c}") AS "{c}"' for c in names)
+        outer = ''.join(f', "{c}"' for c in names)
+
         if isinstance(source, (str, Path)):
-            agg = ''.join(f', ANY_VALUE("{c}") AS "{c}"' for c in names)
-            outer = ''.join(f', "{c}"' for c in names)
             self._con.execute(
                 f'CREATE TABLE dim_{d} AS '
                 f'SELECT val, ROW_NUMBER() OVER (ORDER BY pos) - 1 AS ord{outer} FROM ('
@@ -345,30 +364,32 @@ class DuckdbExecutor:
             )
             self._check_coordinates_single_valued(d, names, f"read_parquet('{source}')")
             return
-        if not isinstance(source, pd.DataFrame) or d not in source.columns:
+        source = as_table(source)
+        if source is None or d not in source.column_names:
             raise DataError(
-                f"explicit index for dimension '{d}' must be a DataFrame with a "
-                f"'{d}' column or a parquet path (got {type(source).__name__})"
+                f"explicit index for dimension '{d}' must be an Arrow-compatible "
+                f"table with a '{d}' column, or a parquet path"
             )
-        missing = [c for c in names if c not in source.columns]
+        missing = [c for c in names if c not in source.column_names]
         if missing:
             raise DataError(
                 f"index for dimension '{d}' is missing declared coordinate column(s) "
-                f'{missing} (has {list(source.columns)})'
+                f'{missing} (has {source.column_names})'
             )
-        vals = pd.unique(source[d])  # first occurrence = positional order
-        frame = pd.DataFrame({'val': vals, 'ord': range(len(vals))})
-        if names:
-            first = source.drop_duplicates(subset=[d]).set_index(d)
-            for c in names:
-                frame[c] = first[c].reindex(vals).to_numpy()
-        self._con.register(f'dimsrc_{d}', frame)
-        cols = ', '.join(['val', 'ord', *(f'"{c}"' for c in names)])
-        self._con.execute(f'CREATE TABLE dim_{d} AS SELECT {cols} FROM dimsrc_{d}')
+        # first occurrence of a label is its position. Row order is data, not a
+        # property duckdb preserves (preserve_insertion_order is off), so it is
+        # carried explicitly — the in-memory twin of the parquet branch's
+        # file_row_number.
+        index = source.select([d, *names])
+        index = index.append_column(_ROW_POSITION, pa.array(range(index.num_rows), type=pa.int64()))
+        self._con.register(f'dimsrc_{d}', index)
+        self._con.execute(
+            f'CREATE TABLE dim_{d} AS '
+            f'SELECT val, ROW_NUMBER() OVER (ORDER BY pos) - 1 AS ord{outer} FROM ('
+            f'SELECT {d} AS val, MIN("{_ROW_POSITION}") AS pos{agg} FROM dimsrc_{d} GROUP BY {d})'
+        )
+        self._check_coordinates_single_valued(d, names, f'dimsrc_{d}')
         self._con.unregister(f'dimsrc_{d}')
-        self._con.register(f'dimraw_{d}', source)
-        self._check_coordinates_single_valued(d, names, f'dimraw_{d}')
-        self._con.unregister(f'dimraw_{d}')
 
     def _check_coordinates_single_valued(self, d: str, names: list[str], relation: str) -> None:
         """One label, one coordinate value — two rows disagreeing is a data bug."""
@@ -895,12 +916,12 @@ class DuckdbExecutor:
         status = str(h.getModelStatus()).rsplit('.', 1)[-1].removeprefix('k')
         objective = h.getInfo().objective_function_value + self._obj_const
 
-        import pandas as pd
+        import pyarrow as pa
 
-        sol = pd.DataFrame(
+        sol = pa.table(
             {
-                'col': np.arange(self._n_cols, dtype=np.int64),
-                'value': np.asarray(h.getSolution().col_value, dtype=np.float64),
+                'col': pa.array(np.arange(self._n_cols, dtype=np.int64)),
+                'value': pa.array(np.asarray(h.getSolution().col_value, dtype=np.float64)),
             }
         )
         self._con.execute('DROP TABLE IF EXISTS sol')
@@ -909,11 +930,13 @@ class DuckdbExecutor:
         self._con.unregister('sol_src')
         return Solution(status=status, objective=objective, _executor=self)
 
-    def _primal(self, name: str) -> pd.DataFrame:
+    def _primal(self, name: str) -> pa.Table:
         assert self._program is not None
         dims = self._program.variable(name).dims
         collist = ', '.join([*(f'v.{d}' for d in dims), 's.value'])
-        return self._con.execute(f'SELECT {collist} FROM var_{name} v JOIN sol s ON s.col = v.var_label').df()
+        return self._con.execute(
+            f'SELECT {collist} FROM var_{name} v JOIN sol s ON s.col = v.var_label'
+        ).to_arrow_table()
 
     def _solution_to_parquet(self, directory: Path) -> dict[str, Path]:
         assert self._program is not None

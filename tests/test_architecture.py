@@ -16,7 +16,11 @@ PKG = Path(__file__).parent.parent / 'linopy_yaml'
 #: at module level (they load only via `import linopy_yaml.compat`).
 COMPAT_LANE = {'builder.py', 'loader.py', 'compat.py'}
 
-FORBIDDEN_RUNTIME = {'linopy', 'xarray'}
+#: pandas is here for the same reason as linopy and xarray, even though it is
+#: neither: it is not a dependency of the runtime lane. Arrow is the boundary,
+#: so a caller's pandas object is recognised through the PyCapsule protocol
+#: (``relational/arrow.py``) and never by importing the library.
+FORBIDDEN_RUNTIME = {'linopy', 'xarray', 'pandas'}
 
 
 def _module_level_imports(path: Path) -> set[str]:

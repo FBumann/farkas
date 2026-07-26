@@ -133,8 +133,8 @@ def test_pwl_convex_differential(pwl_inputs, tmp_path):
 
         # gen_cost equals the true piecewise cost at the optimal dispatch
         # (epigraph is tight under minimisation)
-        p = sol.primal('p').set_index(['snapshot', 'generator'])['value']
-        gc = sol.primal('gen_cost').set_index(['snapshot', 'generator'])['value']
+        p = sol.primal('p').to_pandas().set_index(['snapshot', 'generator'])['value']
+        gc = sol.primal('gen_cost').to_pandas().set_index(['snapshot', 'generator'])['value']
         slopes = data['seg_slope'].to_series().unstack('segment')
         icepts = data['seg_intercept'].to_series().unstack('segment')
         for (s, g), pv in p.items():

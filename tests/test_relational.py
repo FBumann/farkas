@@ -141,7 +141,7 @@ def test_dispatch_roundtrip(dispatch_data, tmp_path):
         assert solve_lp_file(lp) == pytest.approx(oracle, rel=RTOL)
 
         # masked variable rows are absent, and primal joins back to coords
-        primal = sol.primal('p')
+        primal = sol.primal('p').to_pandas()
         n_active = int((gens['p_max'] > 0).sum())
         assert len(primal) == n_active * len(load)
         assert set(primal.columns) == {'snapshot', 'generator', 'value'}
@@ -231,7 +231,7 @@ def test_transport_roundtrip(transport_data, tmp_path):
         assert solve_lp_file(lp) == pytest.approx(oracle, rel=RTOL)
 
         # flows respect line capacity bounds
-        primal_f = sol.primal('f')
+        primal_f = sol.primal('f').to_pandas()
         caps = lines.set_index('line')['cap']
         limits = primal_f['line'].map(caps)
         assert (primal_f['value'].abs() <= limits + 1e-6).all()

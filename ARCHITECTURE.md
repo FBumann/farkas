@@ -31,7 +31,7 @@ flowchart TB
     subgraph REL["Relational lane — streaming · memory-bounded · linopy-free"]
         direction TB
         LOWER["lowering.py"] --> PLAN["logical plan<br/>(relational/plan.py)"]
-        DR[("data<br/>parquet paths / pandas")] --> EXEC
+        DR[("data<br/>parquet paths / Arrow tables")] --> EXEC
         PLAN --> EXEC["executor.py<br/>tidy tables in file-backed duckdb<br/>under memory_limit"]
         EXEC --> LPS["lp_file sink<br/>portability, debugging<br/>(mps planned)"]
         EXEC --> DIRECT["solver_direct sink<br/>COO batches → highspy → HiGHS"]
@@ -266,6 +266,7 @@ than the plan level, which is
 | `builder.py` | eager backend: core AST → `linopy.Model` |
 | `lowering.py` | core AST → logical plan (defines the relational subset) |
 | `relational/plan.py` | frozen logical-plan dataclasses |
+| `relational/arrow.py` | the Arrow boundary — caller tables in, via the PyCapsule protocol |
 | `relational/executor.py` | duckdb execution + `lp_file` / `solver_direct` sinks |
 | `helpers.py` | the closed set of built-in operator *names* — no registry |
 | `errors.py` | the exception hierarchy; the one module the engine may import |
