@@ -143,6 +143,14 @@ def validate_expressions(
                 continue
             resolve_expression(ast, ns, context, errors)
 
+    if len(schema.objectives) > 1:
+        names = ', '.join(repr(n) for n in schema.objectives)
+        errors.append(
+            f'{len(schema.objectives)} objectives declared ({names}) — a model optimises one.\n'
+            f'Combine them into a single objective (a weighted sum is an ordinary expression), '
+            f'or keep one per file.'
+        )
+
     for oname, odef in schema.objectives.items():
         for i, eq in enumerate(odef.equations):
             context = f"Objective '{oname}', equation {i}"
