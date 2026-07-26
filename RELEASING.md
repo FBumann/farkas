@@ -1,5 +1,14 @@
 # Releasing
 
+> **Temporary, alpha only — overrides "Normal release" below.** Until the first
+> official version, nobody merges the release PR:
+> [`release.yaml`](.github/workflows/release.yaml) puts it on auto-merge, so
+> every merge to `main` cuts a `0.0.0aN` and a tester always has a version to
+> quote. It ends by construction — the step declines any version that is not a
+> prerelease — so from the first official release everything below reads as
+> written. Needs "Allow auto-merge" on the repo; pause with the repo variable
+> `AUTO_RELEASE=false`.
+
 The git tag is the version. `pyproject.toml` carries no version number —
 hatch-vcs derives it from the tag at build time, so nothing can drift and a
 release can be cut from any branch without editing a file first.
