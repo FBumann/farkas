@@ -5,7 +5,13 @@
 `linopy_yaml` is a YAML-based math definition layer for [linopy](https://github.com/PyPSA/linopy).
 It lets users define optimisation problems declaratively in YAML and build them into `linopy.Model` objects at runtime.
 
-See `ARCHITECTURE.md` for the architecture (brief, kept current — update it in any PR that changes structure), `SPEC.md` for the full design specification, `ROADMAP.md` for what we build toward and what we have decided never to build, and `GLOSSARY.md` for the vocabulary — one entry per construct, with the name it carries at every layer. A PR that adds, renames, or retires a construct updates the glossary.
+Three docs, kept short on purpose — if a change makes one of them longer, check whether it belongs in another:
+
+- `SPEC.md` — the language reference: what a YAML file may contain and what it means.
+- `ARCHITECTURE.md` — how it fits together, the hard rules, the expressive ceiling, the module map. Update it in any PR that changes structure.
+- `ROADMAP.md` — what we build toward and what we have decided never to build.
+
+A PR that adds, renames, or retires a construct updates `SPEC.md`. Rationale belongs in the PR description or a code comment, not in a new doc section; historical "this used to work differently" notes belong in git.
 
 **Before proposing a new language feature**, triage it: **macro, primitive, or escape?** Most requests are compositions (macro, free); a genuinely new shape earns a primitive only if it clears the expressive ceiling in `ARCHITECTURE.md` (degree 1 ∩ relational ∩ local); unsayable math goes to a declared `escape:` island (#38) rather than into the language. Check the deliberate non-primitives in `ROADMAP.md` first — parity with another tool is not by itself a reason to add anything.
 
@@ -55,9 +61,11 @@ linopy_yaml/
 ```python
 import linopy_yaml as ly
 
-sol = ly.solve("model.yaml", sources={"p_max": "p_max.parquet", ...})
-sol.objective
-sol.primal("p")
+# Solution holds the duckdb executor that backs primal/to_* — use a with block
+# (or sol.close()); ly.build(...) returns the live executor for multiple sinks.
+with ly.solve("model.yaml", {"p_max": "p_max.parquet", ...}) as sol:
+    sol.objective
+    sol.primal("p")
 ```
 
 Compat lane — YAML math on a `linopy.Model` that already exists in memory

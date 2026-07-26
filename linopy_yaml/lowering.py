@@ -1,6 +1,7 @@
 """Lower a parsed YAML schema (typed AST) to the relational logical-plan IR.
 
-This is the phase-3 seam (SPEC.md §12.2): it consumes the same typed AST the
+This is the lowering seam (ARCHITECTURE.md, "The relational lane"): it
+consumes the same typed AST the
 eager builder evaluates (`expression_parser` / `where_parser` nodes) and emits
 a :class:`~linopy_yaml.relational.ir.Program`. It lives on the language side —
 the engine subpackage stays free of YAML knowledge, and this module never
