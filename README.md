@@ -1,16 +1,21 @@
 # farkas
 
-Declarative optimisation: define the math in YAML, supply data at runtime, solve.
+**Self-documenting optimisation models — at any scale.**
 
-Models build on a **relational/streaming engine** — tidy tables in duckdb under
-a hard `memory_limit`, streamed straight to the solver, so build peak memory
-tracks that budget rather than the size of the model.
-[linopy](https://github.com/PyPSA/linopy) is not a
-runtime dependency; it is kept as an opt-in **linopy shim** (YAML math onto a
-`linopy.Model` already built in Python) and as the **oracle** every language
-feature is differentially tested against. There is no routing and no fallback:
-both lanes accept exactly the same language, and a construct outside it is a
-load error naming its rewrite.
+Write the math in YAML, bind data at runtime, solve. Today that means linear and
+mixed-integer programs. The model itself is never a Python object: it is tidy
+tables in duckdb, built under a hard `memory_limit` and streamed straight into
+the solver, so build peak RAM is set by a budget you choose rather than by the
+size of the model. A 107-million-variable dispatch model builds in ~0.6 GB
+([benchmarks](docs/benchmarks.md)).
+
+And because the math is a closed spec known before any data is touched, every
+name, dimension and expression is checked at load time — `check()` compiles a
+whole model repository in CI with nothing bound to it at all.
+
+> Named for [Farkas' lemma](https://en.wikipedia.org/wiki/Farkas%27_lemma): a
+> system of linear inequalities either has a solution, or has a certificate that
+> it has none — never both, never neither.
 
 ```mermaid
 flowchart LR
@@ -84,11 +89,12 @@ exposing the Arrow PyCapsule protocol is accepted without conversion.
 - **Declarative math** — readable without knowing the implementation, and
   self-contained: no Python state changes what a file means. It diffs cleanly in
   review and travels as a research artefact.
-- **Memory as a config knob** — build peak RAM is set by `memory_limit`, not by
-  model size; a 107-million-variable dispatch model builds in ~0.6 GB
-  ([benchmarks](docs/benchmarks.md)).
-- **Fail early, fail loud** — everything validates at load time, with errors
-  naming the problem and the fix.
+- **Memory as a config knob** — `memory_limit` is an invariant, not a hint. Masks
+  are row absence rather than dense arrays, labels *are* the solver's own row and
+  column indices, and no full-model object is ever resident in Python.
+- **Fail early, fail loud** — every expression, `where` string and even *uncalled*
+  macro template is parsed and name-checked before a single source is bound.
+  Errors name the problem and its rewrite; nothing falls back silently.
 - **A finite language with a priced way out** — the ceiling is a closure
   (affine ∩ relational ∩ local), not a feature race; genuinely unsayable math
   goes in an `escape:` island, visible in the file and billed before it runs.
@@ -116,6 +122,12 @@ constraints:
     equations:
       - expression: p - roll(p, snapshot=1) <= ramp_max
 ```
+
+[linopy](https://github.com/PyPSA/linopy) is not a runtime dependency — that shim
+is opt-in, and the same install doubles as the **oracle** every language feature
+is differentially tested against. There is no routing and no fallback: both lanes
+accept exactly the same language, and a construct outside it is a load error
+naming its rewrite.
 
 ## Docs
 
