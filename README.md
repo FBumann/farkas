@@ -118,6 +118,8 @@ constraints:
 for how it fits together · [ROADMAP.md](ROADMAP.md) for what is planned and what
 is refused.
 
+To see it rather than read it, `python examples/walkthrough.py` runs one small model through every stage — YAML → schema → core AST → IR → duckdb tables → LP text → solution — printing the artifact each stage produces, plus two models the language refuses and why. Its output is committed as [examples/walkthrough.out](examples/walkthrough.out) if you would rather just read that.
+
 ```bash
 pip install linopy-yaml            # the streaming engine (duckdb, highspy)
 pip install "linopy-yaml[compat]"  # adds linopy + xarray for the shim and oracle
