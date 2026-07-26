@@ -272,8 +272,6 @@ class DuckdbExecutor:
     def _source_relation(self, name: str, source: Any) -> str:
         if isinstance(source, (str, Path)):
             return f"read_parquet('{source}')"
-        # already normalised when the caller came through the api verbs; doing
-        # it again here keeps a directly-driven executor as permissive as they are
         table = as_table(source)
         if table is not None:
             self._con.register(f'src_{name}', table)
@@ -498,10 +496,9 @@ class DuckdbExecutor:
                 return f'({alias}.value IS NOT NULL AND isfinite({alias}.value))'
             if isinstance(p, plan.BooleanConstant):
                 return 'TRUE' if p.value else 'FALSE'
-            if isinstance(p, plan.And):
-                return f'({walk(p.left)} AND {walk(p.right)})'
-            if isinstance(p, plan.Or):
-                return f'({walk(p.left)} OR {walk(p.right)})'
+            if isinstance(p, (plan.And, plan.Or)):
+                op = 'AND' if isinstance(p, plan.And) else 'OR'
+                return f'({walk(p.left)} {op} {walk(p.right)})'
             if isinstance(p, plan.Not):
                 return f'(NOT COALESCE({walk(p.operand)}, FALSE))'
             raise LanguageError(f'unsupported predicate node {type(p).__name__}')

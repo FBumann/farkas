@@ -175,8 +175,6 @@ def tidy_sources(
                 f'{[*pdef.dims, "value"]} (pyarrow, polars, pandas), or a parquet path'
             )
         if any(d not in table.column_names for d in pdef.dims):
-            # names are binding, so a mismatch is caught here rather than
-            # positionally rewritten — see as_table on why that matters
             raise DataError(
                 f"parameter '{pname}': source columns {table.column_names} "
                 f'do not match its declared dims {list(pdef.dims)}. Rename them to the '
@@ -186,7 +184,7 @@ def tidy_sources(
 
     for dname, ddef in schema.dimensions.items():
         if dname in data:
-            src = data[dname]  # explicit index source (path or table)
+            src = data[dname]
         elif coords and dname in coords:
             src = coords[dname]
         elif ddef.values is not None:
@@ -196,12 +194,9 @@ def tidy_sources(
         if isinstance(src, (str, Path)):
             sources[dname] = src
             continue
-        # a table carries declared coordinate columns alongside the labels, so
-        # it is kept whole; a plain sequence is only the labels themselves
         table = as_table(src, (dname,))
         sources[dname] = table if table is not None else labels_table(dname, src)
 
-    # parquet paths cannot be curvature-checked in process; validate the rest
     validate_piecewise_data(schema, sources)
 
     return sources
@@ -410,13 +405,9 @@ def _lower_where_node(node: WhereNode, context: str) -> plan.Predicate:
 
     if isinstance(node, NotNode):
         return plan.Not(_lower_where_node(node.operand, context))
-    if isinstance(node, AndNode):
-        return plan.And(
-            _lower_where_node(node.left, context),
-            _lower_where_node(node.right, context),
-        )
-    if isinstance(node, OrNode):
-        return plan.Or(
+    if isinstance(node, (AndNode, OrNode)):
+        node_type = plan.And if isinstance(node, AndNode) else plan.Or
+        return node_type(
             _lower_where_node(node.left, context),
             _lower_where_node(node.right, context),
         )
