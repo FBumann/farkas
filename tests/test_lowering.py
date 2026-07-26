@@ -15,7 +15,7 @@ import pandas as pd
 import pytest
 import yaml as pyyaml
 
-from linopy_yaml.errors import LanguageError
+from linopy_yaml.errors import DataError, LanguageError
 from linopy_yaml.lowering import lower_program, tidy_sources
 from linopy_yaml.relational import (
     DuckdbExecutor,
@@ -166,3 +166,43 @@ def test_unsupported_features_rejected(dispatch_schema):
     schema_dict['variables']['p']['bounds'] = {}
     program = lower_program(MathSchema(**schema_dict))
     assert program.variable('p').variable_type == 'binary'
+
+
+NETWORK = {
+    'dimensions': {'from_bus': {'values': ['n1', 'n2']}, 'to_bus': {'values': ['n1', 'n2']}},
+    'parameters': {'cap': {'dims': ['from_bus', 'to_bus']}},
+    'variables': {'f': {'foreach': ['from_bus', 'to_bus'], 'bounds': {'lower': 0, 'upper': 'cap'}}},
+    'objectives': {'c': {'sense': 'maximize', 'equations': [{'expression': 'f'}]}},
+}
+
+#: Asymmetric, so a transposition changes the answer rather than hiding in it.
+CAPS = {('n1', 'n1'): 1.0, ('n2', 'n1'): 5.0, ('n1', 'n2'): 500.0, ('n2', 'n2'): 1.0}
+
+
+def _caps(names):
+    return pd.Series(list(CAPS.values()), index=pd.MultiIndex.from_tuples(list(CAPS), names=names))
+
+
+def _tidy_cap(names):
+    schema = MathSchema(**NETWORK)
+    df = tidy_sources(schema, {'cap': _caps(names)})['cap']
+    return {(r.from_bus, r.to_bus): r.value for r in df.itertuples()}
+
+
+def test_a_named_index_binds_by_name_not_position():
+    """Two dims over the same label space make a transposed index type-check
+    and cover every coordinate, so nothing downstream can catch it. Was: the
+    declared dims overwrote the user's level names and the matrix came out
+    transposed, with no error.
+    """
+    assert _tidy_cap(['from_bus', 'to_bus']) == CAPS
+    assert _tidy_cap(['to_bus', 'from_bus']) == {(f, t): v for (t, f), v in CAPS.items()}
+
+
+def test_an_unnamed_index_still_binds_positionally():
+    assert _tidy_cap([None, None]) == CAPS
+
+
+def test_an_index_name_outside_the_declared_dims_is_an_error():
+    with pytest.raises(DataError, match='do not match its declared dims'):
+        _tidy_cap(['banana', 'to_bus'])

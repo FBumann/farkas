@@ -174,7 +174,16 @@ def tidy_sources(
         if xr is not None and isinstance(obj, xr.DataArray):
             obj = obj.to_series()
         if isinstance(obj, pd.Series):
-            df = obj.rename('value').rename_axis(pdef.dims).reset_index()
+            names = list(obj.index.names)
+            if any(n is None for n in names):
+                obj = obj.rename_axis(pdef.dims)
+            elif set(names) != set(pdef.dims):
+                raise DataError(
+                    f"parameter '{pname}': index names {names} do not match its declared "
+                    f'dims {list(pdef.dims)} — a named index is binding. Rename the levels '
+                    f'to the declared dims, or drop the names to bind positionally.'
+                )
+            df = obj.rename('value').reset_index()
         elif isinstance(obj, pd.DataFrame):
             df = obj
         elif isinstance(obj, (int, float)) and not pdef.dims:
