@@ -13,19 +13,35 @@ xarray/linopy calls, or to a logical plan executed relationally under a fixed
 memory budget — with both paths provably meaning the same thing. Every rule
 below protects it.
 
-```
-YAML ─▶ MathSchema ─▶ core AST ─┬─▶ lowering.py ─▶ IR ─▶ executor.py ─┬─▶ lp_file sink
- schema.py  expansion.py         │   (relational lane: linopy-free,   │   (mps planned)
- validation  piecewise.py        │    tidy tables in duckdb under     └─▶ solver_direct
-             resolution.py       │    memory_limit)                       COO batches
-             dimensions.py       │        └─▶ outside the language:        → highspy
-                                 │            load error naming the        → solution
-   "the only contract            │            construct + rewrite            tables
-    between layers:              │            (no fallback)               (label join)
-    names resolved,              │
-    dims checked"                └╌▶ loader.py ─▶ builder.py ─▶ linopy.Model ─▶ solve
-                                     (compat/oracle lane, opt-in: the ONLY lane
-                                      that imports linopy)
+```mermaid
+flowchart TB
+    Y[YAML file] -->|"parse + validate<br/>(schema.py, validation.py)"| MS[MathSchema]
+    MS -->|"expand macros: / expressions: (expansion.py)<br/>expand piecewise: blocks (piecewise.py)<br/>resolve names to typed nodes (resolution.py)<br/>check dim sets (dimensions.py)<br/>— backends never see any of them"| AST["core AST<br/>= the only contract between layers<br/>fully typed: names resolved, dims checked"]
+    AST -->|"api.py: check / build / solve / write"| LOWER
+    AST -.->|"linopy_yaml.compat<br/>(opt-in shim: build / extend)"| BUILD
+    LOWER -->|"outside the language:<br/>RelationalBuildError naming the construct"| ERR["load error<br/>(no fallback)"]
+
+    subgraph REL["Relational lane — streaming · memory-bounded · linopy-free"]
+        direction TB
+        LOWER["lowering.py"] --> IR["IR<br/>(relational/ir.py)"]
+        DR[("data<br/>parquet paths / pandas")] --> EXEC
+        IR --> EXEC["executor.py<br/>tidy tables in file-backed duckdb<br/>under memory_limit"]
+        EXEC --> LPS["lp_file sink<br/>portability, debugging<br/>(mps planned)"]
+        EXEC --> DIRECT["solver_direct sink<br/>COO batches → highspy → HiGHS"]
+        DIRECT --> SOL["solution tables<br/>(label join, never dense)"]
+    end
+
+    subgraph EAGER["Compat/oracle lane — opt-in via linopy_yaml.compat · the ONLY lane with linopy · not a runtime dependency"]
+        direction TB
+        DE[("data<br/>parquet paths / pandas")] --> LOAD["loader.py<br/>coerce data → xr.Dataset"]
+        LOAD --> BUILD["builder.py<br/>evaluate AST"]
+        BUILD --> MODEL[linopy.Model] --> SOLVE["linopy solve / writers"]
+    end
+
+    classDef laneR fill:#f0f7f0,stroke:#3a7d44,stroke-width:2px,color:#111
+    classDef laneE fill:#eef1fb,stroke:#4a5fc1,stroke-width:2px,color:#111
+    class REL laneR
+    class EAGER laneE
 ```
 
 Eligibility is decided by **attempting the lowering** — `lower_program` returns

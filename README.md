@@ -11,6 +11,24 @@ feature is differentially tested against. There is no routing and no fallback:
 both lanes accept exactly the same language, and a construct outside it is a
 load error naming its rewrite.
 
+```mermaid
+flowchart LR
+    Y["YAML + data"] --> AST["core AST"]
+    AST --> R{"inside the<br/>language?"}
+    R -->|"yes"| S["streaming engine<br/>duckdb · fixed memory_limit"]
+    S --> OUT["solver (batched) / LP file"]
+    R -->|"no"| ERR["load error<br/>naming the construct + rewrite"]
+    AST -.->|"opt-in shim: same language,<br/>for models already in memory"| E["linopy_yaml.compat"]
+    E --> LS["linopy.Model → solve"]
+
+    classDef stream fill:#f0f7f0,stroke:#3a7d44,stroke-width:2px,color:#111
+    classDef compat fill:#eef1fb,stroke:#4a5fc1,stroke-width:2px,color:#111
+    class S,OUT stream
+    class E,LS compat
+    class ERR err
+    classDef err fill:#fdf3e7,stroke:#b7791f,color:#111
+```
+
 ## Example
 
 ```yaml
