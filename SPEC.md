@@ -132,7 +132,7 @@ weights in `[0,1]` with a convexity row, one link row per tuple, and unless
 
 ## 5. Expressions
 
-```
+```text
 expression  ::= arithmetic | arithmetic COMPARATOR arithmetic
 arithmetic  ::= atom | unary_op arithmetic | arithmetic binary_op arithmetic
              |  function_call | "(" arithmetic ")"
@@ -206,7 +206,7 @@ A boolean mask; true means "this coordinate exists". Semantics are **row
 absence**, not zero-fill: a masked-out variable is not created, a masked-out
 constraint row is not built.
 
-```
+```text
 where_expr ::= atom | "NOT" where_expr | where_expr ("AND"|"OR") where_expr
             |  "(" where_expr ")"
 atom       ::= NAME | NAME COMPARATOR value | "True" | "False"
@@ -293,7 +293,7 @@ building is detected before building; the worst error is an opaque xarray or
 solver exception with no pointer back to a YAML declaration. Every message names
 what went wrong, what to do about it, and where it helps, the valid options:
 
-```
+```text
 Constraint 'balance', equation 0: 'p_charge' not found.
   Variables: ['p', 'soc']
   Parameters: ['p_max', 'load', 'efficiency']

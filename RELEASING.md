@@ -51,7 +51,7 @@ parse fails nothing — the entry is just silently missing from the changelog,
 which is why [`pr-title.yaml`](.github/workflows/pr-title.yaml) is a required
 check:
 
-```
+```text
 feat: streaming executor for indexed constraints
 fix(parser): where clauses with a trailing comma
 refactor!: closed helper set, no monkey-patch
