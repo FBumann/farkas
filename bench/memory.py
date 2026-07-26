@@ -211,7 +211,11 @@ def _phase_build_eager(cfg: dict[str, Any]) -> dict[str, Any]:
     nobody can reproduce.
 
     Ignores every budget knob: there is nothing to configure on this side, which
-    is the point being made.
+    is the point being made. ``sink`` is honoured though, and has to be: the
+    original table's eager rows are labelled *lp-polars*, so they timed a build
+    **and** an LP write, while its duckdb rows are the ones the 13.6x is quoted
+    from. Comparing a build against a build-plus-write is how a ratio drifts,
+    so both arms take the same sink here.
     """
     import pandas as pd
     import pyarrow.parquet as pq
@@ -236,8 +240,11 @@ def _phase_build_eager(cfg: dict[str, Any]) -> dict[str, Any]:
         started = time.perf_counter()
         model = farkas_linopy.build(path, data=data, coords=coords)
         build_seconds = time.perf_counter() - started
+        if cfg['sink'] == 'lp':
+            model.to_file(Path(directory) / 'model.lp', io_api='lp-polars')
+        total_seconds = time.perf_counter() - started
         del model
-    return {'build_seconds': build_seconds, 'total_seconds': build_seconds}
+    return {'build_seconds': build_seconds, 'total_seconds': total_seconds}
 
 
 PHASES = {
@@ -378,7 +385,13 @@ def main() -> int:
 
             if args.eager:
                 rec = run_child(
-                    'build_eager', {'sources': sources, 'generators': args.generators, 'tmp_root': args.tmp_root}
+                    'build_eager',
+                    {
+                        'sources': sources,
+                        'generators': args.generators,
+                        'tmp_root': args.tmp_root,
+                        'sink': args.sink,
+                    },
                 )
                 rec.update(phase='build_eager', snapshots=snapshots, generators=args.generators, variables=variables)
                 records.append(rec)
