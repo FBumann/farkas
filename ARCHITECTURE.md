@@ -253,9 +253,10 @@ built model already goes through validation, expansion, resolution and dim
 checking. It is just undocumented and unversioned, while rule 6 refuses a Python
 modeling API and this section forbids generated YAML. Composition therefore
 forces that contract earlier than the roadmap has it: not a general modeling API,
-but a narrow, versioned way to emit declarations — at the schema level rather
-than the plan level, which is
-[#83](https://github.com/FBumann/linopy-yaml/issues/83).
+but a narrow, versioned way to emit declarations. Should anything ever be
+blessed, it is the schema level and not the plan level — that much is settled;
+what is not is whether to bless the seam at all, and namespacing (#29) or a
+native schema merge (#30) is what would force the question.
 
 ## Module map
 
