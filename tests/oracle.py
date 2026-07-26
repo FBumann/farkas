@@ -24,7 +24,8 @@ _REASON = 'needs the [compat] extra (linopy, xarray)'
 linopy = pytest.importorskip('linopy', reason=_REASON)
 xr = pytest.importorskip('xarray', reason=_REASON)
 
-from linopy_yaml import builder, compat, loader  # noqa: E402  — must follow the guard above
+from linopy_yaml import compat  # noqa: E402  — must follow the guard above
+from linopy_yaml.compat import builder, loader  # noqa: E402
 
 __all__ = ['builder', 'compat', 'linopy', 'loader', 'transport_eager_objective', 'xr']
 
