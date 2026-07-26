@@ -306,7 +306,10 @@ lowering case → differential test on both sinks → SPEC §5/§7, and this fil
 structural.
 
 Two things are deliberately *not* per-primitive work, because they are one
-implementation each: the dim-set rule lives only in `dimensions.py` (lowering
-asks it rather than inferring dims again over plan nodes), and the dense-label
-assignment that gives a coordinate its solver index lives only in
-`DuckdbExecutor._label_frame`, shared by variables and constraint rows.
+implementation each: a primitive's dim rule lives only in `dimensions.py` —
+both its dim *set* and its verdict on an operand that lacks the dim being
+reduced along, which lowering asks for rather than deciding again — and the
+dense-label assignment that gives a coordinate its solver index lives only in
+`DuckdbExecutor._label_frame`, shared by variables and constraint rows. What a
+lowering case still owns is what is about the plan: which node the call becomes,
+and the shapes that node cannot represent.

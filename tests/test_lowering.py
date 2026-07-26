@@ -144,12 +144,23 @@ def test_unknown_where_name_is_an_error_in_both_lanes(dispatch_schema):
         _lower_where('no_such_param', Namespace.of(dispatch_schema), 't')
 
 
-def test_sum_over_absent_dim_is_noop(dispatch_schema):
-    # eager parity: sum(load, over=generator) leaves load unchanged
+def test_sum_over_absent_dim_raises_at_lowering_too(dispatch_schema):
+    """A no-op sum is an error at *every* layer, not only at the front door.
+
+    SPEC §"dims" and alpha.4 settled the language question: summing over a dim
+    the operand does not carry builds a model that solves and is wrong, so it
+    is an error rather than the silent identity it once was. ``check_schema``
+    raises it for anything entering through ``ly.check``; this pins that
+    ``_lower_expr`` does not quietly disagree one layer down, which is what it
+    used to do — it returned the operand unchanged, and the comment claiming
+    eager parity outlived the parity.
+    """
+    from linopy_yaml.errors import DimensionError
     from linopy_yaml.lowering import _lower_expr
 
     ast = resolved('sum(load, over=generator)', dispatch_schema)
-    assert _lower_expr(ast, dispatch_schema, 't') == Parameter('load')
+    with pytest.raises(DimensionError, match='no-op that builds and solves wrong'):
+        _lower_expr(ast, dispatch_schema, 't')
 
 
 def test_unsupported_features_rejected(dispatch_schema):

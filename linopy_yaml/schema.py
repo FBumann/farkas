@@ -158,45 +158,44 @@ class EquationBlock(_StrictBlock):
     where: str | None = None
 
 
-class _EquationsBlock(_StrictBlock):
-    """The shared shape of the two declarations that carry equations.
-
-    ``constraints:`` and ``objectives:`` differ in what their equations *mean*
-    — one is compared, the other minimised — not in how they hold them, and an
-    empty list is the same mistake in both.
-    """
-
-    equations: list[EquationBlock]
-
-    @field_validator('equations')
-    @classmethod
-    def _at_least_one(cls, v: list[EquationBlock]) -> list[EquationBlock]:
-        if not v:
-            msg = f'{cls._label} must have at least one equation.'
-            raise ValueError(msg)
-        return v
-
-
-class ConstraintBlock(_EquationsBlock):
+class ConstraintBlock(_StrictBlock):
     """A declared constraint with foreach, where, and equations."""
 
     _label: ClassVar[str] = 'a constraint declaration'
 
     foreach: list[str]
     where: str | None = None
+    equations: list[EquationBlock]
+
+    @field_validator('equations')
+    @classmethod
+    def _at_least_one(cls, v: list[EquationBlock]) -> list[EquationBlock]:
+        if not v:
+            msg = 'A constraint must have at least one equation.'
+            raise ValueError(msg)
+        return v
 
 
-class ObjectiveBlock(_EquationsBlock):
+class ObjectiveBlock(_StrictBlock):
     """A declared objective function."""
 
     _label: ClassVar[str] = 'an objective declaration'
 
     sense: str = 'minimize'
+    equations: list[EquationBlock]
 
     @field_validator('sense')
     @classmethod
     def _check_sense(cls, v: str) -> str:
         return _one_of(v, {'minimize', 'maximize'}, 'sense')
+
+    @field_validator('equations')
+    @classmethod
+    def _at_least_one(cls, v: list[EquationBlock]) -> list[EquationBlock]:
+        if not v:
+            msg = 'An objective must have at least one equation.'
+            raise ValueError(msg)
+        return v
 
 
 class MacroBlock(_StrictBlock):

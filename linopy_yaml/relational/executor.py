@@ -430,23 +430,26 @@ class DuckdbExecutor:
         param: str,
         frame_dims: tuple[str, ...],
         alias: str,
-        frame_column: Callable[[str], str],
-        role: str,
+        coordinate: str,
+        subject: str,
     ) -> str:
         """The ``LEFT JOIN`` clause binding *param* to the frame under *alias*.
 
         Both callers — where-masks and variable bounds — need the same join and
         the same containment check: a parameter carrying a dim the frame does
         not have would be reduced over that dim, silently widening a mask or
-        picking an arbitrary bound. The two differ only in how the frame spells
-        a coordinate column, which is what *frame_column* supplies.
+        picking an arbitrary bound. They differ only in how the frame spells a
+        coordinate column (*coordinate*, a ``{dim}`` template) and in what the
+        message calls the offending parameter (*subject*) — naming the
+        declaration it came from is most of the value of raising here, so it is
+        the caller's word, not a role prefix pasted on the front.
         """
         assert self._program is not None
         declaration = self._program.parameter(param)
         extra = set(declaration.dims) - set(frame_dims)
         if extra:
-            raise LanguageError(f"{role} '{param}' has dims {sorted(extra)} outside the frame dims {list(frame_dims)}")
-        on = ' AND '.join(f'{alias}.{d} = {frame_column(d)}' for d in declaration.dims) or 'TRUE'
+            raise LanguageError(f'{subject} has dims {sorted(extra)} outside the foreach dims {list(frame_dims)}')
+        on = ' AND '.join(f'{alias}.{d} = {coordinate.format(dim=d)}' for d in declaration.dims) or 'TRUE'
         return f'LEFT JOIN p_{param} {alias} ON {on}'
 
     def _pred_sql(self, pred: plan.Predicate, dims: tuple[str, ...]) -> tuple[list[str], str]:
@@ -455,7 +458,7 @@ class DuckdbExecutor:
 
         def join_param(param: str) -> str:
             alias = f'w_{param}'
-            joins[alias] = self._parameter_join(param, dims, alias, lambda d: f't_{d}.val', 'where-parameter')
+            joins[alias] = self._parameter_join(param, dims, alias, 't_{dim}.val', f"where-parameter '{param}'")
             return alias
 
         def walk(p: plan.Predicate) -> str:
@@ -560,7 +563,7 @@ class DuckdbExecutor:
             if isinstance(e, plan.Parameter):
                 alias = f'b_{e.name}'
                 joins[alias] = self._parameter_join(
-                    e.name, v.dims, alias, lambda d: f'f.{d}', f"variable '{v.name}' bound parameter"
+                    e.name, v.dims, alias, 'f.{dim}', f"bound parameter '{e.name}' of variable '{v.name}'"
                 )
                 return f'{alias}.value'
             if isinstance(e, plan.Negate):
