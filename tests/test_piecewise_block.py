@@ -15,13 +15,14 @@ import pandas as pd
 import pytest
 import yaml as pyyaml
 
-from linopy_yaml.lowering import lower_program, tidy_sources
+from linopy_yaml.lowering import lower_program
 from linopy_yaml.piecewise import (
     PiecewiseExpansionError,
     expand_piecewise,
 )
 from linopy_yaml.relational import DuckdbExecutor
 from linopy_yaml.schema import MathSchema
+from linopy_yaml.sources import tidy_sources
 from tests.oracle import compat
 
 RTOL = 1e-9
@@ -435,3 +436,27 @@ def test_example_per_generator_curves(tmp_path):
         for (s, g), pv in p.items():
             expected = curve(pv, bp_x.sel(generator=g).to_series(), bp_y.sel(generator=g).to_series())
             assert cost[(s, g)] == pytest.approx(expected, abs=1e-5)
+
+
+@pytest.mark.parametrize(
+    ('link_expression', 'message'),
+    [
+        ('p ** 2', r"operator '\*\*'"),
+        ('p * p', 'both factors of a product contain variables'),
+    ],
+)
+def test_a_link_outside_the_language_is_named_where_the_user_wrote_it(link_expression, message):
+    """The formulation checks its links itself, and that is the whole point.
+
+    Lowering would catch these anyway — but only after expansion, so the error
+    would name ``cost_curve_link0``, a declaration the user never wrote. The
+    guard in ``_expr_dims`` exists to keep the message pointing at the
+    ``piecewise:`` block and the link index instead.
+    """
+    schema = pyyaml.safe_load(NONCONVEX_YAML)
+    block = next(iter(schema['piecewise']))
+    schema['piecewise'][block]['links'][0][0] = link_expression
+
+    with pytest.raises(PiecewiseExpansionError, match=message) as exc:
+        expand_piecewise(MathSchema(**schema))
+    assert f"piecewise '{block}' link 0" in str(exc.value)

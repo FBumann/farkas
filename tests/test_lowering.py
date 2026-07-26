@@ -16,7 +16,7 @@ import pytest
 import yaml as pyyaml
 
 from linopy_yaml.errors import DataError, LanguageError
-from linopy_yaml.lowering import lower_program, tidy_sources
+from linopy_yaml.lowering import lower_program
 from linopy_yaml.relational import (
     DuckdbExecutor,
 )
@@ -29,6 +29,7 @@ from linopy_yaml.relational.plan import (
     Variable,
 )
 from linopy_yaml.schema import MathSchema
+from linopy_yaml.sources import tidy_sources
 from tests.conftest import resolved
 from tests.oracle import compat
 
