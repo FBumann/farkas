@@ -68,12 +68,12 @@ model: examples/walkthrough.yaml
     status     ok (optimal)
     objective  1,000.0
        snapshot generator  value
-    0         0      wind   80.0
+    0         0       gas    0.0
     1         0     solar    0.0
-    2         0       gas    0.0
-    3         1      wind   60.0
+    2         0      wind   80.0
+    3         1       gas    0.0
     4         1     solar   60.0
-    5         1       gas    0.0
+    5         1      wind   60.0
 
 [7] and what the language refuses  (validation.py, lowering.py)
 
