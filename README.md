@@ -7,8 +7,8 @@ mixed-integer programs. The model itself is never a Python object: it is tidy
 tables in duckdb, built under a `memory_limit` you choose and streamed straight
 into the solver, so build peak RAM tracks that budget instead of the size of the
 model. A 35.6-million-variable dispatch model builds and writes its LP in
-0.76 GB, against 6.28 GB for the same model built eagerly
-([benchmarks](docs/benchmarks.md)).
+0.76 GB, against 6.28 GB for the same model built eagerly; a 107-million-variable
+one builds in 1.3 GB ([benchmarks](docs/benchmarks.md)).
 
 And because the math is a closed spec known before any data is touched, every
 name, dimension and expression is checked at load time — `check()` compiles a
@@ -93,8 +93,8 @@ exposing the Arrow PyCapsule protocol is accepted without conversion.
 - **Memory as a config knob** — no full-model object is ever resident in Python:
   masks are row absence rather than dense arrays, and labels *are* the solver's
   own row and column indices. `memory_limit` (with `chunk_rows`) is the lever
-  that trades peak against time — a real one, [measured](docs/benchmarks.md),
-  though not a hard ceiling on process RSS.
+  that sets build peak — [measured](docs/benchmarks.md) to hold within ~0.3 GB
+  of the budget you pick, rather than being a hard ceiling on process RSS.
 - **Fail early, fail loud** — every expression, `where` string and even *uncalled*
   macro template is parsed and name-checked before a single source is bound.
   Errors name the problem and its rewrite; nothing falls back silently.

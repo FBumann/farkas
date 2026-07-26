@@ -106,12 +106,14 @@ static checks and CI's bare-install job proves the dependency claims.*
    nearly triples the first costs the second nothing
    ([benchmarks](docs/benchmarks.md), reproducible with `bench/memory.py`).
 
-   `memory_limit` is a **lever, not a ceiling** — do not read it as a bound.
-   Measured: a ~81 MiB floor the budget never touches, plus tracked usage that
-   overshoots the configured limit by up to 3.3x at tight settings and saturates
-   once the working set fits, so peak tracks
-   `min(working set, a small multiple of the budget)`. A budget too low to build
-   under raises `OutOfMemoryException` rather than spilling harder.
+   `memory_limit` is a **lever with a bounded overhead**, not a hard ceiling.
+   Measured: `peak ~ 81 MiB floor + min(working set, budget) + 0.1-0.3 GB
+   untracked`. The overhead is additive and near-constant, so the budget does
+   control peak — to within ~0.3 GB — in the regime where it binds, and is
+   irrelevant once the working set fits. The real qualification is at the bottom:
+   the `A` assembly puts a **model-dependent floor** under the budget, below
+   which the build raises `OutOfMemoryException` rather than spilling harder.
+   Chunking it would remove that floor and is the open work.
 
    Two residencies are exempt because neither scales with the budget's purpose:
    the solver's own model when solving in-process, and a model small enough that

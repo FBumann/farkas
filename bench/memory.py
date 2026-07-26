@@ -300,8 +300,14 @@ def _mib(n: float) -> str:
 
 
 def _parse_budget(text: str) -> float:
-    """A duckdb memory-limit string as bytes, for the delta columns."""
-    units = {'KB': 1024, 'MB': 1024**2, 'GB': 1024**3, 'TB': 1024**4}
+    """A duckdb memory-limit string as bytes, for the delta columns.
+
+    **Decimal**, which is duckdb's own convention and not the obvious guess:
+    it reports a ``128MB`` limit as ``122.0 MiB`` when it raises. Reading these
+    as powers of two overstates every budget by 5% (MB) or 7% (GB), which is
+    enough to turn "just under the limit" into "just over" in the table.
+    """
+    units = {'KB': 10**3, 'MB': 10**6, 'GB': 10**9, 'TB': 10**12}
     upper = text.strip().upper()
     for suffix, scale in units.items():
         if upper.endswith(suffix):
@@ -365,8 +371,14 @@ def main() -> int:
 
         # ---------------- builds ----------------
         print('## Build\n')
-        print('| snapshots | variables | threads | budget | peak RSS (MiB) | peak - baseline | vs budget | build s |')
-        print('|---:|---:|---:|---|---:|---:|---:|---:|')
+        # "over budget" is the number that distinguishes a multiplier from a
+        # fixed overhead, and they read very differently: ~250 MiB of untracked
+        # allocation looks like 3x against a 128MB budget and like 1.06x against
+        # 4GB. Negative means the build never needed the whole budget.
+        print(
+            '| snapshots | variables | threads | budget | peak RSS (MiB) | peak - baseline | over budget | vs budget | build s |'
+        )
+        print('|---:|---:|---:|---|---:|---:|---:|---:|---:|')
 
         for snapshots in args.snapshots:
             data_dir = data_root / f's{snapshots}_g{args.generators}'
@@ -400,7 +412,7 @@ def main() -> int:
                 else:
                     print(
                         f'| {snapshots:,} | {variables:,} | — | *eager* | {_mib(rec["peak_rss"])} | '
-                        f'{_mib(rec["peak_rss"] - baseline)} | n/a | {rec["build_seconds"]:.1f} |'
+                        f'{_mib(rec["peak_rss"] - baseline)} | n/a | n/a | {rec["build_seconds"]:.1f} |'
                     )
 
             for threads in args.threads:
@@ -435,10 +447,12 @@ def main() -> int:
                         continue
                     peak = rec['peak_rss']
                     over = peak - baseline
+                    excess = over - _parse_budget(budget)
                     ratio = peak / _parse_budget(budget)
                     print(
                         f'| {snapshots:,} | {variables:,} | {thread_label} | {budget} | {_mib(peak)} | '
-                        f'{_mib(over)} | {ratio:.2f}x | {rec["build_seconds"]:.1f} |'
+                        f'{_mib(over)} | {"+" if excess >= 0 else "-"}{_mib(abs(excess))} | '
+                        f'{ratio:.2f}x | {rec["build_seconds"]:.1f} |'
                     )
 
         # ---------------- verdict ----------------

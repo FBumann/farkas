@@ -34,38 +34,46 @@ is quoted against it.
 
 Build only, no sink.
 
-| budget | 8.9M vars | vs budget | 35.6M vars | vs budget |
-|---|---:|---:|---:|---:|
-| 128MB | 419 MiB | 3.28x | **OOM** | — |
-| 256MB | 501 MiB | 1.96x | 573 MiB | 2.24x |
-| 512MB | 653 MiB | 1.27x | 772 MiB | 1.51x |
-| 1GB | 628 MiB | 0.61x | 1,214 MiB | 1.19x |
-| 2GB | 633 MiB | 0.31x | 1,868 MiB | 0.91x |
+Build only, no sink. Peak RSS, with `peak - 81 MiB floor - budget` in brackets:
+how far the process ran past what it was given. duckdb reads these budgets as
+**decimal** — it reports a `128MB` limit as `122.0 MiB` — so that is how they
+are converted here.
 
-**`memory_limit` is a lever, not a ceiling.** It moves peak monotonically and
-substantially — 128MB to 512MB is a 1.56x swing at 8.9M variables — but the
-process overshoots the configured limit by up to 3.3x at tight settings, and
-subtracting the 81 MiB floor does not rescue it (338 MiB over a 128MB budget is
-still 2.6x). The excess is untracked allocation inside duckdb. Threads are only
-a small part of it: at 8.9M variables under 128MB, 1 thread peaks at 364 MiB,
-2 at 369 MiB, 4 at 415 MiB — single-threaded still overshoots 2.85x.
+| budget | 8.9M vars | 35.6M vars | 106.8M vars |
+|---|---:|---:|---:|
+| 128MB | 419 MiB (+216) | **OOM** | — |
+| 256MB | 501 MiB (+176) | 573 MiB (+248) | — |
+| 512MB | 653 MiB (+84) | 772 MiB (+203) | **OOM** |
+| 1GB | 628 MiB (saturated) | 1,214 MiB (+179) | 1,322 MiB (+287) |
+| 2GB | 633 MiB (saturated) | 1,868 MiB (saturated) | 2,245 MiB (+257) |
+| 4GB | — | — | 4,159 MiB (+263) |
 
-**It saturates.** At 8.9M variables, 512MB / 1GB / 2GB all land near 630-650
-MiB: once the working set fits, a larger budget buys nothing. At 35.6M
-variables nothing saturates below 2GB, because the working set is larger than
-any of these budgets lets it reach. Peak therefore tracks whichever binds
-first:
+**The overshoot is additive, not multiplicative.** Where the budget binds, the
+process runs 80-290 MiB past it, and that excess barely moves: at 106.8M
+variables it is +287, +257, +263 MiB across a 4x range of budgets. Quoting it as
+a ratio is what makes it look alarming — a constant ~216 MiB is "3.4x" against a
+122 MiB budget and "1.09x" against 3.8 GiB. It is untracked allocation inside
+duckdb, and threads are only a small part: at 8.9M variables under 128MB,
+1 thread peaks at 364 MiB, 2 at 369 MiB, 4 at 415 MiB.
+
+**It saturates when the model fits.** At 8.9M variables, 512MB / 1GB / 2GB all
+land near 630-650 MiB — past the working set, a larger budget buys nothing (as
+it buys no speed either). So:
 
 ```
-peak ~ 81 MiB + min(working set, a small multiple of the budget)
+peak ~ 81 MiB floor + min(working set, budget) + 0.1-0.3 GB untracked
 ```
 
-which is why a budget that binds makes peak look flat in model size (at 512MB,
-a 4x model costs 1.18x the memory) and a budget that does not makes it look
-proportional (at 2GB, 2.95x).
+`memory_limit` is a **lever with a bounded overhead**, not a hard ceiling. It
+does control peak, to within ~0.3 GB, in the regime where it binds — which is
+the regime large models are always in.
 
-**Too tight is a failure, not a slower build.** 35.6M variables under 128MB
-raises `OutOfMemoryException` from the `A` assembly — see finding 2.
+**Too low is a failure, not a slower build**, and the threshold rises with the
+model: 8.9M variables builds under 128MB, 35.6M needs more than that, and
+106.8M needs more than 512MB. Each failure is an `OutOfMemoryException` from the
+`A` assembly (finding 2) — the one operator whose demand scales with the model
+rather than with a chunk, so it is what puts a model-dependent floor under the
+budget. That floor is the strongest remaining qualification on hard rule 4.
 
 ## Streaming vs eager
 
@@ -89,6 +97,13 @@ claim stated directly, and it is a better result than any single ratio.
 **The win grows with the model.** For a 4x larger model, eager peak grows 2.9x
 and streaming peak grows 1.17x. The ratio is 3.3x at 8.9M variables and 8.1x at
 35.6M.
+
+**Capability, at 106.8M variables.** The largest model here builds in 1.32 GB
+under a 1GB budget, or 2.25 GB under 2GB — roughly two minutes either way. The
+eager arm is not run at this size: extrapolating its measured growth puts it far
+past this machine, which is the capability claim. It is a claim about what fits,
+not about a fixed cost — the budget still has to be chosen, and chosen above the
+`A` assembly's floor.
 
 ## Operational findings
 
