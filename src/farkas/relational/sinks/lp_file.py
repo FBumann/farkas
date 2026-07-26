@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from linopy_yaml.relational.sinks.tables import ModelTables
+    from farkas.relational.sinks.tables import ModelTables
 
 #: Raw lines, no CSV quoting to undo.
 _COPY_OPTS = "(FORMAT csv, HEADER false, QUOTE '', ESCAPE '')"

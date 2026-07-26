@@ -1,6 +1,6 @@
-"""Shared fixtures for linopy_yaml tests.
+"""Shared fixtures for farkas tests.
 
-On a bare install (no [compat] extra) the compat/oracle modules skip
+On a bare install (no [linopy] extra) the eager/oracle modules skip
 themselves: they reach the oracle through ``tests.oracle``, whose
 ``importorskip`` guard fires at collection. There is no list of filenames to
 keep in sync here — a module that needs the extra says so by importing it.
@@ -31,14 +31,14 @@ def resolved(text, schema):
     this: a raw `parse_expression` result still holds NameNodes, and both
     backends now assert those never reach them (resolution.py).
     """
-    from linopy_yaml.resolution import Namespace, expression_of
+    from farkas.resolution import Namespace, expression_of
 
     return expression_of(text, schema, Namespace.of(schema), 't')
 
 
 def resolved_where(text, schema):
     """Parse + resolve a where string."""
-    from linopy_yaml.resolution import Namespace, where_of
+    from farkas.resolution import Namespace, where_of
 
     return where_of(text, Namespace.of(schema), 't')
 

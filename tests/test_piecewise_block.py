@@ -15,15 +15,15 @@ import pandas as pd
 import pytest
 import yaml as pyyaml
 
-from linopy_yaml.lowering import lower_program
-from linopy_yaml.piecewise import (
+from farkas.lowering import lower_program
+from farkas.piecewise import (
     PiecewiseExpansionError,
     expand_piecewise,
 )
-from linopy_yaml.relational import DuckdbExecutor
-from linopy_yaml.schema import MathSchema
-from linopy_yaml.sources import tidy_sources
-from tests.oracle import compat
+from farkas.relational import DuckdbExecutor
+from farkas.schema import MathSchema
+from farkas.sources import tidy_sources
+from tests.oracle import farkas_linopy
 
 RTOL = 1e-9
 
@@ -90,7 +90,7 @@ def test_nonconvex_on_curve_differential(nonconvex_inputs, tmp_path):
     yaml_path = tmp_path / 'pw.yaml'
     yaml_path.write_text(NONCONVEX_YAML)
 
-    m = compat.build(yaml_path, data=data, coords=coords)
+    m = farkas_linopy.build(yaml_path, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     oracle = float(m.objective.value)
     expected = sum(curve(v, data['bp_x'], data['bp_y']) for v in data['load'])
@@ -120,7 +120,7 @@ def test_convex_flag_gives_hull(nonconvex_inputs, tmp_path):
     program = lower_program(schema)  # inside the streaming language (pure LP)
     assert all(v.variable_type == 'continuous' for v in program.variables)
 
-    m = compat.build(yaml_path, data=data, coords=coords)
+    m = farkas_linopy.build(yaml_path, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     on_curve = sum(curve(v, data['bp_x'], data['bp_y']) for v in data['load'])
     chord = sum(0.55 * v for v in data['load'])  # (100, 55) chord from origin
@@ -184,7 +184,7 @@ def test_chp_three_links(tmp_path):
 
     yaml_path = tmp_path / 'chp.yaml'
     yaml_path.write_text(CHP_YAML)
-    m = compat.build(yaml_path, data=data, coords=coords)
+    m = farkas_linopy.build(yaml_path, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     oracle = float(m.objective.value)
     assert np.isfinite(oracle)
@@ -294,7 +294,7 @@ def test_active_gating(nonconvex_inputs, tmp_path):
 
     yaml_path = tmp_path / 'gated.yaml'
     yaml_path.write_text(GATED_YAML)
-    m = compat.build(yaml_path, data=data, coords=coords)
+    m = farkas_linopy.build(yaml_path, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     oracle = float(m.objective.value)
     assert np.isfinite(oracle)
@@ -320,10 +320,10 @@ def test_both_lanes_check_the_declarations_a_formulation_emits(tmp_path):
     carrying a dim the links do not is a stray dim in generated math — one row
     per zone where the file reads as one per snapshot. The native lane used to
     validate the file as written, which made ``ly.check()`` pass on a model
-    ``compat.build`` refused: the same YAML, two answers (hard rule 3).
+    ``farkas_linopy.build`` refused: the same YAML, two answers (hard rule 3).
     """
-    import linopy_yaml as ly
-    from linopy_yaml.errors import DimensionError
+    import farkas as ly
+    from farkas.errors import DimensionError
 
     raw = pyyaml.safe_load(NONCONVEX_YAML)
     raw['dimensions']['zone'] = {'dtype': 'str'}
@@ -336,7 +336,7 @@ def test_both_lanes_check_the_declarations_a_formulation_emits(tmp_path):
     path = tmp_path / 'stray_dim.yaml'
     path.write_text(pyyaml.safe_dump(raw))
     with pytest.raises(DimensionError, match=stray):
-        compat.build(path)
+        farkas_linopy.build(path)
 
 
 def test_active_must_be_binary():
@@ -350,7 +350,7 @@ def test_active_must_be_binary():
 
 
 def test_convex_guard_rejects_mixed_curvature(nonconvex_inputs):
-    from linopy_yaml.piecewise import validate_piecewise_data
+    from farkas.piecewise import validate_piecewise_data
 
     data, coords = nonconvex_inputs
     raw = pyyaml.safe_load(NONCONVEX_YAML)
@@ -419,7 +419,7 @@ def test_example_per_generator_curves(tmp_path):
     schema = MathSchema(**pyyaml.safe_load(Path(example).read_text()))
     lower_program(schema)  # inside the streaming language (convex: pure LP)
 
-    m = compat.build(example, data=data, coords=coords)
+    m = farkas_linopy.build(example, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     oracle = float(m.objective.value)
     assert np.isfinite(oracle)

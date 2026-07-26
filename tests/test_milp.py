@@ -14,11 +14,11 @@ import pandas as pd
 import pytest
 import yaml as pyyaml
 
-from linopy_yaml.lowering import lower_program
-from linopy_yaml.relational import DuckdbExecutor
-from linopy_yaml.schema import MathSchema
-from linopy_yaml.sources import tidy_sources
-from tests.oracle import compat
+from farkas.lowering import lower_program
+from farkas.relational import DuckdbExecutor
+from farkas.schema import MathSchema
+from farkas.sources import tidy_sources
+from tests.oracle import farkas_linopy
 
 RTOL = 1e-9
 
@@ -91,7 +91,7 @@ def commitment_inputs(tmp_path):
 def test_commitment_milp_differential(commitment_inputs, tmp_path):
     yaml_path, data, coords = commitment_inputs
 
-    m = compat.build(yaml_path, data=data, coords=coords)
+    m = farkas_linopy.build(yaml_path, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     oracle = float(m.objective.value)
     assert np.isfinite(oracle)

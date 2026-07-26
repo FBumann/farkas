@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from linopy_yaml.errors import DataError
+from farkas.errors import DataError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

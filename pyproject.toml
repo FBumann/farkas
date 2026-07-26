@@ -3,7 +3,7 @@ requires = ["hatchling>=1.27", "hatch-vcs"]  # 1.27 is the first with PEP 639 li
 build-backend = "hatchling.build"
 
 [project]
-name = "linopy-yaml"
+name = "farkas"
 # the git tag is the version — see RELEASING.md. Never hardcode it here.
 dynamic = ["version"]
 description = "Declarative optimisation: YAML math on a streaming relational engine"
@@ -31,16 +31,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# linopy + xarray power the compatibility layer (linopy_yaml.compat): YAML math
+# linopy + xarray power the compatibility layer (farkas.linopy): YAML math
 # on a Python-built linopy.Model, plus the differential-test oracle.
 # The streaming engine never imports them.
-compat = [
+linopy = [
     "linopy>=0.9.0,<0.10",
     "xarray>=2024.2.0",
 ]
 
 [project.urls]
-repository = "https://github.com/FBumann/linopy-yaml"
+repository = "https://github.com/FBumann/farkas"
 
 [tool.hatch.version]
 source = "vcs"
@@ -48,7 +48,7 @@ source = "vcs"
 fallback-version = "0.0.0"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/linopy_yaml"]
+packages = ["src/farkas"]
 
 [tool.hatch.build.targets.sdist]
 include = ["/src"]
@@ -100,7 +100,7 @@ extend-fixable = ["B", "SIM", "RUF", "C4", "UP"]
 
 [tool.ruff.lint.per-file-ignores]
 "examples/**/*.py" = ["T20"]  # the walkthrough's whole output is its point
-"src/linopy_yaml/where_parser.py" = ["N806"]  # grammar tokens (NOT/AND/OR) are named after keywords
+"src/farkas/where_parser.py" = ["N806"]  # grammar tokens (NOT/AND/OR) are named after keywords
 
 [tool.ruff.format]
 quote-style = "single"
@@ -122,7 +122,7 @@ testpaths = ["tests"]
 # check against the *lowest* supported interpreter, so 3.12+ syntax and stdlib
 # additions are caught here rather than by the 3.11 leg of the CI matrix.
 python-version = "3.11"
-project-includes = ["src/linopy_yaml"]
+project-includes = ["src/farkas"]
 preset = "strict"
 
 # Warn-by-default rules promoted to error, so a regression fails CI instead of

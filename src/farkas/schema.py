@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from linopy_yaml.helpers import BUILTIN_NAMES
+from farkas.helpers import BUILTIN_NAMES
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -233,7 +233,7 @@ class PiecewiseBlock(_StrictBlock):
     non-``"=="``, and only with exactly two links).
 
     Expanded (before building) into plain variables and constraints via the
-    λ convex-combination method — see ``linopy_yaml.piecewise``.
+    λ convex-combination method — see ``farkas.piecewise``.
     """
 
     _label: ClassVar[str] = 'a piecewise declaration'
@@ -294,7 +294,7 @@ def equation_name(constraint: str, index: int, count: int) -> str:
 
 
 class MathSchema(_StrictBlock):
-    """Top-level schema for a linopy_yaml YAML file."""
+    """Top-level schema for a farkas YAML file."""
 
     _label: ClassVar[str] = 'the top level of the file'
 

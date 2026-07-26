@@ -7,9 +7,9 @@ import datetime
 import pandas as pd
 import pytest
 
-from linopy_yaml.schema import MathSchema
-from linopy_yaml.validation import validate_expressions
-from tests.oracle import compat, linopy
+from farkas.schema import MathSchema
+from farkas.validation import validate_expressions
+from tests.oracle import farkas_linopy, linopy
 
 
 def _schema(**overrides) -> MathSchema:
@@ -158,7 +158,7 @@ class TestLoadTimeIntegration:
             '      - expression: pp <= 100\n'
         )
         with pytest.raises(ValueError, match="'pp' not found"):
-            compat.build(f)
+            farkas_linopy.build(f)
 
     def test_extend_sees_existing_model_variables(self, tmp_path):
         """An extension may reference variables already on the model."""
@@ -176,7 +176,7 @@ class TestLoadTimeIntegration:
             '    equations:\n'
             '      - expression: p <= 100\n'
         )
-        compat.extend(model, f)
+        farkas_linopy.extend(model, f)
         assert 'cap' in model.constraints
 
     def test_extend_flags_unknown_variable(self, tmp_path):
@@ -193,7 +193,7 @@ class TestLoadTimeIntegration:
             '      - expression: p <= 100\n'
         )
         with pytest.raises(ValueError, match="'p' not found"):
-            compat.extend(model, f)
+            farkas_linopy.extend(model, f)
 
 
 class TestDimensionKwargs:

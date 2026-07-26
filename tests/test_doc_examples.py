@@ -49,18 +49,18 @@ from typing import Any, NamedTuple, get_args
 import pytest
 import yaml
 
-import linopy_yaml as ly
-from linopy_yaml.relational.executor import DuckdbExecutor, Solution
-from linopy_yaml.schema import MathSchema
+import farkas as ly
+from farkas.relational.executor import DuckdbExecutor, Solution
+from farkas.schema import MathSchema
 
 try:
-    from linopy_yaml import compat
+    from farkas import linopy as linopy_lane
 except ModuleNotFoundError:
-    # Bare install, no [compat] extra. The rest of this file is linopy-free and
+    # Bare install, no [linopy] extra. The rest of this file is linopy-free and
     # must still run on the native lane, so the module cannot skip itself the
-    # way tests/oracle.py does — only the checks that need compat step aside,
+    # way tests/oracle.py does — only the checks that need the lane step aside,
     # and they do it by skipping rather than by quietly checking less.
-    compat = None
+    linopy_lane = None
 
 REPO = Path(__file__).resolve().parent.parent
 TRACKED = ['README.md', 'SPEC.md', 'ARCHITECTURE.md', 'ROADMAP.md']
@@ -69,15 +69,15 @@ TRACKED = ['README.md', 'SPEC.md', 'ARCHITECTURE.md', 'ROADMAP.md']
 # Anything else (pd, np, network, ...) is external and not our contract.
 ROOTS: dict[str, Any] = {
     'ly': ly,
-    'compat': compat,
+    'farkas_linopy': linopy_lane,
     'sol': Solution,
     'ex': DuckdbExecutor,
     'schema': MathSchema,
 }
 
 # Every root an example may name, whether or not this install can resolve it.
-# Recognising an example must not depend on the extras: a compat example is
-# still a compat example on a bare install, it just cannot be name-checked.
+# Recognising an example must not depend on the extras: a linopy-lane example is
+# is still one on a bare install, it just cannot be name-checked.
 ROOT_NAMES = frozenset(ROOTS)
 ROOTS = {name: obj for name, obj in ROOTS.items() if obj is not None}
 
@@ -87,7 +87,7 @@ def _unresolvable(code: str) -> set[str]:
     return {root for root in ROOT_NAMES - set(ROOTS) if f'{root}.' in code}
 
 
-_EXTRA = 'needs the [compat] extra to check {}'
+_EXTRA = 'needs the [linopy] extra to check {}'
 
 # A fence may be ``` or ~~~, three or more, indented (inside a list item), and
 # may carry an info string after the language (```python title="a.py"). Matching
@@ -336,7 +336,7 @@ def test_every_block_is_covered() -> None:
 # module docstrings — where the executor leak actually lived
 # --------------------------------------------------------------------------
 
-DOCSTRING_MODULES = ['src/linopy_yaml/__init__.py', 'src/linopy_yaml/api.py', 'src/linopy_yaml/compat/__init__.py']
+DOCSTRING_MODULES = ['src/farkas/__init__.py', 'src/farkas/api.py', 'src/farkas/linopy/__init__.py']
 
 
 def _docstring_examples(path: Path) -> list[str]:

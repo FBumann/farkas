@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from linopy_yaml.schema import MathSchema
+from farkas.schema import MathSchema
 
 
 def test_empty_schema():
@@ -99,7 +99,7 @@ def test_omitted_bounds_default_to_linopy_s_infinities():
     Nothing else pins this: both lanes read the same default, so the
     differential tests agree with each other whatever it is.
     """
-    from linopy_yaml.lowering import _bound_expression
+    from farkas.lowering import _bound_expression
 
     s = MathSchema.model_validate({'dimensions': {'x': {'values': [1]}}, 'variables': {'v': {'foreach': ['x']}}})
     bounds = s.variables['v'].bounds

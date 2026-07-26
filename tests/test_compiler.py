@@ -14,9 +14,9 @@ from __future__ import annotations
 
 import pytest
 
-from linopy_yaml.errors import LanguageError
-from linopy_yaml.relational import plan
-from linopy_yaml.relational.compiler import SqlCompiler
+from farkas.errors import LanguageError
+from farkas.relational import plan
+from farkas.relational.compiler import SqlCompiler
 
 PROGRAM = plan.Program(
     parameters=(

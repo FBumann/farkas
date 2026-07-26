@@ -11,9 +11,9 @@ is what makes the planned ``mps`` sink a new module here rather than another
 method on the executor.
 """
 
-from linopy_yaml.relational.sinks.highs import solve_direct
-from linopy_yaml.relational.sinks.lp_file import write_lp_file
-from linopy_yaml.relational.sinks.tables import ModelTables
+from farkas.relational.sinks.highs import solve_direct
+from farkas.relational.sinks.lp_file import write_lp_file
+from farkas.relational.sinks.tables import ModelTables
 
 __all__ = [
     'ModelTables',

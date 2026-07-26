@@ -1,7 +1,7 @@
 """Native API: YAML → streaming engine → solver, with linopy never imported.
 
 The linopy-free guarantee is asserted in a subprocess so conftest's optional
-compat import cannot pollute the check.
+farkas_linopy import cannot pollute the check.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import linopy_yaml as ly
+import farkas as ly
 
 
 @pytest.fixture
@@ -103,7 +103,7 @@ def test_runtime_is_linopy_free(dispatch_yaml):
         assert "linopy" not in sys.modules
 
         import pandas as pd
-        import linopy_yaml as ly
+        import farkas as ly
         assert "linopy" not in sys.modules, "package import pulled in linopy"
         assert "xarray" not in sys.modules, "package import pulled in xarray"
 
@@ -145,7 +145,7 @@ def test_check_reports_language_errors(dispatch_yaml):
 
 def test_error_hierarchy_is_one_catchable_tree():
     """One ``except`` covers the package, and the model/run split is real."""
-    from linopy_yaml.relational import RelationalBuildError
+    from farkas.relational import RelationalBuildError
 
     for cls in (ly.LanguageError, ly.DataError):
         assert issubclass(cls, ly.LinopyYamlError)
@@ -191,7 +191,7 @@ def test_solution_context_manager_and_to_parquet(dispatch_yaml, dispatch_inputs,
 
 def test_no_helper_registry_anywhere():
     """The Python helper registry is gone from every surface (#38 replaces it)."""
-    import linopy_yaml.helpers as helpers
+    import farkas.helpers as helpers
 
     assert not hasattr(ly, 'register')
     assert not hasattr(helpers, 'register')

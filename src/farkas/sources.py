@@ -10,7 +10,7 @@ Lowering turns an AST into a plan and touches no data at all; this touches
 only data and knows nothing about expressions. They were in one file because
 ``api.build`` calls them on consecutive lines, which is not a reason.
 
-The shapes themselves are recognised in :mod:`linopy_yaml.relational.arrow`,
+The shapes themselves are recognised in :mod:`farkas.relational.arrow`,
 so no dataframe library is a dependency of either lane.
 """
 
@@ -19,12 +19,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from linopy_yaml.errors import DataError
-from linopy_yaml.piecewise import validate_piecewise_data
-from linopy_yaml.relational.arrow import as_table, labels_table
+from farkas.errors import DataError
+from farkas.piecewise import validate_piecewise_data
+from farkas.relational.arrow import as_table, labels_table
 
 if TYPE_CHECKING:
-    from linopy_yaml.schema import MathSchema
+    from farkas.schema import MathSchema
 
 
 def tidy_sources(

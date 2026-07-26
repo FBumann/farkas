@@ -136,8 +136,8 @@ To keep releasing 0.1.x after `main` moves to 0.2, cut a `0.1.x` branch and run
 Don't cut a release for this — install from the ref:
 
 ```bash
-uv add "linopy-yaml @ git+ssh://git@github.com/FBumann/linopy-yaml@feat/some-branch"
-uv add "linopy-yaml @ git+https://github.com/FBumann/linopy-yaml@d09aab6"
+uv add "farkas @ git+ssh://git@github.com/FBumann/farkas@feat/some-branch"
+uv add "farkas @ git+https://github.com/FBumann/farkas@d09aab6"
 ```
 
 Every tagged build also attaches its wheel and sdist to the GitHub release.
@@ -151,5 +151,5 @@ Every tagged build also attaches its wheel and sdist to the GitHub release.
 - **PyPI** — currently off. The `pypi` job is skipped unless the repo variable
   `PUBLISH_TO_PYPI` is `true`. To go live: register a
   [trusted publisher](https://docs.pypi.org/trusted-publishers/) for
-  `linopy-yaml` (workflow `publish.yaml`, environment `pypi`), create the `pypi`
+  `farkas` (workflow `publish.yaml`, environment `pypi`), create the `pypi`
   environment, then set the variable.

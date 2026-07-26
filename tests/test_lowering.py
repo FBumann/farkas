@@ -1,7 +1,7 @@
 """Phase-3 gate: YAML lowers to the logical plan and matches the eager backend.
 
 The dispatch example YAML runs through both backends with the same data:
-eager `compat.build(...).solve()` is the oracle; the lowered Program
+eager `farkas_linopy.build(...).solve()` is the oracle; the lowered Program
 executes on DuckdbExecutor via solver_direct and the lp_file sink.
 """
 
@@ -15,12 +15,12 @@ import pandas as pd
 import pytest
 import yaml as pyyaml
 
-from linopy_yaml.errors import DataError, LanguageError
-from linopy_yaml.lowering import lower_program
-from linopy_yaml.relational import (
+from farkas.errors import DataError, LanguageError
+from farkas.lowering import lower_program
+from farkas.relational import (
     DuckdbExecutor,
 )
-from linopy_yaml.relational.plan import (
+from farkas.relational.plan import (
     DimensionComparison,
     Parameter,
     ParameterComparison,
@@ -28,10 +28,10 @@ from linopy_yaml.relational.plan import (
     Sum,
     Variable,
 )
-from linopy_yaml.schema import MathSchema
-from linopy_yaml.sources import tidy_sources
+from farkas.schema import MathSchema
+from farkas.sources import tidy_sources
 from tests.conftest import resolved
-from tests.oracle import compat
+from tests.oracle import farkas_linopy
 
 RTOL = 1e-9
 
@@ -64,7 +64,7 @@ def test_dispatch_yaml_differential(dispatch_schema, dispatch_inputs, tmp_path):
     data, coords = dispatch_inputs
 
     # oracle: the eager backend
-    m = compat.build(DISPATCH_YAML, data=data, coords=coords)
+    m = farkas_linopy.build(DISPATCH_YAML, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     oracle = float(m.objective.value)
     assert np.isfinite(oracle)
@@ -121,8 +121,8 @@ def test_lower_program_structure(dispatch_schema):
 
 
 def test_where_lowering(dispatch_schema):
-    from linopy_yaml.lowering import _lower_where
-    from linopy_yaml.resolution import Namespace
+    from farkas.lowering import _lower_where
+    from farkas.resolution import Namespace
 
     ns = Namespace.of(dispatch_schema)
     assert _lower_where(None, ns, 't') is None
@@ -138,8 +138,8 @@ def test_where_lowering(dispatch_schema):
 def test_unknown_where_name_is_an_error_in_both_lanes(dispatch_schema):
     """It used to be a scalar-False mask in the eager lane: a model that
     builds, solves, and is silently empty. Resolution makes it a load error."""
-    from linopy_yaml.lowering import _lower_where
-    from linopy_yaml.resolution import Namespace
+    from farkas.lowering import _lower_where
+    from farkas.resolution import Namespace
 
     with pytest.raises(LanguageError, match="'no_such_param' not found"):
         _lower_where('no_such_param', Namespace.of(dispatch_schema), 't')
@@ -156,8 +156,8 @@ def test_sum_over_absent_dim_raises_at_lowering_too(dispatch_schema):
     used to do — it returned the operand unchanged, and the comment claiming
     eager parity outlived the parity.
     """
-    from linopy_yaml.errors import DimensionError
-    from linopy_yaml.lowering import _lower_expr
+    from farkas.errors import DimensionError
+    from farkas.lowering import _lower_expr
 
     ast = resolved('sum(load, over=generator)', dispatch_schema)
     with pytest.raises(DimensionError, match='no-op that builds and solves wrong'):
@@ -165,7 +165,7 @@ def test_sum_over_absent_dim_raises_at_lowering_too(dispatch_schema):
 
 
 def test_unsupported_features_rejected(dispatch_schema):
-    from linopy_yaml.lowering import _lower_expr
+    from farkas.lowering import _lower_expr
 
     # roll/shift are supported via plan.Translate, binary/integer via variable_type;
     # '**' and custom Python helpers remain outside the relational subset

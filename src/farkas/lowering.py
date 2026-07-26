@@ -3,13 +3,13 @@
 This is the lowering seam (ARCHITECTURE.md, "The relational lane"): it
 consumes the same typed AST the
 eager builder evaluates (`expression_parser` / `where_parser` nodes) and emits
-a :class:`~linopy_yaml.relational.plan.Program`. It lives on the language side —
+a :class:`~farkas.relational.plan.Program`. It lives on the language side —
 the engine subpackage stays free of YAML knowledge, and this module never
 imports the eager builder.
 
 Covered: foreach, where, arithmetic (+ - * /), sum, group_sum, roll, shift,
 comparison, and binary/integer variables (variable_type). Constructs with no
-lowering raise :class:`~linopy_yaml.errors.LanguageError` naming
+lowering raise :class:`~farkas.errors.LanguageError` naming
 the construct and its rewrite — never a pointer to another backend: the two
 lanes accept the same language, and a rejection here is a language gap
 (ROADMAP.md), not a routing decision.
@@ -27,9 +27,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, assert_never
 
-from linopy_yaml.dimensions import dims_of
-from linopy_yaml.errors import LanguageError
-from linopy_yaml.expression_parser import (
+from farkas.dimensions import dims_of
+from farkas.errors import LanguageError
+from farkas.expression_parser import (
     ArithmeticNode,
     BinaryOperatorNode,
     ComparisonNode,
@@ -42,11 +42,11 @@ from linopy_yaml.expression_parser import (
     UnaryOperatorNode,
     VariableNode,
 )
-from linopy_yaml.helpers import BUILTIN_NAMES, call_shape_error
-from linopy_yaml.relational import plan
-from linopy_yaml.resolution import Namespace, expression_of, where_of
-from linopy_yaml.schema import equation_name
-from linopy_yaml.where_parser import (
+from farkas.helpers import BUILTIN_NAMES, call_shape_error
+from farkas.relational import plan
+from farkas.resolution import Namespace, expression_of, where_of
+from farkas.schema import equation_name
+from farkas.where_parser import (
     AndNode,
     BooleanLiteralNode,
     DimensionComparisonNode,
@@ -60,14 +60,14 @@ from linopy_yaml.where_parser import (
 )
 
 if TYPE_CHECKING:
-    from linopy_yaml.schema import MathSchema
+    from farkas.schema import MathSchema
 
 _SENSES = {'==', '<=', '>='}
 
 
 def lower_program(schema: MathSchema) -> plan.Program:
     """Compile a validated :class:`MathSchema` into a :class:`Program`."""
-    from linopy_yaml.piecewise import expand_piecewise
+    from farkas.piecewise import expand_piecewise
 
     schema = expand_piecewise(schema)
     ns = Namespace.of(schema)

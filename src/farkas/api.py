@@ -7,15 +7,15 @@ sources → live executor), ``solve``, and ``write``.
 
 This is the product path (ARCHITECTURE.md). The language is validated at load
 time, lowered to the plan — anything outside the streaming subset raises
-:class:`~linopy_yaml.errors.LanguageError` naming the construct — and executed relationally
+:class:`~farkas.errors.LanguageError` naming the construct — and executed relationally
 under a hard memory budget.
 
 linopy exists only in the optional compatibility/oracle layer
-(``import linopy_yaml.compat``) and in the differential test suite.
+(``import farkas.linopy``) and in the differential test suite.
 
 Example::
 
-    import linopy_yaml as ly
+    import farkas as ly
 
     # Solution holds the executor backing primal/to_* — use a with block
     with ly.solve(
@@ -33,13 +33,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from linopy_yaml._yaml import read_yaml
-from linopy_yaml.lowering import lower_program
-from linopy_yaml.piecewise import expand_piecewise
-from linopy_yaml.relational.executor import DuckdbExecutor, Solution
-from linopy_yaml.schema import MathSchema
-from linopy_yaml.sources import tidy_sources
-from linopy_yaml.validation import validate_expressions
+from farkas._yaml import read_yaml
+from farkas.lowering import lower_program
+from farkas.piecewise import expand_piecewise
+from farkas.relational.executor import DuckdbExecutor, Solution
+from farkas.schema import MathSchema
+from farkas.sources import tidy_sources
+from farkas.validation import validate_expressions
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -52,7 +52,7 @@ def load_schema(model: str | Path | dict[str, Any] | MathSchema) -> MathSchema:
     Validation is complete at this point: schema shape, every expression and
     where string, every named expression and macro template — and every
     declaration a formulation emits, since those are language too. That is why
-    expansion runs *before* validation here, the order the compat lane already
+    expansion runs *before* validation here, the order the linopy lane already
     uses: validating the file as written checks a strict subset of the model
     that gets built.
 
@@ -64,7 +64,7 @@ def load_schema(model: str | Path | dict[str, Any] | MathSchema) -> MathSchema:
     if isinstance(model, (list, tuple)):
         msg = (
             'composing multiple YAML files into one program is not implemented '
-            'yet — track https://github.com/FBumann/linopy-yaml/issues/30'
+            'yet — track https://github.com/FBumann/farkas/issues/30'
         )
         raise NotImplementedError(msg)
     if isinstance(model, MathSchema):

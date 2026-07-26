@@ -1,6 +1,6 @@
 """Compatibility shim: YAML math onto a ``linopy.Model``.
 
-Requires the ``[compat]`` extra (linopy, xarray).
+Requires the ``[linopy]`` extra (linopy, xarray).
 
 The product path is YAML → AST → streaming engine; linopy is not on it. This
 module exists for two narrow jobs:
@@ -18,14 +18,14 @@ A file's meaning never depends on what was loaded before it (ARCHITECTURE.md,
 hard rule 5), so every file declares the parameters it uses and the caller
 supplies their data per call::
 
-    from linopy_yaml import compat
+    from farkas import linopy as farkas_linopy
 
-    m = compat.build('model.yaml', data={...})
-    compat.extend(m, 'ramp_constraint.yaml', data={...})
+    m = farkas_linopy.build('model.yaml', data={...})
+    farkas_linopy.extend(m, 'ramp_constraint.yaml', data={...})
 
 For models declared entirely in YAML, use the native API — it streams::
 
-    import linopy_yaml as ly
+    import farkas as ly
 
     with ly.solve('model.yaml', {...}) as sol:
         sol.primal('p')
@@ -42,17 +42,17 @@ try:
     import pandas as pd
     import xarray  # noqa: F401 — guarded here so the message covers it
 except ModuleNotFoundError as exc:  # linopy / xarray absent
-    msg = 'The linopy compatibility layer requires the [compat] extra: pip install "linopy-yaml[compat]"'
+    msg = 'The linopy compatibility layer requires the [linopy] extra: pip install "farkas[linopy]"'
     raise ModuleNotFoundError(msg) from exc
 
-from linopy_yaml._notes import note
-from linopy_yaml._yaml import read_yaml
-from linopy_yaml.compat.builder import build_model
-from linopy_yaml.compat.loader import build_dim_coords, build_master_coords, dim_index_of, load_parameters
-from linopy_yaml.errors import LanguageError
-from linopy_yaml.piecewise import expand_piecewise, validate_piecewise_data
-from linopy_yaml.schema import MathSchema
-from linopy_yaml.validation import validate_expressions
+from farkas._notes import note
+from farkas._yaml import read_yaml
+from farkas.errors import LanguageError
+from farkas.linopy.builder import build_model
+from farkas.linopy.loader import build_dim_coords, build_master_coords, dim_index_of, load_parameters
+from farkas.piecewise import expand_piecewise, validate_piecewise_data
+from farkas.schema import MathSchema
+from farkas.validation import validate_expressions
 
 __all__ = ['build', 'extend']
 

@@ -31,7 +31,7 @@ document must be a mapping.
 **`dimensions`** — the master coordinate index. Every dimension named anywhere
 must be declared. `dtype` ∈ {`float`, `int`, `str`, `datetime`}, default `str`.
 `values` is a list or null; if null, coordinates must arrive via `sources=`
-(`coords=` on the compat lane), else loading fails. Every declared value must
+(`coords=` on the linopy lane), else loading fails. Every declared value must
 be of the declared `dtype` — `values: [2024-01-01]` under the default
 `dtype: str` is a load error, because YAML resolved it to a date and a date
 does not join `'2024-01-01'` in the data.
@@ -76,7 +76,7 @@ Omitting a bound means unbounded on that side, as in
 `linopy.Model.add_variables` — non-negativity is written, not assumed. Bounds
 are a *narrower* language than expressions (a name or a number, never
 arithmetic) and the error says so rather than reporting a parse failure;
-expressions here are [#31](https://github.com/FBumann/linopy-yaml/issues/31). A
+expressions here are [#31](https://github.com/FBumann/farkas/issues/31). A
 bound parameter's dims must not exceed `foreach`.
 
 **`constraints`** — `foreach` (required) and an optional `where` covering the
@@ -274,7 +274,7 @@ a comparison of dialects. Dimension arguments are name-checked at load time:
 
 Anything composable out of these belongs in `macros:`. Math that is not sayable
 at all goes to a declared `escape:` island
-([#38](https://github.com/FBumann/linopy-yaml/issues/38)): named in the file,
+([#38](https://github.com/FBumann/farkas/issues/38)): named in the file,
 bounded by the preceding `where` mask, terminal (it yields a constraint, never a
 sub-expression), and billed against a label budget before any Python runs.
 
@@ -294,7 +294,7 @@ highest precedence first:
 Step 4 is unavailable to a dimension declaring `coords` — it reads index
 columns only, so it cannot supply a coordinate. Otherwise step 4 exists because
 a dim some parameter already spans needs no second declaration, but it costs the *declared order*, which `roll`/`shift` read
-positionally — so pass an explicit index whenever order matters. The compat
+positionally — so pass an explicit index whenever order matters. The linopy
 lane has no step 4: a dimension with neither `coords=` nor `values:` raises
 there. A dim that no source names and no parameter carries raises on both.
 
@@ -351,7 +351,7 @@ exception tree rooted at `LinopyYamlError`: `LanguageError` (with `SchemaError`,
 was bound to it.
 
 ```python
-import linopy_yaml as ly
+import farkas as ly
 
 ly.check("model.yaml")                 # parse → validate → lower, no data bound
 schema = ly.load_schema("model.yaml")  # MathSchema
@@ -383,7 +383,7 @@ with ly.build("model.yaml", sources, memory_limit="512MB") as ex:
 table exposing the Arrow PyCapsule protocol — pyarrow, polars and pandas all
 qualify, and the recogniser imports none of them. Nothing on this path imports
 linopy. What the *readers* return is unsettled and tracked separately
-([#105](https://github.com/FBumann/linopy-yaml/issues/105)); today `primal`
+([#105](https://github.com/FBumann/farkas/issues/105)); today `primal`
 returns a pandas DataFrame. Build knobs, shared by all three
 entry points: `coords`, `memory_limit` (default `'1GB'`), `chunk_rows`,
 `threads`, `workdir`. `to_dataset` costs what it says — each variable arrives
@@ -392,12 +392,14 @@ exists for should name a subset or use `to_parquet`. Duals are not exposed yet
 (the solve path reads `col_value` only) — ROADMAP Track 2b. `.lp` is the only
 sink `write` supports today; `.mps` raises `NotImplementedError`.
 
-**Compat shim** (`linopy_yaml.compat`, `[compat]` extra) — two *pure producers*,
+**Linopy shim** (`farkas.linopy`, `[linopy]` extra) — two *pure producers*,
 YAML in, model out, nothing retained:
 
 ```python
-m = compat.build("model.yaml", data={...}, coords={...})   # -> linopy.Model
-compat.extend(m, "ramp.yaml", data={...})                  # mutates m in place
+from farkas import linopy as farkas_linopy
+
+m = farkas_linopy.build("model.yaml", data={...}, coords={...})   # -> linopy.Model
+farkas_linopy.extend(m, "ramp.yaml", data={...})                  # mutates m in place
 ```
 
 `build` returns a plain `linopy.Model` — no accessor, no attached schema, no
@@ -416,8 +418,8 @@ not a silent override. There is no `register()` decorator and no helper registry
 | Not here | Instead |
 |---|---|
 | time-series processing (resample, cluster, interpolate, align), file IO, units | data prep; pass a parameter |
-| solver breadth | HiGHS via `solver_direct`, Gurobi planned on the same path, LP files for everything else ([#28](https://github.com/FBumann/linopy-yaml/issues/28)) |
-| SOS and indicator constraints | `piecewise:` (§4) covers SOS2's usual purpose; the streaming lane's default solver has no SOS or indicator concept at all, so this is a *sink capability* question rather than a language one — [#23](https://github.com/FBumann/linopy-yaml/issues/23), ROADMAP Track 4 |
+| solver breadth | HiGHS via `solver_direct`, Gurobi planned on the same path, LP files for everything else ([#28](https://github.com/FBumann/farkas/issues/28)) |
+| SOS and indicator constraints | `piecewise:` (§4) covers SOS2's usual purpose; the streaming lane's default solver has no SOS or indicator concept at all, so this is a *sink capability* question rather than a language one — [#23](https://github.com/FBumann/farkas/issues/23), ROADMAP Track 4 |
 | multi-objective | one objective; the last defined wins |
 | schema migrations | — |
 | arbitrary array ops (`merge`, `reindex`, `apply_ufunc`) | data prep, or a declared `escape:` island — the closed AST is what makes streaming possible |
@@ -428,4 +430,4 @@ operation parity with xarray/pandas. Whether `.yaml` should ever be a complete
 representation of a model built partly in Python is open — the *math* side is
 feasible, but expression and where strings become anonymous arrays, giving a
 functional round-trip and not a readable one
-([#3](https://github.com/FBumann/linopy-yaml/issues/3)).
+([#3](https://github.com/FBumann/farkas/issues/3)).

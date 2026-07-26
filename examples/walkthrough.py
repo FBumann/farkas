@@ -26,12 +26,12 @@ from pathlib import Path
 
 import pandas as pd
 
-import linopy_yaml as ly
-from linopy_yaml.expansion import parse_and_expand
-from linopy_yaml.expression_parser import parse_expression
-from linopy_yaml.lowering import lower_program
-from linopy_yaml.relational.executor import DuckdbExecutor
-from linopy_yaml.sources import tidy_sources
+import farkas as ly
+from farkas.expansion import parse_and_expand
+from farkas.expression_parser import parse_expression
+from farkas.lowering import lower_program
+from farkas.relational.executor import DuckdbExecutor
+from farkas.sources import tidy_sources
 
 HERE = Path(__file__).parent
 MODEL = HERE / 'walkthrough.yaml'

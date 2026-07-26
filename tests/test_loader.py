@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from linopy_yaml.schema import MathSchema
+from farkas.schema import MathSchema
 from tests.oracle import loader, xr
 
 

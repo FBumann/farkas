@@ -1,4 +1,4 @@
-"""The compat shim: YAML math onto a linopy.Model, as a pure producer.
+"""The farkas_linopy shim: YAML math onto a linopy.Model, as a pure producer.
 
 No accessor, no session, no state on the model — a file's meaning must not
 depend on what was loaded before it (ARCHITECTURE.md, hard rule 5).
@@ -9,11 +9,11 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from tests.oracle import compat, linopy
+from tests.oracle import farkas_linopy, linopy
 
 
 def test_nothing_is_patched_onto_linopy_model():
-    """Importing compat must not touch linopy.Model."""
+    """Importing farkas_linopy must not touch linopy.Model."""
     assert not hasattr(linopy.Model, 'from_yaml')
     assert not hasattr(linopy.Model, 'yaml')
 
@@ -27,7 +27,7 @@ def test_extend_rejects_mismatched_dim_values(tmp_path):
     ext.write_text('dimensions:\n  time:\n    values: [a, b]\n')
 
     with pytest.raises(ValueError, match='differ from the existing model'):
-        compat.extend(m, ext)
+        farkas_linopy.extend(m, ext)
 
 
 def test_extend_accepts_matching_dim_values(tmp_path):
@@ -38,7 +38,7 @@ def test_extend_accepts_matching_dim_values(tmp_path):
     ext = tmp_path / 'ext.yaml'
     ext.write_text('dimensions:\n  generator:\n    values: [wind, solar]\n')
 
-    compat.extend(m, ext)  # must not raise
+    farkas_linopy.extend(m, ext)  # must not raise
 
 
 def test_infer_coords_unions_across_variables():
@@ -47,7 +47,7 @@ def test_infer_coords_unions_across_variables():
     m.add_variables(name='a', coords=[pd.Index(['wind', 'solar'], name='generator')])
     m.add_variables(name='b', coords=[pd.Index(['wind', 'gas'], name='generator')])
 
-    inferred = compat._infer_coords(m)
+    inferred = farkas_linopy._infer_coords(m)
     assert 'generator' in inferred
     assert set(inferred['generator']) == {'wind', 'solar', 'gas'}
 
@@ -71,7 +71,7 @@ def test_extend_uses_inferred_coords_when_yaml_omits_values(tmp_path):
         '      - expression: p <= cap\n'
     )
 
-    compat.extend(m, ext, data={'cap': pd.Series({'wind': 1.0, 'solar': 2.0})})
+    farkas_linopy.extend(m, ext, data={'cap': pd.Series({'wind': 1.0, 'solar': 2.0})})
 
     assert 'limit' in m.constraints
 
@@ -85,7 +85,7 @@ def test_extend_rejects_yaml_values_that_disagree_with_inferred(tmp_path):
     ext.write_text('dimensions:\n  generator:\n    values: [wind, gas]\n')
 
     with pytest.raises(ValueError, match='differ from the existing model'):
-        compat.extend(m, ext)
+        farkas_linopy.extend(m, ext)
 
 
 def test_extend_coords_kwarg_overrides_inferred(tmp_path):
@@ -96,7 +96,7 @@ def test_extend_coords_kwarg_overrides_inferred(tmp_path):
     ext = tmp_path / 'ext.yaml'
     ext.write_text('dimensions:\n  generator: {}\nparameters:\n  cap:\n    dims: [generator]\n')
 
-    compat.extend(
+    farkas_linopy.extend(
         m,
         ext,
         data={'cap': pd.Series({'wind': 1.0, 'gas': 3.0})},
@@ -128,7 +128,7 @@ def test_extend_is_stateless(tmp_path):
         '    equations:\n'
         '      - expression: q <= cap\n'
     )
-    compat.extend(m, first, data={'cap': pd.Series({'wind': 1.0, 'solar': 2.0})})
+    farkas_linopy.extend(m, first, data={'cap': pd.Series({'wind': 1.0, 'solar': 2.0})})
 
     # 'q' is a model variable, so the second file may reference it. 'cap' is
     # not redeclared here — and must therefore be unknown.
@@ -143,4 +143,4 @@ def test_extend_is_stateless(tmp_path):
         '      - expression: q <= cap\n'
     )
     with pytest.raises(ValueError, match="'cap' not found"):
-        compat.extend(m, second)
+        farkas_linopy.extend(m, second)

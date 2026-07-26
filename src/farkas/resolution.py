@@ -19,9 +19,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, assert_never
 
-from linopy_yaml.errors import LanguageError
-from linopy_yaml.expansion import parse_and_expand
-from linopy_yaml.expression_parser import (
+from farkas.errors import LanguageError
+from farkas.expansion import parse_and_expand
+from farkas.expression_parser import (
     ArithmeticNode,
     BinaryOperatorNode,
     ComparisonNode,
@@ -35,8 +35,8 @@ from linopy_yaml.expression_parser import (
     UnaryOperatorNode,
     VariableNode,
 )
-from linopy_yaml.helpers import BUILTINS, call_shape_error, unknown_helper_message
-from linopy_yaml.where_parser import (
+from farkas.helpers import BUILTINS, call_shape_error, unknown_helper_message
+from farkas.where_parser import (
     AndNode,
     BooleanLiteralNode,
     DimensionComparisonNode,
@@ -53,7 +53,7 @@ from linopy_yaml.where_parser import (
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
-    from linopy_yaml.schema import MathSchema
+    from farkas.schema import MathSchema
 
 
 class Namespace:
@@ -84,7 +84,7 @@ class Namespace:
         """Build the namespace of *schema*.
 
         ``known_variables`` widens the variable set only — used by
-        ``compat.extend()``, where expressions may reference variables already
+        ``linopy.extend()``, where expressions may reference variables already
         on the model. Parameters get no such widening: a YAML file declares
         every parameter it uses (hard rule 5).
         """

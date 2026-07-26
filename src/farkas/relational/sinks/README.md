@@ -64,6 +64,6 @@ sink take it". Two notes for whoever writes it:
 Neither file sink emits in a stable order: several `COPY` statements have no
 `ORDER BY` and `preserve_insertion_order=false` is set on the connection, so
 two runs of the same model produce byte-different files with identical content
-— [#109](https://github.com/FBumann/linopy-yaml/issues/109). `solver_direct` is
+— [#109](https://github.com/FBumann/farkas/issues/109). `solver_direct` is
 unaffected; every read it makes is explicitly ordered, because `searchsorted`
 requires it.

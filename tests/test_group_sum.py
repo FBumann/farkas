@@ -16,19 +16,19 @@ import pandas as pd
 import pytest
 import yaml as pyyaml
 
-from linopy_yaml.errors import DataError, LanguageError
-from linopy_yaml.lowering import lower_program
-from linopy_yaml.relational import (
+from farkas.errors import DataError, LanguageError
+from farkas.lowering import lower_program
+from farkas.relational import (
     DuckdbExecutor,
 )
-from linopy_yaml.relational.plan import (
+from farkas.relational.plan import (
     GroupSum,
     Variable,
 )
-from linopy_yaml.schema import MathSchema
-from linopy_yaml.sources import tidy_sources
+from farkas.schema import MathSchema
+from farkas.sources import tidy_sources
 from tests.conftest import resolved
-from tests.oracle import compat, transport_eager_objective, xr
+from tests.oracle import farkas_linopy, transport_eager_objective, xr
 
 RTOL = 1e-9
 
@@ -63,7 +63,7 @@ def test_transport_yaml_differential(transport_data, tmp_path):
     assert np.isfinite(oracle)
 
     # eager backend through the YAML group_sum helper
-    m = compat.build(TRANSPORT_YAML, data=data, coords=coords)
+    m = farkas_linopy.build(TRANSPORT_YAML, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     assert float(m.objective.value) == pytest.approx(oracle, rel=RTOL)
 
@@ -96,7 +96,7 @@ def test_group_sum_lowering_structure():
 
 
 def _flatten(expr):
-    from linopy_yaml.relational.plan import (
+    from farkas.relational.plan import (
         Add,
         Negate,
     )
@@ -110,7 +110,7 @@ def _flatten(expr):
 
 def test_group_sum_lowering_errors():
     schema = MathSchema(**pyyaml.safe_load(Path(TRANSPORT_YAML).read_text()))
-    from linopy_yaml.lowering import _lower_expr
+    from farkas.lowering import _lower_expr
 
     # an undeclared dim, or a coordinate the dim does not declare, is caught in
     # resolution before lowering ever sees the call
@@ -154,7 +154,7 @@ def test_mistyped_coordinate_is_refused_eagerly(transport_data):
     gens, lines, load = transport_data
     data, coords = _mistyped(gens, lines, load)
     with pytest.raises(DataError, match="not 'bus' coordinates"):
-        compat.build(TRANSPORT_YAML, data=data, coords=coords)
+        farkas_linopy.build(TRANSPORT_YAML, data=data, coords=coords)
 
 
 def test_a_coordinate_must_be_single_valued(transport_data):

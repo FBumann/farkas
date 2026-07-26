@@ -13,11 +13,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from linopy_yaml.errors import DataError, LanguageError
-from linopy_yaml.relational import (
+from farkas.errors import DataError, LanguageError
+from farkas.relational import (
     DuckdbExecutor,
 )
-from linopy_yaml.relational.plan import (
+from farkas.relational.plan import (
     Constant,
     ConstraintDeclaration,
     DimensionDeclaration,

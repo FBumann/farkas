@@ -12,7 +12,7 @@ from typing import Any, Literal, cast
 
 import pyparsing as pp
 
-from linopy_yaml.errors import SchemaError
+from farkas.errors import SchemaError
 
 ComparisonOperator = Literal['<=', '>=', '==']
 

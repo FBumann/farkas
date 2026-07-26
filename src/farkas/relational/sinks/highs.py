@@ -1,7 +1,7 @@
 """The ``solver_direct`` sink: COO batches straight into HiGHS.
 
 No float→text→parse round trip — that is the whole reason this exists beside
-:mod:`~linopy_yaml.relational.sinks.lp_file`. Columns arrive as arrow batches,
+:mod:`~farkas.relational.sinks.lp_file`. Columns arrive as arrow batches,
 rows as numpy slices of ``A``, and the full model never lands in one array.
 
 ``highspy`` is imported inside the function rather than at module scope: it is
@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from linopy_yaml.relational.sinks.tables import ModelTables
+    from farkas.relational.sinks.tables import ModelTables
 
 
 def solve_direct(model: ModelTables, batch_rows: int = 100_000) -> tuple[str, float]:

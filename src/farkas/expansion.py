@@ -39,8 +39,8 @@ from __future__ import annotations
 import copy
 from typing import TYPE_CHECKING, assert_never, overload
 
-from linopy_yaml.errors import SchemaError
-from linopy_yaml.expression_parser import (
+from farkas.errors import SchemaError
+from farkas.expression_parser import (
     ArithmeticNode,
     BinaryOperatorNode,
     ComparisonNode,
@@ -59,7 +59,7 @@ from linopy_yaml.expression_parser import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from linopy_yaml.schema import MacroBlock, MathSchema
+    from farkas.schema import MacroBlock, MathSchema
 
 #: Backstop against pathological nesting the cycle check cannot see.
 _MAX_DEPTH = 50

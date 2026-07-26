@@ -25,8 +25,8 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from linopy_yaml.errors import LanguageError
-from linopy_yaml.relational import plan
+from farkas.errors import LanguageError
+from farkas.relational import plan
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping

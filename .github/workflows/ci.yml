@@ -43,7 +43,7 @@ jobs:
       - run: uv sync --group dev
       - run: uv run --no-sync ruff check .
       - run: uv run --no-sync ruff format --check .
-      # Only here, not in `native`: missing-import is an error, and the compat
+      # Only here, not in `native`: missing-import is an error, and the linopy
       # lane imports linopy/xarray, which the bare install deliberately lacks.
       - run: uv run --no-sync pyrefly check --output-format=github
       - run: uv run --no-sync pytest -q

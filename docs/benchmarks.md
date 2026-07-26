@@ -8,7 +8,7 @@ Evidence for the central claim — build peak RSS is a config knob
 These numbers came from a harness under `scratch/` that has since been removed:
 it had to be re-run by hand, drifted from the shipped code, and its correctness
 arm is now the differential test suite, which runs on every commit. Reproducing
-them means writing a fresh harness against `linopy_yaml.api`; the pitfalls
+them means writing a fresh harness against `farkas.api`; the pitfalls
 below are what to watch for.
 
 ## Results

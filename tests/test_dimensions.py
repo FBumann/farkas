@@ -11,9 +11,9 @@ import copy
 import pytest
 import yaml as pyyaml
 
-from linopy_yaml.dimensions import DimensionError, check_schema, dims_of
-from linopy_yaml.resolution import Namespace, expression_of
-from linopy_yaml.schema import MathSchema
+from farkas.dimensions import DimensionError, check_schema, dims_of
+from farkas.resolution import Namespace, expression_of
+from farkas.schema import MathSchema
 
 BASE = {
     'dimensions': {
@@ -159,7 +159,7 @@ def test_bound_parameter_dim_outside_foreach_is_rejected():
 def test_checking_needs_no_data():
     """The whole point: every rule above is decided from declarations alone,
     so `ly.check()` catches them in CI with no sources bound."""
-    import linopy_yaml as ly
+    import farkas as ly
 
     raw = copy.deepcopy(BASE)
     raw['constraints']['stray'] = {'foreach': ['snapshot'], 'equations': [{'expression': 'p <= p_max'}]}
