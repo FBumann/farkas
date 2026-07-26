@@ -11,78 +11,69 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import yaml as pyyaml
 
 from farkas.errors import LanguageError
 from farkas.lowering import lower_program
-from farkas.schema import MathSchema
+from tests.conftest import schema_of
+
+DISPATCH = Path('examples/dispatch.yaml')
 
 
-def _schema(path: str = 'examples/dispatch.yaml', **overrides) -> MathSchema:
-    raw = pyyaml.safe_load(Path(path).read_text())
-    for dotted, value in overrides.items():
-        node = raw
-        *parents, leaf = dotted.split('.')
-        for key in parents:
-            node = node[key]
-        node[leaf] = value
-    return MathSchema(**raw)
+def _objective(expression: str) -> dict:
+    return {'objectives.total_cost.equations': [{'expression': expression}]}
+
+
+@pytest.mark.parametrize('path', sorted(Path('examples').glob('*.yaml')), ids=lambda p: p.name)
+def test_every_shipped_example_is_inside_the_language(path):
+    """The examples are the language's own claim about itself — one of them
+    falling outside the streaming subset would be a documentation bug that
+    only shows up when a reader runs it."""
+    lower_program(schema_of(path))
 
 
 @pytest.mark.parametrize(
-    'path',
-    ['examples/dispatch.yaml', 'examples/transport.yaml', 'examples/storage.yaml'],
+    'patch',
+    [
+        pytest.param({'variables.p.binary': True, 'variables.p.bounds': {}}, id='binary-variable'),
+        # ROADMAP 5b: both lanes accept `where: "snapshot > 2"`
+        pytest.param({'variables.p.where': 'snapshot > 2'}, id='where-on-a-dimension'),
+        pytest.param(_objective('sum(p * cost, over=generator)'), id='affine-product'),
+    ],
 )
-def test_examples_are_inside_the_language(path):
-    lower_program(_schema(path))  # must not raise
+def test_inside_the_language(patch):
+    lower_program(schema_of(DISPATCH, **patch))  # must not raise
 
 
-def test_binary_variable_is_inside_the_language():
-    schema = _schema(**{'variables.p.binary': True, 'variables.p.bounds': {}})
-    lower_program(schema)
+@pytest.mark.parametrize(
+    ('patch', 'match'),
+    [
+        pytest.param(
+            {'constraints.power_balance.equations': [{'expression': 'sum(p ** 2, over=generator) == load'}]},
+            r"operator '\*\*'",
+            id='power-operator',
+        ),
+        # `check()` must catch degree 2 — it is the first clause of the ceiling.
+        # The affine guard used to live only in the executor, so it needed data
+        # bound: `ly.check()` accepted this and the model only blew up at build
+        # time, which made check() useless as the CI verb for exactly the rule
+        # it should enforce first.
+        pytest.param(_objective('sum(p * p, over=generator)'), 'degree 2', id='degree-two'),
+        pytest.param(_objective('sum(cost / p, over=generator)'), 'divisor contains variables', id='variable-divisor'),
+    ],
+)
+def test_outside_the_language_is_a_load_error(patch, match):
+    with pytest.raises(LanguageError, match=match):
+        lower_program(schema_of(DISPATCH, **patch))
 
 
-def test_power_operator_is_a_load_error():
-    schema = _schema(**{'constraints.power_balance.equations': [{'expression': 'sum(p ** 2, over=generator) == load'}]})
-    with pytest.raises(LanguageError, match=r"operator '\*\*'"):
-        lower_program(schema)
-
-
-def test_unknown_helper_is_a_load_error_with_context():
-    schema = _schema(
-        **{'constraints.power_balance.equations': [{'expression': 'my_helper(p, over=generator) == load'}]}
-    )
+def test_an_unknown_helper_names_its_context_and_teaches_the_rewrite():
+    """The message is the whole test: an error that pointed at another lane
+    would be telling the user to leave the language rather than restate it."""
+    patch = {'constraints.power_balance.equations': [{'expression': 'my_helper(p, over=generator) == load'}]}
     with pytest.raises(LanguageError, match='my_helper') as exc:
-        lower_program(schema)
+        lower_program(schema_of(DISPATCH, **patch))
+
     reason = str(exc.value)
     assert 'power_balance' in reason  # reason carries context
     assert 'escape' in reason  # ...and the rewrite, not a pointer to another lane
     assert 'eager' not in reason.lower()
-
-
-def test_dimension_where_comparison_is_inside_the_language():
-    """ROADMAP 5b: both lanes accept `where: "snapshot > 2"`."""
-    lower_program(_schema(**{'variables.p.where': 'snapshot > 2'}))  # must not raise
-
-
-def test_degree_two_is_a_load_error_not_a_build_error():
-    """`check()` must catch degree 2 — it is the first clause of the ceiling.
-
-    The affine guard used to live only in the executor, so it needed data
-    bound: `ly.check()` accepted `sum(p * p, over=g)` and the model only blew
-    up at build time. That made check() useless as the CI verb for exactly the
-    rule it should enforce first.
-    """
-    schema = _schema(**{'objectives.total_cost.equations': [{'expression': 'sum(p * p, over=generator)'}]})
-    with pytest.raises(LanguageError, match='degree 2'):
-        lower_program(schema)
-
-
-def test_variable_divisor_is_a_load_error():
-    schema = _schema(**{'objectives.total_cost.equations': [{'expression': 'sum(cost / p, over=generator)'}]})
-    with pytest.raises(LanguageError, match='divisor contains variables'):
-        lower_program(schema)
-
-
-def test_affine_products_still_lower():
-    lower_program(_schema(**{'objectives.total_cost.equations': [{'expression': 'sum(p * cost, over=generator)'}]}))

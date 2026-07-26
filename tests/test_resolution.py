@@ -6,40 +6,22 @@ backends. Each test names the behaviour each lane used to have.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from farkas.errors import LanguageError
 from farkas.lowering import lower_program
 from farkas.resolution import Namespace, expression_of, where_of
-from farkas.schema import MathSchema
 from farkas.validation import validate_expressions
+from tests.conftest import DISPATCH_MODEL, schema_of
 
-BASE = {
-    'dimensions': {'snapshot': {'dtype': 'int'}, 'generator': {'values': ['wind', 'gas']}},
-    'parameters': {
-        'p_max': {'dims': ['generator']},
-        'cost': {'dims': ['generator']},
-        'load': {'dims': ['snapshot']},
-    },
-    'variables': {'p': {'foreach': ['snapshot', 'generator'], 'bounds': {'lower': 0, 'upper': 'p_max'}}},
-    'constraints': {
-        'balance': {'foreach': ['snapshot'], 'equations': [{'expression': 'sum(p, over=generator) == load'}]}
-    },
-    'objectives': {'total': {'sense': 'minimize', 'equations': [{'expression': 'sum(p * cost, over=generator)'}]}},
-}
+if TYPE_CHECKING:
+    from farkas.schema import MathSchema
 
 
 def _schema(**overrides) -> MathSchema:
-    import copy
-
-    raw = copy.deepcopy(BASE)
-    for dotted, value in overrides.items():
-        node = raw
-        *path, leaf = dotted.split('.')
-        for key in path:
-            node = node.setdefault(key, {})
-        node[leaf] = value
-    return MathSchema(**raw)
+    return schema_of(DISPATCH_MODEL, **overrides)
 
 
 # ---------------------------------------------------------------------------
