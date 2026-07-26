@@ -299,12 +299,16 @@ there. A dim that no source names and no parameter carries raises on both.
 
 **Accepted per parameter** (declared `dims: [d1, d2]`): `int`/`float` as a
 scalar that broadcasts freely; `dict` and `pd.Series` for 1-D (keys / index
-values become coordinates, and a Series index name must match the dim);
+values become coordinates);
 `pd.DataFrame` for 2-D (index name → `d1`, column name → `d2`); `xr.DataArray`
 directly, with dim names a subset of the declared dims; parquet paths on the
 streaming lane (columns are the dims plus `value`). `np.ndarray` and `list` have
 no named axes, so only 0-D or 1-D matching one declared dim is accepted —
 anything else is refused with a message asking for a named object.
+
+Index names are optional but **binding**: an unnamed index binds positionally
+to the declared `dims`, a named one binds by name in any order, and a name
+outside the declared dims raises rather than being overwritten.
 
 Coordinate values in the data must be a subset of the master coordinate; values
 outside it raise rather than being dropped silently. Every declared parameter
