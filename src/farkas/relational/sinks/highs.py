@@ -12,7 +12,7 @@ import is what keeps the fence cheap.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from farkas.relational.sinks.tables import ModelTables
@@ -35,22 +35,27 @@ def solve_direct(model: ModelTables, batch_rows: int = 100_000) -> tuple[str, fl
 
     empty_i = np.empty(0, dtype=np.int32)
     empty_f = np.empty(0, dtype=np.float64)
+    # Arrow -> numpy per column, never through python objects. ``to_pydict()``
+    # builds a python float per cell, which ``np.asarray`` then parses back:
+    # five million throwaway objects per million columns, and 26x the cost of
+    # reading the buffer that is already there.
     reader = con.execute(
-        'SELECT c.col, c.lb, c.ub, c.vtype, COALESCE(o.coeff, 0) AS cost '
-        'FROM cols c LEFT JOIN obj o USING (col) ORDER BY c.col'
+        'SELECT c.lb, c.ub, COALESCE(o.coeff, 0) AS cost FROM cols c LEFT JOIN obj o USING (col) ORDER BY c.col'
     ).to_arrow_reader(batch_rows)
     for batch in reader:
-        d = batch.to_pydict()
-        lb = np.nan_to_num(np.asarray(d['lb'], dtype=np.float64), neginf=-inf, posinf=inf)
-        ub = np.nan_to_num(np.asarray(d['ub'], dtype=np.float64), neginf=-inf, posinf=inf)
-        cost = np.asarray(d['cost'], dtype=np.float64)
+        lb = np.nan_to_num(_column(batch, 'lb', np.float64), neginf=-inf, posinf=inf)
+        ub = np.nan_to_num(_column(batch, 'ub', np.float64), neginf=-inf, posinf=inf)
+        cost = _column(batch, 'cost', np.float64)
         h.addCols(len(cost), cost, lb, ub, 0, empty_i, empty_i, empty_f)
-        variable_type = np.asarray(d['vtype'])
-        noncontinuous = np.flatnonzero(variable_type != 'continuous')
-        if len(noncontinuous):
-            cols_idx = np.asarray(d['col'], dtype=np.int32)[noncontinuous]
-            integrality = np.full(len(noncontinuous), int(highspy.HighsVarType.kInteger), dtype=np.uint8)
-            h.changeColsIntegrality(len(noncontinuous), cols_idx, integrality)
+
+    # Integrality is its own streamed pass rather than a per-batch string
+    # compare: for a pure LP the query returns nothing and the loop never runs.
+    integral = con.execute("SELECT col FROM cols WHERE vtype != 'continuous' ORDER BY col").to_arrow_reader(batch_rows)
+    for batch in integral:
+        index = _column(batch, 'col', np.int32)
+        h.changeColsIntegrality(
+            len(index), index, np.full(len(index), int(highspy.HighsVarType.kInteger), dtype=np.uint8)
+        )
 
     for lo, hi in model.row_chunks(batch_rows):
         rows = con.execute(
@@ -92,3 +97,9 @@ def solve_direct(model: ModelTables, batch_rows: int = 100_000) -> tuple[str, fl
     con.execute('CREATE TABLE sol AS SELECT * FROM sol_src')
     con.unregister('sol_src')
     return status, objective
+
+
+def _column(batch: Any, name: str, dtype: Any = None):
+    """One Arrow column as a numpy array, without going through python objects."""
+    array = batch.column(name).to_numpy(zero_copy_only=False)
+    return array if dtype is None else array.astype(dtype, copy=False)
