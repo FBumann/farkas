@@ -31,10 +31,11 @@ flowchart TB
     subgraph REL["Relational lane — streaming · memory-bounded · linopy-free"]
         direction TB
         LOWER["lowering.py"] --> PLAN["logical plan<br/>(relational/plan.py)"]
-        DR[("data<br/>parquet paths / Arrow tables")] --> EXEC
-        PLAN --> EXEC["executor.py<br/>tidy tables in file-backed duckdb<br/>under memory_limit"]
-        EXEC --> LPS["lp_file sink<br/>portability, debugging<br/>(mps planned)"]
-        EXEC --> DIRECT["solver_direct sink<br/>COO batches → highspy → HiGHS"]
+        PLAN --> COMP["compiler.py<br/>plan → SQL text<br/>pure: no connection"]
+        DR[("data<br/>parquet paths / pandas")] --> EXEC
+        COMP --> EXEC["executor.py<br/>tidy tables in file-backed duckdb<br/>under memory_limit"]
+        EXEC --> LPS["lp_file sink (sinks.py)<br/>portability, debugging<br/>(mps planned)"]
+        EXEC --> DIRECT["solver_direct sink (sinks.py)<br/>COO batches → highspy → HiGHS"]
         DIRECT --> SOL["solution tables<br/>(label join, never dense)"]
     end
 
@@ -195,6 +196,14 @@ sink, is [ROADMAP Track 4](ROADMAP.md#track-4--sink-capabilities).
 
 ## The relational lane
 
+**Three modules, one per box above.** `compiler.py` turns plan nodes into SQL
+and holds no connection; `executor.py` owns the database and fills the tables;
+`sinks.py` drains them. The split is what makes the admissibility test below
+something you can perform rather than reason about — build a `SqlCompiler`,
+hand it a node, read the `SELECT` (`tests/test_compiler.py` does exactly that,
+with no engine installed). It is also why a new sink is a function in one file
+instead of another method on the executor.
+
 **Tidy tables.** Parameters are `(dims…, value)`; a variable frame is
 `(dims…, var_label)`, one row per *existing* variable; a linear expression is
 `(frame dims…, var_label, coeff)` plus a constant part; constraint rows are
@@ -275,7 +284,9 @@ native schema merge (#30) is what would force the question.
 | `errors.py` | the exception hierarchy; the one module the engine may import |
 | `relational/plan.py` | frozen logical-plan dataclasses |
 | `relational/arrow.py` | the Arrow boundary — caller tables in, via the PyCapsule protocol |
-| `relational/executor.py` | duckdb execution + `lp_file` / `solver_direct` sinks |
+| `relational/compiler.py` | plan → SQL text; pure, no connection |
+| `relational/executor.py` | duckdb: bind sources, label, assemble the tables |
+| `relational/sinks/` | how a built model leaves: `lp_file`, `solver_direct` (one module each, [README](linopy_yaml/relational/sinks/README.md)) |
 | `compat/__init__.py` | opt-in shim: `build` / `extend` on a `linopy.Model` |
 | `compat/loader.py` | data coercion to `xr.Dataset`, master coords |
 | `compat/builder.py` | eager backend: core AST → `linopy.Model` |
