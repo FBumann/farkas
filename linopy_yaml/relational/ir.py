@@ -8,7 +8,7 @@ tables; actual data is bound at execution time via a source registry.
 
 Expressions support operator sugar so plans read naturally in Python:
 
-    balance = GroupSum(Var("p"), mapping="gen_bus", into="bus") - Param("load")
+    balance = GroupSum(Variable("p"), mapping="gen_bus", into="bus") - Parameter("load")
 """
 
 from __future__ import annotations
@@ -16,10 +16,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-Sense = Literal['==', '<=', '>=']
-ObjSense = Literal['min', 'max']
-CmpOp = Literal['==', '!=', '<=', '>=', '<', '>']
-VType = Literal['continuous', 'binary', 'integer']
+ConstraintSense = Literal['==', '<=', '>=']
+ObjectiveSense = Literal['min', 'max']
+ComparisonOperator = Literal['==', '!=', '<=', '>=', '<', '>']
+VariableType = Literal['continuous', 'binary', 'integer']
 
 
 # --------------------------------------------------------------------------
@@ -28,124 +28,128 @@ VType = Literal['continuous', 'binary', 'integer']
 
 
 @dataclass(frozen=True)
-class Expr:
+class Expression:
     """Base class for affine expressions over variables and parameters."""
 
-    def __add__(self, other: Expr | float | int) -> Expr:
+    def __add__(self, other: Expression | float | int) -> Expression:
         return Add(self, _coerce(other))
 
-    def __radd__(self, other: Expr | float | int) -> Expr:
+    def __radd__(self, other: Expression | float | int) -> Expression:
         return Add(_coerce(other), self)
 
-    def __sub__(self, other: Expr | float | int) -> Expr:
-        return Add(self, Neg(_coerce(other)))
+    def __sub__(self, other: Expression | float | int) -> Expression:
+        return Add(self, Negate(_coerce(other)))
 
-    def __rsub__(self, other: Expr | float | int) -> Expr:
-        return Add(_coerce(other), Neg(self))
+    def __rsub__(self, other: Expression | float | int) -> Expression:
+        return Add(_coerce(other), Negate(self))
 
-    def __mul__(self, other: Expr | float | int) -> Expr:
-        return Mul(self, _coerce(other))
+    def __mul__(self, other: Expression | float | int) -> Expression:
+        return Multiply(self, _coerce(other))
 
-    def __rmul__(self, other: Expr | float | int) -> Expr:
-        return Mul(_coerce(other), self)
+    def __rmul__(self, other: Expression | float | int) -> Expression:
+        return Multiply(_coerce(other), self)
 
-    def __truediv__(self, other: Expr | float | int) -> Expr:
-        return Div(self, _coerce(other))
+    def __truediv__(self, other: Expression | float | int) -> Expression:
+        return Divide(self, _coerce(other))
 
-    def __neg__(self) -> Expr:
-        return Neg(self)
+    def __neg__(self) -> Expression:
+        return Negate(self)
 
 
-def _coerce(x: Expr | float | int) -> Expr:
-    if isinstance(x, Expr):
+def _coerce(x: Expression | float | int) -> Expression:
+    if isinstance(x, Expression):
         return x
-    return Const(float(x))
+    return Constant(float(x))
 
 
 @dataclass(frozen=True)
-class Const(Expr):
+class Constant(Expression):
     """A scalar constant."""
 
     value: float
 
 
 @dataclass(frozen=True)
-class Param(Expr):
+class Parameter(Expression):
     """A parameter reference — contributes to the constant part."""
 
     name: str
 
 
 @dataclass(frozen=True)
-class Var(Expr):
+class Variable(Expression):
     """A variable reference — one term per existing variable row."""
 
     name: str
 
 
 @dataclass(frozen=True)
-class Neg(Expr):
-    x: Expr
+class Negate(Expression):
+    operand: Expression
 
 
 @dataclass(frozen=True)
-class Add(Expr):
-    a: Expr
-    b: Expr
+class Add(Expression):
+    left: Expression
+    right: Expression
 
 
 @dataclass(frozen=True)
-class Mul(Expr):
+class Multiply(Expression):
     """Product. At least one factor must be variable-free (affine algebra)."""
 
-    a: Expr
-    b: Expr
+    left: Expression
+    right: Expression
 
 
 @dataclass(frozen=True)
-class Div(Expr):
-    """Quotient ``a / b``. The divisor must be variable-free."""
+class Divide(Expression):
+    """Quotient ``numerator / divisor``. The divisor must be variable-free."""
 
-    a: Expr
-    b: Expr
+    numerator: Expression
+    divisor: Expression
 
 
 @dataclass(frozen=True)
-class Sum(Expr):
-    """Sum ``x`` over the named dims, removing them from the result."""
+class Sum(Expression):
+    """Sum ``operand`` over the named dims, removing them from the result."""
 
-    x: Expr
+    operand: Expression
     over: tuple[str, ...]
 
     def __post_init__(self) -> None:
-        if isinstance(self.over, str):  # tolerate Sum(x, "generator")
+        if isinstance(self.over, str):  # tolerate Sum(operand, "generator")
             object.__setattr__(self, 'over', (self.over,))
 
 
 @dataclass(frozen=True)
-class GroupSum(Expr):
-    """Sum ``x`` through a mapping parameter.
+class GroupSum(Expression):
+    """Sum ``operand`` through a mapping parameter.
 
     ``mapping`` names a parameter with exactly one dim ``d`` whose value
     column holds group keys; the result replaces dim ``d`` with dim ``into``.
     """
 
-    x: Expr
+    operand: Expression
     mapping: str
     into: str
 
 
 @dataclass(frozen=True)
-class Shift(Expr):
-    """Shift along ``dim``: the result at coord *t* is ``x`` at coord *t-n*.
+class Translate(Expression):
+    """Re-index along one dimension: the result at coord *t* is ``operand`` at
+    coord *t - by*.
 
-    ``wrap=True`` is periodic (matching ``xarray.roll``); ``wrap=False`` is
-    acyclic — positions shifted past the edge contribute zero (row absence).
+    One node for both surface spellings, which differ only in ``wrap``:
+    ``roll`` is ``wrap=True`` (periodic, matching ``xarray.roll``), ``shift``
+    is ``wrap=False`` (acyclic — positions translated past the edge contribute
+    zero, by row absence). The node is named for the coordinate map rather
+    than for either spelling, so it does not read as one of the two.
     """
 
-    x: Expr
-    dim: str
-    n: int
+    operand: Expression
+    dimension: str
+    by: int
     wrap: bool = True
 
 
@@ -155,59 +159,59 @@ class Shift(Expr):
 
 
 @dataclass(frozen=True)
-class Pred:
+class Predicate:
     """Base class for where-predicates."""
 
 
 @dataclass(frozen=True)
-class Cmp(Pred):
-    param: str
-    op: CmpOp
+class ParameterComparison(Predicate):
+    parameter: str
+    op: ComparisonOperator
     value: float | str
 
 
 @dataclass(frozen=True)
-class DimCmp(Pred):
+class DimensionComparison(Predicate):
     """Compare a *dimension coordinate* to a literal — ``where: "snapshot > 0"``.
 
-    Unlike :class:`Cmp`, no parameter is involved: the dim table is already in
-    the frame, so this is a filter on its own column.
+    Unlike :class:`ParameterComparison`, no parameter is involved: the dim
+    table is already in the frame, so this is a filter on its own column.
     """
 
-    dim: str
-    op: CmpOp
+    dimension: str
+    op: ComparisonOperator
     value: float | str
 
 
 @dataclass(frozen=True)
-class Defined(Pred):
+class ParameterDefined(Predicate):
     """True where the parameter has a non-null, finite value."""
 
-    param: str
+    parameter: str
 
 
 @dataclass(frozen=True)
-class Bool(Pred):
-    """Constant predicate (``Bool(False)`` masks out every row)."""
+class BooleanConstant(Predicate):
+    """Constant predicate (``BooleanConstant(False)`` masks out every row)."""
 
     value: bool
 
 
 @dataclass(frozen=True)
-class And(Pred):
-    a: Pred
-    b: Pred
+class And(Predicate):
+    left: Predicate
+    right: Predicate
 
 
 @dataclass(frozen=True)
-class Or(Pred):
-    a: Pred
-    b: Pred
+class Or(Predicate):
+    left: Predicate
+    right: Predicate
 
 
 @dataclass(frozen=True)
-class Not(Pred):
-    x: Pred
+class Not(Predicate):
+    operand: Predicate
 
 
 # --------------------------------------------------------------------------
@@ -216,7 +220,7 @@ class Not(Pred):
 
 
 @dataclass(frozen=True)
-class ParameterDecl:
+class ParameterDeclaration:
     """Shape declaration; data is bound at execution time by name."""
 
     name: str
@@ -224,17 +228,17 @@ class ParameterDecl:
 
 
 @dataclass(frozen=True)
-class VariableDecl:
+class VariableDeclaration:
     name: str
     dims: tuple[str, ...]
-    where: Pred | None = None
-    lower: Expr = field(default_factory=lambda: Const(float('-inf')))
-    upper: Expr = field(default_factory=lambda: Const(float('inf')))
-    vtype: VType = 'continuous'
+    where: Predicate | None = None
+    lower: Expression = field(default_factory=lambda: Constant(float('-inf')))
+    upper: Expression = field(default_factory=lambda: Constant(float('inf')))
+    variable_type: VariableType = 'continuous'
 
 
 @dataclass(frozen=True)
-class ConstraintDecl:
+class ConstraintDeclaration:
     """``lhs sense rhs`` for each coord combination of ``dims``.
 
     Both sides are affine; the executor normalises constants to the RHS.
@@ -243,36 +247,36 @@ class ConstraintDecl:
 
     name: str
     dims: tuple[str, ...]
-    lhs: Expr
-    sense: Sense
-    rhs: Expr
-    where: Pred | None = None
+    lhs: Expression
+    sense: ConstraintSense
+    rhs: Expression
+    where: Predicate | None = None
 
 
 @dataclass(frozen=True)
-class ObjectiveDecl:
+class ObjectiveDeclaration:
     """Objective; dims remaining after explicit Sums are implicitly summed."""
 
-    sense: ObjSense
-    expr: Expr
+    sense: ObjectiveSense
+    expression: Expression
 
 
 @dataclass(frozen=True)
 class Program:
     """A complete linear program over named tidy tables."""
 
-    parameters: tuple[ParameterDecl, ...]
-    variables: tuple[VariableDecl, ...]
-    constraints: tuple[ConstraintDecl, ...]
-    objective: ObjectiveDecl
+    parameters: tuple[ParameterDeclaration, ...]
+    variables: tuple[VariableDeclaration, ...]
+    constraints: tuple[ConstraintDeclaration, ...]
+    objective: ObjectiveDeclaration
 
-    def parameter(self, name: str) -> ParameterDecl:
+    def parameter(self, name: str) -> ParameterDeclaration:
         for p in self.parameters:
             if p.name == name:
                 return p
         raise KeyError(f"unknown parameter '{name}'")
 
-    def variable(self, name: str) -> VariableDecl:
+    def variable(self, name: str) -> VariableDeclaration:
         for v in self.variables:
             if v.name == name:
                 return v

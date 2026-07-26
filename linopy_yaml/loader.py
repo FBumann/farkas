@@ -8,6 +8,8 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from linopy_yaml.errors import DataError
+
 if TYPE_CHECKING:
     from linopy_yaml.schema import MathSchema
 
@@ -37,7 +39,7 @@ def build_master_coords(
                 f"Declare them under 'dimensions.{dim_name}.values' in the YAML\n"
                 f"or pass coords={{'{dim_name}': [...]}}."
             )
-            raise ValueError(msg)
+            raise DataError(msg)
 
     return master
 
@@ -59,7 +61,7 @@ def load_parameters(
     for pname in schema.parameters:
         if pname not in data:
             msg = f"Parameter '{pname}' is required but was not provided in data.\nAdd '{pname}' to the data= argument."
-            raise ValueError(msg)
+            raise DataError(msg)
 
     # Step 5: reject unknown data keys
     declared = set(schema.parameters)
@@ -71,7 +73,7 @@ def load_parameters(
             f"Declare them under 'parameters:' in the YAML or remove "
             f'them from data=.'
         )
-        raise ValueError(msg)
+        raise DataError(msg)
 
     # Coerce each parameter
     for pname, pdef in schema.parameters.items():
@@ -113,7 +115,7 @@ def _coerce_to_dataarray(
     if isinstance(raw, dict):
         if len(dims) != 1:
             msg = f"Parameter '{name}': dict input is only supported for 1-D parameters, but declared dims are {dims}."
-            raise ValueError(msg)
+            raise DataError(msg)
         series = pd.Series(raw)
         series.index.name = dims[0]
         raw = series  # fall through to Series handling
@@ -125,7 +127,7 @@ def _coerce_to_dataarray(
                 f"Parameter '{name}': pd.Series input is only supported for "
                 f'1-D parameters, but declared dims are {dims}.'
             )
-            raise ValueError(msg)
+            raise DataError(msg)
         if raw.index.name is None:
             raw = raw.copy()
             raw.index.name = dims[0]
@@ -141,7 +143,7 @@ def _coerce_to_dataarray(
                 f"Parameter '{name}': pd.DataFrame input is only supported for "
                 f'2-D parameters, but declared dims are {dims}.'
             )
-            raise ValueError(msg)
+            raise DataError(msg)
         if raw.index.name is None:
             raw = raw.copy()
             raw.index.name = dims[0]
@@ -174,7 +176,7 @@ def _coerce_to_dataarray(
                     f"match master coordinate '{dim}' length "
                     f'{len(master_coords[dim])}.'
                 )
-                raise ValueError(msg)
+                raise DataError(msg)
             return xr.DataArray(arr_np, dims=[dim], coords={dim: master_coords[dim]})
         msg = (
             f"Parameter '{name}': unsupported type ndarray.\n"
@@ -182,7 +184,7 @@ def _coerce_to_dataarray(
             f'pandas DataFrame or xr.DataArray with named dimensions.\n'
             f'Declared dims: {dims}.'
         )
-        raise ValueError(msg)
+        raise DataError(msg)
 
     type_name = type(raw).__name__
     msg = f"Parameter '{name}': unsupported type '{type_name}'."
@@ -202,7 +204,7 @@ def _validate_dims(
             f'Declared dims: {declared_dims}.\n'
             f'Either update the declaration or reshape your data.'
         )
-        raise ValueError(msg)
+        raise DataError(msg)
 
 
 def _validate_coords(
@@ -223,4 +225,4 @@ def _validate_coords(
                 f'that are not in the master coordinate: {sorted(unknown)}.\n'
                 f"Master '{dim}' coords: {list(master_coords[dim])}"
             )
-            raise ValueError(msg)
+            raise DataError(msg)

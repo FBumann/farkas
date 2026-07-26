@@ -11,7 +11,7 @@ import copy
 import pytest
 import yaml as pyyaml
 
-from linopy_yaml.dimensions import DimError, check_schema, dims_of
+from linopy_yaml.dimensions import DimensionError, check_schema, dims_of
 from linopy_yaml.resolution import Namespace, expression_of
 from linopy_yaml.schema import MathSchema
 
@@ -84,17 +84,17 @@ def test_dim_inference(expr, expected):
 def test_sum_over_an_absent_dim_is_an_error_not_a_noop():
     """SPEC §7.1 used to return the array unchanged. `sum(p, over=bus)` then
     built and solved a model that silently never summed anything."""
-    with pytest.raises(DimError, match='sum\\(over=bus\\) but the expression has dims'):
+    with pytest.raises(DimensionError, match='sum\\(over=bus\\) but the expression has dims'):
         _dims('sum(p, over=bus)')
 
 
 def test_group_sum_requires_the_mapping_dim():
-    with pytest.raises(DimError, match="mapping 'gen_bus' has dims"):
+    with pytest.raises(DimensionError, match="mapping 'gen_bus' has dims"):
         _dims('group_sum(load, gen_bus, into=bus)')
 
 
 def test_roll_requires_the_dim():
-    with pytest.raises(DimError, match="roll\\(\\) along 'snapshot'"):
+    with pytest.raises(DimensionError, match="roll\\(\\) along 'snapshot'"):
         _dims('roll(cost, snapshot=1)')
 
 
@@ -120,7 +120,7 @@ def test_stray_dim_in_a_constraint_is_rejected():
     """The rule that matters most: a dim the foreach does not declare
     multiplies the rows this constraint builds."""
     schema = _schema(**{'constraints.stray': {'foreach': ['snapshot'], 'equations': [{'expression': 'p <= p_max'}]}})
-    with pytest.raises(DimError, match=r"carries dims \['generator'\] that are not in foreach"):
+    with pytest.raises(DimensionError, match=r"carries dims \['generator'\] that are not in foreach"):
         check_schema(schema)
 
 
@@ -133,7 +133,7 @@ def test_foreach_dim_the_equation_never_uses_is_rejected():
             }
         }
     )
-    with pytest.raises(DimError, match=r"does not carry \['bus'\]"):
+    with pytest.raises(DimensionError, match=r"does not carry \['bus'\]"):
         check_schema(schema)
 
 
@@ -141,19 +141,19 @@ def test_where_dim_outside_the_frame_is_rejected():
     """SPEC §6.3 documented an `any()` reduction here — a mask that fails
     *open*, silently including everything."""
     schema = _schema(**{'variables.cap': {'foreach': ['generator'], 'where': 'load > 0'}})
-    with pytest.raises(DimError, match=r"where-parameter 'load' has dims \['bus', 'snapshot'\]"):
+    with pytest.raises(DimensionError, match=r"where-parameter 'load' has dims \['bus', 'snapshot'\]"):
         check_schema(schema)
 
 
 def test_where_comparison_on_a_dim_outside_the_frame_is_rejected():
     schema = _schema(**{'variables.cap': {'foreach': ['generator'], 'where': 'snapshot > 0'}})
-    with pytest.raises(DimError, match="where-comparison on dimension 'snapshot'"):
+    with pytest.raises(DimensionError, match="where-comparison on dimension 'snapshot'"):
         check_schema(schema)
 
 
 def test_bound_parameter_dim_outside_foreach_is_rejected():
     schema = _schema(**{'variables.cap': {'foreach': ['generator'], 'bounds': {'lower': 0, 'upper': 'load'}}})
-    with pytest.raises(DimError, match=r"bounds.upper parameter 'load' has dims \['bus', 'snapshot'\]"):
+    with pytest.raises(DimensionError, match=r"bounds.upper parameter 'load' has dims \['bus', 'snapshot'\]"):
         check_schema(schema)
 
 
@@ -164,7 +164,7 @@ def test_checking_needs_no_data():
 
     raw = copy.deepcopy(BASE)
     raw['constraints']['stray'] = {'foreach': ['snapshot'], 'equations': [{'expression': 'p <= p_max'}]}
-    with pytest.raises(DimError):
+    with pytest.raises(DimensionError):
         ly.check(raw)
 
 

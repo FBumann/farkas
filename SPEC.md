@@ -156,7 +156,8 @@ breaks degree 1; over parameters alone it is data prep.
 ### 5.1 Name resolution
 
 A **load-time pass** (`resolution.py`), not an evaluation-time lookup: parsers
-emit `Name` tokens, the pass rewrites each into `Var`, `Param` or `Dim`, so no
+emit `NameNode` tokens, the pass rewrites each into `VariableNode`, `ParameterNode`
+or `DimensionNode`, so no
 unresolved name crosses into a backend and no backend can hold its own opinion
 about what a name means.
 
@@ -306,7 +307,10 @@ silent fallback, never a redirection to the other lane.
 
 ## 10. Python API
 
-Six names: `check`, `load_schema`, `build`, `solve`, `write`, `LanguageError`.
+Five verbs — `check`, `load_schema`, `build`, `solve`, `write` — and the
+exception tree rooted at `LinopyYamlError`: `LanguageError` (with `SchemaError`,
+`DimensionError`, `PiecewiseExpansionError`) for the model, `DataError` for what
+was bound to it.
 
 ```python
 import linopy_yaml as ly

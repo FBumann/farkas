@@ -15,18 +15,18 @@ import pandas as pd
 import pytest
 import yaml as pyyaml
 
+from linopy_yaml.errors import LanguageError
 from linopy_yaml.lowering import lower_program, tidy_sources
 from linopy_yaml.relational import (
     DuckdbExecutor,
-    RelationalBuildError,
 )
 from linopy_yaml.relational.ir import (
-    Cmp,
-    Defined,
-    DimCmp,
-    Param,
+    DimensionComparison,
+    Parameter,
+    ParameterComparison,
+    ParameterDefined,
     Sum,
-    Var,
+    Variable,
 )
 from linopy_yaml.schema import MathSchema
 from tests.conftest import resolved
@@ -103,20 +103,20 @@ def test_lower_program_structure(dispatch_schema):
     (v,) = program.variables
     assert v.name == 'p'
     assert v.dims == ('snapshot', 'generator')
-    assert v.where == Cmp('p_max', '>', 0.0)
-    assert v.upper == Param('p_max')
+    assert v.where == ParameterComparison('p_max', '>', 0.0)
+    assert v.upper == Parameter('p_max')
 
     (c,) = program.constraints
     assert c.name == 'power_balance'
     assert c.dims == ('snapshot',)
-    assert c.lhs == Sum(Var('p'), ('generator',))
+    assert c.lhs == Sum(Variable('p'), ('generator',))
     assert c.sense == '=='
-    assert c.rhs == Param('load')
+    assert c.rhs == Parameter('load')
 
     assert program.objective.sense == 'min'
     # no sum: an objective totals every dim it carries, so writing one would
     # only restate what the objective already is
-    assert program.objective.expr == Var('p') * Param('cost')
+    assert program.objective.expression == Variable('p') * Parameter('cost')
 
 
 def test_where_lowering(dispatch_schema):
@@ -126,22 +126,21 @@ def test_where_lowering(dispatch_schema):
     ns = Namespace.of(dispatch_schema)
     assert _lower_where(None, ns, 't') is None
     assert _lower_where('True', ns, 't') is None  # True == no mask
-    assert _lower_where('p_max', ns, 't') == Defined('p_max')
+    assert _lower_where('p_max', ns, 't') == ParameterDefined('p_max')
     pred = _lower_where('p_max > 0 AND NOT load == 0', ns, 't')
     assert pred is not None
 
     # dimension coordinates compare like parameters (ROADMAP 5b)
-    assert _lower_where('snapshot > 5', ns, 't') == DimCmp('snapshot', '>', 5)
+    assert _lower_where('snapshot > 5', ns, 't') == DimensionComparison('snapshot', '>', 5)
 
 
 def test_unknown_where_name_is_an_error_in_both_lanes(dispatch_schema):
     """It used to be a scalar-False mask in the eager lane: a model that
     builds, solves, and is silently empty. Resolution makes it a load error."""
     from linopy_yaml.lowering import _lower_where
-    from linopy_yaml.relational.executor import RelationalBuildError
     from linopy_yaml.resolution import Namespace
 
-    with pytest.raises(RelationalBuildError, match="'no_such_param' not found"):
+    with pytest.raises(LanguageError, match="'no_such_param' not found"):
         _lower_where('no_such_param', Namespace.of(dispatch_schema), 't')
 
 
@@ -150,15 +149,15 @@ def test_sum_over_absent_dim_is_noop(dispatch_schema):
     from linopy_yaml.lowering import _lower_expr
 
     ast = resolved('sum(load, over=generator)', dispatch_schema)
-    assert _lower_expr(ast, dispatch_schema, 't') == Param('load')
+    assert _lower_expr(ast, dispatch_schema, 't') == Parameter('load')
 
 
 def test_unsupported_features_rejected(dispatch_schema):
     from linopy_yaml.lowering import _lower_expr
 
-    # roll/shift are supported since ir.Shift, binary/integer since vtype;
+    # roll/shift are supported via ir.Translate, binary/integer via variable_type;
     # '**' and custom Python helpers remain outside the relational subset
-    with pytest.raises(RelationalBuildError, match=r"operator '\*\*'"):
+    with pytest.raises(LanguageError, match=r"operator '\*\*'"):
         _lower_expr(resolved('p ** 2', dispatch_schema), dispatch_schema, 't')
 
     # binary is eligible now and lowers to vtype (see also test_router)
@@ -166,4 +165,4 @@ def test_unsupported_features_rejected(dispatch_schema):
     schema_dict['variables']['p']['binary'] = True
     schema_dict['variables']['p']['bounds'] = {}
     program = lower_program(MathSchema(**schema_dict))
-    assert program.variable('p').vtype == 'binary'
+    assert program.variable('p').variable_type == 'binary'

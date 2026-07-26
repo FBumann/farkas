@@ -20,12 +20,25 @@ Example::
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _installed_version
 
-from linopy_yaml.api import LanguageError, build, check, load_schema, solve, write
+from linopy_yaml.api import build, check, load_schema, solve, write
+from linopy_yaml.errors import (
+    DataError,
+    DimensionError,
+    LanguageError,
+    LinopyYamlError,
+    PiecewiseExpansionError,
+    SchemaError,
+)
 from linopy_yaml.schema import MathSchema
 
 __all__ = [
+    'DataError',
+    'DimensionError',
     'LanguageError',
+    'LinopyYamlError',
     'MathSchema',
+    'PiecewiseExpansionError',
+    'SchemaError',
     'build',
     'check',
     'load_schema',

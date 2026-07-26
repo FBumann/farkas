@@ -3,12 +3,12 @@
 import pytest
 
 from linopy_yaml.expression_parser import (
-    BinOpNode,
-    CompareNode,
-    FuncCallNode,
+    BinaryOperatorNode,
+    ComparisonNode,
+    FunctionCallNode,
     NameNode,
     NumberNode,
-    UnaryOpNode,
+    UnaryOperatorNode,
     parse_expression,
 )
 from linopy_yaml.where_parser import parse_where
@@ -32,51 +32,51 @@ class TestExpressionParser:
 
     def test_addition(self):
         node = parse_expression('a + b')
-        assert isinstance(node, BinOpNode)
+        assert isinstance(node, BinaryOperatorNode)
         assert node.op == '+'
         assert isinstance(node.left, NameNode)
         assert isinstance(node.right, NameNode)
 
     def test_precedence_mul_over_add(self):
         node = parse_expression('a + b * c')
-        assert isinstance(node, BinOpNode)
+        assert isinstance(node, BinaryOperatorNode)
         assert node.op == '+'
-        assert isinstance(node.right, BinOpNode)
+        assert isinstance(node.right, BinaryOperatorNode)
         assert node.right.op == '*'
 
     def test_parentheses(self):
         node = parse_expression('(a + b) * c')
-        assert isinstance(node, BinOpNode)
+        assert isinstance(node, BinaryOperatorNode)
         assert node.op == '*'
-        assert isinstance(node.left, BinOpNode)
+        assert isinstance(node.left, BinaryOperatorNode)
         assert node.left.op == '+'
 
     def test_comparison(self):
         node = parse_expression('p <= p_max')
-        assert isinstance(node, CompareNode)
+        assert isinstance(node, ComparisonNode)
         assert node.op == '<='
 
     def test_equality(self):
         node = parse_expression('sum(p, over=g) == load')
-        assert isinstance(node, CompareNode)
+        assert isinstance(node, ComparisonNode)
         assert node.op == '=='
 
     def test_function_call(self):
         node = parse_expression('sum(p, over=generator)')
-        assert isinstance(node, FuncCallNode)
+        assert isinstance(node, FunctionCallNode)
         assert node.name == 'sum'
         assert len(node.args) == 1
         assert 'over' in node.kwargs
 
     def test_unary_minus(self):
         node = parse_expression('-x')
-        assert isinstance(node, UnaryOpNode)
+        assert isinstance(node, UnaryOperatorNode)
         assert node.op == '-'
 
     def test_complex_expression(self):
         node = parse_expression('sum(p * cost, over=generator)')
-        assert isinstance(node, FuncCallNode)
-        assert isinstance(node.args[0], BinOpNode)
+        assert isinstance(node, FunctionCallNode)
+        assert isinstance(node.args[0], BinaryOperatorNode)
 
     def test_invalid_raises(self):
         with pytest.raises(ValueError, match='Failed to parse'):
@@ -85,24 +85,24 @@ class TestExpressionParser:
 
 class TestWhereParser:
     def test_bool_literal_true(self):
-        from linopy_yaml.where_parser import BoolLiteral
+        from linopy_yaml.where_parser import BooleanLiteralNode
 
         node = parse_where('True')
-        assert isinstance(node, BoolLiteral)
+        assert isinstance(node, BooleanLiteralNode)
         assert node.value is True
 
     def test_existence_check(self):
-        from linopy_yaml.where_parser import ExistenceCheck
+        from linopy_yaml.where_parser import UnresolvedNameNode
 
         node = parse_where('p_max')
-        assert isinstance(node, ExistenceCheck)
+        assert isinstance(node, UnresolvedNameNode)
         assert node.name == 'p_max'
 
     def test_comparison(self):
-        from linopy_yaml.where_parser import Comparison
+        from linopy_yaml.where_parser import UnresolvedComparisonNode
 
         node = parse_where('p_max > 0')
-        assert isinstance(node, Comparison)
+        assert isinstance(node, UnresolvedComparisonNode)
         assert node.op == '>'
         assert node.value == 0
 

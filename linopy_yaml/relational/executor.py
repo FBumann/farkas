@@ -40,6 +40,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+from linopy_yaml.errors import DataError, LanguageError, LinopyYamlError
 from linopy_yaml.relational import ir
 
 if TYPE_CHECKING:
@@ -52,12 +53,16 @@ _IDENT = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 _COPY_OPTS = "(FORMAT csv, HEADER false, QUOTE '', ESCAPE '')"
 
 
-class RelationalBuildError(ValueError):
-    """A program cannot be built — bad shape, unbound source, nonlinearity…"""
+#: Deprecated. The engine's failures are now split between
+#: :class:`~linopy_yaml.errors.LanguageError` (the program says something the
+#: engine cannot build) and :class:`~linopy_yaml.errors.DataError` (a source is
+#: missing or the wrong shape). This alias is their common base, so an existing
+#: ``except RelationalBuildError`` keeps catching everything it used to.
+RelationalBuildError = LinopyYamlError
 
 
 @dataclass(frozen=True)
-class _Piece:
+class _TermFragment:
     """One additive piece of a compiled affine expression.
 
     ``sql`` is a full SELECT. Term pieces yield ``(dims…, var_label, coeff)``;
@@ -70,9 +75,9 @@ class _Piece:
 
 
 @dataclass(frozen=True)
-class _Compiled:
-    terms: tuple[_Piece, ...]
-    consts: tuple[_Piece, ...]
+class _CompiledExpression:
+    terms: tuple[_TermFragment, ...]
+    consts: tuple[_TermFragment, ...]
 
 
 @dataclass
@@ -229,16 +234,16 @@ class DuckdbExecutor:
         )
         for n in names:
             if not _IDENT.match(n):
-                raise RelationalBuildError(f"name '{n}' is not a valid identifier ([A-Za-z_][A-Za-z0-9_]*)")
+                raise LanguageError(f"name '{n}' is not a valid identifier ([A-Za-z_][A-Za-z0-9_]*)")
 
-    def _create_param_table(self, p: ir.ParameterDecl, sources: Mapping[str, Any]) -> None:
+    def _create_param_table(self, p: ir.ParameterDeclaration, sources: Mapping[str, Any]) -> None:
         if p.name not in sources:
-            raise RelationalBuildError(f"no source bound for parameter '{p.name}'")
+            raise DataError(f"no source bound for parameter '{p.name}'")
         rel = self._source_relation(p.name, sources[p.name])
         cols = [*p.dims, 'value']
         missing = set(cols) - set(self._relation_columns(rel))
         if missing:
-            raise RelationalBuildError(
+            raise DataError(
                 f"source for parameter '{p.name}' is missing columns {sorted(missing)} "
                 f"(need dims {list(p.dims)} plus 'value')"
             )
@@ -255,7 +260,7 @@ class DuckdbExecutor:
         if isinstance(source, pd.DataFrame):
             self._con.register(f'src_{name}', source)
             return f'src_{name}'
-        raise RelationalBuildError(
+        raise DataError(
             f"source for '{name}' must be a parquet path, DataFrame, or Series (got {type(source).__name__})"
         )
 
@@ -286,7 +291,7 @@ class DuckdbExecutor:
             else:
                 params = [p for p in program.parameters if d in p.dims]
                 if not params:
-                    raise RelationalBuildError(
+                    raise DataError(
                         f"dimension '{d}' has no source: no parameter carries it and "
                         f"no explicit index was provided under key '{d}'"
                     )
@@ -310,7 +315,7 @@ class DuckdbExecutor:
             )
             return
         if not isinstance(source, pd.DataFrame) or d not in source.columns:
-            raise RelationalBuildError(
+            raise DataError(
                 f"explicit index for dimension '{d}' must be a DataFrame with a "
                 f"'{d}' column or a parquet path (got {type(source).__name__})"
             )
@@ -324,7 +329,7 @@ class DuckdbExecutor:
     # frames (masked coord products with partition-wise labels)
     # ------------------------------------------------------------------
 
-    def _frame_sql(self, dims: tuple[str, ...], where: ir.Pred | None) -> tuple[str, str, str]:
+    def _frame_sql(self, dims: tuple[str, ...], where: ir.Predicate | None) -> tuple[str, str, str]:
         """FROM/WHERE clauses of the (masked) coord product and its order key.
 
         Returns ``(from_clause, where_clause, order_key)``; the select list can
@@ -344,7 +349,7 @@ class DuckdbExecutor:
         order_key = ', '.join(f't_{d}.ord' for d in dims)
         return from_clause, where_clause, order_key
 
-    def _pred_sql(self, pred: ir.Pred, dims: tuple[str, ...]) -> tuple[list[str], str]:
+    def _pred_sql(self, pred: ir.Predicate, dims: tuple[str, ...]) -> tuple[list[str], str]:
         assert self._program is not None
         joins: dict[str, str] = {}
 
@@ -358,7 +363,7 @@ class DuckdbExecutor:
             decl = self._program.parameter(param)
             extra = set(decl.dims) - set(dims)
             if extra:
-                raise RelationalBuildError(
+                raise LanguageError(
                     f"where-parameter '{param}' has dims {sorted(extra)} outside the foreach dims {list(dims)}"
                 )
             alias = f'w_{param}'
@@ -366,33 +371,33 @@ class DuckdbExecutor:
             joins[alias] = f'LEFT JOIN p_{param} {alias} ON {on}'
             return alias
 
-        def walk(p: ir.Pred) -> str:
-            if isinstance(p, ir.Cmp):
-                alias = join_param(p.param)
+        def walk(p: ir.Predicate) -> str:
+            if isinstance(p, ir.ParameterComparison):
+                alias = join_param(p.parameter)
                 val = f"'{p.value}'" if isinstance(p.value, str) else repr(p.value)
                 op = '=' if p.op == '==' else p.op
                 return f'({alias}.value {op} {val})'
-            if isinstance(p, ir.DimCmp):
-                if p.dim not in dims:
-                    raise RelationalBuildError(
-                        f"where-comparison on dimension '{p.dim}' is outside the foreach dims "
+            if isinstance(p, ir.DimensionComparison):
+                if p.dimension not in dims:
+                    raise LanguageError(
+                        f"where-comparison on dimension '{p.dimension}' is outside the foreach dims "
                         f'{list(dims)} — reducing a mask over an unlisted dim is not supported'
                     )
                 val = f"'{p.value}'" if isinstance(p.value, str) else repr(p.value)
                 op = '=' if p.op == '==' else p.op
-                return f'(t_{p.dim}.val {op} {val})'
-            if isinstance(p, ir.Defined):
-                alias = join_param(p.param)
+                return f'(t_{p.dimension}.val {op} {val})'
+            if isinstance(p, ir.ParameterDefined):
+                alias = join_param(p.parameter)
                 return f'({alias}.value IS NOT NULL AND isfinite({alias}.value))'
-            if isinstance(p, ir.Bool):
+            if isinstance(p, ir.BooleanConstant):
                 return 'TRUE' if p.value else 'FALSE'
             if isinstance(p, ir.And):
-                return f'({walk(p.a)} AND {walk(p.b)})'
+                return f'({walk(p.left)} AND {walk(p.right)})'
             if isinstance(p, ir.Or):
-                return f'({walk(p.a)} OR {walk(p.b)})'
+                return f'({walk(p.left)} OR {walk(p.right)})'
             if isinstance(p, ir.Not):
-                return f'(NOT COALESCE({walk(p.x)}, FALSE))'
-            raise RelationalBuildError(f'unsupported predicate node {type(p).__name__}')
+                return f'(NOT COALESCE({walk(p.operand)}, FALSE))'
+            raise LanguageError(f'unsupported predicate node {type(p).__name__}')
 
         cond = walk(pred)
         # NULL comparisons (missing parameter rows) must exclude the row, not
@@ -404,9 +409,9 @@ class DuckdbExecutor:
         per_chunk = max(1, int(self.chunk_rows // max(1.0, other_card)))
         return [(s, min(s + per_chunk, card)) for s in range(0, card, per_chunk)]
 
-    def _build_variable(self, v: ir.VariableDecl) -> None:
+    def _build_variable(self, v: ir.VariableDeclaration) -> None:
         if not v.dims:
-            raise RelationalBuildError(f"variable '{v.name}' has no dims (scalars: use dims of size 1)")
+            raise LanguageError(f"variable '{v.name}' has no dims (scalars: use dims of size 1)")
         collist = ', '.join(f't_{d}.val AS {d}' for d in v.dims)
         from_clause, where_clause, order_key = self._frame_sql(v.dims, v.where)
         self._con.execute(
@@ -430,29 +435,29 @@ class DuckdbExecutor:
         ub_sql, ub_joins = self._bound_sql(v.upper, v)
         joins = ' '.join(dict.fromkeys(lb_joins + ub_joins))
         self._con.execute(
-            f"INSERT INTO cols SELECT f.var_label, {lb_sql}, {ub_sql}, '{v.vtype}' FROM var_{v.name} f {joins}"
+            f"INSERT INTO cols SELECT f.var_label, {lb_sql}, {ub_sql}, '{v.variable_type}' FROM var_{v.name} f {joins}"
         )
         bad = self._scalar('SELECT count(*) FROM cols WHERE lb IS NULL OR ub IS NULL')
         if bad:
-            raise RelationalBuildError(
+            raise DataError(
                 f"variable '{v.name}': {bad} rows have NULL bounds — a bound parameter "
                 f'is missing values for some coordinates'
             )
 
-    def _bound_sql(self, expr: ir.Expr, v: ir.VariableDecl) -> tuple[str, list[str]]:
+    def _bound_sql(self, expr: ir.Expression, v: ir.VariableDeclaration) -> tuple[str, list[str]]:
         """Compile a variable-free bound expression to a scalar SQL expression
         over alias ``f`` (the variable frame), returning (sql, join clauses)."""
         assert self._program is not None
         joins: dict[str, str] = {}
 
-        def walk(e: ir.Expr) -> str:
-            if isinstance(e, ir.Const):
+        def walk(e: ir.Expression) -> str:
+            if isinstance(e, ir.Constant):
                 return _lit(e.value)
-            if isinstance(e, ir.Param):
+            if isinstance(e, ir.Parameter):
                 decl = self._program.parameter(e.name)
                 extra = set(decl.dims) - set(v.dims)
                 if extra:
-                    raise RelationalBuildError(
+                    raise LanguageError(
                         f"bound parameter '{e.name}' of variable '{v.name}' has dims "
                         f'{sorted(extra)} outside the variable dims {list(v.dims)}'
                     )
@@ -460,15 +465,15 @@ class DuckdbExecutor:
                 on = ' AND '.join(f'{alias}.{d} = f.{d}' for d in decl.dims) or 'TRUE'
                 joins[alias] = f'LEFT JOIN p_{e.name} {alias} ON {on}'
                 return f'{alias}.value'
-            if isinstance(e, ir.Neg):
-                return f'(-({walk(e.x)}))'
+            if isinstance(e, ir.Negate):
+                return f'(-({walk(e.operand)}))'
             if isinstance(e, ir.Add):
-                return f'({walk(e.a)} + {walk(e.b)})'
-            if isinstance(e, ir.Mul):
-                return f'({walk(e.a)} * {walk(e.b)})'
-            raise RelationalBuildError(
+                return f'({walk(e.left)} + {walk(e.right)})'
+            if isinstance(e, ir.Multiply):
+                return f'({walk(e.left)} * {walk(e.right)})'
+            raise LanguageError(
                 f"unsupported node {type(e).__name__} in bounds of variable '{v.name}' "
-                f'(bounds must be variable-free arithmetic over Const/Param)'
+                f'(bounds must be variable-free arithmetic over Constant/Parameter)'
             )
 
         return walk(expr), list(joins.values())
@@ -477,75 +482,75 @@ class DuckdbExecutor:
     # expression compilation → pieces
     # ------------------------------------------------------------------
 
-    def _compile(self, expr: ir.Expr, context: str) -> _Compiled:
+    def _compile(self, expr: ir.Expression, context: str) -> _CompiledExpression:
         assert self._program is not None
         prog = self._program
 
-        def ev(e: ir.Expr) -> _Compiled:
-            if isinstance(e, ir.Const):
-                return _Compiled((), (_Piece((), f'SELECT {_lit(e.value)} AS cval', False),))
-            if isinstance(e, ir.Param):
+        def ev(e: ir.Expression) -> _CompiledExpression:
+            if isinstance(e, ir.Constant):
+                return _CompiledExpression((), (_TermFragment((), f'SELECT {_lit(e.value)} AS cval', False),))
+            if isinstance(e, ir.Parameter):
                 d = prog.parameter(e.name).dims
                 cols = ', '.join([*d, 'value AS cval']) if d else 'value AS cval'
-                return _Compiled((), (_Piece(d, f'SELECT {cols} FROM p_{e.name}', False),))
-            if isinstance(e, ir.Var):
+                return _CompiledExpression((), (_TermFragment(d, f'SELECT {cols} FROM p_{e.name}', False),))
+            if isinstance(e, ir.Variable):
                 d = prog.variable(e.name).dims
                 cols = ', '.join([*d, 'var_label', '1.0 AS coeff'])
-                return _Compiled((_Piece(d, f'SELECT {cols} FROM var_{e.name}', True),), ())
-            if isinstance(e, ir.Neg):
-                inner = ev(e.x)
-                return _Compiled(
+                return _CompiledExpression((_TermFragment(d, f'SELECT {cols} FROM var_{e.name}', True),), ())
+            if isinstance(e, ir.Negate):
+                inner = ev(e.operand)
+                return _CompiledExpression(
                     tuple(_negate(p) for p in inner.terms),
                     tuple(_negate(p) for p in inner.consts),
                 )
             if isinstance(e, ir.Add):
-                a, b = ev(e.a), ev(e.b)
-                return _Compiled(a.terms + b.terms, a.consts + b.consts)
-            if isinstance(e, ir.Mul):
-                a, b = ev(e.a), ev(e.b)
+                a, b = ev(e.left), ev(e.right)
+                return _CompiledExpression(a.terms + b.terms, a.consts + b.consts)
+            if isinstance(e, ir.Multiply):
+                a, b = ev(e.left), ev(e.right)
                 if a.terms and b.terms:
-                    raise RelationalBuildError(f'nonlinear product in {context}: both factors contain variables')
+                    raise LanguageError(f'nonlinear product in {context}: both factors contain variables')
                 if b.terms:  # normalise: terms on the left
                     a, b = b, a
                 terms = tuple(_join_mul(t, c, is_term=True) for t in a.terms for c in b.consts)
                 consts = tuple(_join_mul(x, c, is_term=False) for x in a.consts for c in b.consts)
-                return _Compiled(terms, consts)
-            if isinstance(e, ir.Div):
-                a, b = ev(e.a), ev(e.b)
+                return _CompiledExpression(terms, consts)
+            if isinstance(e, ir.Divide):
+                a, b = ev(e.numerator), ev(e.divisor)
                 if b.terms:
-                    raise RelationalBuildError(f'nonlinear quotient in {context}: the divisor contains variables')
+                    raise LanguageError(f'nonlinear quotient in {context}: the divisor contains variables')
                 if len(b.consts) != 1:
-                    raise RelationalBuildError(
-                        f'in {context}: a divisor must be a single Const/Param factor, '
+                    raise LanguageError(
+                        f'in {context}: a divisor must be a single Constant/Parameter factor, '
                         f'not a sum — rewrite as multiplication by a precomputed parameter'
                     )
                 inv = b.consts[0]
                 terms = tuple(_join_mul(t, inv, is_term=True, op='/') for t in a.terms)
                 consts = tuple(_join_mul(x, inv, is_term=False, op='/') for x in a.consts)
-                return _Compiled(terms, consts)
+                return _CompiledExpression(terms, consts)
             if isinstance(e, ir.Sum):
-                inner = ev(e.x)
-                terms = tuple(self._sum_piece(p, e.over, context) for p in inner.terms)
-                consts = tuple(self._sum_piece(p, e.over, context) for p in inner.consts)
-                return _Compiled(terms, consts)
+                inner = ev(e.operand)
+                terms = tuple(self._sum_fragment(p, e.over, context) for p in inner.terms)
+                consts = tuple(self._sum_fragment(p, e.over, context) for p in inner.consts)
+                return _CompiledExpression(terms, consts)
             if isinstance(e, ir.GroupSum):
-                inner = ev(e.x)
-                terms = tuple(self._group_piece(p, e, context) for p in inner.terms)
-                consts = tuple(self._group_piece(p, e, context) for p in inner.consts)
-                return _Compiled(terms, consts)
-            if isinstance(e, ir.Shift):
-                inner = ev(e.x)
-                terms = tuple(self._shift_piece(p, e, context) for p in inner.terms)
-                consts = tuple(self._shift_piece(p, e, context) for p in inner.consts)
-                return _Compiled(terms, consts)
-            raise RelationalBuildError(f'unsupported expression node {type(e).__name__} in {context}')
+                inner = ev(e.operand)
+                terms = tuple(self._group_fragment(p, e, context) for p in inner.terms)
+                consts = tuple(self._group_fragment(p, e, context) for p in inner.consts)
+                return _CompiledExpression(terms, consts)
+            if isinstance(e, ir.Translate):
+                inner = ev(e.operand)
+                terms = tuple(self._translate_fragment(p, e, context) for p in inner.terms)
+                consts = tuple(self._translate_fragment(p, e, context) for p in inner.consts)
+                return _CompiledExpression(terms, consts)
+            raise LanguageError(f'unsupported expression node {type(e).__name__} in {context}')
 
         return ev(expr)
 
-    def _sum_piece(self, p: _Piece, over: tuple[str, ...], context: str) -> _Piece:
+    def _sum_fragment(self, p: _TermFragment, over: tuple[str, ...], context: str) -> _TermFragment:
         missing = [d for d in over if d not in p.dims]
         if missing and not p.is_term:
-            raise RelationalBuildError(
+            raise LanguageError(
                 f'in {context}: Sum over {list(over)} of a constant part lacking dims '
                 f'{missing} is ambiguous under masks — multiply explicitly instead'
             )
@@ -555,55 +560,55 @@ class DuckdbExecutor:
         if scale != 1:
             valcols = f'var_label, coeff * {scale} AS coeff' if p.is_term else f'cval * {scale} AS cval'
         cols = ', '.join([*keep, valcols]) if keep else valcols
-        return _Piece(keep, f'SELECT {cols} FROM ({p.sql})', p.is_term)
+        return _TermFragment(keep, f'SELECT {cols} FROM ({p.sql})', p.is_term)
 
-    def _group_piece(self, p: _Piece, g: ir.GroupSum, context: str) -> _Piece:
+    def _group_fragment(self, p: _TermFragment, g: ir.GroupSum, context: str) -> _TermFragment:
         assert self._program is not None
         mdecl = self._program.parameter(g.mapping)
         if len(mdecl.dims) != 1:
-            raise RelationalBuildError(
+            raise LanguageError(
                 f"in {context}: GroupSum mapping '{g.mapping}' must have exactly one dim (has {list(mdecl.dims)})"
             )
         d = mdecl.dims[0]
         if d not in p.dims:
-            raise RelationalBuildError(f"in {context}: GroupSum over '{d}' but the expression has dims {list(p.dims)}")
+            raise LanguageError(f"in {context}: GroupSum over '{d}' but the expression has dims {list(p.dims)}")
         keep = tuple(x for x in p.dims if x != d)
         valcols = 't.var_label, t.coeff' if p.is_term else 't.cval'
         keepcols = ', '.join([*(f't.{x}' for x in keep), f'm.value AS {g.into}', valcols])
         sql = f'SELECT {keepcols} FROM ({p.sql}) t JOIN p_{g.mapping} m ON m.{d} = t.{d}'
-        return _Piece((*keep, g.into), sql, p.is_term)
+        return _TermFragment((*keep, g.into), sql, p.is_term)
 
-    def _shift_piece(self, p: _Piece, s: ir.Shift, context: str) -> _Piece:
-        """Circular shift = a pointwise remap of the dim through its ord:
-        a row at ord *o* contributes to output coord at ord ``(o + n) % card``.
-        No window function involved — bounded-halo locality."""
-        if s.dim not in p.dims:
-            raise RelationalBuildError(
-                f"in {context}: Shift along '{s.dim}' but the expression has dims {list(p.dims)}"
+    def _translate_fragment(self, p: _TermFragment, s: ir.Translate, context: str) -> _TermFragment:
+        """Translation = a pointwise remap of the dim through its ord:
+        a row at ord *o* contributes to the output coord at ord ``(o + by) %
+        card``. No window function involved — bounded-halo locality."""
+        if s.dimension not in p.dims:
+            raise LanguageError(
+                f"in {context}: translation along '{s.dimension}' but the expression has dims {list(p.dims)}"
             )
-        card = self._dim_card[s.dim]
-        others = [d for d in p.dims if d != s.dim]
+        card = self._dim_card[s.dimension]
+        others = [d for d in p.dims if d != s.dimension]
         valcols = 't.var_label, t.coeff' if p.is_term else 't.cval'
-        cols = ', '.join([*(f't.{d}' for d in others), f'd_out.val AS {s.dim}', valcols])
+        cols = ', '.join([*(f't.{d}' for d in others), f'd_out.val AS {s.dimension}', valcols])
         if s.wrap:
-            on = f'd_out.ord = ((d_in.ord + {s.n}) % {card} + {card}) % {card}'
+            on = f'd_out.ord = ((d_in.ord + {s.by}) % {card} + {card}) % {card}'
         else:
             # acyclic: out-of-range rows simply don't join — zero contribution
-            on = f'd_out.ord = d_in.ord + {s.n}'
+            on = f'd_out.ord = d_in.ord + {s.by}'
         sql = (
             f'SELECT {cols} FROM ({p.sql}) t '
-            f'JOIN dim_{s.dim} d_in ON d_in.val = t.{s.dim} '
-            f'JOIN dim_{s.dim} d_out ON {on}'
+            f'JOIN dim_{s.dimension} d_in ON d_in.val = t.{s.dimension} '
+            f'JOIN dim_{s.dimension} d_out ON {on}'
         )
-        return _Piece(p.dims, sql, p.is_term)
+        return _TermFragment(p.dims, sql, p.is_term)
 
     # ------------------------------------------------------------------
     # constraints and objective
     # ------------------------------------------------------------------
 
-    def _build_constraint(self, c: ir.ConstraintDecl) -> None:
+    def _build_constraint(self, c: ir.ConstraintDeclaration) -> None:
         if not c.dims:
-            raise RelationalBuildError(f"constraint '{c.name}' has no dims")
+            raise LanguageError(f"constraint '{c.name}' has no dims")
         lhs = self._compile(c.lhs, f"constraint '{c.name}' lhs")
         rhs = self._compile(c.rhs, f"constraint '{c.name}' rhs")
         # normalise: terms on the left (rhs terms negated), consts on the right
@@ -612,7 +617,7 @@ class DuckdbExecutor:
         for p, _ in [*terms, *consts]:
             extra = set(p.dims) - set(c.dims)
             if extra:
-                raise RelationalBuildError(
+                raise LanguageError(
                     f"constraint '{c.name}': expression has dims {sorted(extra)} outside "
                     f'foreach {list(c.dims)} — missing a Sum/GroupSum?'
                 )
@@ -658,16 +663,16 @@ class DuckdbExecutor:
             )
         self._con.execute(f"INSERT INTO rows WITH f AS ({frame}) SELECT f.row, '{c.sense}', {rhs_sql} FROM f")
 
-    def _agg_const_join(self, p: _Piece, frame_dims: tuple[str, ...]) -> str:
+    def _agg_const_join(self, p: _TermFragment, frame_dims: tuple[str, ...]) -> str:
         """Correlated scalar: the summed const piece value for frame row ``f``."""
         cond = ' AND '.join(f'q.{d} = f.{d}' for d in p.dims) or 'TRUE'
         return f'SELECT SUM(q.cval) FROM ({p.sql}) q WHERE {cond}'
 
-    def _build_objective(self, o: ir.ObjectiveDecl) -> None:
-        comp = self._compile(o.expr, 'objective')
+    def _build_objective(self, o: ir.ObjectiveDeclaration) -> None:
+        comp = self._compile(o.expression, 'objective')
         for p in comp.consts:
             if p.dims:
-                raise RelationalBuildError(
+                raise LanguageError(
                     'objective constant part has dims — wrap parameter terms in '
                     'Mul with a Var, or pre-aggregate to a scalar'
                 )
@@ -875,13 +880,13 @@ def _lit(v: float) -> str:
     return repr(float(v))
 
 
-def _negate(p: _Piece) -> _Piece:
+def _negate(p: _TermFragment) -> _TermFragment:
     cols = 'var_label, -coeff AS coeff' if p.is_term else '-cval AS cval'
     sel = ', '.join([*p.dims, cols]) if p.dims else cols
-    return _Piece(p.dims, f'SELECT {sel} FROM ({p.sql})', p.is_term)
+    return _TermFragment(p.dims, f'SELECT {sel} FROM ({p.sql})', p.is_term)
 
 
-def _join_mul(a: _Piece, c: _Piece, is_term: bool, op: str = '*') -> _Piece:
+def _join_mul(a: _TermFragment, c: _TermFragment, is_term: bool, op: str = '*') -> _TermFragment:
     """a op c where ``c`` is a const piece; join on shared dims, broadcast the rest."""
     shared = [d for d in a.dims if d in c.dims]
     on = ' AND '.join(f'a.{d} = c.{d}' for d in shared) or 'TRUE'
@@ -892,7 +897,7 @@ def _join_mul(a: _Piece, c: _Piece, is_term: bool, op: str = '*') -> _Piece:
     ]
     val = f'a.var_label, a.coeff {op} c.cval AS coeff' if is_term else f'a.cval {op} c.cval AS cval'
     sel = ', '.join([*dimcols, val])
-    return _Piece(
+    return _TermFragment(
         out_dims,
         f'SELECT {sel} FROM ({a.sql}) a JOIN ({c.sql}) c ON {on}',
         is_term,

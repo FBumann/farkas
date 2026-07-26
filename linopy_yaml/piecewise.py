@@ -42,15 +42,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from linopy_yaml.expression_parser import CompareNode, parse_expression
-from linopy_yaml.schema import MathSchema, PiecewiseDef
+from linopy_yaml.errors import PiecewiseExpansionError
+from linopy_yaml.expression_parser import ComparisonNode, parse_expression
+from linopy_yaml.schema import MathSchema, PiecewiseBlock
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
-
-
-class PiecewiseExpansionError(ValueError):
-    """A piecewise block references something that doesn't exist or collides."""
 
 
 def expand_piecewise(schema: MathSchema) -> MathSchema:
@@ -98,7 +95,7 @@ def expand_piecewise(schema: MathSchema) -> MathSchema:
     return MathSchema(**raw)
 
 
-def _validate_block(schema: MathSchema, name: str, pw: PiecewiseDef) -> tuple[str, ...]:
+def _validate_block(schema: MathSchema, name: str, pw: PiecewiseBlock) -> tuple[str, ...]:
     """Check references and infer the frame (union of the links' dims)."""
     ctx = f"piecewise '{name}'"
     if pw.over not in schema.dimensions:
@@ -147,21 +144,21 @@ def _validate_block(schema: MathSchema, name: str, pw: PiecewiseDef) -> tuple[st
 
 def _expr_dims(schema: MathSchema, text: str, ctx: str) -> frozenset[str]:
     """Dims of an affine link expression, via the lowering machinery."""
+    from linopy_yaml.errors import LanguageError
     from linopy_yaml.lowering import _dims_of, _lower_expr
-    from linopy_yaml.relational.executor import RelationalBuildError
     from linopy_yaml.resolution import Namespace, resolve_expression
 
     ast = parse_expression(text)
-    if isinstance(ast, CompareNode):
+    if isinstance(ast, ComparisonNode):
         raise PiecewiseExpansionError(f'{ctx}: link expressions must not contain a comparison, got {text!r}')
     errors: list[str] = []
     resolved = resolve_expression(ast, Namespace.of(schema), ctx, errors)
     if resolved is None:
         raise PiecewiseExpansionError('\n'.join(errors))
-    assert not isinstance(resolved, CompareNode)
+    assert not isinstance(resolved, ComparisonNode)
     try:
         return _dims_of(_lower_expr(resolved, schema, ctx), schema)
-    except RelationalBuildError as exc:
+    except LanguageError as exc:
         raise PiecewiseExpansionError(
             f'{ctx}: link expression {text!r} is not a core-subset affine expression: {exc}'
         ) from exc

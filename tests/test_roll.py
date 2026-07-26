@@ -16,14 +16,14 @@ import pandas as pd
 import pytest
 import yaml as pyyaml
 
+from linopy_yaml.errors import LanguageError
 from linopy_yaml.lowering import lower_program, tidy_sources
 from linopy_yaml.relational import (
     DuckdbExecutor,
-    RelationalBuildError,
 )
 from linopy_yaml.relational.ir import (
-    Shift,
-    Var,
+    Translate,
+    Variable,
 )
 from linopy_yaml.schema import MathSchema
 from tests.conftest import resolved
@@ -96,19 +96,23 @@ def test_roll_lowering_structure():
     schema = MathSchema(**pyyaml.safe_load(Path(STORAGE_YAML).read_text()))
     from linopy_yaml.lowering import _lower_expr
 
-    assert _lower_expr(resolved('roll(soc, snapshot=1)', schema), schema, 't') == Shift(Var('soc'), 'snapshot', 1)
+    assert _lower_expr(resolved('roll(soc, snapshot=1)', schema), schema, 't') == Translate(
+        Variable('soc'), 'snapshot', 1
+    )
 
     # negative shifts work (look-ahead)
-    assert _lower_expr(resolved('roll(soc, snapshot=-2)', schema), schema, 't') == Shift(Var('soc'), 'snapshot', -2)
+    assert _lower_expr(resolved('roll(soc, snapshot=-2)', schema), schema, 't') == Translate(
+        Variable('soc'), 'snapshot', -2
+    )
 
 
 def test_roll_lowering_errors():
     schema = MathSchema(**pyyaml.safe_load(Path(STORAGE_YAML).read_text()))
     from linopy_yaml.lowering import _lower_expr
 
-    with pytest.raises(RelationalBuildError, match=r'roll\(nope=\.\.\.\) does not name a declared dimension'):
+    with pytest.raises(LanguageError, match=r'roll\(nope=\.\.\.\) does not name a declared dimension'):
         _lower_expr(resolved('roll(soc, nope=1)', schema), schema, 't')
-    with pytest.raises(RelationalBuildError, match='but the expression has dims'):
+    with pytest.raises(LanguageError, match='but the expression has dims'):
         _lower_expr(resolved('roll(load, generator=1)', schema), schema, 't')
 
 
@@ -156,8 +160,8 @@ def test_shift_lowering_structure():
     schema = MathSchema(**pyyaml.safe_load(Path(STORAGE_YAML).read_text()))
     from linopy_yaml.lowering import _lower_expr
 
-    assert _lower_expr(resolved('shift(soc, snapshot=1)', schema), schema, 't') == Shift(
-        Var('soc'), 'snapshot', 1, wrap=False
+    assert _lower_expr(resolved('shift(soc, snapshot=1)', schema), schema, 't') == Translate(
+        Variable('soc'), 'snapshot', 1, wrap=False
     )
 
 

@@ -89,12 +89,10 @@ def test_parquet_path_sources(dispatch_yaml, dispatch_inputs, tmp_path):
 def test_out_of_language_is_a_build_error(dispatch_yaml, dispatch_inputs):
     import yaml as pyyaml
 
-    from linopy_yaml.relational import RelationalBuildError
-
     raw = pyyaml.safe_load(Path(dispatch_yaml).read_text())
     raw['objectives']['total_cost']['equations'] = [{'expression': 'sum(p ** 2, over=generator)'}]
     sources, coords = dispatch_inputs
-    with pytest.raises(RelationalBuildError, match='operator'):
+    with pytest.raises(ly.LanguageError, match='operator'):
         ly.build(raw, sources, coords=coords)
 
 
@@ -145,10 +143,19 @@ def test_check_reports_language_errors(dispatch_yaml):
         ly.check(raw)
 
 
-def test_language_error_is_public_name():
+def test_error_hierarchy_is_one_catchable_tree():
+    """One ``except`` covers the package, and the model/run split is real."""
     from linopy_yaml.relational import RelationalBuildError
 
-    assert ly.LanguageError is RelationalBuildError
+    for cls in (ly.LanguageError, ly.DataError):
+        assert issubclass(cls, ly.LinopyYamlError)
+    for cls in (ly.SchemaError, ly.DimensionError, ly.PiecewiseExpansionError):
+        assert issubclass(cls, ly.LanguageError)
+    assert not issubclass(ly.DataError, ly.LanguageError)
+    assert issubclass(ly.LinopyYamlError, ValueError)
+
+    # the retired name still catches everything it used to
+    assert RelationalBuildError is ly.LinopyYamlError
 
 
 def test_multi_file_composition_reserved(dispatch_yaml):

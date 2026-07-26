@@ -15,30 +15,31 @@ import numpy as np
 import xarray as xr
 
 from linopy_yaml._notes import note
+from linopy_yaml.errors import DataError, LanguageError
 from linopy_yaml.expression_parser import (
-    ArithNode,
-    BinOpNode,
-    CompareNode,
-    DimRefNode,
-    FuncCallNode,
+    ArithmeticNode,
+    BinaryOperatorNode,
+    ComparisonNode,
+    DimensionNode,
+    FunctionCallNode,
     NameNode,
     NumberNode,
-    ParamNode,
-    UnaryOpNode,
-    VarNode,
+    ParameterNode,
+    UnaryOperatorNode,
+    VariableNode,
 )
 from linopy_yaml.helpers import unknown_helper_message
 from linopy_yaml.resolution import Namespace, expression_of, where_of
 from linopy_yaml.where_parser import (
     AndNode,
-    BoolLiteral,
-    Comparison,
-    DimCmp,
-    ExistenceCheck,
+    BooleanLiteralNode,
+    DimensionComparisonNode,
     NotNode,
     OrNode,
-    ParamCmp,
-    ParamDefined,
+    ParameterComparisonNode,
+    ParameterDefinedNode,
+    UnresolvedComparisonNode,
+    UnresolvedNameNode,
     WhereNode,
 )
 
@@ -55,7 +56,7 @@ _SIGN_MAP = {'==': '=', '<=': '<=', '>=': '>='}
 
 
 @dataclass(frozen=True)
-class EvalContext:
+class EvaluationContext:
     """Everything expression evaluation needs to resolve names.
 
     Grows with the expression language (sub-expression scopes, slice
@@ -81,7 +82,7 @@ def build_model(
     This mutates *model* in-place, adding variables, constraints, and
     objectives as declared in *schema*.
     """
-    ctx = EvalContext(model, dataset, master_coords, schema, Namespace.of(schema, list(model.variables)))
+    ctx = EvaluationContext(model, dataset, master_coords, schema, Namespace.of(schema, list(model.variables)))
     _build_variables(ctx)
     _build_constraints(ctx)
     _build_objectives(ctx)
@@ -92,7 +93,7 @@ def build_model(
 # ---------------------------------------------------------------------------
 
 
-def _build_variables(ctx: EvalContext) -> None:
+def _build_variables(ctx: EvaluationContext) -> None:
     for vname, vdef in ctx.schema.variables.items():
         with note(f"while building variable '{vname}'"):
             coords = {d: ctx.master_coords[d] for d in vdef.foreach}
@@ -126,7 +127,7 @@ def _resolve_bound(
                 f"Bound references parameter '{value}' which is not in the "
                 f'loaded dataset. Available: {sorted(map(str, dataset.data_vars))}'
             )
-            raise ValueError(msg)
+            raise DataError(msg)
         return dataset[value]
     return value
 
@@ -147,7 +148,7 @@ def _as_linopy_mask(mask: xr.DataArray) -> xr.DataArray | None:
 # ---------------------------------------------------------------------------
 
 
-def _build_constraints(ctx: EvalContext) -> None:
+def _build_constraints(ctx: EvaluationContext) -> None:
     for cname, cdef in ctx.schema.constraints.items():
         with note(f"while building constraint '{cname}'"):
             c_where = where_of(cdef.where, ctx.ns, f"constraint '{cname}'")
@@ -163,13 +164,13 @@ def _build_constraints(ctx: EvalContext) -> None:
                 mask = constraint_mask & eq_mask
 
                 ast = expression_of(eq.expression, ctx.schema, ctx.ns, f"constraint '{eq_name}'")
-                if not isinstance(ast, CompareNode):
+                if not isinstance(ast, ComparisonNode):
                     msg = (
                         f'Equation {i}: expression must contain exactly one '
                         f'comparison operator (<=, >=, ==).\n'
                         f'Got: {eq.expression!r}'
                     )
-                    raise ValueError(msg)
+                    raise LanguageError(msg)
 
                 # Evaluate both sides
                 lhs = _eval_ast(ast.left, ctx)
@@ -184,15 +185,15 @@ def _build_constraints(ctx: EvalContext) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _build_objectives(ctx: EvalContext) -> None:
+def _build_objectives(ctx: EvaluationContext) -> None:
     for oname, odef in ctx.schema.objectives.items():
         with note(f"while building objective '{oname}'"):
             eq = odef.equations[0]
             ast = expression_of(eq.expression, ctx.schema, ctx.ns, f"objective '{oname}'")
 
-            if isinstance(ast, CompareNode):
+            if isinstance(ast, ComparisonNode):
                 msg = f'Expression must not contain a comparison operator. Got: {eq.expression!r}'
-                raise ValueError(msg)
+                raise LanguageError(msg)
 
             expr = _eval_ast(ast, ctx)
 
@@ -206,20 +207,20 @@ def _build_objectives(ctx: EvalContext) -> None:
 
 
 def _eval_ast(
-    node: ArithNode,
-    ctx: EvalContext,
+    node: ArithmeticNode,
+    ctx: EvaluationContext,
 ) -> Any:
     """Evaluate an expression AST node against the model namespace."""
     if isinstance(node, NumberNode):
         return node.value
 
-    if isinstance(node, VarNode):
+    if isinstance(node, VariableNode):
         return ctx.model.variables[node.name]
 
-    if isinstance(node, ParamNode):
+    if isinstance(node, ParameterNode):
         return ctx.dataset[node.name]
 
-    if isinstance(node, (NameNode, DimRefNode)):
+    if isinstance(node, (NameNode, DimensionNode)):
         msg = (
             f'{type(node).__name__}({node.name!r}) reached the evaluator. '
             f'Expressions must go through resolution.expression_of() first '
@@ -227,13 +228,13 @@ def _eval_ast(
         )
         raise AssertionError(msg)
 
-    if isinstance(node, UnaryOpNode):
+    if isinstance(node, UnaryOperatorNode):
         operand = _eval_ast(node.operand, ctx)
         if node.op == '-':
             return -operand
         return operand  # unary +
 
-    if isinstance(node, BinOpNode):
+    if isinstance(node, BinaryOperatorNode):
         left = _eval_ast(node.left, ctx)
         right = _eval_ast(node.right, ctx)
         ops = {
@@ -251,10 +252,10 @@ def _eval_ast(
                 f'or precompute it as a parameter — a variable base would make the '
                 f'model nonlinear (see ROADMAP, "The degree axis").'
             )
-            raise ValueError(msg)
+            raise LanguageError(msg)
         return ops[node.op](left, right)
 
-    if isinstance(node, FuncCallNode):
+    if isinstance(node, FunctionCallNode):
         # validation.py already rejected unknown helpers at load time; this
         # guard covers direct calls that skipped it
         if node.name not in _HELPERS:
@@ -264,7 +265,7 @@ def _eval_ast(
         args = [_eval_ast(a, ctx) for a in node.args]
         kwargs = {}
         for k, v in node.kwargs.items():
-            if isinstance(v, DimRefNode):
+            if isinstance(v, DimensionNode):
                 kwargs[k] = v.name
             else:
                 kwargs[k] = _eval_ast(v, ctx)
@@ -315,7 +316,7 @@ def _helper_group_sum(array: Any, mapping: Any, *, into: str) -> Any:
         raise TypeError(msg)
     if mapping.ndim != 1:
         msg = f'group_sum() mapping must have exactly one dimension, got {list(mapping.dims)}'
-        raise ValueError(msg)
+        raise LanguageError(msg)
 
     group = mapping.rename(into)
     if isinstance(array, xr.DataArray) or hasattr(array, 'groupby'):
@@ -412,22 +413,22 @@ def _eval_node(
     dataset: xr.Dataset,
     master_coords: dict[str, pd.Index],
 ) -> xr.DataArray:
-    if isinstance(node, BoolLiteral):
+    if isinstance(node, BooleanLiteralNode):
         return xr.DataArray(node.value)
 
-    if isinstance(node, (ExistenceCheck, Comparison)):
+    if isinstance(node, (UnresolvedNameNode, UnresolvedComparisonNode)):
         msg = (
             f'{type(node).__name__} reached the evaluator unresolved. '
             f'Where strings must go through resolution.resolve_where() first.'
         )
         raise AssertionError(msg)
 
-    if isinstance(node, ParamDefined):
+    if isinstance(node, ParameterDefinedNode):
         arr = dataset[node.name]
         return arr.notnull() & np.isfinite(arr)
 
-    if isinstance(node, (ParamCmp, DimCmp)):
-        if isinstance(node, ParamCmp):
+    if isinstance(node, (ParameterComparisonNode, DimensionComparisonNode)):
+        if isinstance(node, ParameterComparisonNode):
             arr = dataset[node.name]
         else:
             arr = xr.DataArray(

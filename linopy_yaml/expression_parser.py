@@ -12,7 +12,9 @@ from typing import Any, Literal, cast
 
 import pyparsing as pp
 
-CompareOp = Literal['<=', '>=', '==']
+from linopy_yaml.errors import SchemaError
+
+ComparisonOperator = Literal['<=', '>=', '==']
 
 # ---------------------------------------------------------------------------
 # AST nodes
@@ -38,21 +40,21 @@ class NameNode:
 
 
 @dataclass
-class VarNode:
+class VariableNode:
     """A resolved reference to a declared decision variable."""
 
     name: str
 
 
 @dataclass
-class ParamNode:
+class ParameterNode:
     """A resolved reference to a declared parameter."""
 
     name: str
 
 
 @dataclass
-class DimRefNode:
+class DimensionNode:
     """A resolved reference to a declared dimension.
 
     Only legal in helper kwarg *values* (``sum(x, over=generator)``), never as
@@ -63,47 +65,56 @@ class DimRefNode:
 
 
 @dataclass
-class UnaryOpNode:
+class UnaryOperatorNode:
     op: str
-    operand: ArithNode
+    operand: ArithmeticNode
 
 
 @dataclass
-class BinOpNode:
+class BinaryOperatorNode:
     op: str
-    left: ArithNode
-    right: ArithNode
+    left: ArithmeticNode
+    right: ArithmeticNode
 
 
 @dataclass
-class FuncCallNode:
+class FunctionCallNode:
     name: str
-    args: list[ArithNode] = field(default_factory=list)
-    kwargs: dict[str, ArithNode] = field(default_factory=dict)
+    args: list[ArithmeticNode] = field(default_factory=list)
+    kwargs: dict[str, ArithmeticNode] = field(default_factory=dict)
 
 
 # An arithmetic-only AST node — no comparison. Nested expression positions
-# (operands, args, kwargs) only accept this; CompareNode appears only at the
+# (operands, args, kwargs) only accept this; ComparisonNode appears only at the
 # top of a parsed expression.
-# NOTE: the dataclasses above reference `ArithNode` in their annotations
+# NOTE: the dataclasses above reference `ArithmeticNode` in their annotations
 # before this line — that works only because `from __future__ import
 # annotations` makes annotations strings. Don't remove that future-import
 # unless you also reorder these definitions.
-ArithNode = NumberNode | NameNode | VarNode | ParamNode | DimRefNode | UnaryOpNode | BinOpNode | FuncCallNode
+ArithmeticNode = (
+    NumberNode
+    | NameNode
+    | VariableNode
+    | ParameterNode
+    | DimensionNode
+    | UnaryOperatorNode
+    | BinaryOperatorNode
+    | FunctionCallNode
+)
 
 #: The subset a backend may see: resolution has removed every NameNode.
 #: Both consumers assert on this rather than re-implementing name lookup.
-RESOLVED_REFS = (VarNode, ParamNode, DimRefNode)
+RESOLVED_REFERENCE_NODES = (VariableNode, ParameterNode, DimensionNode)
 
 
 @dataclass
-class CompareNode:
-    op: CompareOp
-    left: ArithNode
-    right: ArithNode
+class ComparisonNode:
+    op: ComparisonOperator
+    left: ArithmeticNode
+    right: ArithmeticNode
 
 
-ExprNode = ArithNode | CompareNode
+ExpressionNode = ArithmeticNode | ComparisonNode
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +147,7 @@ def _build_grammar() -> pp.ParserElement:
     atom = func_call | number | name_node | (pp.Suppress('(') + arith + pp.Suppress(')'))
 
     # Unary
-    unary = (pp.one_of('+ -') + atom).set_parse_action(lambda t: UnaryOpNode(t[0], t[1])) | atom
+    unary = (pp.one_of('+ -') + atom).set_parse_action(lambda t: UnaryOperatorNode(t[0], t[1])) | atom
 
     # Power (right-associative)
     power = unary + pp.ZeroOrMore(pp.Literal('**') + unary)
@@ -154,13 +165,13 @@ def _build_grammar() -> pp.ParserElement:
 
     # Comparison (optional, at most one)
     comparator = pp.one_of('<= >= ==')
-    expr = (arith + comparator + arith).set_parse_action(lambda t: CompareNode(t[1], t[0], t[2])) | arith
+    expr = (arith + comparator + arith).set_parse_action(lambda t: ComparisonNode(t[1], t[0], t[2])) | arith
 
     return expr
 
 
-def _make_func_call(tokens: pp.ParseResults) -> FuncCallNode:
-    """Build a FuncCallNode from parsed tokens."""
+def _make_func_call(tokens: pp.ParseResults) -> FunctionCallNode:
+    """Build a FunctionCallNode from parsed tokens."""
     # a ParseResults element is untyped; the grammar guarantees an identifier here
     name = cast('str', tokens[0])
     args = []
@@ -173,24 +184,24 @@ def _make_func_call(tokens: pp.ParseResults) -> FuncCallNode:
             kwargs[k] = v
         else:
             args.append(item)
-    return FuncCallNode(name=name, args=args, kwargs=kwargs)
+    return FunctionCallNode(name=name, args=args, kwargs=kwargs)
 
 
 def _make_left_assoc(tokens: pp.ParseResults) -> Any:
-    """Fold tokens into left-associative BinOpNode chain."""
+    """Fold tokens into left-associative BinaryOperatorNode chain."""
     items = list(tokens)
     result = items[0]
     i = 1
     while i < len(items):
         op = items[i]
         right = items[i + 1]
-        result = BinOpNode(op, result, right)
+        result = BinaryOperatorNode(op, result, right)
         i += 2
     return result
 
 
 def _make_right_assoc(tokens: pp.ParseResults) -> Any:
-    """Fold tokens into right-associative BinOpNode chain (for **)."""
+    """Fold tokens into right-associative BinaryOperatorNode chain (for **)."""
     items = list(tokens)
     if len(items) == 1:
         return items[0]
@@ -200,7 +211,7 @@ def _make_right_assoc(tokens: pp.ParseResults) -> Any:
     while i >= 0:
         op = items[i + 1]
         left = items[i]
-        result = BinOpNode(op, left, result)
+        result = BinaryOperatorNode(op, left, result)
         i -= 2
     return result
 
@@ -209,16 +220,16 @@ def _make_right_assoc(tokens: pp.ParseResults) -> Any:
 _GRAMMAR = _build_grammar()
 
 
-def parse_expression(text: str) -> ExprNode:
+def parse_expression(text: str) -> ExpressionNode:
     """Parse a math expression string into an AST.
 
-    Returns one of: NumberNode, NameNode, UnaryOpNode, BinOpNode,
-    CompareNode, or FuncCallNode.
+    Returns one of: NumberNode, NameNode, UnaryOperatorNode, BinaryOperatorNode,
+    ComparisonNode, or FunctionCallNode.
     """
     try:
         result = _GRAMMAR.parse_string(text, parse_all=True)
     except pp.ParseException as e:
         msg = f'Failed to parse expression: {text!r}\n{e}'
-        raise ValueError(msg) from e
+        raise SchemaError(msg) from e
     # parseAll with a single top-level alternative: element 0 is the root node
-    return cast('ExprNode', result[0])
+    return cast('ExpressionNode', result[0])

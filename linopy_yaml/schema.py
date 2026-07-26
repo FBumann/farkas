@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 
-class _Strict(BaseModel):
+class _StrictBlock(BaseModel):
     """Base for every schema model: unknown keys are an error, not a shrug.
 
     Without this, a misspelled optional key is silently dropped and the
@@ -48,7 +48,7 @@ class _Strict(BaseModel):
         return f"unknown key '{key}' in {label}. {fix}"
 
 
-class DimensionDef(_Strict):
+class DimensionBlock(_StrictBlock):
     """A declared dimension with optional dtype and values."""
 
     _label: ClassVar[str] = 'a dimension declaration'
@@ -66,7 +66,7 @@ class DimensionDef(_Strict):
         return v
 
 
-class ParameterDef(_Strict):
+class ParameterBlock(_StrictBlock):
     """A declared parameter with dims and dtype."""
 
     _label: ClassVar[str] = 'a parameter declaration'
@@ -84,7 +84,7 @@ class ParameterDef(_Strict):
         return v
 
 
-class BoundsDef(_Strict):
+class BoundsBlock(_StrictBlock):
     """Variable bounds — each side is a number or parameter name.
 
     The defaults are linopy's (``add_variables(lower=-inf, upper=inf)``): a
@@ -99,26 +99,26 @@ class BoundsDef(_Strict):
     upper: float | str = float('inf')
 
 
-class VariableDef(_Strict):
+class VariableBlock(_StrictBlock):
     """A declared decision variable."""
 
     _label: ClassVar[str] = 'a variable declaration'
 
     foreach: list[str]
     where: str | None = None
-    bounds: BoundsDef = BoundsDef()
+    bounds: BoundsBlock = BoundsBlock()
     binary: bool = False
     integer: bool = False
 
     @model_validator(mode='after')
-    def _check_binary_integer(self) -> VariableDef:
+    def _check_binary_integer(self) -> VariableBlock:
         if self.binary and self.integer:
             msg = 'A variable cannot be both binary and integer.'
             raise ValueError(msg)
         return self
 
 
-class EquationDef(_Strict):
+class EquationBlock(_StrictBlock):
     """A single equation inside a constraint or objective."""
 
     _label: ClassVar[str] = 'an equation'
@@ -127,31 +127,31 @@ class EquationDef(_Strict):
     where: str | None = None
 
 
-class ConstraintDef(_Strict):
+class ConstraintBlock(_StrictBlock):
     """A declared constraint with foreach, where, and equations."""
 
     _label: ClassVar[str] = 'a constraint declaration'
 
     foreach: list[str]
     where: str | None = None
-    equations: list[EquationDef]
+    equations: list[EquationBlock]
 
     @field_validator('equations')
     @classmethod
-    def _at_least_one(cls, v: list[EquationDef]) -> list[EquationDef]:
+    def _at_least_one(cls, v: list[EquationBlock]) -> list[EquationBlock]:
         if not v:
             msg = 'A constraint must have at least one equation.'
             raise ValueError(msg)
         return v
 
 
-class ObjectiveDef(_Strict):
+class ObjectiveBlock(_StrictBlock):
     """A declared objective function."""
 
     _label: ClassVar[str] = 'an objective declaration'
 
     sense: str = 'minimize'
-    equations: list[EquationDef]
+    equations: list[EquationBlock]
 
     @field_validator('sense')
     @classmethod
@@ -164,14 +164,14 @@ class ObjectiveDef(_Strict):
 
     @field_validator('equations')
     @classmethod
-    def _at_least_one(cls, v: list[EquationDef]) -> list[EquationDef]:
+    def _at_least_one(cls, v: list[EquationBlock]) -> list[EquationBlock]:
         if not v:
             msg = 'An objective must have at least one equation.'
             raise ValueError(msg)
         return v
 
 
-class MacroDef(_Strict):
+class MacroBlock(_StrictBlock):
     """A parameterised expression template, defined in the YAML itself.
 
     The template is language, not code: formal names (``args`` positional,
@@ -186,7 +186,7 @@ class MacroDef(_Strict):
     template: str
 
     @model_validator(mode='after')
-    def _check_formals(self) -> MacroDef:
+    def _check_formals(self) -> MacroBlock:
         formals = [*self.args, *self.kwargs]
         if len(set(formals)) != len(formals):
             msg = f'duplicate formal names: {formals}'
@@ -194,7 +194,7 @@ class MacroDef(_Strict):
         return self
 
 
-class PiecewiseDef(_Strict):
+class PiecewiseBlock(_StrictBlock):
     """N expressions jointly pinned to a breakpoint-indexed piecewise curve.
 
     Mirrors ``linopy.Model.add_piecewise_formulation``: each link is a tuple
@@ -217,7 +217,7 @@ class PiecewiseDef(_Strict):
     active: str | None = None  # gating expression: formulation pinned to 0 when 0
 
     @model_validator(mode='after')
-    def _check_convex_shape(self) -> PiecewiseDef:
+    def _check_convex_shape(self) -> PiecewiseBlock:
         if self.convex and len(self.links) != 2:
             msg = (
                 'convex: true requires exactly two links (the hull relaxation '
@@ -255,19 +255,19 @@ class PiecewiseDef(_Strict):
         return v
 
 
-class MathSchema(_Strict):
+class MathSchema(_StrictBlock):
     """Top-level schema for a linopy_yaml YAML file."""
 
     _label: ClassVar[str] = 'the top level of the file'
 
-    dimensions: dict[str, DimensionDef] = {}
-    parameters: dict[str, ParameterDef] = {}
-    variables: dict[str, VariableDef] = {}
-    constraints: dict[str, ConstraintDef] = {}
-    objectives: dict[str, ObjectiveDef] = {}
+    dimensions: dict[str, DimensionBlock] = {}
+    parameters: dict[str, ParameterBlock] = {}
+    variables: dict[str, VariableBlock] = {}
+    constraints: dict[str, ConstraintBlock] = {}
+    objectives: dict[str, ObjectiveBlock] = {}
     expressions: dict[str, str] = {}
-    macros: dict[str, MacroDef] = {}
-    piecewise: dict[str, PiecewiseDef] = {}
+    macros: dict[str, MacroBlock] = {}
+    piecewise: dict[str, PiecewiseBlock] = {}
 
     @model_validator(mode='after')
     def _validate_references(self) -> MathSchema:

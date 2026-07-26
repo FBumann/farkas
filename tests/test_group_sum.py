@@ -16,14 +16,14 @@ import pandas as pd
 import pytest
 import yaml as pyyaml
 
+from linopy_yaml.errors import LanguageError
 from linopy_yaml.lowering import lower_program, tidy_sources
 from linopy_yaml.relational import (
     DuckdbExecutor,
-    RelationalBuildError,
 )
 from linopy_yaml.relational.ir import (
     GroupSum,
-    Var,
+    Variable,
 )
 from linopy_yaml.schema import MathSchema
 from tests.conftest import resolved
@@ -91,19 +91,19 @@ def test_group_sum_lowering_structure():
     (c,) = program.constraints
     assert c.dims == ('snapshot', 'bus')
     # lhs contains the three GroupSum pieces
-    assert GroupSum(Var('p'), mapping='gen_bus', into='bus') in _flatten(c.lhs)
+    assert GroupSum(Variable('p'), mapping='gen_bus', into='bus') in _flatten(c.lhs)
 
 
 def _flatten(expr):
     from linopy_yaml.relational.ir import (
         Add,
-        Neg,
+        Negate,
     )
 
     if isinstance(expr, Add):
-        return _flatten(expr.a) + _flatten(expr.b)
-    if isinstance(expr, Neg):
-        return _flatten(expr.x)
+        return _flatten(expr.left) + _flatten(expr.right)
+    if isinstance(expr, Negate):
+        return _flatten(expr.operand)
     return [expr]
 
 
@@ -113,12 +113,12 @@ def test_group_sum_lowering_errors():
 
     # an undeclared mapping or target dim is now caught in resolution, before
     # lowering ever sees the call — the name simply has no kind
-    with pytest.raises(RelationalBuildError, match="'nope' not found"):
+    with pytest.raises(LanguageError, match="'nope' not found"):
         resolved('group_sum(p, nope, into=bus)', schema)
-    with pytest.raises(RelationalBuildError, match=r'into=nope\) does not name a declared dimension'):
+    with pytest.raises(LanguageError, match=r'into=nope\) does not name a declared dimension'):
         resolved('group_sum(p, gen_bus, into=nope)', schema)
     # shape errors stay at lowering: these names resolve, the arity does not fit
-    with pytest.raises(RelationalBuildError, match='exactly one dim'):
+    with pytest.raises(LanguageError, match='exactly one dim'):
         _lower_expr(resolved('group_sum(p, load, into=bus)', schema), schema, 't')
-    with pytest.raises(RelationalBuildError, match='but the expression'):
+    with pytest.raises(LanguageError, match='but the expression'):
         _lower_expr(resolved('group_sum(f, gen_bus, into=bus)', schema), schema, 't')

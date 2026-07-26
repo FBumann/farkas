@@ -19,7 +19,7 @@ flowchart TB
     MS -->|"expand macros: / expressions: (expansion.py)<br/>expand piecewise: blocks (piecewise.py)<br/>resolve names to typed nodes (resolution.py)<br/>check dim sets (dimensions.py)<br/>— backends never see any of them"| AST["core AST<br/>= the only contract between layers<br/>fully typed: names resolved, dims checked"]
     AST -->|"api.py: check / build / solve / write"| LOWER
     AST -.->|"linopy_yaml.compat<br/>(opt-in shim: build / extend)"| BUILD
-    LOWER -->|"outside the language:<br/>RelationalBuildError naming the construct"| ERR["load error<br/>(no fallback)"]
+    LOWER -->|"outside the language:<br/>LanguageError naming the construct"| ERR["load error<br/>(no fallback)"]
 
     subgraph REL["Relational lane — streaming · memory-bounded · linopy-free"]
         direction TB
@@ -45,8 +45,10 @@ flowchart TB
 ```
 
 Eligibility is decided by **attempting the lowering** — `lower_program` returns
-a `Program` or raises `RelationalBuildError` (public alias `ly.LanguageError`) —
-so it cannot drift from what the engine supports. `ly.check()` is exactly parse
+a `Program` or raises `ly.LanguageError` — so it cannot drift from what the
+engine supports. Errors split model from run: everything under `LanguageError`
+is decidable without data, `DataError` is what a source failed to supply, and
+both are `LinopyYamlError` (`errors.py`). `ly.check()` is exactly parse
 → validate → expand → lower with no data bound, so a model repository can
 compile-check its math in CI.
 
@@ -58,7 +60,7 @@ static checks and CI's bare-install job proves the dependency claims.*
 1. **Core AST is the whole language.** Both backends consume only core AST;
    macros, named expressions and `piecewise:` are expanded away before dispatch,
    and IR/SQL/xarray are backend-private. The AST crossing that seam is **fully
-   resolved** — names are typed `Var`/`Param`/`Dim` nodes — so a backend cannot
+   resolved** — names are typed `Variable`/`Parameter`/`Dimension` nodes — so a backend cannot
    hold its own opinion about what a name refers to. Resolving independently is
    how the two lanes silently disagreed about scoping before.
 2. **The relational lane is linopy-free.** `linopy_yaml/relational/` imports
@@ -244,7 +246,7 @@ than the IR level, which is
 | `schema.py` | pydantic schema incl. `expressions:` / `macros:` / `piecewise:` |
 | `expression_parser.py`, `where_parser.py` | text → core AST; grammar only, dependency-free |
 | `expansion.py` | named-expression / macro substitution (pre-dispatch) |
-| `resolution.py` | one flat namespace; `Name` → typed `Var`/`Param`/`Dim` |
+| `resolution.py` | one flat namespace; `NameNode` → typed `Variable`/`Parameter`/`Dimension` nodes |
 | `dimensions.py` | static dim-set checking over the resolved AST |
 | `validation.py` | load-time: parse, expand, resolve, check everything |
 | `piecewise.py` | `piecewise:` → λ-formulation declarations + curvature guard |
@@ -256,6 +258,28 @@ than the IR level, which is
 | `relational/ir.py` | frozen logical-plan dataclasses |
 | `relational/executor.py` | duckdb execution + `lp_file` / `solver_direct` sinks |
 | `helpers.py` | the closed set of built-in operator *names* — no registry |
+| `errors.py` | the exception hierarchy; the one module the engine may import |
+
+### Naming across the layers
+
+The same construct passes through three layers, and each names it in full —
+no abbreviations, so a name never has to be decoded. The **layer is the
+suffix**, which is what keeps the three vocabularies from colliding:
+
+| Layer | Suffix | Example |
+|---|---|---|
+| YAML block (`schema.py`) | `Block` | `VariableBlock`, `PiecewiseBlock` |
+| Core AST (`*_parser.py`) | `Node` | `VariableNode`, `DimensionComparisonNode` |
+| IR (`relational/ir.py`) | none / `Declaration` | `Variable`, `VariableDeclaration` |
+
+Two rules follow from that table, and a PR that adds a construct keeps them:
+
+- **A node names the coordinate map, not a surface spelling.** `roll` and
+  `shift` are one node, so it is `Translate` — naming it `Shift` would make
+  one of the two spellings look privileged.
+- **Nothing is abbreviated.** `Cmp` became `ParameterComparison`, `vtype`
+  became `variable_type`. The one place abbreviation survives is SQL column
+  names inside the executor, which are not Python identifiers.
 
 ## Extension checklists
 

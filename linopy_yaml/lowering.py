@@ -8,8 +8,8 @@ the engine subpackage stays free of YAML knowledge, and this module never
 imports the eager builder.
 
 Covered: foreach, where, arithmetic (+ - * /), sum, group_sum, roll, shift,
-comparison, and binary/integer variables (vtype). Constructs with no lowering
-raise :class:`~linopy_yaml.relational.executor.RelationalBuildError` naming
+comparison, and binary/integer variables (variable_type). Constructs with no
+lowering raise :class:`~linopy_yaml.errors.LanguageError` naming
 the construct and its rewrite — never a pointer to another backend: the two
 lanes accept the same language, and a rejection here is a language gap
 (ROADMAP.md), not a routing decision.
@@ -26,32 +26,32 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, assert_never
 
+from linopy_yaml.errors import DataError, LanguageError
 from linopy_yaml.expression_parser import (
-    ArithNode,
-    BinOpNode,
-    CompareNode,
-    DimRefNode,
-    FuncCallNode,
+    ArithmeticNode,
+    BinaryOperatorNode,
+    ComparisonNode,
+    DimensionNode,
+    FunctionCallNode,
     NameNode,
     NumberNode,
-    ParamNode,
-    UnaryOpNode,
-    VarNode,
+    ParameterNode,
+    UnaryOperatorNode,
+    VariableNode,
 )
 from linopy_yaml.helpers import BUILTIN_NAMES
 from linopy_yaml.relational import ir
-from linopy_yaml.relational.executor import RelationalBuildError
 from linopy_yaml.resolution import Namespace, expression_of, where_of
 from linopy_yaml.where_parser import (
     AndNode,
-    BoolLiteral,
-    Comparison,
-    DimCmp,
-    ExistenceCheck,
+    BooleanLiteralNode,
+    DimensionComparisonNode,
     NotNode,
     OrNode,
-    ParamCmp,
-    ParamDefined,
+    ParameterComparisonNode,
+    ParameterDefinedNode,
+    UnresolvedComparisonNode,
+    UnresolvedNameNode,
     WhereNode,
 )
 
@@ -67,31 +67,31 @@ def lower_program(schema: MathSchema) -> ir.Program:
 
     schema = expand_piecewise(schema)
     ns = Namespace.of(schema)
-    parameters = tuple(ir.ParameterDecl(name, tuple(pdef.dims)) for name, pdef in schema.parameters.items())
+    parameters = tuple(ir.ParameterDeclaration(name, tuple(pdef.dims)) for name, pdef in schema.parameters.items())
 
     variables = []
     for vname, vdef in schema.variables.items():
-        lower: ir.Expr
-        upper: ir.Expr
+        lower: ir.Expression
+        upper: ir.Expression
         if vdef.binary:
             # binary implies fixed 0/1 bounds, matching linopy's binary=True
-            vtype, lower, upper = 'binary', ir.Const(0.0), ir.Const(1.0)
+            variable_type, lower, upper = 'binary', ir.Constant(0.0), ir.Constant(1.0)
         elif vdef.integer:
-            vtype = 'integer'
+            variable_type = 'integer'
             lower = _lower_bound(vdef.bounds.lower)
             upper = _lower_bound(vdef.bounds.upper)
         else:
-            vtype = 'continuous'
+            variable_type = 'continuous'
             lower = _lower_bound(vdef.bounds.lower)
             upper = _lower_bound(vdef.bounds.upper)
         variables.append(
-            ir.VariableDecl(
+            ir.VariableDeclaration(
                 vname,
                 tuple(vdef.foreach),
                 where=_lower_where(vdef.where, ns, f"variable '{vname}'"),
                 lower=lower,
                 upper=upper,
-                vtype=vtype,
+                variable_type=variable_type,
             )
         )
 
@@ -105,15 +105,15 @@ def lower_program(schema: MathSchema) -> ir.Program:
             where = _and_preds(c_where, eq_where)
 
             ast = expression_of(eq.expression, schema, ns, f"constraint '{eq_name}'")
-            if not isinstance(ast, CompareNode):
-                raise RelationalBuildError(
+            if not isinstance(ast, ComparisonNode):
+                raise LanguageError(
                     f"constraint '{eq_name}': expression must contain exactly one "
                     f'comparison operator (<=, >=, ==). Got: {eq.expression!r}'
                 )
             if ast.op not in _SENSES:
-                raise RelationalBuildError(f"constraint '{eq_name}': unsupported sense '{ast.op}'")
+                raise LanguageError(f"constraint '{eq_name}': unsupported sense '{ast.op}'")
             constraints.append(
-                ir.ConstraintDecl(
+                ir.ConstraintDeclaration(
                     eq_name,
                     tuple(cdef.foreach),
                     lhs=_lower_expr(ast.left, schema, f"constraint '{eq_name}'"),
@@ -124,12 +124,12 @@ def lower_program(schema: MathSchema) -> ir.Program:
             )
 
     if not schema.objectives:
-        raise RelationalBuildError('the relational backend requires an objective')
+        raise LanguageError('the relational backend requires an objective')
     oname, odef = next(reversed(schema.objectives.items()))  # last one wins (eager parity)
     ast = expression_of(odef.equations[0].expression, schema, ns, f"objective '{oname}'")
-    if isinstance(ast, CompareNode):
-        raise RelationalBuildError(f"objective '{oname}': expression must not contain a comparison operator")
-    objective = ir.ObjectiveDecl(
+    if isinstance(ast, ComparisonNode):
+        raise LanguageError(f"objective '{oname}': expression must not contain a comparison operator")
+    objective = ir.ObjectiveDeclaration(
         'min' if odef.sense == 'minimize' else 'max',
         _lower_expr(ast, schema, f"objective '{oname}'"),
     )
@@ -166,7 +166,7 @@ def tidy_sources(
     sources: dict[str, object] = {}
     for pname, pdef in schema.parameters.items():
         if pname not in data:
-            raise RelationalBuildError(f"no data provided for parameter '{pname}'")
+            raise DataError(f"no data provided for parameter '{pname}'")
         obj = data[pname]
         if isinstance(obj, (str, Path)):
             sources[pname] = obj  # parquet path — the executor reads it directly
@@ -180,7 +180,7 @@ def tidy_sources(
         elif isinstance(obj, (int, float)) and not pdef.dims:
             df = pd.DataFrame({'value': [float(obj)]})
         else:
-            raise RelationalBuildError(
+            raise DataError(
                 f"parameter '{pname}': cannot adapt {type(obj).__name__} to a tidy "
                 f'table — pass a Series indexed by {pdef.dims} or a DataFrame with '
                 f'columns {[*pdef.dims, "value"]}'
@@ -204,17 +204,17 @@ def tidy_sources(
 # ---------------------------------------------------------------------------
 
 
-def _lower_expr(node: ArithNode, schema: MathSchema, context: str) -> ir.Expr:
+def _lower_expr(node: ArithmeticNode, schema: MathSchema, context: str) -> ir.Expression:
     if isinstance(node, NumberNode):
-        return ir.Const(node.value)
+        return ir.Constant(node.value)
 
-    if isinstance(node, VarNode):
-        return ir.Var(node.name)
+    if isinstance(node, VariableNode):
+        return ir.Variable(node.name)
 
-    if isinstance(node, ParamNode):
-        return ir.Param(node.name)
+    if isinstance(node, ParameterNode):
+        return ir.Parameter(node.name)
 
-    if isinstance(node, (NameNode, DimRefNode)):
+    if isinstance(node, (NameNode, DimensionNode)):
         msg = (
             f'{type(node).__name__}({node.name!r}) reached lowering. Expressions '
             f'must go through resolution.expression_of() first '
@@ -222,48 +222,48 @@ def _lower_expr(node: ArithNode, schema: MathSchema, context: str) -> ir.Expr:
         )
         raise AssertionError(msg)
 
-    if isinstance(node, UnaryOpNode):
+    if isinstance(node, UnaryOperatorNode):
         inner = _lower_expr(node.operand, schema, context)
-        return ir.Neg(inner) if node.op == '-' else inner
+        return ir.Negate(inner) if node.op == '-' else inner
 
-    if isinstance(node, BinOpNode):
+    if isinstance(node, BinaryOperatorNode):
         left = _lower_expr(node.left, schema, context)
         right = _lower_expr(node.right, schema, context)
         match node.op:
             case '+':
                 return ir.Add(left, right)
             case '-':
-                return ir.Add(left, ir.Neg(right))
+                return ir.Add(left, ir.Negate(right))
             case '*':
                 if _has_var(left) and _has_var(right):
-                    raise RelationalBuildError(
+                    raise LanguageError(
                         f'{context}: both factors of a product contain variables, which '
                         f'is degree 2. Multiply the variable by a parameter instead, or '
                         f'model the curve with a piecewise: block — see ROADMAP, '
                         f'"The degree axis".'
                     )
-                return ir.Mul(left, right)
+                return ir.Multiply(left, right)
             case '/':
                 if _has_var(right):
-                    raise RelationalBuildError(
+                    raise LanguageError(
                         f'{context}: the divisor contains variables, which is not affine. '
                         f'Divide by a parameter, or precompute the reciprocal as one.'
                     )
-                return ir.Div(left, right)
+                return ir.Divide(left, right)
             case _:
-                raise RelationalBuildError(
+                raise LanguageError(
                     f"{context}: operator '{node.op}' is not in the language. Multiply the "
                     f'term out, or precompute it as a parameter — a variable base would '
                     f'make the model nonlinear (see ROADMAP, "The degree axis").'
                 )
 
-    if isinstance(node, FuncCallNode):
+    if isinstance(node, FunctionCallNode):
         if node.name == 'sum':
             if len(node.args) != 1 or set(node.kwargs) != {'over'}:
-                raise RelationalBuildError(f'{context}: sum() expects sum(<expr>, over=<dim>)')
+                raise LanguageError(f'{context}: sum() expects sum(<expr>, over=<dim>)')
             over_node = node.kwargs['over']
-            if not isinstance(over_node, DimRefNode):
-                raise RelationalBuildError(f'{context}: sum(over=...) must name a dimension')
+            if not isinstance(over_node, DimensionNode):
+                raise LanguageError(f'{context}: sum(over=...) must name a dimension')
             inner = _lower_expr(node.args[0], schema, context)
             # eager parity: summing over a dim the operand does not carry is a no-op
             if over_node.name not in _dims_of(inner, schema):
@@ -272,23 +272,23 @@ def _lower_expr(node: ArithNode, schema: MathSchema, context: str) -> ir.Expr:
 
         if node.name == 'group_sum':
             if len(node.args) != 2 or set(node.kwargs) != {'into'}:
-                raise RelationalBuildError(
+                raise LanguageError(
                     f'{context}: group_sum() expects group_sum(<expr>, <mapping-parameter>, into=<dim>)'
                 )
             mapping_node = node.args[1]
             into_node = node.kwargs['into']
-            if not isinstance(mapping_node, ParamNode):
-                raise RelationalBuildError(f'{context}: group_sum() mapping must name a declared parameter')
+            if not isinstance(mapping_node, ParameterNode):
+                raise LanguageError(f'{context}: group_sum() mapping must name a declared parameter')
             mdims = schema.parameters[mapping_node.name].dims
             if len(mdims) != 1:
-                raise RelationalBuildError(
+                raise LanguageError(
                     f"{context}: group_sum() mapping '{mapping_node.name}' must have exactly one dim (has {mdims})"
                 )
-            if not isinstance(into_node, DimRefNode):
-                raise RelationalBuildError(f'{context}: group_sum(into=...) must name a declared dimension')
+            if not isinstance(into_node, DimensionNode):
+                raise LanguageError(f'{context}: group_sum(into=...) must name a declared dimension')
             inner = _lower_expr(node.args[0], schema, context)
             if mdims[0] not in _dims_of(inner, schema):
-                raise RelationalBuildError(
+                raise LanguageError(
                     f"{context}: group_sum() over '{mdims[0]}' but the expression "
                     f'has dims {sorted(_dims_of(inner, schema))}'
                 )
@@ -297,22 +297,22 @@ def _lower_expr(node: ArithNode, schema: MathSchema, context: str) -> ir.Expr:
         if node.name in ('roll', 'shift'):
             wrap = node.name == 'roll'
             if len(node.args) != 1 or len(node.kwargs) != 1:
-                raise RelationalBuildError(f'{context}: {node.name}() expects {node.name}(<expr>, <dim>=<n>)')
+                raise LanguageError(f'{context}: {node.name}() expects {node.name}(<expr>, <dim>=<n>)')
             ((dim, shift_node),) = node.kwargs.items()
             sign = 1
-            if isinstance(shift_node, UnaryOpNode) and shift_node.op == '-':
+            if isinstance(shift_node, UnaryOperatorNode) and shift_node.op == '-':
                 sign, shift_node = -1, shift_node.operand
             if not isinstance(shift_node, NumberNode) or int(shift_node.value) != shift_node.value:
-                raise RelationalBuildError(f'{context}: {node.name}() shift must be an integer literal')
+                raise LanguageError(f'{context}: {node.name}() shift must be an integer literal')
             inner = _lower_expr(node.args[0], schema, context)
             if dim not in _dims_of(inner, schema):
-                raise RelationalBuildError(
+                raise LanguageError(
                     f"{context}: {node.name}() along '{dim}' but the expression "
                     f'has dims {sorted(_dims_of(inner, schema))}'
                 )
-            return ir.Shift(inner, dim, sign * int(shift_node.value), wrap=wrap)
+            return ir.Translate(inner, dim, by=sign * int(shift_node.value), wrap=wrap)
 
-        raise RelationalBuildError(
+        raise LanguageError(
             f"{context}: helper '{node.name}' has no lowering. The language's "
             f'helpers are {sorted(BUILTIN_NAMES)}; compositions of them '
             f"belong in 'macros:'. Math outside the language belongs in a "
@@ -322,51 +322,55 @@ def _lower_expr(node: ArithNode, schema: MathSchema, context: str) -> ir.Expr:
     assert_never(node)
 
 
-def _has_var(expr: ir.Expr) -> bool:
+def _has_var(expr: ir.Expression) -> bool:
     """Whether *expr* contains a decision variable.
 
     Degree 1 is the first clause of the expressive ceiling, so it has to be
     decidable without data — that is what makes ``ly.check()`` a real gate.
     The executor repeats the check when it compiles terms, for hand-built IR.
     """
-    if isinstance(expr, ir.Var):
+    if isinstance(expr, ir.Variable):
         return True
-    if isinstance(expr, (ir.Const, ir.Param)):
+    if isinstance(expr, (ir.Constant, ir.Parameter)):
         return False
-    if isinstance(expr, ir.Neg):
-        return _has_var(expr.x)
-    if isinstance(expr, (ir.Add, ir.Mul, ir.Div)):
-        return _has_var(expr.a) or _has_var(expr.b)
-    if isinstance(expr, (ir.Sum, ir.Shift, ir.GroupSum)):
-        return _has_var(expr.x)
-    raise RelationalBuildError(f'cannot decide degree of {type(expr).__name__}')
+    if isinstance(expr, ir.Negate):
+        return _has_var(expr.operand)
+    if isinstance(expr, (ir.Add, ir.Multiply)):
+        return _has_var(expr.left) or _has_var(expr.right)
+    if isinstance(expr, ir.Divide):
+        return _has_var(expr.numerator) or _has_var(expr.divisor)
+    if isinstance(expr, (ir.Sum, ir.Translate, ir.GroupSum)):
+        return _has_var(expr.operand)
+    raise LanguageError(f'cannot decide degree of {type(expr).__name__}')
 
 
-def _dims_of(expr: ir.Expr, schema: MathSchema) -> frozenset[str]:
-    if isinstance(expr, ir.Const):
+def _dims_of(expr: ir.Expression, schema: MathSchema) -> frozenset[str]:
+    if isinstance(expr, ir.Constant):
         return frozenset()
-    if isinstance(expr, ir.Param):
+    if isinstance(expr, ir.Parameter):
         return frozenset(schema.parameters[expr.name].dims)
-    if isinstance(expr, ir.Var):
+    if isinstance(expr, ir.Variable):
         return frozenset(schema.variables[expr.name].foreach)
-    if isinstance(expr, ir.Neg):
-        return _dims_of(expr.x, schema)
-    if isinstance(expr, (ir.Add, ir.Mul, ir.Div)):
-        return _dims_of(expr.a, schema) | _dims_of(expr.b, schema)
+    if isinstance(expr, ir.Negate):
+        return _dims_of(expr.operand, schema)
+    if isinstance(expr, (ir.Add, ir.Multiply)):
+        return _dims_of(expr.left, schema) | _dims_of(expr.right, schema)
+    if isinstance(expr, ir.Divide):
+        return _dims_of(expr.numerator, schema) | _dims_of(expr.divisor, schema)
     if isinstance(expr, ir.Sum):
-        return _dims_of(expr.x, schema) - set(expr.over)
-    if isinstance(expr, ir.Shift):
-        return _dims_of(expr.x, schema)
+        return _dims_of(expr.operand, schema) - set(expr.over)
+    if isinstance(expr, ir.Translate):
+        return _dims_of(expr.operand, schema)
     if isinstance(expr, ir.GroupSum):
         d = schema.parameters[expr.mapping].dims[0]
-        return (_dims_of(expr.x, schema) - {d}) | {expr.into}
-    raise RelationalBuildError(f'cannot infer dims of {type(expr).__name__}')
+        return (_dims_of(expr.operand, schema) - {d}) | {expr.into}
+    raise LanguageError(f'cannot infer dims of {type(expr).__name__}')
 
 
-def _lower_bound(value: float | str) -> ir.Expr:
+def _lower_bound(value: float | str) -> ir.Expression:
     if isinstance(value, str):
-        return ir.Param(value)
-    return ir.Const(value)
+        return ir.Parameter(value)
+    return ir.Constant(value)
 
 
 # ---------------------------------------------------------------------------
@@ -374,30 +378,30 @@ def _lower_bound(value: float | str) -> ir.Expr:
 # ---------------------------------------------------------------------------
 
 
-def _lower_where(text: str | None, ns: Namespace, context: str) -> ir.Pred | None:
+def _lower_where(text: str | None, ns: Namespace, context: str) -> ir.Predicate | None:
     node = where_of(text, ns, context)
     if node is None:
         return None
     pred = _lower_where_node(node, context)
-    if isinstance(pred, ir.Bool) and pred.value:
+    if isinstance(pred, ir.BooleanConstant) and pred.value:
         return None  # True is equivalent to no mask
     return pred
 
 
-def _lower_where_node(node: WhereNode, context: str) -> ir.Pred:
-    if isinstance(node, BoolLiteral):
-        return ir.Bool(node.value)
+def _lower_where_node(node: WhereNode, context: str) -> ir.Predicate:
+    if isinstance(node, BooleanLiteralNode):
+        return ir.BooleanConstant(node.value)
 
-    if isinstance(node, ParamDefined):
-        return ir.Defined(node.name)
+    if isinstance(node, ParameterDefinedNode):
+        return ir.ParameterDefined(node.name)
 
-    if isinstance(node, ParamCmp):
-        return ir.Cmp(node.name, node.op, node.value)
+    if isinstance(node, ParameterComparisonNode):
+        return ir.ParameterComparison(node.name, node.op, node.value)
 
-    if isinstance(node, DimCmp):
-        return ir.DimCmp(node.name, node.op, node.value)
+    if isinstance(node, DimensionComparisonNode):
+        return ir.DimensionComparison(node.name, node.op, node.value)
 
-    if isinstance(node, (ExistenceCheck, Comparison)):
+    if isinstance(node, (UnresolvedNameNode, UnresolvedComparisonNode)):
         msg = (
             f'{type(node).__name__} reached lowering unresolved. Where strings '
             f'must go through resolution.where_of() first.'
@@ -420,7 +424,7 @@ def _lower_where_node(node: WhereNode, context: str) -> ir.Pred:
     assert_never(node)
 
 
-def _and_preds(a: ir.Pred | None, b: ir.Pred | None) -> ir.Pred | None:
+def _and_preds(a: ir.Predicate | None, b: ir.Predicate | None) -> ir.Predicate | None:
     if a is None:
         return b
     if b is None:

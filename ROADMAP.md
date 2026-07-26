@@ -70,7 +70,7 @@ rows and is excluded permanently.
 | 3 | Coordinate helpers in `where` | `index(dim, i)`, negative `i` from the end | "first/last snapshot" without hardcoding a label | coordinate-space | blocks 4 |
 | 4 | Window sum | `sum_next_n(x, over=dim, n=N)` | rolling horizons, DSR, reserves, min up/down time | bounded-halo | needs 3 |
 | 5 | Component-aware `where` | `defined(v)` over variables | masks compose across components instead of being re-derived and drifting | pointwise | needs design |
-| 6 | `all`-reduction in `where` | `all(x, over=dim)` | reducing a mask over an out-of-`foreach` dim at all — today that is a `DimError`, since an implicit reduction would silently widen the mask | pointwise | small |
+| 6 | `all`-reduction in `where` | `all(x, over=dim)` | reducing a mask over an out-of-`foreach` dim at all — today that is a `DimensionError`, since an implicit reduction would silently widen the mask | pointwise | small |
 | 7 | Bounds as expressions | — | signs, bidirectional flows, component libraries | pointwise | #31 |
 | 8 | Namespacing / qualified names | — | component libraries | n/a | #29 |
 | 9 | Compose-then-build (schema merge) | — | one lower/stream pass over merged libraries | n/a | #30 |
