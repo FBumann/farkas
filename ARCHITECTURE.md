@@ -56,8 +56,10 @@ a `Program` or raises `ly.LanguageError` — so it cannot drift from what the
 engine supports. Errors split model from run: everything under `LanguageError`
 is decidable without data, `DataError` is what a source failed to supply, and
 both are `LinopyYamlError` (`errors.py`). `ly.check()` is exactly parse
-→ validate → expand → lower with no data bound, so a model repository can
-compile-check its math in CI.
+→ expand → validate → lower with no data bound, so a model repository can
+compile-check its math in CI. Expansion precedes validation in **both** lanes,
+because a formulation emits declarations and those are language too — a stray
+dim in generated math is the same error as a stray dim in a written one.
 
 ## Hard rules
 
@@ -136,9 +138,10 @@ stream first:
 | dim table only, no data join | coordinate-space | admissible (free) |
 | window over unbounded rows, or a recursive CTE | global | **reject**, with the rewrite |
 
-This is the case analysis `_sum_piece`, `_group_piece` and `_shift_piece`
-already implement, so a candidate fitting none of those shapes has no executor
-to be written into. Two limits: **degree is not a SQL property**, and it
+This is the case analysis `_sum_fragment`, `_group_fragment` and
+`_translate_fragment` already implement — each rewriting one fragment on its
+own, which is what *pointwise* and *bounded-halo* mean in code — so a candidate
+fitting none of those shapes has no executor to be written into. Two limits: **degree is not a SQL property**, and it
 presumes `GROUP BY row, col` stays the only aggregate a *term* passes through.
 A primitive is finished when `lowering.py` accepts it and the differential test
 against the linopy oracle passes.
@@ -267,7 +270,7 @@ than the plan level, which is
 | `lowering.py` | core AST → logical plan (defines the relational subset) |
 | `relational/plan.py` | frozen logical-plan dataclasses |
 | `relational/executor.py` | duckdb execution + `lp_file` / `solver_direct` sinks |
-| `helpers.py` | the closed set of built-in operator *names* — no registry |
+| `helpers.py` | the closed set of built-in operators: their *names* and *call shapes* — no registry |
 | `errors.py` | the exception hierarchy; the one module the engine may import |
 
 ### Naming across the layers
@@ -295,6 +298,18 @@ Two rules follow from that table, and a PR that adds a construct keeps them:
 
 **Add a macro or named expression:** edit YAML. Nothing else.
 
-**Add a primitive:** grammar (usually free — `f(x, k=v)` already parses) → eager
-helper → plan node + locality class → executor → lowering case → differential test
-on both sinks → SPEC §5/§7, and this file if structural.
+**Add a primitive:** grammar (usually free — `f(x, k=v)` already parses) →
+signature in `helpers.BUILTINS` (arity and which arguments name dimensions —
+resolution, validation and lowering all read it from there, so the shape is
+declared once) → eager helper → plan node + locality class → executor →
+lowering case → differential test on both sinks → SPEC §5/§7, and this file if
+structural.
+
+Two things are deliberately *not* per-primitive work, because they are one
+implementation each: a primitive's dim rule lives only in `dimensions.py` —
+both its dim *set* and its verdict on an operand that lacks the dim being
+reduced along, which lowering asks for rather than deciding again — and the
+dense-label assignment that gives a coordinate its solver index lives only in
+`DuckdbExecutor._label_frame`, shared by variables and constraint rows. What a
+lowering case still owns is what is about the plan: which node the call becomes,
+and the shapes that node cannot represent.

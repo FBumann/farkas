@@ -39,14 +39,8 @@ from linopy_yaml.expression_parser import (
     UnaryOperatorNode,
     VariableNode,
 )
-from linopy_yaml.helpers import BUILTIN_NAMES, unknown_helper_message
-from linopy_yaml.resolution import (
-    _DIM_KEY_HELPERS,
-    _DIM_VALUE_KWARGS,
-    Namespace,
-    resolve_expression,
-    resolve_where,
-)
+from linopy_yaml.helpers import BUILTINS, unknown_helper_message
+from linopy_yaml.resolution import Namespace, resolve_expression, resolve_where
 from linopy_yaml.where_parser import parse_where
 
 if TYPE_CHECKING:
@@ -272,20 +266,21 @@ def _check_template_names(
         return
 
     if isinstance(node, FunctionCallNode):
-        if node.name not in BUILTIN_NAMES:
+        builtin = BUILTINS.get(node.name)
+        if builtin is None:
             errors.append(f'{context}: {unknown_helper_message(node.name)}')
         for arg in node.args:
             _check_template_names(arg, template, context, ns, formals, errors)
         # a formal may be bound to a dimension at the call site (ROADMAP 5c)
         known_dims = ns.dimensions | formals
-        for kwarg in _DIM_VALUE_KWARGS.get(node.name, ()):
+        for kwarg in builtin.dimension_kwargs if builtin else ():
             value = node.kwargs.get(kwarg)
             if isinstance(value, NameNode) and value.name not in known_dims:
                 errors.append(
                     f'{context}: {node.name}({kwarg}={value.name}) does not name a '
                     f'declared dimension or a formal of this macro.'
                 )
-        if node.name in _DIM_KEY_HELPERS:
+        if builtin is not None and builtin.dimension_is_key:
             errors.extend(
                 f'{context}: {node.name}({key}=...) does not name a declared dimension.'
                 for key in node.kwargs

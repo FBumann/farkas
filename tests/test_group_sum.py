@@ -120,7 +120,8 @@ def test_group_sum_lowering_errors():
     # a coordinate declared on a *different* dim is not in scope either
     with pytest.raises(LanguageError, match=r"by=to\) does not name a coordinate of 'generator'"):
         resolved('group_sum(p, over=generator, by=to)', schema)
-    # shape errors stay at lowering: the names resolve, the operand lacks the dim
+    # the names resolve and the arity fits, so what is left is a dim rule:
+    # lowering raises it by asking `dimensions`, not by restating it
     with pytest.raises(LanguageError, match='but the expression'):
         _lower_expr(resolved('group_sum(f, over=generator, by=bus)', schema), schema, 't')
 

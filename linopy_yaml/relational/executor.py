@@ -44,7 +44,7 @@ from linopy_yaml.errors import DataError, LanguageError, LinopyYamlError
 from linopy_yaml.relational import plan
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
 
     import pandas as pd
 
@@ -432,43 +432,52 @@ class DuckdbExecutor:
         order_key = ', '.join(f't_{d}.ord' for d in dims)
         return from_clause, where_clause, order_key
 
+    def _parameter_join(
+        self,
+        param: str,
+        frame_dims: tuple[str, ...],
+        alias: str,
+        coordinate: str,
+        subject: str,
+    ) -> str:
+        """The ``LEFT JOIN`` clause binding *param* to the frame under *alias*.
+
+        Both callers — where-masks and variable bounds — need the same join and
+        the same containment check: a parameter carrying a dim the frame does
+        not have would be reduced over that dim, silently widening a mask or
+        picking an arbitrary bound. They differ only in how the frame spells a
+        coordinate column (*coordinate*, a ``{dim}`` template) and in what the
+        message calls the offending parameter (*subject*) — naming the
+        declaration it came from is most of the value of raising here, so it is
+        the caller's word, not a role prefix pasted on the front.
+        """
+        assert self._program is not None
+        declaration = self._program.parameter(param)
+        extra = set(declaration.dims) - set(frame_dims)
+        if extra:
+            raise LanguageError(f'{subject} has dims {sorted(extra)} outside the foreach dims {list(frame_dims)}')
+        on = ' AND '.join(f'{alias}.{d} = {coordinate.format(dim=d)}' for d in declaration.dims) or 'TRUE'
+        return f'LEFT JOIN p_{param} {alias} ON {on}'
+
     def _pred_sql(self, pred: plan.Predicate, dims: tuple[str, ...]) -> tuple[list[str], str]:
         assert self._program is not None
         joins: dict[str, str] = {}
 
         def join_param(param: str) -> str:
-            """LEFT JOIN where-parameter *param* onto the frame; return its alias.
-
-            Every parameter predicate needs this same join and the same
-            containment check: a where-parameter carrying a dim the frame does
-            not have would silently reduce the mask over that dim.
-            """
-            decl = self._program.parameter(param)
-            extra = set(decl.dims) - set(dims)
-            if extra:
-                raise LanguageError(
-                    f"where-parameter '{param}' has dims {sorted(extra)} outside the foreach dims {list(dims)}"
-                )
             alias = f'w_{param}'
-            on = ' AND '.join(f'{alias}.{d} = t_{d}.val' for d in decl.dims) or 'TRUE'
-            joins[alias] = f'LEFT JOIN p_{param} {alias} ON {on}'
+            joins[alias] = self._parameter_join(param, dims, alias, 't_{dim}.val', f"where-parameter '{param}'")
             return alias
 
         def walk(p: plan.Predicate) -> str:
             if isinstance(p, plan.ParameterComparison):
-                alias = join_param(p.parameter)
-                val = f"'{p.value}'" if isinstance(p.value, str) else repr(p.value)
-                op = '=' if p.op == '==' else p.op
-                return f'({alias}.value {op} {val})'
+                return _comparison_sql(f'{join_param(p.parameter)}.value', p.op, p.value)
             if isinstance(p, plan.DimensionComparison):
                 if p.dimension not in dims:
                     raise LanguageError(
                         f"where-comparison on dimension '{p.dimension}' is outside the foreach dims "
                         f'{list(dims)} — reducing a mask over an unlisted dim is not supported'
                     )
-                val = f"'{p.value}'" if isinstance(p.value, str) else repr(p.value)
-                op = '=' if p.op == '==' else p.op
-                return f'(t_{p.dimension}.val {op} {val})'
+                return _comparison_sql(f't_{p.dimension}.val', p.op, p.value)
             if isinstance(p, plan.ParameterDefined):
                 alias = join_param(p.parameter)
                 if p.parameter in self._bool_params:
@@ -494,27 +503,49 @@ class DuckdbExecutor:
         per_chunk = max(1, int(self.chunk_rows // max(1.0, other_card)))
         return [(s, min(s + per_chunk, card)) for s in range(0, card, per_chunk)]
 
-    def _build_variable(self, v: plan.VariableDeclaration) -> None:
-        if not v.dims:
-            raise LanguageError(f"variable '{v.name}' has no dims (scalars: use dims of size 1)")
-        collist = ', '.join(f't_{d}.val AS {d}' for d in v.dims)
-        from_clause, where_clause, order_key = self._frame_sql(v.dims, v.where)
+    def _label_frame(
+        self,
+        table: str,
+        dims: tuple[str, ...],
+        where: plan.Predicate | None,
+        label: str,
+        start: int,
+    ) -> int:
+        """Materialise the masked coord product of *dims* as *table*, with a
+        dense ``label`` column continuing from *start*. Returns the next label.
+
+        Variables (``var_label``) and constraint rows (``row``) are the same
+        operation over different tables, and it is the one place chunking is
+        hand-managed: a global ``ROW_NUMBER`` window materialises its whole
+        input, so labels are assigned per-chunk of the leading dim with a
+        running offset. Writing that twice is how the two would come to
+        disagree about which coordinate gets which solver index.
+        """
+        collist = ', '.join(f't_{d}.val AS {d}' for d in dims)
+        from_clause, where_clause, order_key = self._frame_sql(dims, where)
         self._con.execute(
-            f'CREATE TABLE var_{v.name} AS SELECT {collist}, 0::BIGINT AS var_label FROM {from_clause} WHERE FALSE'
+            f'CREATE TABLE {table} AS SELECT {collist}, 0::BIGINT AS {label} FROM {from_clause} WHERE FALSE'
         )
 
-        other = math.prod(self._dim_card[d] for d in v.dims[1:]) if len(v.dims) > 1 else 1
-        lead = v.dims[0]
+        lead, *rest = dims
+        other = math.prod(self._dim_card[d] for d in rest)
+        next_label = start
         for lo, hi in self._chunk_starts(lead, other):
-            self._n_cols += self._scalar(
+            next_label += self._scalar(
                 f"""
-                INSERT INTO var_{v.name}
+                INSERT INTO {table}
                 SELECT {collist},
-                       {self._n_cols} + ROW_NUMBER() OVER (ORDER BY {order_key}) - 1
+                       {next_label} + ROW_NUMBER() OVER (ORDER BY {order_key}) - 1
                 FROM {from_clause}
                 WHERE t_{lead}.ord >= {lo} AND t_{lead}.ord < {hi} AND {where_clause}
                 """
             )
+        return next_label
+
+    def _build_variable(self, v: plan.VariableDeclaration) -> None:
+        if not v.dims:
+            raise LanguageError(f"variable '{v.name}' has no dims (scalars: use dims of size 1)")
+        self._n_cols = self._label_frame(f'var_{v.name}', v.dims, v.where, 'var_label', self._n_cols)
 
         lb_sql, lb_joins = self._bound_sql(v.lower, v)
         ub_sql, ub_joins = self._bound_sql(v.upper, v)
@@ -539,16 +570,10 @@ class DuckdbExecutor:
             if isinstance(e, plan.Constant):
                 return _lit(e.value)
             if isinstance(e, plan.Parameter):
-                decl = self._program.parameter(e.name)
-                extra = set(decl.dims) - set(v.dims)
-                if extra:
-                    raise LanguageError(
-                        f"bound parameter '{e.name}' of variable '{v.name}' has dims "
-                        f'{sorted(extra)} outside the variable dims {list(v.dims)}'
-                    )
                 alias = f'b_{e.name}'
-                on = ' AND '.join(f'{alias}.{d} = f.{d}' for d in decl.dims) or 'TRUE'
-                joins[alias] = f'LEFT JOIN p_{e.name} {alias} ON {on}'
+                joins[alias] = self._parameter_join(
+                    e.name, v.dims, alias, 'f.{dim}', f"bound parameter '{e.name}' of variable '{v.name}'"
+                )
                 return f'{alias}.value'
             if isinstance(e, plan.Negate):
                 return f'(-({walk(e.operand)}))'
@@ -583,11 +608,7 @@ class DuckdbExecutor:
                 cols = ', '.join([*d, 'var_label', '1.0 AS coeff'])
                 return _CompiledExpression((_TermFragment(d, f'SELECT {cols} FROM var_{e.name}', True),), ())
             if isinstance(e, plan.Negate):
-                inner = ev(e.operand)
-                return _CompiledExpression(
-                    tuple(_negate(p) for p in inner.terms),
-                    tuple(_negate(p) for p in inner.consts),
-                )
+                return _map_fragments(ev(e.operand), _negate)
             if isinstance(e, plan.Add):
                 a, b = ev(e.left), ev(e.right)
                 return _CompiledExpression(a.terms + b.terms, a.consts + b.consts)
@@ -614,20 +635,11 @@ class DuckdbExecutor:
                 consts = tuple(_join_mul(x, inv, is_term=False, op='/') for x in a.consts)
                 return _CompiledExpression(terms, consts)
             if isinstance(e, plan.Sum):
-                inner = ev(e.operand)
-                terms = tuple(self._sum_fragment(p, e.over, context) for p in inner.terms)
-                consts = tuple(self._sum_fragment(p, e.over, context) for p in inner.consts)
-                return _CompiledExpression(terms, consts)
+                return _map_fragments(ev(e.operand), lambda p: self._sum_fragment(p, e.over, context))
             if isinstance(e, plan.GroupSum):
-                inner = ev(e.operand)
-                terms = tuple(self._group_fragment(p, e, context) for p in inner.terms)
-                consts = tuple(self._group_fragment(p, e, context) for p in inner.consts)
-                return _CompiledExpression(terms, consts)
+                return _map_fragments(ev(e.operand), lambda p: self._group_fragment(p, e, context))
             if isinstance(e, plan.Translate):
-                inner = ev(e.operand)
-                terms = tuple(self._translate_fragment(p, e, context) for p in inner.terms)
-                consts = tuple(self._translate_fragment(p, e, context) for p in inner.consts)
-                return _CompiledExpression(terms, consts)
+                return _map_fragments(ev(e.operand), lambda p: self._translate_fragment(p, e, context))
             raise LanguageError(f'unsupported expression node {type(e).__name__} in {context}')
 
         return ev(expr)
@@ -708,26 +720,7 @@ class DuckdbExecutor:
                     f'foreach {list(c.dims)} — missing a Sum/GroupSum?'
                 )
 
-        collist = ', '.join(f't_{d}.val AS {d}' for d in c.dims)
-        from_clause, where_clause, order_key = self._frame_sql(c.dims, c.where)
-        self._con.execute(
-            f'CREATE TABLE con_{c.name} AS SELECT {collist}, 0::BIGINT AS row FROM {from_clause} WHERE FALSE'
-        )
-
-        # label assignment is the one step that needs the partition loop
-        # (a global ROW_NUMBER window materialises its whole input)
-        other = math.prod(self._dim_card[d] for d in c.dims[1:]) if len(c.dims) > 1 else 1
-        lead = c.dims[0]
-        for lo, hi in self._chunk_starts(lead, other):
-            self._n_rows += self._scalar(
-                f"""
-                INSERT INTO con_{c.name}
-                SELECT {collist},
-                       {self._n_rows} + ROW_NUMBER() OVER (ORDER BY {order_key}) - 1
-                FROM {from_clause}
-                WHERE t_{lead}.ord >= {lo} AND t_{lead}.ord < {hi} AND {where_clause}
-                """
-            )
+        self._n_rows = self._label_frame(f'con_{c.name}', c.dims, c.where, 'row', self._n_rows)
 
         rhs_sql = ' + '.join(f'{sign} * COALESCE(({self._agg_const_join(p, c.dims)}), 0)' for p, sign in consts) or '0'
 
@@ -918,11 +911,18 @@ class DuckdbExecutor:
         self._con.unregister('sol_src')
         return Solution(status=status, objective=objective, _executor=self)
 
-    def _primal(self, name: str) -> pd.DataFrame:
+    def _solution_sql(self, name: str) -> str:
+        """The tidy solution of variable *name*: ``(dims…, value)``.
+
+        A label join, never a dense array — which is what makes reading results
+        back cost the same whichever sink asked for them.
+        """
         assert self._program is not None
-        dims = self._program.variable(name).dims
-        collist = ', '.join([*(f'v.{d}' for d in dims), 's.value'])
-        return self._con.execute(f'SELECT {collist} FROM var_{name} v JOIN sol s ON s.col = v.var_label').df()
+        collist = ', '.join([*(f'v.{d}' for d in self._program.variable(name).dims), 's.value'])
+        return f'SELECT {collist} FROM var_{name} v JOIN sol s ON s.col = v.var_label'
+
+    def _primal(self, name: str) -> pd.DataFrame:
+        return self._con.execute(self._solution_sql(name)).df()
 
     def _solution_to_parquet(self, directory: Path) -> dict[str, Path]:
         assert self._program is not None
@@ -930,11 +930,7 @@ class DuckdbExecutor:
         written: dict[str, Path] = {}
         for v in self._program.variables:
             out = directory / f'{v.name}.parquet'
-            collist = ', '.join([*(f'v.{d}' for d in v.dims), 's.value'])
-            self._con.execute(
-                f'COPY (SELECT {collist} FROM var_{v.name} v JOIN sol s ON s.col = v.var_label) '
-                f"TO '{out}' (FORMAT parquet)"
-            )
+            self._con.execute(f"COPY ({self._solution_sql(v.name)}) TO '{out}' (FORMAT parquet)")
             written[v.name] = out
         return written
 
@@ -964,6 +960,34 @@ def _lit(v: float) -> str:
     # _lit(0) type-checks (int -> float) and would emit '0': INTEGER, not DOUBLE
     # pyrefly: ignore[unnecessary-type-conversion]
     return repr(float(v))
+
+
+def _map_fragments(
+    compiled: _CompiledExpression,
+    rewrite: Callable[[_TermFragment], _TermFragment],
+) -> _CompiledExpression:
+    """Apply *rewrite* to every fragment, keeping the term/const split.
+
+    Sum, GroupSum and Translate all rewrite each fragment on its own, which is
+    what pointwise and bounded-halo locality mean in code (ARCHITECTURE.md,
+    "Read the verdict off the SQL"). A node that needed the fragments
+    *together* would be a global operator, rejected at lowering instead.
+    """
+    return _CompiledExpression(
+        tuple(rewrite(p) for p in compiled.terms),
+        tuple(rewrite(p) for p in compiled.consts),
+    )
+
+
+def _comparison_sql(column: str, op: plan.ComparisonOperator, value: float | str) -> str:
+    """One where-comparison: ``(<column> <op> <literal>)``.
+
+    The language's ``==`` is SQL's ``=``, and a string literal needs quoting —
+    stated once, since the parameter and dimension cases differ only in which
+    column they test.
+    """
+    literal = f"'{value}'" if isinstance(value, str) else repr(value)
+    return f'({column} {"=" if op == "==" else op} {literal})'
 
 
 def _negate(p: _TermFragment) -> _TermFragment:

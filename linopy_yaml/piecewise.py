@@ -143,9 +143,15 @@ def _validate_block(schema: MathSchema, name: str, pw: PiecewiseBlock) -> tuple[
 
 
 def _expr_dims(schema: MathSchema, text: str, ctx: str) -> frozenset[str]:
-    """Dims of an affine link expression, via the lowering machinery."""
+    """Dims of an affine link expression, checked to be in the core subset.
+
+    Lowering is the subset test — it is what raises on a link the engine has
+    no plan node for — and ``dimensions`` is the dim set, which is a language
+    property rather than a lowering by-product.
+    """
+    from linopy_yaml.dimensions import dims_of
     from linopy_yaml.errors import LanguageError
-    from linopy_yaml.lowering import _dims_of, _lower_expr
+    from linopy_yaml.lowering import _lower_expr
     from linopy_yaml.resolution import Namespace, resolve_expression
 
     ast = parse_expression(text)
@@ -157,7 +163,8 @@ def _expr_dims(schema: MathSchema, text: str, ctx: str) -> frozenset[str]:
         raise PiecewiseExpansionError('\n'.join(errors))
     assert not isinstance(resolved, ComparisonNode)
     try:
-        return _dims_of(_lower_expr(resolved, schema, ctx), schema)
+        _lower_expr(resolved, schema, ctx)
+        return dims_of(resolved, schema, ctx)
     except LanguageError as exc:
         raise PiecewiseExpansionError(
             f'{ctx}: link expression {text!r} is not a core-subset affine expression: {exc}'

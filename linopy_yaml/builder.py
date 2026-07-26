@@ -8,6 +8,7 @@ the relational side by lowering cases and SQL rather than shared code.
 
 from __future__ import annotations
 
+import operator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, assert_never
 
@@ -31,6 +32,7 @@ from linopy_yaml.expression_parser import (
 )
 from linopy_yaml.helpers import unknown_helper_message
 from linopy_yaml.resolution import Namespace, expression_of, where_of
+from linopy_yaml.schema import equation_name
 from linopy_yaml.where_parser import (
     AndNode,
     BooleanLiteralNode,
@@ -45,7 +47,7 @@ from linopy_yaml.where_parser import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Hashable, Mapping
 
     import linopy
     import pandas as pd
@@ -54,6 +56,24 @@ if TYPE_CHECKING:
 
 # Mapping from YAML comparison operators to linopy sign strings
 _SIGN_MAP = {'==': '=', '<=': '<=', '>=': '>='}
+
+#: The language's arithmetic. ``**`` is absent on purpose — see ``_eval_ast``.
+_ARITHMETIC_OPS: dict[str, Callable[[Any, Any], Any]] = {
+    '+': operator.add,
+    '-': operator.sub,
+    '*': operator.mul,
+    '/': operator.truediv,
+}
+
+#: Where-comparison operators, evaluated element-wise on a DataArray.
+_PREDICATE_OPS: dict[str, Callable[[Any, Any], Any]] = {
+    '==': operator.eq,
+    '!=': operator.ne,
+    '<': operator.lt,
+    '>': operator.gt,
+    '<=': operator.le,
+    '>=': operator.ge,
+}
 
 
 @dataclass(frozen=True)
@@ -168,7 +188,7 @@ def _build_constraints(ctx: EvaluationContext) -> None:
             n_eqs = len(cdef.equations)
 
             for i, eq in enumerate(cdef.equations):
-                eq_name = cname if n_eqs == 1 else f'{cname}_{i}'
+                eq_name = equation_name(cname, i, n_eqs)
                 # Per-equation where mask (ANDed with constraint mask)
                 eq_where = where_of(eq.where, ctx.ns, f"constraint '{eq_name}'")
                 eq_mask = evaluate_where(eq_where, ctx.dataset, ctx.master_coords)
@@ -248,13 +268,7 @@ def _eval_ast(
     if isinstance(node, BinaryOperatorNode):
         left = _eval_ast(node.left, ctx)
         right = _eval_ast(node.right, ctx)
-        ops = {
-            '+': lambda a, b: a + b,
-            '-': lambda a, b: a - b,
-            '*': lambda a, b: a * b,
-            '/': lambda a, b: a / b,
-        }
-        if node.op not in ops:
+        if node.op not in _ARITHMETIC_OPS:
             # `**` parses but is not in the language: a variable base breaks
             # degree 1, and a parameters-only power belongs in data prep. The
             # streaming lane rejects it at lowering; this lane must agree.
@@ -264,7 +278,7 @@ def _eval_ast(
                 f'model nonlinear (see ROADMAP, "The degree axis").'
             )
             raise LanguageError(msg)
-        return ops[node.op](left, right)
+        return _ARITHMETIC_OPS[node.op](left, right)
 
     if isinstance(node, FunctionCallNode):
         # validation.py already rejected unknown helpers at load time; this
@@ -357,16 +371,20 @@ def _helper_group_sum(array: Any, mapping: Any, *, into: str) -> Any:
     raise TypeError(msg)
 
 
-def _shift_amount(helper: str, kwargs: dict[str, float]) -> tuple[str, int]:
-    """Unpack and check the shared ``<dim>=<n>`` signature of roll/shift."""
+def _translation(helper: str, kwargs: dict[str, float]) -> Mapping[Hashable, int]:
+    """The ``<dim>=<n>`` signature both spellings of ``plan.Translate`` share.
+
+    Only the signature is shared: how far to move is one rule, and whether the
+    edge wraps is what makes roll and shift different operators.
+    """
     if len(kwargs) != 1:
         msg = f'{helper}() expects exactly one keyword argument (dim=n), got {len(kwargs)}: {kwargs}'
         raise TypeError(msg)
-    dim, n = next(iter(kwargs.items()))
-    if int(n) != n:
-        msg = f'{helper}() amount must be an integer, got {n!r}'
+    dim, amount = next(iter(kwargs.items()))
+    if int(amount) != amount:
+        msg = f'{helper}() amount must be an integer, got {amount!r}'
         raise TypeError(msg)
-    return dim, int(n)
+    return {dim: int(amount)}
 
 
 def _helper_shift(array: Any, **kwargs: float) -> Any:
@@ -375,11 +393,11 @@ def _helper_shift(array: Any, **kwargs: float) -> Any:
     Usage in YAML: ``shift(soc, snapshot=1)`` — the value at *t-1*, with the
     first position empty (an acyclic recurrence, e.g. storage starting empty).
     """
-    dim, n = _shift_amount('shift', kwargs)
+    by = _translation('shift', kwargs)
     if isinstance(array, xr.DataArray):
-        return array.shift({dim: n}, fill_value=0)
+        return array.shift(by, fill_value=0)
     if hasattr(array, 'shift'):
-        return array.shift({dim: n})
+        return array.shift(by)
     msg = f"shift() does not support type '{type(array).__name__}'."
     raise TypeError(msg)
 
@@ -389,11 +407,11 @@ def _helper_roll(array: Any, **kwargs: float) -> Any:
 
     Usage in YAML: ``roll(soc, snapshot=1)``
     """
-    dim, n = _shift_amount('roll', kwargs)
+    by = _translation('roll', kwargs)
     if isinstance(array, xr.DataArray):
-        return array.roll({dim: n}, roll_coords=False)
+        return array.roll(by, roll_coords=False)
     if hasattr(array, 'roll'):
-        return array.roll({dim: n})
+        return array.roll(by)
     msg = f"roll() does not support type '{type(array).__name__}'."
     raise TypeError(msg)
 
@@ -472,16 +490,7 @@ def _eval_node(
             )
 
         val = node.value  # a literal: resolution rejected parameter/variable RHS
-
-        ops = {
-            '==': lambda a, b: a == b,
-            '!=': lambda a, b: a != b,
-            '<': lambda a, b: a < b,
-            '>': lambda a, b: a > b,
-            '<=': lambda a, b: a <= b,
-            '>=': lambda a, b: a >= b,
-        }
-        result = ops[node.op](arr, val)
+        result = _PREDICATE_OPS[node.op](arr, val)
         # NaN propagates as False
         return result.fillna(False).astype(bool)
 

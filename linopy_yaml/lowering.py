@@ -15,7 +15,8 @@ lanes accept the same language, and a rejection here is a language gap
 (ROADMAP.md), not a routing decision.
 
 Semantics mirror the eager builder exactly:
-- ``sum(x, over=d)`` where ``x`` does not carry dim ``d`` is a no-op;
+- a reduction over a dim the operand does not carry is an error, not a silent
+  identity — ``dimensions.py`` owns that rule and this module asks it;
 - a single-equation constraint keeps the constraint name, multiple equations
   get ``_{i}`` suffixes;
 - constraint-level and equation-level where strings are ANDed;
@@ -26,6 +27,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, assert_never
 
+from linopy_yaml.dimensions import dims_of
 from linopy_yaml.errors import DataError, LanguageError
 from linopy_yaml.expression_parser import (
     ArithmeticNode,
@@ -40,9 +42,10 @@ from linopy_yaml.expression_parser import (
     UnaryOperatorNode,
     VariableNode,
 )
-from linopy_yaml.helpers import BUILTIN_NAMES
+from linopy_yaml.helpers import BUILTIN_NAMES, call_shape_error
 from linopy_yaml.relational import plan
 from linopy_yaml.resolution import Namespace, expression_of, where_of
+from linopy_yaml.schema import equation_name
 from linopy_yaml.where_parser import (
     AndNode,
     BooleanLiteralNode,
@@ -72,19 +75,13 @@ def lower_program(schema: MathSchema) -> plan.Program:
 
     variables = []
     for vname, vdef in schema.variables.items():
-        lower: plan.Expression
-        upper: plan.Expression
+        variable_type: plan.VariableType
         if vdef.binary:
             # binary implies fixed 0/1 bounds, matching linopy's binary=True
             variable_type, lower, upper = 'binary', plan.Constant(0.0), plan.Constant(1.0)
-        elif vdef.integer:
-            variable_type = 'integer'
-            lower = _lower_bound(vdef.bounds.lower)
-            upper = _lower_bound(vdef.bounds.upper)
         else:
-            variable_type = 'continuous'
-            lower = _lower_bound(vdef.bounds.lower)
-            upper = _lower_bound(vdef.bounds.upper)
+            variable_type = 'integer' if vdef.integer else 'continuous'
+            lower, upper = _bound_expression(vdef.bounds.lower), _bound_expression(vdef.bounds.upper)
         variables.append(
             plan.VariableDeclaration(
                 vname,
@@ -101,7 +98,7 @@ def lower_program(schema: MathSchema) -> plan.Program:
         c_where = _lower_where(cdef.where, ns, f"constraint '{cname}'")
         n_eqs = len(cdef.equations)
         for i, eq in enumerate(cdef.equations):
-            eq_name = cname if n_eqs == 1 else f'{cname}_{i}'
+            eq_name = equation_name(cname, i, n_eqs)
             eq_where = _lower_where(eq.where, ns, f"constraint '{eq_name}'")
             where = _and_preds(c_where, eq_where)
 
@@ -220,6 +217,20 @@ def tidy_sources(
 
 
 def _lower_expr(node: ArithmeticNode, schema: MathSchema, context: str) -> plan.Expression:
+    """Rewrite one resolved core-AST expression as a plan expression.
+
+    Two rules a helper case relies on, neither of them stated here. The call
+    shape comes from ``helpers.call_shape_error``, which resolution has already
+    applied — it is asked again here so an AST that skipped resolution gets the
+    language's wording rather than an ``IndexError``. The dim rules come from
+    ``dimensions.dims_of`` over the *core AST*: whether an operand carries the
+    dim it is being reduced along is a language question, and lowering asks it
+    rather than answering it a second time.
+
+    What stays here is what is genuinely about the plan: which node a call
+    becomes, and the shapes a node cannot represent — a ``GroupSum`` groups by
+    a declared coordinate, a ``Translate`` distance is an integer literal.
+    """
     if isinstance(node, NumberNode):
         return plan.Constant(node.value)
 
@@ -273,61 +284,69 @@ def _lower_expr(node: ArithmeticNode, schema: MathSchema, context: str) -> plan.
                 )
 
     if isinstance(node, FunctionCallNode):
+        if node.name not in BUILTIN_NAMES:
+            raise LanguageError(
+                f"{context}: helper '{node.name}' has no lowering. The language's "
+                f'helpers are {sorted(BUILTIN_NAMES)}; compositions of them '
+                f"belong in 'macros:'. Math outside the language belongs in a "
+                f"declared 'escape:' island, not in a helper."
+            )
+        shape_error = call_shape_error(node.name, len(node.args), node.kwargs)
+        if shape_error is not None:
+            raise LanguageError(f'{context}: {shape_error}')
+
         if node.name == 'sum':
-            if len(node.args) != 1 or set(node.kwargs) != {'over'}:
-                raise LanguageError(f'{context}: sum() expects sum(<expr>, over=<dim>)')
             over_node = node.kwargs['over']
             if not isinstance(over_node, DimensionNode):
                 raise LanguageError(f'{context}: sum(over=...) must name a dimension')
-            inner = _lower_expr(node.args[0], schema, context)
-            # eager parity: summing over a dim the operand does not carry is a no-op
-            if over_node.name not in _dims_of(inner, schema):
-                return inner
-            return plan.Sum(inner, (over_node.name,))
+            _check_dim_rules(node, schema, context)
+            return plan.Sum(_lower_expr(node.args[0], schema, context), (over_node.name,))
 
         if node.name == 'group_sum':
-            if len(node.args) != 1 or set(node.kwargs) != {'over', 'by'}:
-                raise LanguageError(f'{context}: group_sum() expects group_sum(<expr>, over=<dim>, by=<coord>)')
             over_node = node.kwargs['over']
             by_node = node.kwargs['by']
             if not isinstance(over_node, DimensionNode):
                 raise LanguageError(f'{context}: group_sum(over=...) must name a dimension')
             if not isinstance(by_node, CoordinateNode):
                 raise LanguageError(f'{context}: group_sum(by=...) must name a coordinate')
-            inner = _lower_expr(node.args[0], schema, context)
-            if over_node.name not in _dims_of(inner, schema):
-                raise LanguageError(
-                    f"{context}: group_sum() over '{over_node.name}' but the expression "
-                    f'has dims {sorted(_dims_of(inner, schema))}'
-                )
-            return plan.GroupSum(inner, over=over_node.name, coordinate=by_node.name, into=by_node.into)
+            _check_dim_rules(node, schema, context)
+            return plan.GroupSum(
+                _lower_expr(node.args[0], schema, context),
+                over=over_node.name,
+                coordinate=by_node.name,
+                into=by_node.into,
+            )
 
         if node.name in ('roll', 'shift'):
-            wrap = node.name == 'roll'
-            if len(node.args) != 1 or len(node.kwargs) != 1:
-                raise LanguageError(f'{context}: {node.name}() expects {node.name}(<expr>, <dim>=<n>)')
             ((dim, shift_node),) = node.kwargs.items()
             sign = 1
             if isinstance(shift_node, UnaryOperatorNode) and shift_node.op == '-':
                 sign, shift_node = -1, shift_node.operand
             if not isinstance(shift_node, NumberNode) or int(shift_node.value) != shift_node.value:
                 raise LanguageError(f'{context}: {node.name}() shift must be an integer literal')
-            inner = _lower_expr(node.args[0], schema, context)
-            if dim not in _dims_of(inner, schema):
-                raise LanguageError(
-                    f"{context}: {node.name}() along '{dim}' but the expression "
-                    f'has dims {sorted(_dims_of(inner, schema))}'
-                )
-            return plan.Translate(inner, dim, by=sign * int(shift_node.value), wrap=wrap)
+            _check_dim_rules(node, schema, context)
+            return plan.Translate(
+                _lower_expr(node.args[0], schema, context),
+                dim,
+                by=sign * int(shift_node.value),
+                wrap=node.name == 'roll',
+            )
 
-        raise LanguageError(
-            f"{context}: helper '{node.name}' has no lowering. The language's "
-            f'helpers are {sorted(BUILTIN_NAMES)}; compositions of them '
-            f"belong in 'macros:'. Math outside the language belongs in a "
-            f"declared 'escape:' island, not in a helper."
-        )
+        raise LanguageError(f"{context}: built-in '{node.name}' declares no lowering case")
 
     assert_never(node)
+
+
+def _check_dim_rules(node: FunctionCallNode, schema: MathSchema, context: str) -> None:
+    """Apply the language's dim rules to a helper call, discarding the dim set.
+
+    Lowering wants the *raise*, not the answer: ``dimensions`` decides whether
+    an operand carries the dim it is being reduced along, and a second copy of
+    that decision here is a second thing to keep in step. It is called after
+    the plan-shape checks so those get to speak first, and only for the dims of
+    one call — the enclosing frame is ``dimensions.check_schema``'s business.
+    """
+    dims_of(node, schema, context)
 
 
 def _has_var(expr: plan.Expression) -> bool:
@@ -352,29 +371,7 @@ def _has_var(expr: plan.Expression) -> bool:
     raise LanguageError(f'cannot decide degree of {type(expr).__name__}')
 
 
-def _dims_of(expr: plan.Expression, schema: MathSchema) -> frozenset[str]:
-    if isinstance(expr, plan.Constant):
-        return frozenset()
-    if isinstance(expr, plan.Parameter):
-        return frozenset(schema.parameters[expr.name].dims)
-    if isinstance(expr, plan.Variable):
-        return frozenset(schema.variables[expr.name].foreach)
-    if isinstance(expr, plan.Negate):
-        return _dims_of(expr.operand, schema)
-    if isinstance(expr, (plan.Add, plan.Multiply)):
-        return _dims_of(expr.left, schema) | _dims_of(expr.right, schema)
-    if isinstance(expr, plan.Divide):
-        return _dims_of(expr.numerator, schema) | _dims_of(expr.divisor, schema)
-    if isinstance(expr, plan.Sum):
-        return _dims_of(expr.operand, schema) - set(expr.over)
-    if isinstance(expr, plan.Translate):
-        return _dims_of(expr.operand, schema)
-    if isinstance(expr, plan.GroupSum):
-        return (_dims_of(expr.operand, schema) - {expr.over}) | {expr.into}
-    raise LanguageError(f'cannot infer dims of {type(expr).__name__}')
-
-
-def _lower_bound(value: float | str) -> plan.Expression:
+def _bound_expression(value: float | str) -> plan.Expression:
     if isinstance(value, str):
         return plan.Parameter(value)
     return plan.Constant(value)

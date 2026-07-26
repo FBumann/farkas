@@ -138,7 +138,9 @@ def load_parameters(
     """Load, coerce, and validate all declared parameters.
 
     Returns an ``xr.Dataset`` with one DataArray per parameter, aligned to
-    the master coordinates.
+    the master coordinates. Dim and coordinate checking happens here rather
+    than per input shape: every branch of ``_coerce_to_dataarray`` produces a
+    DataArray, and every one of them owes the same two guarantees.
     """
     data = data or {}
     arrays: dict[str, xr.DataArray] = {}
@@ -165,6 +167,8 @@ def load_parameters(
     for pname, pdef in schema.parameters.items():
         raw = data[pname]
         arr = _coerce_to_dataarray(pname, raw, pdef.dims, master_coords)
+        _validate_dims(pname, arr, pdef.dims)
+        _validate_coords(pname, arr, master_coords)
 
         # Expand scalars and reindex to master coords
         if pdef.dims:
@@ -219,10 +223,7 @@ def _coerce_to_dataarray(
         if raw.index.name is None:
             raw = raw.copy()
             raw.index.name = dims[0]
-        arr = xr.DataArray.from_series(raw)
-        _validate_dims(name, arr, dims)
-        _validate_coords(name, arr, master_coords)
-        return arr
+        return xr.DataArray.from_series(raw)
 
     # pd.DataFrame
     if isinstance(raw, pd.DataFrame):
@@ -240,15 +241,10 @@ def _coerce_to_dataarray(
         # flat columns (checked above: exactly 2 dims), so stack() gives a Series
         stacked = cast('pd.Series', raw.stack())
         stacked.name = name
-        arr = xr.DataArray.from_series(stacked).unstack()
-        _validate_dims(name, arr, dims)
-        _validate_coords(name, arr, master_coords)
-        return arr
+        return xr.DataArray.from_series(stacked).unstack()
 
     # xr.DataArray
     if isinstance(raw, xr.DataArray):
-        _validate_dims(name, raw, dims)
-        _validate_coords(name, raw, master_coords)
         return raw
 
     # np.ndarray / list

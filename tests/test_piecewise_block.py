@@ -312,6 +312,32 @@ def test_active_gating(nonconvex_inputs, tmp_path):
             assert cost[s] == pytest.approx(expected, abs=1e-6)
 
 
+def test_both_lanes_check_the_declarations_a_formulation_emits(tmp_path):
+    """Emitted declarations are language too, so both lanes must judge them.
+
+    A link's dims come from its values parameter, so a values parameter
+    carrying a dim the links do not is a stray dim in generated math — one row
+    per zone where the file reads as one per snapshot. The native lane used to
+    validate the file as written, which made ``ly.check()`` pass on a model
+    ``compat.build`` refused: the same YAML, two answers (hard rule 3).
+    """
+    import linopy_yaml as ly
+    from linopy_yaml.errors import DimensionError
+
+    raw = pyyaml.safe_load(NONCONVEX_YAML)
+    raw['dimensions']['zone'] = {'dtype': 'str'}
+    raw['parameters']['bp_y'] = {'dims': ['zone', 'bp']}
+    stray = r"cost_curve_link1.*\['zone'\]"
+
+    with pytest.raises(DimensionError, match=stray):
+        ly.check(raw)
+
+    path = tmp_path / 'stray_dim.yaml'
+    path.write_text(pyyaml.safe_dump(raw))
+    with pytest.raises(DimensionError, match=stray):
+        compat.build(path)
+
+
 def test_active_must_be_binary():
     raw = pyyaml.safe_load(GATED_YAML)
     raw['variables']['u'] = {
