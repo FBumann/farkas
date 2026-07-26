@@ -16,7 +16,9 @@ from typing import Any, Literal, cast
 
 import pyparsing as pp
 
-ComparisonOp = Literal['<=', '>=', '==', '!=', '<', '>']
+from linopy_yaml.errors import SchemaError
+
+PredicateOperator = Literal['<=', '>=', '==', '!=', '<', '>']
 
 # ---------------------------------------------------------------------------
 # AST nodes
@@ -24,48 +26,48 @@ ComparisonOp = Literal['<=', '>=', '==', '!=', '<', '>']
 
 
 @dataclass
-class BoolLiteral:
+class BooleanLiteralNode:
     value: bool
 
 
 @dataclass
-class ExistenceCheck:
+class UnresolvedNameNode:
     """A bare name — unresolved. ``resolution.py`` types it."""
 
     name: str
 
 
 @dataclass
-class Comparison:
+class UnresolvedComparisonNode:
     """A comparison against an unresolved name. ``resolution.py`` types it."""
 
     name: str
-    op: ComparisonOp
+    op: PredicateOperator
     value: float | str
 
 
 @dataclass
-class ParamDefined:
+class ParameterDefinedNode:
     """True wherever the named parameter is non-null and finite."""
 
     name: str
 
 
 @dataclass
-class ParamCmp:
+class ParameterComparisonNode:
     """Compare a parameter against a literal, element-wise."""
 
     name: str
-    op: ComparisonOp
+    op: PredicateOperator
     value: float | str
 
 
 @dataclass
-class DimCmp:
+class DimensionComparisonNode:
     """Compare a dimension's own coordinates against a literal."""
 
     name: str
-    op: ComparisonOp
+    op: PredicateOperator
     value: float | str
 
 
@@ -90,7 +92,17 @@ class OrNode:
 # before this line — that works only because `from __future__ import
 # annotations` makes annotations strings. Don't remove that future-import
 # unless you also reorder these definitions.
-WhereNode = BoolLiteral | ExistenceCheck | Comparison | ParamDefined | ParamCmp | DimCmp | NotNode | AndNode | OrNode
+WhereNode = (
+    BooleanLiteralNode
+    | UnresolvedNameNode
+    | UnresolvedComparisonNode
+    | ParameterDefinedNode
+    | ParameterComparisonNode
+    | DimensionComparisonNode
+    | NotNode
+    | AndNode
+    | OrNode
+)
 
 
 # ---------------------------------------------------------------------------
@@ -103,12 +115,12 @@ def _build_where_grammar() -> pp.ParserElement:
     where_expr = pp.Forward()
 
     # Literals
-    true_lit = pp.CaselessKeyword('True').set_parse_action(lambda: BoolLiteral(True))
-    false_lit = pp.CaselessKeyword('False').set_parse_action(lambda: BoolLiteral(False))
+    true_lit = pp.CaselessKeyword('True').set_parse_action(lambda: BooleanLiteralNode(True))
+    false_lit = pp.CaselessKeyword('False').set_parse_action(lambda: BooleanLiteralNode(False))
 
     # Numbers
     real = pp.Regex(r'-?\d+\.\d*([eE][+-]?\d+)?').set_parse_action(lambda t: float(t[0]))
-    # float, not int: Comparison.value is declared float, so store one
+    # float, not int: UnresolvedComparisonNode.value is declared float, so store one
     integer = pp.Regex(r'-?\d+').set_parse_action(lambda t: float(t[0]))
     number = real | integer
 
@@ -117,10 +129,12 @@ def _build_where_grammar() -> pp.ParserElement:
 
     # Comparisons
     comparator = pp.one_of('<= >= == != < >')
-    comparison = (name + comparator + (number | name)).set_parse_action(lambda t: Comparison(t[0], t[1], t[2]))
+    comparison = (name + comparator + (number | name)).set_parse_action(
+        lambda t: UnresolvedComparisonNode(t[0], t[1], t[2])
+    )
 
     # Existence check (bare name)
-    existence = name.copy().set_parse_action(lambda t: ExistenceCheck(t[0]))
+    existence = name.copy().set_parse_action(lambda t: UnresolvedNameNode(t[0]))
 
     # Atoms
     atom = true_lit | false_lit | comparison | existence | (pp.Suppress('(') + where_expr + pp.Suppress(')'))
@@ -168,6 +182,6 @@ def parse_where(text: str) -> WhereNode:
         result = _WHERE_GRAMMAR.parse_string(text, parse_all=True)
     except pp.ParseException as e:
         msg = f'Failed to parse where string: {text!r}\n{e}'
-        raise ValueError(msg) from e
+        raise SchemaError(msg) from e
     # parseAll with a single top-level alternative: element 0 is the root node
     return cast('WhereNode', result[0])

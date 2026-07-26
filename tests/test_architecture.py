@@ -96,9 +96,21 @@ def test_lazy_oracle_imports_stay_on_the_allowlist():
     )
 
 
+#: Package modules the engine may import: dependency-free leaves that carry no
+#: YAML, schema or AST knowledge. ``errors.py`` is one — without it there is no
+#: single exception class a caller can catch across both lanes.
+ENGINE_MAY_IMPORT = {'linopy_yaml.errors'}
+
+
 def test_engine_is_isolated():
-    """Hard rule 2: the relational engine imports nothing from the package
-    outside its own subpackage — the IR is fed to it, it never reaches out."""
+    """Hard rule 2: the engine knows nothing about linopy, xarray or YAML.
+
+    Enforced as "imports nothing from the package bar ENGINE_MAY_IMPORT",
+    which is stricter than the written rule and deliberately so: the plan is
+    fed to the engine, and keeping the import surface at zero is what leaves
+    the subpackage extractable. Widening it is a decision — add the module to
+    ENGINE_MAY_IMPORT with a reason, the way ``errors.py`` is there.
+    """
     offenders = {}
     for path in (PKG / 'relational').rglob('*.py'):
         if '__pycache__' in path.parts:
@@ -111,12 +123,18 @@ def test_engine_is_isolated():
                     a.name
                     for a in node.names
                     if a.name.split('.')[0] in FORBIDDEN_RUNTIME | {'yaml'}
-                    or (a.name.startswith('linopy_yaml') and not a.name.startswith('linopy_yaml.relational'))
+                    or (
+                        a.name.startswith('linopy_yaml')
+                        and not a.name.startswith('linopy_yaml.relational')
+                        and a.name not in ENGINE_MAY_IMPORT
+                    )
                 ]
             elif isinstance(node, ast.ImportFrom) and node.module:
                 m = node.module
                 if m.split('.')[0] in FORBIDDEN_RUNTIME | {'yaml'} or (
-                    m.startswith('linopy_yaml') and not m.startswith('linopy_yaml.relational')
+                    m.startswith('linopy_yaml')
+                    and not m.startswith('linopy_yaml.relational')
+                    and m not in ENGINE_MAY_IMPORT
                 ):
                     bad.append(m)
         if bad:
@@ -148,14 +166,16 @@ def test_expansion_has_no_mutable_module_state():
 def test_every_ir_expr_node_is_handled_by_the_executor():
     """Two-tier economy: a primitive is not done until the executor consumes
     it. Grep-level drift alarm — the differential tests prove semantics."""
-    import linopy_yaml.relational.ir as ir
+    import linopy_yaml.relational.plan as plan
 
     executor_src = (PKG / 'relational' / 'executor.py').read_text()
-    unhandled = [cls.__name__ for cls in ir.Expr.__subclasses__() if f'ir.{cls.__name__}' not in executor_src]
-    assert not unhandled, f'ir.Expr nodes unknown to the executor: {unhandled}'
+    unhandled = [cls.__name__ for cls in plan.Expression.__subclasses__() if f'plan.{cls.__name__}' not in executor_src]
+    assert not unhandled, f'plan.Expression nodes unknown to the executor: {unhandled}'
 
-    unhandled_pred = [cls.__name__ for cls in ir.Pred.__subclasses__() if f'ir.{cls.__name__}' not in executor_src]
-    assert not unhandled_pred, f'ir.Pred nodes unknown to the executor: {unhandled_pred}'
+    unhandled_pred = [
+        cls.__name__ for cls in plan.Predicate.__subclasses__() if f'plan.{cls.__name__}' not in executor_src
+    ]
+    assert not unhandled_pred, f'plan.Predicate nodes unknown to the executor: {unhandled_pred}'
 
 
 def test_both_lanes_implement_exactly_the_closed_helper_set():
@@ -204,15 +224,15 @@ def test_architecture_doc_mentions_every_module():
 def test_every_schema_model_is_strict():
     """A schema model that inherits BaseModel directly silently drops unknown
     keys, which turns a typo into a different model. Strictness lives on
-    ``_Strict``, so the check is that nothing bypasses it."""
+    ``_StrictBlock``, so the check is that nothing bypasses it."""
     tree = ast.parse((PKG / 'schema.py').read_text())
     loose = [
         node.name
         for node in tree.body
         if isinstance(node, ast.ClassDef)
-        and node.name != '_Strict'
+        and node.name != '_StrictBlock'
         and any(isinstance(b, ast.Name) and b.id == 'BaseModel' for b in node.bases)
     ]
     assert not loose, (
-        f'schema models {loose} inherit BaseModel directly and so accept unknown keys — inherit _Strict instead'
+        f'schema models {loose} inherit BaseModel directly and so accept unknown keys — inherit _StrictBlock instead'
     )

@@ -1,13 +1,13 @@
 """The runner: bind data to a YAML model and execute it. Not a modeling API.
 
 Math is defined in YAML only — there is no Python API for constructing
-models, and the relational IR is internal (a stable IR-construction API may
+models, and the logical plan is internal (a stable plan-construction API may
 come later). This module's job is exactly three verbs: ``build`` (YAML +
 sources → live executor), ``solve``, and ``write``.
 
 This is the product path (ARCHITECTURE.md). The language is validated at load
-time, lowered to the IR — anything outside the streaming subset raises
-:class:`RelationalBuildError` naming the construct — and executed relationally
+time, lowered to the plan — anything outside the streaming subset raises
+:class:`~linopy_yaml.errors.LanguageError` naming the construct — and executed relationally
 under a hard memory budget.
 
 linopy exists only in the optional compatibility/oracle layer
@@ -35,16 +35,12 @@ from typing import TYPE_CHECKING, Any
 
 from linopy_yaml._yaml import read_yaml
 from linopy_yaml.lowering import lower_program, tidy_sources
-from linopy_yaml.relational.executor import DuckdbExecutor, RelationalBuildError, Solution
+from linopy_yaml.relational.executor import DuckdbExecutor, Solution
 from linopy_yaml.schema import MathSchema
 from linopy_yaml.validation import validate_expressions
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
-
-#: Public name for "this model is outside the streaming language". The
-#: exception class is shared with the engine; callers should catch this alias.
-LanguageError = RelationalBuildError
 
 
 def load_schema(model: str | Path | dict[str, Any] | MathSchema) -> MathSchema:
@@ -102,7 +98,7 @@ def build(
 
     Raises
     ------
-    RelationalBuildError
+    LanguageError
         If the model uses a construct outside the streaming language —
         the message names the construct and its context.
     """

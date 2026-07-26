@@ -23,18 +23,19 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, assert_never
 
 from linopy_yaml.dimensions import check_schema
+from linopy_yaml.errors import SchemaError
 from linopy_yaml.expansion import expand, parse_template
 from linopy_yaml.expression_parser import (
-    ArithNode,
-    BinOpNode,
-    CompareNode,
-    DimRefNode,
-    FuncCallNode,
+    ArithmeticNode,
+    BinaryOperatorNode,
+    ComparisonNode,
+    DimensionNode,
+    FunctionCallNode,
     NameNode,
     NumberNode,
-    ParamNode,
-    UnaryOpNode,
-    VarNode,
+    ParameterNode,
+    UnaryOperatorNode,
+    VariableNode,
 )
 from linopy_yaml.helpers import BUILTIN_NAMES, unknown_helper_message
 from linopy_yaml.resolution import (
@@ -83,7 +84,7 @@ def validate_expressions(
 
     Raises
     ------
-    ValueError
+    SchemaError
         Listing every problem found, one per line.
     """
     ns = Namespace.of(schema, known_variables)
@@ -93,7 +94,7 @@ def validate_expressions(
         context = f"Macro '{mname}'"
         try:
             body_ast = expand(parse_template(mname, macro, context), schema, context)
-            assert not isinstance(body_ast, CompareNode)
+            assert not isinstance(body_ast, ComparisonNode)
         except ValueError as e:
             errors.append(str(e) if str(e).startswith(context) else f'{context}: {e}')
             continue
@@ -113,7 +114,7 @@ def validate_expressions(
         ast = _parse_expand(body, schema, context, errors)
         if ast is None:
             continue
-        if isinstance(ast, CompareNode):
+        if isinstance(ast, ComparisonNode):
             errors.append(f'{context}: must not contain a comparison operator.\nGot: {body!r}')
             continue
         resolve_expression(ast, ns, context, errors)
@@ -129,7 +130,7 @@ def validate_expressions(
             ast = _parse_expand(eq.expression, schema, context, errors)
             if ast is None:
                 continue
-            if not isinstance(ast, CompareNode):
+            if not isinstance(ast, ComparisonNode):
                 errors.append(
                     f'{context}: expression must contain exactly one '
                     f'comparison operator (<=, >=, ==).\n'
@@ -145,13 +146,13 @@ def validate_expressions(
             ast = _parse_expand(eq.expression, schema, context, errors)
             if ast is None:
                 continue
-            if isinstance(ast, CompareNode):
+            if isinstance(ast, ComparisonNode):
                 errors.append(f'{context}: expression must not contain a comparison operator.\nGot: {eq.expression!r}')
                 continue
             resolve_expression(ast, ns, context, errors)
 
     if errors:
-        raise ValueError('\n'.join(errors))
+        raise SchemaError('\n'.join(errors))
 
     # Dim rules are language rules, not backend rules, so they run here rather
     # than at either entry point — compat.build/extend and api.load_schema all
@@ -165,7 +166,7 @@ def _parse_expand(
     schema: MathSchema,
     context: str,
     errors: list[str],
-) -> ArithNode | CompareNode | None:
+) -> ArithmeticNode | ComparisonNode | None:
     from linopy_yaml.expansion import parse_and_expand
 
     try:
@@ -192,7 +193,7 @@ def _check_where(
 
 
 def _check_template_names(
-    node: ArithNode,
+    node: ArithmeticNode,
     template: str,
     context: str,
     ns: Namespace,
@@ -206,7 +207,7 @@ def _check_template_names(
     that are *not* formals, which is what makes an uncalled macro still fail
     at load time.
     """
-    if isinstance(node, (NumberNode, VarNode, ParamNode, DimRefNode)):
+    if isinstance(node, (NumberNode, VariableNode, ParameterNode, DimensionNode)):
         return
 
     if isinstance(node, NameNode):
@@ -220,16 +221,16 @@ def _check_template_names(
             )
         return
 
-    if isinstance(node, UnaryOpNode):
+    if isinstance(node, UnaryOperatorNode):
         _check_template_names(node.operand, template, context, ns, formals, errors)
         return
 
-    if isinstance(node, BinOpNode):
+    if isinstance(node, BinaryOperatorNode):
         _check_template_names(node.left, template, context, ns, formals, errors)
         _check_template_names(node.right, template, context, ns, formals, errors)
         return
 
-    if isinstance(node, FuncCallNode):
+    if isinstance(node, FunctionCallNode):
         if node.name not in BUILTIN_NAMES:
             errors.append(f'{context}: {unknown_helper_message(node.name)}')
         for arg in node.args:

@@ -19,13 +19,13 @@ flowchart TB
     MS -->|"expand macros: / expressions: (expansion.py)<br/>expand piecewise: blocks (piecewise.py)<br/>resolve names to typed nodes (resolution.py)<br/>check dim sets (dimensions.py)<br/>— backends never see any of them"| AST["core AST<br/>= the only contract between layers<br/>fully typed: names resolved, dims checked"]
     AST -->|"api.py: check / build / solve / write"| LOWER
     AST -.->|"linopy_yaml.compat<br/>(opt-in shim: build / extend)"| BUILD
-    LOWER -->|"outside the language:<br/>RelationalBuildError naming the construct"| ERR["load error<br/>(no fallback)"]
+    LOWER -->|"outside the language:<br/>LanguageError naming the construct"| ERR["load error<br/>(no fallback)"]
 
     subgraph REL["Relational lane — streaming · memory-bounded · linopy-free"]
         direction TB
-        LOWER["lowering.py"] --> IR["IR<br/>(relational/ir.py)"]
+        LOWER["lowering.py"] --> PLAN["logical plan<br/>(relational/plan.py)"]
         DR[("data<br/>parquet paths / pandas")] --> EXEC
-        IR --> EXEC["executor.py<br/>tidy tables in file-backed duckdb<br/>under memory_limit"]
+        PLAN --> EXEC["executor.py<br/>tidy tables in file-backed duckdb<br/>under memory_limit"]
         EXEC --> LPS["lp_file sink<br/>portability, debugging<br/>(mps planned)"]
         EXEC --> DIRECT["solver_direct sink<br/>COO batches → highspy → HiGHS"]
         DIRECT --> SOL["solution tables<br/>(label join, never dense)"]
@@ -45,8 +45,10 @@ flowchart TB
 ```
 
 Eligibility is decided by **attempting the lowering** — `lower_program` returns
-a `Program` or raises `RelationalBuildError` (public alias `ly.LanguageError`) —
-so it cannot drift from what the engine supports. `ly.check()` is exactly parse
+a `Program` or raises `ly.LanguageError` — so it cannot drift from what the
+engine supports. Errors split model from run: everything under `LanguageError`
+is decidable without data, `DataError` is what a source failed to supply, and
+both are `LinopyYamlError` (`errors.py`). `ly.check()` is exactly parse
 → validate → expand → lower with no data bound, so a model repository can
 compile-check its math in CI.
 
@@ -57,8 +59,8 @@ static checks and CI's bare-install job proves the dependency claims.*
 
 1. **Core AST is the whole language.** Both backends consume only core AST;
    macros, named expressions and `piecewise:` are expanded away before dispatch,
-   and IR/SQL/xarray are backend-private. The AST crossing that seam is **fully
-   resolved** — names are typed `Var`/`Param`/`Dim` nodes — so a backend cannot
+   and the plan/SQL/xarray are backend-private. The AST crossing that seam is **fully
+   resolved** — names are typed `Variable`/`Parameter`/`Dimension` nodes — so a backend cannot
    hold its own opinion about what a name refers to. Resolving independently is
    how the two lanes silently disagreed about scoping before.
 2. **The relational lane is linopy-free.** `linopy_yaml/relational/` imports
@@ -86,19 +88,19 @@ static checks and CI's bare-install job proves the dependency claims.*
 5. **Backend-visible YAML files are self-contained.** No Python-side state
    (registries, session objects) may change what a file means.
 6. **The public interface is YAML.** The Python surface is the runner (`api.py`).
-   The IR is internal; a stable IR-construction API is a possible later addition,
+   The plan is internal; a stable plan-construction API is a possible later addition,
    not a current contract.
 
 ## Two tiers, and the ceiling
 
 **Primitives** (operators, `sum`, `group_sum`, `roll`/`shift`, `where`
 predicates) set the expressive ceiling, and each costs the full two-backend tax:
-eager implementation, IR node + locality class, executor case, lowering case,
+eager implementation, plan node + locality class, executor case, lowering case,
 differential tests, SPEC entry. **`macros:` / `expressions:`** are pure AST
 substitution — every composition of primitives at zero marginal cost and zero
 divergence risk. **Formulations** (`piecewise:`) are taxed like a primitive but
 compose like a macro: they emit *new declarations* before dispatch and never
-enter as IR expression nodes.
+enter as plan expression nodes.
 
 For any request, triage: **macro, primitive, or escape?** Most are compositions.
 New primitives must be **macro-friendly** — anything a user might parameterise
@@ -188,11 +190,11 @@ are dense `0..n-1` by construction, so `var_label` **is** the solver column
 index and `row` the solver row index — no remapping. That is also why value-only
 re-solve is cheap and structural editing is out of scope.
 
-**The IR is affine-by-design.** No node introduces variables or constraints as a
+**The plan is affine-by-design.** No node introduces variables or constraints as a
 side effect of an expression; formulations are model *transformations*. Variable
 *types* are not formulations — binary/integer are a `vtype` column, LP
 `binary`/`general` sections and HiGHS integrality, which keeps basic MILP inside
-the streaming lane. Reimplementing linopy's reformulation passes inside the IR
+the streaming lane. Reimplementing linopy's reformulation passes inside the plan
 is explicitly rejected: that duplicates the library this package consumes.
 
 **Chunk only what cannot spill.** duckdb's joins and plain numeric hash
@@ -234,7 +236,7 @@ checking. It is just undocumented and unversioned, while rule 6 refuses a Python
 modeling API and this section forbids generated YAML. Composition therefore
 forces that contract earlier than the roadmap has it: not a general modeling API,
 but a narrow, versioned way to emit declarations — at the schema level rather
-than the IR level, which is
+than the plan level, which is
 [#83](https://github.com/FBumann/linopy-yaml/issues/83).
 
 ## Module map
@@ -244,7 +246,7 @@ than the IR level, which is
 | `schema.py` | pydantic schema incl. `expressions:` / `macros:` / `piecewise:` |
 | `expression_parser.py`, `where_parser.py` | text → core AST; grammar only, dependency-free |
 | `expansion.py` | named-expression / macro substitution (pre-dispatch) |
-| `resolution.py` | one flat namespace; `Name` → typed `Var`/`Param`/`Dim` |
+| `resolution.py` | one flat namespace; `NameNode` → typed `Variable`/`Parameter`/`Dimension` nodes |
 | `dimensions.py` | static dim-set checking over the resolved AST |
 | `validation.py` | load-time: parse, expand, resolve, check everything |
 | `piecewise.py` | `piecewise:` → λ-formulation declarations + curvature guard |
@@ -252,15 +254,37 @@ than the IR level, which is
 | `compat.py` | opt-in shim: `build` / `extend` on a `linopy.Model` |
 | `loader.py` | compat lane: data coercion to `xr.Dataset`, master coords |
 | `builder.py` | eager backend: core AST → `linopy.Model` |
-| `lowering.py` | core AST → IR (defines the relational subset) |
-| `relational/ir.py` | frozen logical-plan dataclasses |
+| `lowering.py` | core AST → logical plan (defines the relational subset) |
+| `relational/plan.py` | frozen logical-plan dataclasses |
 | `relational/executor.py` | duckdb execution + `lp_file` / `solver_direct` sinks |
 | `helpers.py` | the closed set of built-in operator *names* — no registry |
+| `errors.py` | the exception hierarchy; the one module the engine may import |
+
+### Naming across the layers
+
+The same construct passes through three layers, and each names it in full —
+no abbreviations, so a name never has to be decoded. The **layer is the
+suffix**, which is what keeps the three vocabularies from colliding:
+
+| Layer | Suffix | Example |
+|---|---|---|
+| YAML block (`schema.py`) | `Block` | `VariableBlock`, `PiecewiseBlock` |
+| Core AST (`*_parser.py`) | `Node` | `VariableNode`, `DimensionComparisonNode` |
+| Logical plan (`relational/plan.py`) | none / `Declaration` | `Variable`, `VariableDeclaration` |
+
+Two rules follow from that table, and a PR that adds a construct keeps them:
+
+- **A node names the coordinate map, not a surface spelling.** `roll` and
+  `shift` are one node, so it is `Translate` — naming it `Shift` would make
+  one of the two spellings look privileged.
+- **Nothing is abbreviated.** `Cmp` became `ParameterComparison`, `vtype`
+  became `variable_type`. The one place abbreviation survives is SQL column
+  names inside the executor, which are not Python identifiers.
 
 ## Extension checklists
 
 **Add a macro or named expression:** edit YAML. Nothing else.
 
 **Add a primitive:** grammar (usually free — `f(x, k=v)` already parses) → eager
-helper → IR node + locality class → executor → lowering case → differential test
+helper → plan node + locality class → executor → lowering case → differential test
 on both sinks → SPEC §5/§7, and this file if structural.

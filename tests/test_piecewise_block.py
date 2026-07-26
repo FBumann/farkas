@@ -117,7 +117,7 @@ def test_convex_flag_gives_hull(nonconvex_inputs, tmp_path):
 
     schema = MathSchema(**pyyaml.safe_load(yaml_text))
     program = lower_program(schema)  # inside the streaming language (pure LP)
-    assert all(v.vtype == 'continuous' for v in program.variables)
+    assert all(v.variable_type == 'continuous' for v in program.variables)
 
     m = compat.build(yaml_path, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)

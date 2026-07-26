@@ -38,7 +38,7 @@ calls, a 2.6 GB CSV write), not by spilling.
 Differential check (HiGHS solve, objective + dimensions): equivalent at 1.6k,
 920k and 8.9M variables; at 8.9M the objectives agree to 14 significant digits.
 
-The general IR + `DuckdbExecutor` path matches the hand-written spike SQL: at
+The general plan + `DuckdbExecutor` path matches the hand-written spike SQL: at
 S=100k under 512 MB, build 3.1 s, `write_lp` 2.0 s, 0.84 GB peak — no
 generality penalty against the hand-written 3.1 s / 0.81 GB. End-to-end
 `solver_direct` (batched HiGHS `addCols`/`addRows`, no LP file): solve 30.5 s,

@@ -59,9 +59,9 @@ class TestWhereEvaluation:
     def test_missing_param_is_a_load_error(self):
         """Was: a scalar-False mask, i.e. a silently empty model. Resolution
         makes an undeclared name a load error in both lanes."""
-        from linopy_yaml.relational.executor import RelationalBuildError
+        from linopy_yaml.errors import LanguageError
 
-        with pytest.raises(RelationalBuildError, match="'nonexistent' not found"):
+        with pytest.raises(LanguageError, match="'nonexistent' not found"):
             self._where('nonexistent')
 
     def test_dimension_comparison(self):

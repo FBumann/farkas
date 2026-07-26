@@ -122,8 +122,8 @@ def test_both_lanes_build_the_same_model(tmp_path, data, coords, where):
 def test_every_resolved_predicate_is_parity_tested():
     """The guard that would have caught the DimDefined hole.
 
-    `DimDefined` shipped in #62 lowering to `ir.Bool(True)`, which discarded
-    the dimension — so unlike `DimCmp`, nothing checked it against the frame's
+    `DimDefined` shipped in #62 lowering to `plan.BooleanConstant(True)`, which discarded
+    the dimension — so unlike `DimensionComparisonNode`, nothing checked it against the frame's
     dims, and a bare dimension name outside `foreach` raised eagerly and built
     relationally. No test touched it. This one fails if any resolved predicate
     is not exercised by ACCEPTED above, so a new node cannot arrive untested.
@@ -131,9 +131,9 @@ def test_every_resolved_predicate_is_parity_tested():
     from typing import get_args
 
     from linopy_yaml.resolution import Namespace, where_of
-    from linopy_yaml.where_parser import Comparison, ExistenceCheck, WhereNode
+    from linopy_yaml.where_parser import UnresolvedComparisonNode, UnresolvedNameNode, WhereNode
 
-    unresolved = {ExistenceCheck, Comparison}  # rewritten by resolution, never evaluated
+    unresolved = {UnresolvedNameNode, UnresolvedComparisonNode}  # rewritten by resolution, never evaluated
     expected = set(get_args(WhereNode)) - unresolved
 
     ns = Namespace((), ('p_max', 'cost', 'load'), ('snapshot', 'generator'))

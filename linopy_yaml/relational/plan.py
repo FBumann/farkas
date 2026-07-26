@@ -1,0 +1,287 @@
+"""The logical plan: relational LP construction, one step above SQL.
+
+An intermediate representation in the compiler sense — the module is named
+for what it *is* to this engine (duckdb, Calcite and Spark all call this
+shape a logical plan) rather than for the generic category.
+
+The lane is described in ARCHITECTURE.md, "The relational lane".
+
+Frozen dataclasses only — no execution logic, no engine imports. A `Program`
+is a complete declarative description of a linear program over named tidy
+tables; actual data is bound at execution time via a source registry.
+
+Expressions support operator sugar so plans read naturally in Python:
+
+    balance = GroupSum(Variable("p"), mapping="gen_bus", into="bus") - Parameter("load")
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Literal
+
+ConstraintSense = Literal['==', '<=', '>=']
+ObjectiveSense = Literal['min', 'max']
+ComparisonOperator = Literal['==', '!=', '<=', '>=', '<', '>']
+VariableType = Literal['continuous', 'binary', 'integer']
+
+
+# --------------------------------------------------------------------------
+# Affine expressions
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Expression:
+    """Base class for affine expressions over variables and parameters."""
+
+    def __add__(self, other: Expression | float | int) -> Expression:
+        return Add(self, _coerce(other))
+
+    def __radd__(self, other: Expression | float | int) -> Expression:
+        return Add(_coerce(other), self)
+
+    def __sub__(self, other: Expression | float | int) -> Expression:
+        return Add(self, Negate(_coerce(other)))
+
+    def __rsub__(self, other: Expression | float | int) -> Expression:
+        return Add(_coerce(other), Negate(self))
+
+    def __mul__(self, other: Expression | float | int) -> Expression:
+        return Multiply(self, _coerce(other))
+
+    def __rmul__(self, other: Expression | float | int) -> Expression:
+        return Multiply(_coerce(other), self)
+
+    def __truediv__(self, other: Expression | float | int) -> Expression:
+        return Divide(self, _coerce(other))
+
+    def __neg__(self) -> Expression:
+        return Negate(self)
+
+
+def _coerce(x: Expression | float | int) -> Expression:
+    if isinstance(x, Expression):
+        return x
+    return Constant(float(x))
+
+
+@dataclass(frozen=True)
+class Constant(Expression):
+    """A scalar constant."""
+
+    value: float
+
+
+@dataclass(frozen=True)
+class Parameter(Expression):
+    """A parameter reference — contributes to the constant part."""
+
+    name: str
+
+
+@dataclass(frozen=True)
+class Variable(Expression):
+    """A variable reference — one term per existing variable row."""
+
+    name: str
+
+
+@dataclass(frozen=True)
+class Negate(Expression):
+    operand: Expression
+
+
+@dataclass(frozen=True)
+class Add(Expression):
+    left: Expression
+    right: Expression
+
+
+@dataclass(frozen=True)
+class Multiply(Expression):
+    """Product. At least one factor must be variable-free (affine algebra)."""
+
+    left: Expression
+    right: Expression
+
+
+@dataclass(frozen=True)
+class Divide(Expression):
+    """Quotient ``numerator / divisor``. The divisor must be variable-free."""
+
+    numerator: Expression
+    divisor: Expression
+
+
+@dataclass(frozen=True)
+class Sum(Expression):
+    """Sum ``operand`` over the named dims, removing them from the result."""
+
+    operand: Expression
+    over: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if isinstance(self.over, str):  # tolerate Sum(operand, "generator")
+            object.__setattr__(self, 'over', (self.over,))
+
+
+@dataclass(frozen=True)
+class GroupSum(Expression):
+    """Sum ``operand`` through a mapping parameter.
+
+    ``mapping`` names a parameter with exactly one dim ``d`` whose value
+    column holds group keys; the result replaces dim ``d`` with dim ``into``.
+    """
+
+    operand: Expression
+    mapping: str
+    into: str
+
+
+@dataclass(frozen=True)
+class Translate(Expression):
+    """Re-index along one dimension: the result at coord *t* is ``operand`` at
+    coord *t - by*.
+
+    One node for both surface spellings, which differ only in ``wrap``:
+    ``roll`` is ``wrap=True`` (periodic, matching ``xarray.roll``), ``shift``
+    is ``wrap=False`` (acyclic — positions translated past the edge contribute
+    zero, by row absence). The node is named for the coordinate map rather
+    than for either spelling, so it does not read as one of the two.
+    """
+
+    operand: Expression
+    dimension: str
+    by: int
+    wrap: bool = True
+
+
+# --------------------------------------------------------------------------
+# Predicates (where masks — row absence)
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Predicate:
+    """Base class for where-predicates."""
+
+
+@dataclass(frozen=True)
+class ParameterComparison(Predicate):
+    parameter: str
+    op: ComparisonOperator
+    value: float | str
+
+
+@dataclass(frozen=True)
+class DimensionComparison(Predicate):
+    """Compare a *dimension coordinate* to a literal — ``where: "snapshot > 0"``.
+
+    Unlike :class:`ParameterComparison`, no parameter is involved: the dim
+    table is already in the frame, so this is a filter on its own column.
+    """
+
+    dimension: str
+    op: ComparisonOperator
+    value: float | str
+
+
+@dataclass(frozen=True)
+class ParameterDefined(Predicate):
+    """True where the parameter has a non-null, finite value."""
+
+    parameter: str
+
+
+@dataclass(frozen=True)
+class BooleanConstant(Predicate):
+    """Constant predicate (``BooleanConstant(False)`` masks out every row)."""
+
+    value: bool
+
+
+@dataclass(frozen=True)
+class And(Predicate):
+    left: Predicate
+    right: Predicate
+
+
+@dataclass(frozen=True)
+class Or(Predicate):
+    left: Predicate
+    right: Predicate
+
+
+@dataclass(frozen=True)
+class Not(Predicate):
+    operand: Predicate
+
+
+# --------------------------------------------------------------------------
+# Declarations
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ParameterDeclaration:
+    """Shape declaration; data is bound at execution time by name."""
+
+    name: str
+    dims: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class VariableDeclaration:
+    name: str
+    dims: tuple[str, ...]
+    where: Predicate | None = None
+    lower: Expression = field(default_factory=lambda: Constant(float('-inf')))
+    upper: Expression = field(default_factory=lambda: Constant(float('inf')))
+    variable_type: VariableType = 'continuous'
+
+
+@dataclass(frozen=True)
+class ConstraintDeclaration:
+    """``lhs sense rhs`` for each coord combination of ``dims``.
+
+    Both sides are affine; the executor normalises constants to the RHS.
+    ``where`` masks out coord combinations (row absence, like variables).
+    """
+
+    name: str
+    dims: tuple[str, ...]
+    lhs: Expression
+    sense: ConstraintSense
+    rhs: Expression
+    where: Predicate | None = None
+
+
+@dataclass(frozen=True)
+class ObjectiveDeclaration:
+    """Objective; dims remaining after explicit Sums are implicitly summed."""
+
+    sense: ObjectiveSense
+    expression: Expression
+
+
+@dataclass(frozen=True)
+class Program:
+    """A complete linear program over named tidy tables."""
+
+    parameters: tuple[ParameterDeclaration, ...]
+    variables: tuple[VariableDeclaration, ...]
+    constraints: tuple[ConstraintDeclaration, ...]
+    objective: ObjectiveDeclaration
+
+    def parameter(self, name: str) -> ParameterDeclaration:
+        for p in self.parameters:
+            if p.name == name:
+                return p
+        raise KeyError(f"unknown parameter '{name}'")
+
+    def variable(self, name: str) -> VariableDeclaration:
+        for v in self.variables:
+            if v.name == name:
+                return v
+        raise KeyError(f"unknown variable '{name}'")

@@ -13,22 +13,22 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from linopy_yaml.errors import DataError, LanguageError
 from linopy_yaml.relational import (
     DuckdbExecutor,
-    RelationalBuildError,
 )
-from linopy_yaml.relational.ir import (
-    Cmp,
-    Const,
-    ConstraintDecl,
+from linopy_yaml.relational.plan import (
+    Constant,
+    ConstraintDeclaration,
     GroupSum,
-    ObjectiveDecl,
-    Param,
-    ParameterDecl,
+    ObjectiveDeclaration,
+    Parameter,
+    ParameterComparison,
+    ParameterDeclaration,
     Program,
     Sum,
-    Var,
-    VariableDecl,
+    Variable,
+    VariableDeclaration,
 )
 from tests.oracle import linopy, transport_eager_objective, xr
 
@@ -73,29 +73,29 @@ def dispatch_data():
 def dispatch_program() -> Program:
     return Program(
         parameters=(
-            ParameterDecl('p_max', ('generator',)),
-            ParameterDecl('cost', ('generator',)),
-            ParameterDecl('load', ('snapshot',)),
+            ParameterDeclaration('p_max', ('generator',)),
+            ParameterDeclaration('cost', ('generator',)),
+            ParameterDeclaration('load', ('snapshot',)),
         ),
         variables=(
-            VariableDecl(
+            VariableDeclaration(
                 'p',
                 ('snapshot', 'generator'),
-                where=Cmp('p_max', '>', 0),
-                lower=Const(0.0),
-                upper=Param('p_max'),
+                where=ParameterComparison('p_max', '>', 0),
+                lower=Constant(0.0),
+                upper=Parameter('p_max'),
             ),
         ),
         constraints=(
-            ConstraintDecl(
+            ConstraintDeclaration(
                 'power_balance',
                 ('snapshot',),
-                lhs=Sum(Var('p'), over=('generator',)),
+                lhs=Sum(Variable('p'), over=('generator',)),
                 sense='==',
-                rhs=Param('load'),
+                rhs=Parameter('load'),
             ),
         ),
-        objective=ObjectiveDecl('min', Sum(Var('p') * Param('cost'), over=('generator', 'snapshot'))),
+        objective=ObjectiveDeclaration('min', Sum(Variable('p') * Parameter('cost'), over=('generator', 'snapshot'))),
     )
 
 
@@ -157,44 +157,44 @@ def test_dispatch_roundtrip(dispatch_data, tmp_path):
 
 def transport_program() -> Program:
     injection = (
-        GroupSum(Var('p'), mapping='gen_bus', into='bus')
-        + GroupSum(Var('f'), mapping='line_to', into='bus')
-        - GroupSum(Var('f'), mapping='line_from', into='bus')
+        GroupSum(Variable('p'), mapping='gen_bus', into='bus')
+        + GroupSum(Variable('f'), mapping='line_to', into='bus')
+        - GroupSum(Variable('f'), mapping='line_from', into='bus')
     )
     return Program(
         parameters=(
-            ParameterDecl('p_max', ('generator',)),
-            ParameterDecl('cost', ('generator',)),
-            ParameterDecl('gen_bus', ('generator',)),
-            ParameterDecl('cap', ('line',)),
-            ParameterDecl('line_from', ('line',)),
-            ParameterDecl('line_to', ('line',)),
-            ParameterDecl('load', ('snapshot', 'bus')),
+            ParameterDeclaration('p_max', ('generator',)),
+            ParameterDeclaration('cost', ('generator',)),
+            ParameterDeclaration('gen_bus', ('generator',)),
+            ParameterDeclaration('cap', ('line',)),
+            ParameterDeclaration('line_from', ('line',)),
+            ParameterDeclaration('line_to', ('line',)),
+            ParameterDeclaration('load', ('snapshot', 'bus')),
         ),
         variables=(
-            VariableDecl(
+            VariableDeclaration(
                 'p',
                 ('snapshot', 'generator'),
-                lower=Const(0.0),
-                upper=Param('p_max'),
+                lower=Constant(0.0),
+                upper=Parameter('p_max'),
             ),
-            VariableDecl(
+            VariableDeclaration(
                 'f',
                 ('snapshot', 'line'),
-                lower=-Param('cap'),
-                upper=Param('cap'),
+                lower=-Parameter('cap'),
+                upper=Parameter('cap'),
             ),
         ),
         constraints=(
-            ConstraintDecl(
+            ConstraintDeclaration(
                 'balance',
                 ('snapshot', 'bus'),
                 lhs=injection,
                 sense='==',
-                rhs=Param('load'),
+                rhs=Parameter('load'),
             ),
         ),
-        objective=ObjectiveDecl('min', Sum(Var('p') * Param('cost'), over=('generator', 'snapshot'))),
+        objective=ObjectiveDeclaration('min', Sum(Variable('p') * Parameter('cost'), over=('generator', 'snapshot'))),
     )
 
 
@@ -247,9 +247,9 @@ def test_nonlinear_product_rejected(dispatch_data):
         parameters=prog.parameters,
         variables=prog.variables,
         constraints=prog.constraints,
-        objective=ObjectiveDecl('min', Sum(Var('p') * Var('p'), over=('generator', 'snapshot'))),
+        objective=ObjectiveDeclaration('min', Sum(Variable('p') * Variable('p'), over=('generator', 'snapshot'))),
     )
-    with DuckdbExecutor() as ex, pytest.raises(RelationalBuildError, match='nonlinear'):
+    with DuckdbExecutor() as ex, pytest.raises(LanguageError, match='nonlinear'):
         ex.build(bad, dispatch_sources(gens, load))
 
 
@@ -257,7 +257,7 @@ def test_missing_source_rejected(dispatch_data):
     gens, load = dispatch_data
     sources = dispatch_sources(gens, load)
     del sources['cost']
-    with DuckdbExecutor() as ex, pytest.raises(RelationalBuildError, match="no source bound for parameter 'cost'"):
+    with DuckdbExecutor() as ex, pytest.raises(DataError, match="no source bound for parameter 'cost'"):
         ex.build(dispatch_program(), sources)
 
 
@@ -268,15 +268,15 @@ def test_out_of_foreach_dims_rejected(dispatch_data):
         parameters=prog.parameters,
         variables=prog.variables,
         constraints=(
-            ConstraintDecl(
+            ConstraintDeclaration(
                 'power_balance',
                 ('snapshot',),
-                lhs=Var('p'),  # generator dim not summed
+                lhs=Variable('p'),  # generator dim not summed
                 sense='==',
-                rhs=Param('load'),
+                rhs=Parameter('load'),
             ),
         ),
         objective=prog.objective,
     )
-    with DuckdbExecutor() as ex, pytest.raises(RelationalBuildError, match='missing a Sum'):
+    with DuckdbExecutor() as ex, pytest.raises(LanguageError, match='missing a Sum'):
         ex.build(bad, dispatch_sources(gens, load))

@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
+from linopy_yaml.errors import LanguageError
 from linopy_yaml.lowering import lower_program
-from linopy_yaml.relational.executor import RelationalBuildError
 from linopy_yaml.resolution import Namespace, expression_of, where_of
 from linopy_yaml.schema import MathSchema
 from linopy_yaml.validation import validate_expressions
@@ -67,18 +67,18 @@ def test_no_unresolved_name_survives_the_pass():
 
 
 def test_names_are_typed_by_kind():
-    from linopy_yaml.expression_parser import DimRefNode, ParamNode, VarNode
+    from linopy_yaml.expression_parser import DimensionNode, ParameterNode, VariableNode
 
     schema = _schema()
     ast = expression_of('sum(p * cost, over=generator)', schema, Namespace.of(schema), 't')
-    assert isinstance(ast.args[0].left, VarNode)
-    assert isinstance(ast.args[0].right, ParamNode)
-    assert isinstance(ast.kwargs['over'], DimRefNode)
+    assert isinstance(ast.args[0].left, VariableNode)
+    assert isinstance(ast.args[0].right, ParameterNode)
+    assert isinstance(ast.kwargs['over'], DimensionNode)
 
 
 def test_dimension_is_not_a_value_in_an_expression():
     schema = _schema()
-    with pytest.raises(RelationalBuildError, match='is a dimension'):
+    with pytest.raises(LanguageError, match='is a dimension'):
         expression_of('p * snapshot', schema, Namespace.of(schema), 't')
 
 
@@ -93,7 +93,7 @@ def test_unknown_where_name_is_an_error():
     schema = _schema(**{'variables.p.where': 'typo_name > 0'})
     with pytest.raises(ValueError, match="'typo_name' not found"):
         validate_expressions(schema)
-    with pytest.raises(RelationalBuildError, match="'typo_name' not found"):
+    with pytest.raises(LanguageError, match="'typo_name' not found"):
         lower_program(schema)
 
 
@@ -145,7 +145,7 @@ def test_declaring_a_parameter_cannot_change_an_existing_where():
     means the dimension, and declaring a parameter of that name must not
     silently reinterpret it — it is rejected instead."""
     schema = _schema(**{'variables.p.where': 'snapshot > 0'})
-    assert where_of('snapshot > 0', Namespace.of(schema), 't').__class__.__name__ == 'DimCmp'
+    assert where_of('snapshot > 0', Namespace.of(schema), 't').__class__.__name__ == 'DimensionComparisonNode'
     with pytest.raises(ValueError, match='collides with the dimension'):
         _schema(**{'variables.p.where': 'snapshot > 0', 'parameters.snapshot': {'dims': []}})
 

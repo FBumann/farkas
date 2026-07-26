@@ -1,8 +1,8 @@
 """Name resolution — the pass that makes the core AST fully typed.
 
 Parsers emit ``NameNode``: a token, not yet a meaning. This module rewrites
-each one into a typed node (``VarNode`` / ``ParamNode`` / ``DimRefNode``, and
-``ParamCmp`` / ``DimCmp`` / ``ParamDefined`` on the where
+each one into a typed node (``VariableNode`` / ``ParameterNode`` / ``DimensionNode``, and
+``ParameterComparisonNode`` / ``DimensionComparisonNode`` / ``ParameterDefinedNode`` on the where
 side), so the AST reaching either backend holds no unresolved names.
 
 Doing this once, here, is what makes scoping identical across the lanes by
@@ -19,29 +19,29 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, assert_never
 
 from linopy_yaml.expression_parser import (
-    ArithNode,
-    BinOpNode,
-    CompareNode,
-    DimRefNode,
-    ExprNode,
-    FuncCallNode,
+    ArithmeticNode,
+    BinaryOperatorNode,
+    ComparisonNode,
+    DimensionNode,
+    ExpressionNode,
+    FunctionCallNode,
     NameNode,
     NumberNode,
-    ParamNode,
-    UnaryOpNode,
-    VarNode,
+    ParameterNode,
+    UnaryOperatorNode,
+    VariableNode,
 )
 from linopy_yaml.helpers import BUILTIN_NAMES
 from linopy_yaml.where_parser import (
     AndNode,
-    BoolLiteral,
-    Comparison,
-    DimCmp,
-    ExistenceCheck,
+    BooleanLiteralNode,
+    DimensionComparisonNode,
     NotNode,
     OrNode,
-    ParamCmp,
-    ParamDefined,
+    ParameterComparisonNode,
+    ParameterDefinedNode,
+    UnresolvedComparisonNode,
+    UnresolvedNameNode,
     WhereNode,
 )
 
@@ -114,7 +114,7 @@ class Namespace:
 # ---------------------------------------------------------------------------
 
 
-def expression_of(text: str, schema: MathSchema, ns: Namespace, context: str) -> ExprNode:
+def expression_of(text: str, schema: MathSchema, ns: Namespace, context: str) -> ExpressionNode:
     """Parse, expand and resolve *text* — the only way a backend gets an AST.
 
     Raises :class:`LanguageError` listing every problem. ``validation.py`` calls the
@@ -122,20 +122,20 @@ def expression_of(text: str, schema: MathSchema, ns: Namespace, context: str) ->
     known to be clean; calling it again is how the backend gets a *typed* tree
     without duplicating the pass.
     """
+    from linopy_yaml.errors import LanguageError
     from linopy_yaml.expansion import parse_and_expand
-    from linopy_yaml.relational.executor import RelationalBuildError
 
     errors: list[str] = []
     resolved = resolve_expression(parse_and_expand(text, schema, context), ns, context, errors)
     if errors:
-        raise RelationalBuildError('\n'.join(errors))
+        raise LanguageError('\n'.join(errors))
     assert resolved is not None
     return resolved
 
 
 def where_of(text: str | None, ns: Namespace, context: str) -> WhereNode | None:
     """Parse and resolve a where string; ``None`` stays ``None``."""
-    from linopy_yaml.relational.executor import RelationalBuildError
+    from linopy_yaml.errors import LanguageError
     from linopy_yaml.where_parser import parse_where
 
     if text is None:
@@ -143,7 +143,7 @@ def where_of(text: str | None, ns: Namespace, context: str) -> WhereNode | None:
     errors: list[str] = []
     resolved = resolve_where(parse_where(text), ns, context, errors)
     if errors:
-        raise RelationalBuildError('\n'.join(errors))
+        raise LanguageError('\n'.join(errors))
     return resolved
 
 
@@ -153,19 +153,19 @@ def where_of(text: str | None, ns: Namespace, context: str) -> WhereNode | None:
 
 
 def resolve_expression(
-    node: ExprNode,
+    node: ExpressionNode,
     ns: Namespace,
     context: str,
     errors: list[str],
-) -> ExprNode | None:
+) -> ExpressionNode | None:
     """Rewrite every ``NameNode`` under *node* to a typed node.
 
     Appends to *errors* and returns ``None`` if anything failed to resolve, so
     a caller collecting problems across a whole schema reports them together.
     """
     before = len(errors)
-    if isinstance(node, CompareNode):
-        resolved: ExprNode = CompareNode(
+    if isinstance(node, ComparisonNode):
+        resolved: ExpressionNode = ComparisonNode(
             node.op,
             _resolve_arith(node.left, ns, context, errors),
             _resolve_arith(node.right, ns, context, errors),
@@ -175,19 +175,19 @@ def resolve_expression(
     return None if len(errors) > before else resolved
 
 
-def _resolve_arith(node: ArithNode, ns: Namespace, context: str, errors: list[str]) -> ArithNode:
+def _resolve_arith(node: ArithmeticNode, ns: Namespace, context: str, errors: list[str]) -> ArithmeticNode:
     if isinstance(node, NumberNode):
         return node
 
-    if isinstance(node, (VarNode, ParamNode, DimRefNode)):
+    if isinstance(node, (VariableNode, ParameterNode, DimensionNode)):
         return node  # idempotent: piecewise re-resolves expanded links
 
     if isinstance(node, NameNode):
         match ns.kind(node.name):
             case 'variable':
-                return VarNode(node.name)
+                return VariableNode(node.name)
             case 'parameter':
-                return ParamNode(node.name)
+                return ParameterNode(node.name)
             case 'dimension':
                 errors.append(
                     f"{context}: '{node.name}' is a dimension, and a dimension is "
@@ -201,24 +201,24 @@ def _resolve_arith(node: ArithNode, ns: Namespace, context: str, errors: list[st
                 errors.append(ns._unknown(node.name, context, allow_dims=False))
                 return node
 
-    if isinstance(node, UnaryOpNode):
-        return UnaryOpNode(node.op, _resolve_arith(node.operand, ns, context, errors))
+    if isinstance(node, UnaryOperatorNode):
+        return UnaryOperatorNode(node.op, _resolve_arith(node.operand, ns, context, errors))
 
-    if isinstance(node, BinOpNode):
-        return BinOpNode(
+    if isinstance(node, BinaryOperatorNode):
+        return BinaryOperatorNode(
             node.op,
             _resolve_arith(node.left, ns, context, errors),
             _resolve_arith(node.right, ns, context, errors),
         )
 
-    if isinstance(node, FuncCallNode):
+    if isinstance(node, FunctionCallNode):
         if node.name not in BUILTIN_NAMES:
             from linopy_yaml.helpers import unknown_helper_message
 
             errors.append(f'{context}: {unknown_helper_message(node.name)}')
             return node
         args = [_resolve_arith(a, ns, context, errors) for a in node.args]
-        kwargs: dict[str, ArithNode] = {}
+        kwargs: dict[str, ArithmeticNode] = {}
         dim_valued = _DIM_VALUE_KWARGS.get(node.name, ())
         for key, value in node.kwargs.items():
             # roll(x, snapshot=1): the dim is the key, so there is no node to type
@@ -229,7 +229,7 @@ def _resolve_arith(node: ArithNode, ns: Namespace, context: str, errors: list[st
                 if key in dim_valued
                 else _resolve_arith(value, ns, context, errors)
             )
-        return FuncCallNode(node.name, args, kwargs)
+        return FunctionCallNode(node.name, args, kwargs)
 
     assert_never(node)
 
@@ -248,15 +248,15 @@ def _undeclared_dim(context: str, helper: str, shown: str, name: str, ns: Namesp
 
 
 def _resolve_dim_ref(
-    value: ArithNode,
+    value: ArithmeticNode,
     ns: Namespace,
     context: str,
     helper: str,
     key: str,
     errors: list[str],
-) -> ArithNode:
+) -> ArithmeticNode:
     """Resolve a helper kwarg whose *value* must name a declared dimension."""
-    if isinstance(value, DimRefNode):
+    if isinstance(value, DimensionNode):
         return value
     if not isinstance(value, NameNode):
         errors.append(f'{context}: {helper}({key}=...) must name a dimension.')
@@ -264,7 +264,7 @@ def _resolve_dim_ref(
     if value.name not in ns.dimensions:
         errors.append(_undeclared_dim(context, helper, f'{key}={value.name}', value.name, ns))
         return value
-    return DimRefNode(value.name)
+    return DimensionNode(value.name)
 
 
 # ---------------------------------------------------------------------------
@@ -291,16 +291,16 @@ def resolve_where(
 
 
 def _resolve_where(node: WhereNode, ns: Namespace, context: str, errors: list[str]) -> WhereNode:
-    if isinstance(node, BoolLiteral):
+    if isinstance(node, BooleanLiteralNode):
         return node
 
-    if isinstance(node, (ParamCmp, DimCmp, ParamDefined)):
+    if isinstance(node, (ParameterComparisonNode, DimensionComparisonNode, ParameterDefinedNode)):
         return node  # already resolved
 
-    if isinstance(node, ExistenceCheck):
+    if isinstance(node, UnresolvedNameNode):
         match ns.kind(node.name):
             case 'parameter':
-                return ParamDefined(node.name)
+                return ParameterDefinedNode(node.name)
             case 'dimension':
                 errors.append(
                     f"{context}: '{node.name}' is a dimension, and a bare dimension "
@@ -319,7 +319,7 @@ def _resolve_where(node: WhereNode, ns: Namespace, context: str, errors: list[st
                 errors.append(ns._unknown(node.name, context, allow_dims=True))
                 return node
 
-    if isinstance(node, Comparison):
+    if isinstance(node, UnresolvedComparisonNode):
         value = node.value
         # The grammar has no string quoting, so a bare-name RHS is ambiguous;
         # resolving it like any other name keeps the meaning declaration-independent.
@@ -340,9 +340,9 @@ def _resolve_where(node: WhereNode, ns: Namespace, context: str, errors: list[st
 
         match ns.kind(node.name):
             case 'parameter':
-                return ParamCmp(node.name, node.op, value)
+                return ParameterComparisonNode(node.name, node.op, value)
             case 'dimension':
-                return DimCmp(node.name, node.op, value)
+                return DimensionComparisonNode(node.name, node.op, value)
             case 'variable':
                 errors.append(
                     f"{context}: where references variable '{node.name}'. A where "

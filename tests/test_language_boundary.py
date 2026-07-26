@@ -13,8 +13,8 @@ from pathlib import Path
 import pytest
 import yaml as pyyaml
 
+from linopy_yaml.errors import LanguageError
 from linopy_yaml.lowering import lower_program
-from linopy_yaml.relational import RelationalBuildError
 from linopy_yaml.schema import MathSchema
 
 
@@ -44,7 +44,7 @@ def test_binary_variable_is_inside_the_language():
 
 def test_power_operator_is_a_load_error():
     schema = _schema(**{'constraints.power_balance.equations': [{'expression': 'sum(p ** 2, over=generator) == load'}]})
-    with pytest.raises(RelationalBuildError, match=r"operator '\*\*'"):
+    with pytest.raises(LanguageError, match=r"operator '\*\*'"):
         lower_program(schema)
 
 
@@ -52,7 +52,7 @@ def test_unknown_helper_is_a_load_error_with_context():
     schema = _schema(
         **{'constraints.power_balance.equations': [{'expression': 'my_helper(p, over=generator) == load'}]}
     )
-    with pytest.raises(RelationalBuildError, match='my_helper') as exc:
+    with pytest.raises(LanguageError, match='my_helper') as exc:
         lower_program(schema)
     reason = str(exc.value)
     assert 'power_balance' in reason  # reason carries context
@@ -74,13 +74,13 @@ def test_degree_two_is_a_load_error_not_a_build_error():
     rule it should enforce first.
     """
     schema = _schema(**{'objectives.total_cost.equations': [{'expression': 'sum(p * p, over=generator)'}]})
-    with pytest.raises(RelationalBuildError, match='degree 2'):
+    with pytest.raises(LanguageError, match='degree 2'):
         lower_program(schema)
 
 
 def test_variable_divisor_is_a_load_error():
     schema = _schema(**{'objectives.total_cost.equations': [{'expression': 'sum(cost / p, over=generator)'}]})
-    with pytest.raises(RelationalBuildError, match='divisor contains variables'):
+    with pytest.raises(LanguageError, match='divisor contains variables'):
         lower_program(schema)
 
 

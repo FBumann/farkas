@@ -18,7 +18,7 @@ interact with the ``dtype: datetime`` the schema accepts and does not yet
 implement, so they belong to the dtype guard in #65 rather than here.
 
 The output is plain ``dict``/``str``: no loader wrapper reaches the schema,
-the AST, the IR, or duckdb.
+the AST, the plan, or duckdb.
 """
 
 from __future__ import annotations
@@ -28,6 +28,8 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+
+from linopy_yaml.errors import SchemaError
 
 #: The YAML 1.2 core-schema boolean set — nothing else resolves to a bool.
 _BOOL_1_2 = re.compile(r'^(?:true|True|TRUE|false|False|FALSE)$')
@@ -67,7 +69,7 @@ def _check_duplicate_keys(node: yaml.Node, where: str) -> None:
                     f'line {seen[key]}. YAML would silently keep the last one, '
                     f'discarding a declaration the file contains.'
                 )
-                raise ValueError(msg)
+                raise SchemaError(msg)
             seen[key] = line
             _check_duplicate_keys(value_node, where)
     elif isinstance(node, yaml.SequenceNode):
@@ -91,5 +93,5 @@ def read_yaml(path: Path | str) -> dict[str, Any]:
         return {}
     if not isinstance(data, dict):
         msg = f'{where}: a model file must be a mapping of sections (dimensions:, variables:, …), got {type(data).__name__}.'
-        raise ValueError(msg)
+        raise SchemaError(msg)
     return data

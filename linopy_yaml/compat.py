@@ -48,6 +48,7 @@ except ModuleNotFoundError as exc:  # linopy / xarray absent
 from linopy_yaml._notes import note
 from linopy_yaml._yaml import read_yaml
 from linopy_yaml.builder import build_model
+from linopy_yaml.errors import LanguageError
 from linopy_yaml.loader import build_master_coords, load_parameters
 from linopy_yaml.piecewise import expand_piecewise, validate_piecewise_data
 from linopy_yaml.schema import MathSchema
@@ -147,7 +148,7 @@ def extend(
                     f"Either omit 'values:' for '{dim_name}' in the "
                     f'extension, or make them match.'
                 )
-                raise ValueError(msg)
+                raise LanguageError(msg)
 
         # ``known`` is the override, so any dim it covers beats this YAML's
         # ``values:``. Dims still missing fall through to ``values:`` or raise.

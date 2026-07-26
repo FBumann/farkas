@@ -38,29 +38,30 @@ from __future__ import annotations
 from types import MappingProxyType
 from typing import TYPE_CHECKING, assert_never
 
+from linopy_yaml.errors import DimensionError
 from linopy_yaml.expression_parser import (
-    ArithNode,
-    BinOpNode,
-    CompareNode,
-    DimRefNode,
-    ExprNode,
-    FuncCallNode,
+    ArithmeticNode,
+    BinaryOperatorNode,
+    ComparisonNode,
+    DimensionNode,
+    ExpressionNode,
+    FunctionCallNode,
     NameNode,
     NumberNode,
-    ParamNode,
-    UnaryOpNode,
-    VarNode,
+    ParameterNode,
+    UnaryOperatorNode,
+    VariableNode,
 )
 from linopy_yaml.where_parser import (
     AndNode,
-    BoolLiteral,
-    Comparison,
-    DimCmp,
-    ExistenceCheck,
+    BooleanLiteralNode,
+    DimensionComparisonNode,
     NotNode,
     OrNode,
-    ParamCmp,
-    ParamDefined,
+    ParameterComparisonNode,
+    ParameterDefinedNode,
+    UnresolvedComparisonNode,
+    UnresolvedNameNode,
     WhereNode,
 )
 
@@ -70,12 +71,8 @@ if TYPE_CHECKING:
     from linopy_yaml.schema import MathSchema
 
 
-class DimError(ValueError):
-    """A dim-set rule was violated. Raised at load time, before any data."""
-
-
 def dims_of(
-    node: ExprNode,
+    node: ExpressionNode,
     schema: MathSchema,
     context: str,
     external: Mapping[str, Sequence[str]] = MappingProxyType({}),
@@ -86,13 +83,13 @@ def dims_of(
     in this schema — ``compat.extend()``'s case, mirroring how
     ``known_variables`` widens the namespace.
     """
-    if isinstance(node, CompareNode):
+    if isinstance(node, ComparisonNode):
         return _dims(node.left, schema, context, external) | _dims(node.right, schema, context, external)
     return _dims(node, schema, context, external)
 
 
 def _dims(
-    node: ArithNode,
+    node: ArithmeticNode,
     schema: MathSchema,
     context: str,
     external: Mapping[str, Sequence[str]],
@@ -100,22 +97,22 @@ def _dims(
     if isinstance(node, NumberNode):
         return frozenset()
 
-    if isinstance(node, ParamNode):
+    if isinstance(node, ParameterNode):
         return frozenset(schema.parameters[node.name].dims)
 
-    if isinstance(node, VarNode):
+    if isinstance(node, VariableNode):
         if node.name in schema.variables:
             return frozenset(schema.variables[node.name].foreach)
         return frozenset(external[node.name])  # a variable already on the model
 
-    if isinstance(node, (NameNode, DimRefNode)):
+    if isinstance(node, (NameNode, DimensionNode)):
         msg = f'{type(node).__name__} reached the dim checker; resolve the expression first.'
         raise AssertionError(msg)
 
-    if isinstance(node, UnaryOpNode):
+    if isinstance(node, UnaryOperatorNode):
         return _dims(node.operand, schema, context, external)
 
-    if isinstance(node, BinOpNode):
+    if isinstance(node, BinaryOperatorNode):
         # Union, not subset. An outer product is legitimate when the frame
         # declares the result — the convex-piecewise epigraph multiplies a
         # per-segment slope by a per-snapshot variable and wants one row per
@@ -124,14 +121,14 @@ def _dims(
         # point where model size is actually decided.
         return _dims(node.left, schema, context, external) | _dims(node.right, schema, context, external)
 
-    if isinstance(node, FuncCallNode):
+    if isinstance(node, FunctionCallNode):
         return _dims_call(node, schema, context, external)
 
     assert_never(node)
 
 
 def _dims_call(
-    node: FuncCallNode,
+    node: FunctionCallNode,
     schema: MathSchema,
     context: str,
     external: Mapping[str, Sequence[str]],
@@ -139,9 +136,9 @@ def _dims_call(
     if node.name == 'sum':
         inner = _dims(node.args[0], schema, context, external)
         over = node.kwargs['over']
-        assert isinstance(over, DimRefNode)
+        assert isinstance(over, DimensionNode)
         if over.name not in inner:
-            raise DimError(
+            raise DimensionError(
                 f'{context}: sum(over={over.name}) but the expression has dims '
                 f'{sorted(inner)}. Summing over a dim the operand does not carry '
                 f'is a no-op that builds and solves wrong — drop the sum, or fix '
@@ -153,11 +150,11 @@ def _dims_call(
         inner = _dims(node.args[0], schema, context, external)
         mapping = node.args[1]
         into = node.kwargs['into']
-        assert isinstance(mapping, ParamNode)
-        assert isinstance(into, DimRefNode)
+        assert isinstance(mapping, ParameterNode)
+        assert isinstance(into, DimensionNode)
         mdims = frozenset(schema.parameters[mapping.name].dims)
         if not mdims <= inner:
-            raise DimError(
+            raise DimensionError(
                 f"{context}: group_sum() mapping '{mapping.name}' has dims "
                 f'{sorted(mdims)}, which the expression (dims {sorted(inner)}) does '
                 f'not carry.'
@@ -168,11 +165,11 @@ def _dims_call(
         inner = _dims(node.args[0], schema, context, external)
         ((dim, _),) = node.kwargs.items()
         if dim not in inner:
-            raise DimError(f"{context}: {node.name}() along '{dim}' but the expression has dims {sorted(inner)}.")
+            raise DimensionError(f"{context}: {node.name}() along '{dim}' but the expression has dims {sorted(inner)}.")
         return inner
 
     msg = f"{context}: helper '{node.name}' has no dim rule"
-    raise DimError(msg)
+    raise DimensionError(msg)
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +181,7 @@ def check_schema(
     schema: MathSchema,
     external: Mapping[str, Sequence[str]] = MappingProxyType({}),
 ) -> None:
-    """Check every declaration's dim rules. Raises :class:`DimError`.
+    """Check every declaration's dim rules. Raises :class:`DimensionError`.
 
     ``external`` maps variables already on a model to their dims, so
     ``compat.extend()`` can reference them (hard rule 5 keeps parameters
@@ -203,7 +200,7 @@ def check_schema(
             if isinstance(bound, str):
                 bdims = frozenset(schema.parameters[bound].dims)
                 if not bdims <= frame:
-                    raise DimError(
+                    raise DimensionError(
                         f"{context}: bounds.{side} parameter '{bound}' has dims "
                         f"{sorted(bdims - frame)} outside the variable's foreach "
                         f'{sorted(frame)}.'
@@ -228,7 +225,7 @@ def check_schema(
                     f'would be repeated across {missing}; drop it from foreach, or use it '
                     f'in the equation'
                 )
-                raise DimError(f'{context}: the expression {detail}.')
+                raise DimensionError(f'{context}: the expression {detail}.')
 
     for oname, odef in schema.objectives.items():
         context = f"Objective '{oname}'"
@@ -250,17 +247,17 @@ def _check_where_dims(
     if node is None:
         return
 
-    if isinstance(node, (ParamDefined, ParamCmp)):
+    if isinstance(node, (ParameterDefinedNode, ParameterComparisonNode)):
         pdims = frozenset(schema.parameters[node.name].dims)
         if not pdims <= frame:
-            raise DimError(
+            raise DimensionError(
                 f"{context}: where-parameter '{node.name}' has dims "
                 f'{sorted(pdims - frame)} outside the frame {sorted(frame)}. Reducing '
                 f'a mask over an unlisted dim would silently widen it.'
             )
-    elif isinstance(node, DimCmp):
+    elif isinstance(node, DimensionComparisonNode):
         if node.name not in frame:
-            raise DimError(
+            raise DimensionError(
                 f"{context}: where-comparison on dimension '{node.name}', which is not in the frame {sorted(frame)}."
             )
     elif isinstance(node, NotNode):
@@ -268,8 +265,8 @@ def _check_where_dims(
     elif isinstance(node, (AndNode, OrNode)):
         _check_where_dims(node.left, schema, frame, context)
         _check_where_dims(node.right, schema, frame, context)
-    elif isinstance(node, (ExistenceCheck, Comparison)):
+    elif isinstance(node, (UnresolvedNameNode, UnresolvedComparisonNode)):
         msg = f'{type(node).__name__} reached the dim checker unresolved.'
         raise AssertionError(msg)
-    elif not isinstance(node, BoolLiteral):
+    elif not isinstance(node, BooleanLiteralNode):
         assert_never(node)

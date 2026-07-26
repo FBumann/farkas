@@ -39,50 +39,51 @@ from __future__ import annotations
 import copy
 from typing import TYPE_CHECKING, assert_never, overload
 
+from linopy_yaml.errors import SchemaError
 from linopy_yaml.expression_parser import (
-    ArithNode,
-    BinOpNode,
-    CompareNode,
-    DimRefNode,
-    ExprNode,
-    FuncCallNode,
+    ArithmeticNode,
+    BinaryOperatorNode,
+    ComparisonNode,
+    DimensionNode,
+    ExpressionNode,
+    FunctionCallNode,
     NameNode,
     NumberNode,
-    ParamNode,
-    UnaryOpNode,
-    VarNode,
+    ParameterNode,
+    UnaryOperatorNode,
+    VariableNode,
     parse_expression,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from linopy_yaml.schema import MacroDef, MathSchema
+    from linopy_yaml.schema import MacroBlock, MathSchema
 
 #: Backstop against pathological nesting the cycle check cannot see.
 _MAX_DEPTH = 50
 
 
-def parse_and_expand(text: str, schema: MathSchema, context: str = 'expression') -> ExprNode:
+def parse_and_expand(text: str, schema: MathSchema, context: str = 'expression') -> ExpressionNode:
     """Parse *text* and expand named sub-expressions and macros to core AST."""
     return expand(parse_expression(text), schema, context)
 
 
 @overload
-def expand(node: ArithNode, schema: MathSchema, context: str = ...) -> ArithNode: ...
+def expand(node: ArithmeticNode, schema: MathSchema, context: str = ...) -> ArithmeticNode: ...
 @overload
-def expand(node: CompareNode, schema: MathSchema, context: str = ...) -> CompareNode: ...
+def expand(node: ComparisonNode, schema: MathSchema, context: str = ...) -> ComparisonNode: ...
 
 
-def expand(node: ExprNode, schema: MathSchema, context: str = 'expression') -> ExprNode:
+def expand(node: ExpressionNode, schema: MathSchema, context: str = 'expression') -> ExpressionNode:
     """Expand all named sub-expressions and macro calls under *node*.
 
     Expansion never changes the shape of the root: a comparison stays a
     comparison, an arithmetic node stays arithmetic. The overloads say so, so
-    callers holding an ``ArithNode`` keep it across the call.
+    callers holding an ``ArithmeticNode`` keep it across the call.
     """
-    if isinstance(node, CompareNode):
-        return CompareNode(
+    if isinstance(node, ComparisonNode):
+        return ComparisonNode(
             node.op,
             _expand(node.left, schema, context, ()),
             _expand(node.right, schema, context, ()),
@@ -90,36 +91,36 @@ def expand(node: ExprNode, schema: MathSchema, context: str = 'expression') -> E
     return _expand(node, schema, context, ())
 
 
-def macro_signature(name: str, macro: MacroDef) -> str:
+def macro_signature(name: str, macro: MacroBlock) -> str:
     """Human-readable call signature, for error messages."""
     parts = [*macro.args, *(f'{k}=...' for k in macro.kwargs)]
     return f'{name}({", ".join(parts)})'
 
 
-def parse_template(name: str, macro: MacroDef, context: str) -> ArithNode:
+def parse_template(name: str, macro: MacroBlock, context: str) -> ArithmeticNode:
     """Parse a macro template, rejecting comparisons."""
     body = parse_expression(macro.template)
-    if isinstance(body, CompareNode):
+    if isinstance(body, ComparisonNode):
         msg = f"{context}: macro '{name}' template must not contain a comparison operator. Got: {macro.template!r}"
-        raise ValueError(msg)
+        raise SchemaError(msg)
     return body
 
 
-def _descend(node: ArithNode, recurse: Callable[[ArithNode], ArithNode]) -> ArithNode:
+def _descend(node: ArithmeticNode, recurse: Callable[[ArithmeticNode], ArithmeticNode]) -> ArithmeticNode:
     """Rebuild *node* with *recurse* applied to each child.
 
     The structural half of a tree walk, shared by the two walks below: they
-    differ only in what they do at NameNode and FuncCallNode, and duplicating
+    differ only in what they do at NameNode and FunctionCallNode, and duplicating
     the other four cases is how the two drift apart.
     """
-    if isinstance(node, NumberNode | NameNode | VarNode | ParamNode | DimRefNode):
+    if isinstance(node, NumberNode | NameNode | VariableNode | ParameterNode | DimensionNode):
         return node
-    if isinstance(node, UnaryOpNode):
-        return UnaryOpNode(node.op, recurse(node.operand))
-    if isinstance(node, BinOpNode):
-        return BinOpNode(node.op, recurse(node.left), recurse(node.right))
-    if isinstance(node, FuncCallNode):
-        return FuncCallNode(
+    if isinstance(node, UnaryOperatorNode):
+        return UnaryOperatorNode(node.op, recurse(node.operand))
+    if isinstance(node, BinaryOperatorNode):
+        return BinaryOperatorNode(node.op, recurse(node.left), recurse(node.right))
+    if isinstance(node, FunctionCallNode):
+        return FunctionCallNode(
             node.name,
             [recurse(a) for a in node.args],
             {k: recurse(v) for k, v in node.kwargs.items()},
@@ -128,28 +129,28 @@ def _descend(node: ArithNode, recurse: Callable[[ArithNode], ArithNode]) -> Arit
 
 
 def _expand(
-    node: ArithNode,
+    node: ArithmeticNode,
     schema: MathSchema,
     context: str,
     stack: tuple[str, ...],
-) -> ArithNode:
+) -> ArithmeticNode:
     if len(stack) > _MAX_DEPTH:
         chain = ' -> '.join(stack)
         msg = f'{context}: expansion exceeds depth {_MAX_DEPTH} (via {chain})'
-        raise ValueError(msg)
+        raise SchemaError(msg)
 
     def _cycle(name: str, kind: str) -> None:
         if name in stack:
             chain = ' -> '.join([*stack, name])
             msg = f'{context}: circular {kind} reference: {chain}'
-            raise ValueError(msg)
+            raise SchemaError(msg)
 
     if isinstance(node, NameNode) and node.name in schema.expressions:
         _cycle(node.name, 'expression')
         body = _parse_named(node.name, schema, context)
         return _expand(body, schema, context, (*stack, node.name))
 
-    if isinstance(node, FuncCallNode) and node.name in schema.macros:
+    if isinstance(node, FunctionCallNode) and node.name in schema.macros:
         _cycle(node.name, 'macro')
         return _expand_macro(node, schema, context, stack)
 
@@ -157,23 +158,23 @@ def _expand(
     return _descend(node, lambda child: _expand(child, schema, context, stack))
 
 
-def _parse_named(name: str, schema: MathSchema, context: str) -> ArithNode:
+def _parse_named(name: str, schema: MathSchema, context: str) -> ArithmeticNode:
     body = parse_expression(schema.expressions[name])
-    if isinstance(body, CompareNode):
+    if isinstance(body, ComparisonNode):
         msg = (
             f"{context}: named expression '{name}' must not contain a "
             f'comparison operator. Got: {schema.expressions[name]!r}'
         )
-        raise ValueError(msg)
+        raise SchemaError(msg)
     return body
 
 
 def _expand_macro(
-    call: FuncCallNode,
+    call: FunctionCallNode,
     schema: MathSchema,
     context: str,
     stack: tuple[str, ...],
-) -> ArithNode:
+) -> ArithmeticNode:
     macro = schema.macros[call.name]
     signature = macro_signature(call.name, macro)
     if len(call.args) != len(macro.args):
@@ -181,14 +182,14 @@ def _expand_macro(
             f"{context}: macro '{call.name}' expects {len(macro.args)} "
             f'positional argument(s), got {len(call.args)}. Signature: {signature}'
         )
-        raise ValueError(msg)
+        raise SchemaError(msg)
     if set(call.kwargs) != set(macro.kwargs):
         msg = (
             f"{context}: macro '{call.name}' expects keyword argument(s) "
             f'{sorted(macro.kwargs)}, got {sorted(call.kwargs)}. '
             f'Signature: {signature}'
         )
-        raise ValueError(msg)
+        raise SchemaError(msg)
 
     # call-by-value: arguments are expanded before substitution, so they may
     # themselves use named expressions and macros
@@ -202,7 +203,7 @@ def _expand_macro(
     return _expand(substituted, schema, context, (*stack, call.name))
 
 
-def _substitute(node: ArithNode, bindings: dict[str, ArithNode]) -> ArithNode:
+def _substitute(node: ArithmeticNode, bindings: dict[str, ArithmeticNode]) -> ArithmeticNode:
     """Replace formal-name NameNodes in *node* with their bound subtrees."""
     if isinstance(node, NameNode) and node.name in bindings:
         return copy.deepcopy(bindings[node.name])
