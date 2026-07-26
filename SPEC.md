@@ -59,6 +59,7 @@ block; `equations[]` each carry an `expression` with exactly one of `<=`, `>=`,
 constraint after the block; several give `name_0`, `name_1`, … The LHS must
 involve at least one decision variable.
 
+<!-- doctest: wrap=constraints -->
 ```yaml
 storage_balance:
   foreach: [snapshot, storage]
