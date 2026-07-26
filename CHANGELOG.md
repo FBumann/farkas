@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.0.0-alpha.9](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.8...v0.0.0-alpha.9) (2026-07-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* the import path is now `farkas`; the compat lane is `farkas.linopy` and its extra is `[linopy]`.
+
+### Refactoring
+
+* rename the package to farkas, and compat/ to linopy/ ([#127](https://github.com/FBumann/farkas/issues/127)) ([5fae345](https://github.com/FBumann/farkas/commit/5fae345de3358f227e3a04da91f205982a1af4ce))
+
 ## [0.0.0-alpha.8](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.7...v0.0.0-alpha.8) (2026-07-26)
 
 
