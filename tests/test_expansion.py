@@ -9,13 +9,12 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
-import yaml as pyyaml
 
 from farkas.expansion import parse_and_expand
 from farkas.expression_parser import parse_expression
 from farkas.schema import MathSchema
 from farkas.validation import validate_expressions
-from tests.oracle import farkas_linopy
+from tests.differential import differential
 
 WEIGHTED_SUM = {
     'args': ['array', 'weights'],
@@ -211,13 +210,7 @@ def test_macro_templates_validated_even_when_unused():
 # ---------------------------------------------------------------------------
 
 
-def test_differential_named_expression_and_macro(tmp_path):
-
-    from farkas.lowering import lower_program
-    from farkas.relational import DuckdbExecutor
-    from farkas.sources import tidy_sources
-
-    yaml_text = """
+EXPANSION_YAML = """
 dimensions:
   snapshot: {dtype: int}
   generator: {values: [wind, solar, gas]}
@@ -248,9 +241,11 @@ objectives:
     equations:
       - expression: weighted_sum(p, cost, over=generator)
 """
-    yaml_file = tmp_path / 'model.yaml'
-    yaml_file.write_text(yaml_text)
 
+
+def test_a_macro_and_a_named_expression_mean_the_same_on_both_lanes():
+    """One end-to-end test carries the whole feature: both constructs expand to
+    core AST before dispatch, so if the lanes agree here they agree at all."""
     rng = np.random.default_rng(5)
     n_s = 24
     data = {
@@ -263,32 +258,8 @@ objectives:
     }
     coords = {'snapshot': pd.RangeIndex(n_s, name='snapshot')}
 
-    m = farkas_linopy.build(yaml_file, data=data, coords=coords)
-    m.solve(solver_name='highs', output_flag=False)
-    oracle = float(m.objective.value)
-    assert np.isfinite(oracle)
-
-    schema = MathSchema(**pyyaml.safe_load(yaml_text))
-    with DuckdbExecutor(memory_limit='256MB') as ex:
-        ex.build(lower_program(schema), tidy_sources(schema, data, coords))
-        sol = ex.solve()
-        assert sol.status == 'Optimal'
-        assert sol.objective == pytest.approx(oracle, rel=1e-9)
-
-
-def test_no_python_helper_registry():
-    """The helper set is closed — there is no way to register more.
-
-    This is what makes the two lanes accept the same language, and hence what
-    makes the differential tests an oracle rather than a comparison of
-    dialects (ARCHITECTURE.md, "The expressive ceiling").
-    """
-    import farkas
-    import farkas.helpers as helpers
-
-    assert not hasattr(helpers, 'register')
-    assert not hasattr(helpers, '_REGISTRY')
-    assert not hasattr(farkas, 'register')
+    with differential(EXPANSION_YAML, data, coords):
+        pass  # agreement on the objective is the whole assertion
 
 
 def test_unknown_helper_rejected_at_load_time_with_the_rewrite():

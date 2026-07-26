@@ -1,25 +1,20 @@
 """Phase-3 gate: YAML lowers to the logical plan and matches the eager backend.
 
-The dispatch example YAML runs through both backends with the same data:
-eager `farkas_linopy.build(...).solve()` is the oracle; the lowered Program
-executes on DuckdbExecutor via solver_direct and the lp_file sink.
+The dispatch example runs through both backends with the same data, and the
+lowered ``Program`` is read back node by node — the plan is the contract
+between the language and the engine, so its shape is asserted directly rather
+than only through the answer it produces.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-import highspy
 import numpy as np
-import pandas as pd
 import pytest
-import yaml as pyyaml
 
-from farkas.errors import DataError, LanguageError
-from farkas.lowering import lower_program
-from farkas.relational import (
-    DuckdbExecutor,
-)
+from farkas.errors import DataError, DimensionError, LanguageError
+from farkas.lowering import _lower_expr, _lower_where, lower_program
 from farkas.relational.plan import (
     DimensionComparison,
     Parameter,
@@ -28,73 +23,37 @@ from farkas.relational.plan import (
     Sum,
     Variable,
 )
+from farkas.resolution import Namespace
 from farkas.schema import MathSchema
 from farkas.sources import tidy_sources
-from tests.conftest import resolved
-from tests.oracle import farkas_linopy
+from tests.conftest import resolved, schema_of
+from tests.differential import differential
 
-RTOL = 1e-9
-
-DISPATCH_YAML = 'examples/dispatch.yaml'
+DISPATCH_YAML = Path('examples/dispatch.yaml')
 
 
 @pytest.fixture
 def dispatch_schema() -> MathSchema:
-    with open(DISPATCH_YAML) as f:
-        return MathSchema(**pyyaml.safe_load(f))
+    return schema_of(DISPATCH_YAML)
 
 
-@pytest.fixture
-def dispatch_inputs():
-    rng = np.random.default_rng(3)
-    n_s = 48
-    p_max = pd.Series({'wind': 100.0, 'solar': 60.0, 'gas': 200.0})
-    # distinct costs -> unique optimal vertex, so primals are comparable
-    cost = pd.Series({'wind': 1.0, 'solar': 2.0, 'gas': 50.0})
-    load = pd.Series(
-        (rng.uniform(0.2, 0.8, n_s) * p_max.sum()).round(3),
-        index=pd.RangeIndex(n_s, name='snapshot'),
-    )
-    data = {'p_max': p_max, 'load': load, 'cost': cost}
-    coords = {'snapshot': pd.RangeIndex(n_s, name='snapshot')}
-    return data, coords
-
-
-def test_dispatch_yaml_differential(dispatch_schema, dispatch_inputs, tmp_path):
+def test_dispatch_yaml_agrees_variable_by_variable(dispatch_yaml, dispatch_inputs):
     data, coords = dispatch_inputs
 
-    # oracle: the eager backend
-    m = farkas_linopy.build(DISPATCH_YAML, data=data, coords=coords)
-    m.solve(solver_name='highs', output_flag=False)
-    oracle = float(m.objective.value)
-    assert np.isfinite(oracle)
-
-    # relational: lower the same schema, execute with the same inputs
-    program = lower_program(dispatch_schema)
-    sources = tidy_sources(dispatch_schema, data, coords)
-
-    with DuckdbExecutor(memory_limit='256MB') as ex:
-        ex.build(program, sources)
-
-        sol = ex.solve()
-        assert sol.status == 'Optimal'
-        assert sol.objective == pytest.approx(oracle, rel=RTOL)
-
-        lp = tmp_path / 'dispatch.lp'
-        ex.write_lp(lp)
-        h = highspy.Highs()
-        h.setOptionValue('output_flag', False)
-        h.readModel(str(lp))
-        h.run()
-        assert h.getInfo().objective_function_value == pytest.approx(oracle, rel=RTOL)
-
-        # primal agrees with the eager solution variable-by-variable
-        eager_p = m.solution['p'].to_dataframe(name='value').reset_index()
-        rel_p = sol.primal('p')
+    with differential(DISPATCH_YAML, data, coords, lp=True) as run:
+        # primal agrees with the eager solution variable-by-variable, not only
+        # in total — an objective can agree while the dispatch behind it differs
+        eager_p = run.model.solution['p'].to_dataframe(name='value').reset_index()
+        rel_p = run.sol.primal('p')
         merged = eager_p.merge(rel_p, on=['snapshot', 'generator'], suffixes=('_eager', '_rel'))
         # masked (gas is unmasked; all p_max > 0 here) rows align 1:1
         assert len(merged) == len(rel_p)
         assert np.allclose(merged['value_eager'], merged['value_rel'], atol=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# the plan the language lowers to
+# ---------------------------------------------------------------------------
 
 
 def test_lower_program_structure(dispatch_schema):
@@ -120,27 +79,27 @@ def test_lower_program_structure(dispatch_schema):
     assert program.objective.expression == Variable('p') * Parameter('cost')
 
 
-def test_where_lowering(dispatch_schema):
-    from farkas.lowering import _lower_where
-    from farkas.resolution import Namespace
+@pytest.mark.parametrize(
+    ('where', 'expected'),
+    [
+        (None, None),
+        ('True', None),  # True == no mask
+        ('p_max', ParameterDefined('p_max')),
+        # dimension coordinates compare like parameters (ROADMAP 5b)
+        ('snapshot > 5', DimensionComparison('snapshot', '>', 5)),
+    ],
+)
+def test_where_lowering(dispatch_schema, where, expected):
+    assert _lower_where(where, Namespace.of(dispatch_schema), 't') == expected
 
-    ns = Namespace.of(dispatch_schema)
-    assert _lower_where(None, ns, 't') is None
-    assert _lower_where('True', ns, 't') is None  # True == no mask
-    assert _lower_where('p_max', ns, 't') == ParameterDefined('p_max')
-    pred = _lower_where('p_max > 0 AND NOT load == 0', ns, 't')
-    assert pred is not None
 
-    # dimension coordinates compare like parameters (ROADMAP 5b)
-    assert _lower_where('snapshot > 5', ns, 't') == DimensionComparison('snapshot', '>', 5)
+def test_a_compound_where_lowers_to_something(dispatch_schema):
+    assert _lower_where('p_max > 0 AND NOT load == 0', Namespace.of(dispatch_schema), 't') is not None
 
 
-def test_unknown_where_name_is_an_error_in_both_lanes(dispatch_schema):
+def test_an_unknown_where_name_is_an_error_at_lowering_too(dispatch_schema):
     """It used to be a scalar-False mask in the eager lane: a model that
     builds, solves, and is silently empty. Resolution makes it a load error."""
-    from farkas.lowering import _lower_where
-    from farkas.resolution import Namespace
-
     with pytest.raises(LanguageError, match="'no_such_param' not found"):
         _lower_where('no_such_param', Namespace.of(dispatch_schema), 't')
 
@@ -156,29 +115,25 @@ def test_sum_over_absent_dim_raises_at_lowering_too(dispatch_schema):
     used to do — it returned the operand unchanged, and the comment claiming
     eager parity outlived the parity.
     """
-    from farkas.errors import DimensionError
-    from farkas.lowering import _lower_expr
-
-    ast = resolved('sum(load, over=generator)', dispatch_schema)
     with pytest.raises(DimensionError, match='no-op that builds and solves wrong'):
-        _lower_expr(ast, dispatch_schema, 't')
+        _lower_expr(resolved('sum(load, over=generator)', dispatch_schema), dispatch_schema, 't')
 
 
-def test_unsupported_features_rejected(dispatch_schema):
-    from farkas.lowering import _lower_expr
-
-    # roll/shift are supported via plan.Translate, binary/integer via variable_type;
-    # '**' and custom Python helpers remain outside the relational subset
+def test_the_power_operator_stays_outside_the_relational_subset(dispatch_schema):
+    """roll/shift lower to plan.Translate and binary/integer to variable_type;
+    '**' has no affine reading at all, so it has nowhere to go."""
     with pytest.raises(LanguageError, match=r"operator '\*\*'"):
         _lower_expr(resolved('p ** 2', dispatch_schema), dispatch_schema, 't')
 
-    # binary is eligible now and lowers to vtype (see also test_router)
-    schema_dict = pyyaml.safe_load(Path(DISPATCH_YAML).read_text())
-    schema_dict['variables']['p']['binary'] = True
-    schema_dict['variables']['p']['bounds'] = {}
-    program = lower_program(MathSchema(**schema_dict))
+
+def test_a_binary_variable_lowers_to_a_vtype():
+    program = lower_program(schema_of(DISPATCH_YAML, **{'variables.p.binary': True, 'variables.p.bounds': {}}))
     assert program.variable('p').variable_type == 'binary'
 
+
+# ---------------------------------------------------------------------------
+# binding an index to a dim: by name where there is one, by position otherwise
+# ---------------------------------------------------------------------------
 
 NETWORK = {
     'dimensions': {'from_bus': {'values': ['n1', 'n2']}, 'to_bus': {'values': ['n1', 'n2']}},
@@ -191,15 +146,13 @@ NETWORK = {
 CAPS = {('n1', 'n1'): 1.0, ('n2', 'n1'): 5.0, ('n1', 'n2'): 500.0, ('n2', 'n2'): 1.0}
 
 
-def _caps(names):
-    return pd.Series(list(CAPS.values()), index=pd.MultiIndex.from_tuples(list(CAPS), names=names))
-
-
 def _tidy_cap(names):
-    schema = MathSchema(**NETWORK)
+    import pandas as pd
+
+    index = pd.MultiIndex.from_tuples(list(CAPS), names=names)
     # tidy_sources normalises to Arrow, so read the columns back by name —
     # which is the point: a transposition would show up as swapped values
-    table = tidy_sources(schema, {'cap': _caps(names)})['cap'].to_pydict()
+    table = tidy_sources(MathSchema(**NETWORK), {'cap': pd.Series(list(CAPS.values()), index=index)})['cap'].to_pydict()
     return dict(zip(zip(table['from_bus'], table['to_bus'], strict=True), table['value'], strict=True))
 
 

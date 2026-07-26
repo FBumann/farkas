@@ -1,39 +1,36 @@
-"""group_sum: the same transport YAML through both backends.
+"""group_sum: the transport YAML through both backends, and what coordinates buy.
 
 Three-way differential on examples/transport.yaml:
-  1. eager Model.from_yaml + solve (group_sum via linopy groupby)
-  2. lowered Program -> DuckdbExecutor solver_direct
-  3. hand-built indicator-matrix linopy model (independent oracle)
+  1. eager farkas_linopy.build + solve (group_sum via linopy groupby)
+  2. lowered Program -> DuckdbExecutor solver_direct, plus the LP file
+  3. hand-built indicator-matrix linopy model (an independent oracle that
+     involves no group_sum at all)
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-import highspy
 import numpy as np
 import pandas as pd
 import pytest
-import yaml as pyyaml
 
 import farkas as fk
 from farkas.errors import DataError, LanguageError
-from farkas.lowering import lower_program
-from farkas.relational import (
-    DuckdbExecutor,
-)
+from farkas.lowering import _lower_expr, lower_program
+from farkas.relational import DuckdbExecutor
 from farkas.relational.plan import (
+    Add,
     GroupSum,
+    Negate,
     Variable,
 )
-from farkas.schema import MathSchema
 from farkas.sources import tidy_sources
-from tests.conftest import resolved
+from tests.conftest import resolved, schema_of
+from tests.differential import RTOL, differential
 from tests.oracle import farkas_linopy, transport_eager_objective, xr
 
-RTOL = 1e-9
-
-TRANSPORT_YAML = 'examples/transport.yaml'
+TRANSPORT_YAML = Path('examples/transport.yaml')
 
 
 def _inputs(gens, lines, load):
@@ -55,53 +52,24 @@ def _inputs(gens, lines, load):
     return data, coords
 
 
-def test_transport_yaml_differential(transport_data, tmp_path):
+def test_transport_yaml_agrees_with_an_independent_oracle(transport_data):
     gens, lines, load = transport_data
     data, coords = _inputs(gens, lines, load)
 
-    # independent oracle (indicator matrices, no group_sum involved)
-    oracle = transport_eager_objective(gens, lines, load)
-    assert np.isfinite(oracle)
+    # indicator matrices, no group_sum involved — an oracle for the oracle
+    independent = transport_eager_objective(gens, lines, load)
+    assert np.isfinite(independent)
 
-    # eager backend through the YAML group_sum helper
-    m = farkas_linopy.build(TRANSPORT_YAML, data=data, coords=coords)
-    m.solve(solver_name='highs', output_flag=False)
-    assert float(m.objective.value) == pytest.approx(oracle, rel=RTOL)
-
-    # relational backend through lowering
-    schema = MathSchema(**pyyaml.safe_load(Path(TRANSPORT_YAML).read_text()))
-    with DuckdbExecutor(memory_limit='256MB') as ex:
-        ex.build(lower_program(schema), tidy_sources(schema, data, coords))
-        sol = ex.solve()
-        assert sol.status == 'Optimal'
-        assert sol.objective == pytest.approx(oracle, rel=RTOL)
-
-        lp = tmp_path / 'transport.lp'
-        ex.write_lp(lp)
-        h = highspy.Highs()
-        h.setOptionValue('output_flag', False)
-        h.readModel(str(lp))
-        h.run()
-        assert h.getInfo().objective_function_value == pytest.approx(oracle, rel=RTOL)
+    with differential(TRANSPORT_YAML, data, coords, lp=True) as run:
+        assert run.oracle == pytest.approx(independent, rel=RTOL)
 
 
-def test_group_sum_lowering_structure():
-    schema = MathSchema(**pyyaml.safe_load(Path(TRANSPORT_YAML).read_text()))
-    program = lower_program(schema)
-
-    (c,) = program.constraints
-    assert c.dims == ('snapshot', 'bus')
-    # lhs contains the three GroupSum pieces
-    assert GroupSum(Variable('p'), over='generator', coordinate='bus', into='bus') in _flatten(c.lhs)
-    assert GroupSum(Variable('f'), over='line', coordinate='to', into='bus') in _flatten(c.lhs)
+# ---------------------------------------------------------------------------
+# lowering
+# ---------------------------------------------------------------------------
 
 
 def _flatten(expr):
-    from farkas.relational.plan import (
-        Add,
-        Negate,
-    )
-
     if isinstance(expr, Add):
         return _flatten(expr.left) + _flatten(expr.right)
     if isinstance(expr, Negate):
@@ -109,21 +77,36 @@ def _flatten(expr):
     return [expr]
 
 
-def test_group_sum_lowering_errors():
-    schema = MathSchema(**pyyaml.safe_load(Path(TRANSPORT_YAML).read_text()))
-    from farkas.lowering import _lower_expr
+def test_group_sum_lowers_to_one_node_per_injection_term():
+    program = lower_program(schema_of(TRANSPORT_YAML))
 
-    # an undeclared dim, or a coordinate the dim does not declare, is caught in
-    # resolution before lowering ever sees the call
-    with pytest.raises(LanguageError, match=r'over=nope\) does not name a declared dimension'):
-        resolved('group_sum(p, over=nope, by=bus)', schema)
-    with pytest.raises(LanguageError, match=r"by=nope\) does not name a coordinate of 'generator'"):
-        resolved('group_sum(p, over=generator, by=nope)', schema)
-    # a coordinate declared on a *different* dim is not in scope either
-    with pytest.raises(LanguageError, match=r"by=to\) does not name a coordinate of 'generator'"):
-        resolved('group_sum(p, over=generator, by=to)', schema)
-    # the names resolve and the arity fits, so what is left is a dim rule:
-    # lowering raises it by asking `dimensions`, not by restating it
+    (c,) = program.constraints
+    assert c.dims == ('snapshot', 'bus')
+    terms = _flatten(c.lhs)
+    assert GroupSum(Variable('p'), over='generator', coordinate='bus', into='bus') in terms
+    assert GroupSum(Variable('f'), over='line', coordinate='to', into='bus') in terms
+
+
+@pytest.mark.parametrize(
+    ('expression', 'match'),
+    [
+        # an undeclared dim, or a coordinate the dim does not declare, is caught
+        # in resolution before lowering ever sees the call
+        ('group_sum(p, over=nope, by=bus)', r'over=nope\) does not name a declared dimension'),
+        ('group_sum(p, over=generator, by=nope)', r"by=nope\) does not name a coordinate of 'generator'"),
+        # a coordinate declared on a *different* dim is not in scope either
+        ('group_sum(p, over=generator, by=to)', r"by=to\) does not name a coordinate of 'generator'"),
+    ],
+)
+def test_a_name_group_sum_cannot_resolve_is_refused(expression, match):
+    with pytest.raises(LanguageError, match=match):
+        resolved(expression, schema_of(TRANSPORT_YAML))
+
+
+def test_grouping_an_expression_that_lacks_the_dim_is_refused():
+    """The names resolve and the arity fits, so what is left is a dim rule:
+    lowering raises it by asking `dimensions`, not by restating it."""
+    schema = schema_of(TRANSPORT_YAML)
     with pytest.raises(LanguageError, match='but the expression'):
         _lower_expr(resolved('group_sum(f, over=generator, by=bus)', schema), schema, 't')
 
@@ -133,27 +116,23 @@ def test_group_sum_lowering_errors():
 # ---------------------------------------------------------------------------
 
 
-def _mistyped(gens, lines, load):
-    """Point one generator at a bus that does not exist."""
-    bad = gens.copy()
-    bad.loc[bad.index[0], 'bus'] = 'nowhere'
-    return _inputs(bad, lines, load)
+def _relationally(data, coords):
+    schema = schema_of(TRANSPORT_YAML)
+    with DuckdbExecutor(memory_limit='256MB') as ex:
+        ex.build(lower_program(schema), tidy_sources(schema, data, coords))
 
 
-def test_mistyped_coordinate_is_refused_relationally(transport_data):
+def test_a_mistyped_coordinate_is_refused_on_both_lanes(transport_data):
     """Before coordinates were declared this built and solved: the mapping's
     value column was promoted to an index unchecked, and the inner join that
     places the terms dropped the generator out of its balance silently."""
     gens, lines, load = transport_data
-    data, coords = _mistyped(gens, lines, load)
-    schema = MathSchema(**pyyaml.safe_load(Path(TRANSPORT_YAML).read_text()))
-    with DuckdbExecutor(memory_limit='256MB') as ex, pytest.raises(DataError, match="not 'bus' coordinates"):
-        ex.build(lower_program(schema), tidy_sources(schema, data, coords))
+    bad = gens.copy()
+    bad.loc[bad.index[0], 'bus'] = 'nowhere'  # a bus that does not exist
+    data, coords = _inputs(bad, lines, load)
 
-
-def test_mistyped_coordinate_is_refused_eagerly(transport_data):
-    gens, lines, load = transport_data
-    data, coords = _mistyped(gens, lines, load)
+    with pytest.raises(DataError, match="not 'bus' coordinates"):
+        _relationally(data, coords)
     with pytest.raises(DataError, match="not 'bus' coordinates"):
         farkas_linopy.build(TRANSPORT_YAML, data=data, coords=coords)
 
@@ -164,10 +143,9 @@ def test_a_coordinate_must_be_single_valued(transport_data):
     gens, lines, load = transport_data
     other = 's' if gens['bus'].iloc[0] != 's' else 'n'
     doubled = pd.concat([gens, gens.head(1).assign(bus=other)])
-    data, coords = _inputs(doubled, lines, load)
-    schema = MathSchema(**pyyaml.safe_load(Path(TRANSPORT_YAML).read_text()))
-    with DuckdbExecutor(memory_limit='256MB') as ex, pytest.raises(DataError, match='more than one value'):
-        ex.build(lower_program(schema), tidy_sources(schema, data, coords))
+
+    with pytest.raises(DataError, match='more than one value'):
+        _relationally(*_inputs(doubled, lines, load))
 
 
 def test_a_coordinate_bearing_dim_needs_an_index_source(transport_data):
@@ -176,9 +154,9 @@ def test_a_coordinate_bearing_dim_needs_an_index_source(transport_data):
     gens, lines, load = transport_data
     data, coords = _inputs(gens, lines, load)
     del coords['generator']
-    schema = MathSchema(**pyyaml.safe_load(Path(TRANSPORT_YAML).read_text()))
-    with DuckdbExecutor(memory_limit='256MB') as ex, pytest.raises(DataError, match='no index source'):
-        ex.build(lower_program(schema), tidy_sources(schema, data, coords))
+
+    with pytest.raises(DataError, match='no index source'):
+        _relationally(data, coords)
 
 
 PARTIAL_YAML = """

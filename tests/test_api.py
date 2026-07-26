@@ -9,29 +9,13 @@ from __future__ import annotations
 import subprocess
 import sys
 import textwrap
-from pathlib import Path
 
-import highspy
 import numpy as np
 import pandas as pd
 import pytest
 
 import farkas as ly
-
-
-@pytest.fixture
-def dispatch_inputs():
-    rng = np.random.default_rng(9)
-    n_s = 24
-    p_max = pd.Series({'wind': 100.0, 'solar': 60.0, 'gas': 200.0})
-    cost = pd.Series({'wind': 1.0, 'solar': 2.0, 'gas': 50.0})
-    load = pd.Series(
-        (rng.uniform(0.2, 0.8, n_s) * p_max.sum()).round(3),
-        index=pd.RangeIndex(n_s, name='snapshot'),
-    )
-    sources = {'p_max': p_max, 'load': load, 'cost': cost}
-    coords = {'snapshot': pd.RangeIndex(n_s, name='snapshot')}
-    return sources, coords
+from tests.conftest import schema_of, solve_lp_file
 
 
 def test_solve(dispatch_yaml, dispatch_inputs):
@@ -55,12 +39,7 @@ def test_build_context_manager_and_write_lp(dispatch_yaml, dispatch_inputs, tmp_
         objective_direct = sol.objective
 
     lp = ly.write(dispatch_yaml, sources, tmp_path / 'm.lp', coords=coords)
-
-    h = highspy.Highs()
-    h.setOptionValue('output_flag', False)
-    h.readModel(str(lp))
-    h.run()
-    assert h.getInfo().objective_function_value == pytest.approx(objective_direct, rel=1e-9)
+    assert solve_lp_file(lp) == pytest.approx(objective_direct, rel=1e-9)
 
 
 def test_parquet_path_sources(dispatch_yaml, dispatch_inputs, tmp_path):
@@ -84,16 +63,6 @@ def test_parquet_path_sources(dispatch_yaml, dispatch_inputs, tmp_path):
         assert sol.objective == pytest.approx(ref.objective, rel=1e-9)
     finally:
         ref.close()
-
-
-def test_out_of_language_is_a_build_error(dispatch_yaml, dispatch_inputs):
-    import yaml as pyyaml
-
-    raw = pyyaml.safe_load(Path(dispatch_yaml).read_text())
-    raw['objectives']['total_cost']['equations'] = [{'expression': 'sum(p ** 2, over=generator)'}]
-    sources, coords = dispatch_inputs
-    with pytest.raises(ly.LanguageError, match='operator'):
-        ly.build(raw, sources, coords=coords)
 
 
 def test_runtime_is_linopy_free(dispatch_yaml):
@@ -129,18 +98,31 @@ def test_runtime_is_linopy_free(dispatch_yaml):
     assert 'LINOPY_FREE_OK' in out.stdout
 
 
-def test_check_needs_no_data(dispatch_yaml):
-    schema = ly.check(dispatch_yaml)
-    assert 'p' in schema.variables
+def test_check_and_load_schema_need_no_data(dispatch_yaml):
+    """The model stands for itself: the schema is read from the file when
+    wanted, never carried on a built model."""
+    for schema in (ly.check(dispatch_yaml), ly.load_schema(dispatch_yaml)):
+        assert schema.variables['p'].foreach == ['snapshot', 'generator']
+        assert schema.parameters['load'].dims == ['snapshot']
 
 
-def test_check_reports_language_errors(dispatch_yaml):
-    import yaml as pyyaml
+@pytest.mark.parametrize(
+    ('expression', 'match'),
+    [
+        ('sum(p ** 2, over=generator)', r"operator '\*\*'"),
+        # the CI verb enforces degree 1 with no data bound (ROADMAP, degree axis)
+        ('sum(p * p, over=generator)', 'degree 2'),
+    ],
+)
+def test_check_reports_language_errors_before_any_data_is_bound(dispatch_yaml, dispatch_inputs, expression, match):
+    raw = schema_of(dispatch_yaml, **{'objectives.total_cost.equations': [{'expression': expression}]}).model_dump()
 
-    raw = pyyaml.safe_load(Path(dispatch_yaml).read_text())
-    raw['objectives']['total_cost']['equations'] = [{'expression': 'sum(p ** 2, over=generator)'}]
-    with pytest.raises(ly.LanguageError, match=r"operator '\*\*'"):
+    with pytest.raises(ly.LanguageError, match=match):
         ly.check(raw)
+    # ...and build says the same thing rather than deferring it to the solver
+    sources, coords = dispatch_inputs
+    with pytest.raises(ly.LanguageError, match=match):
+        ly.build(raw, sources, coords=coords)
 
 
 def test_error_hierarchy_is_one_catchable_tree():
@@ -190,21 +172,18 @@ def test_solution_context_manager_and_to_parquet(dispatch_yaml, dispatch_inputs,
 
 
 def test_no_helper_registry_anywhere():
-    """The Python helper registry is gone from every surface (#38 replaces it)."""
+    """The helper set is closed — there is no way to register more, on any
+    surface (#38's ``escape:`` island replaces the idea).
+
+    This is what makes the two lanes accept the same language, and hence what
+    makes the differential tests an oracle rather than a comparison of
+    dialects (ARCHITECTURE.md, "The expressive ceiling").
+    """
     import farkas.helpers as helpers
 
     assert not hasattr(ly, 'register')
     assert not hasattr(helpers, 'register')
-
-
-def test_check_rejects_degree_two_without_data(dispatch_yaml):
-    """The CI verb enforces degree 1 with no data bound (ROADMAP, degree axis)."""
-    import yaml as pyyaml
-
-    raw = pyyaml.safe_load(Path(dispatch_yaml).read_text())
-    raw['objectives']['total_cost']['equations'] = [{'expression': 'sum(p * p, over=generator)'}]
-    with pytest.raises(ly.LanguageError, match='degree 2'):
-        ly.check(raw)
+    assert not hasattr(helpers, '_REGISTRY')
 
 
 def test_solution_to_dataarray(dispatch_yaml, dispatch_inputs):

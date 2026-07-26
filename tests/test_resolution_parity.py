@@ -8,31 +8,17 @@ pass, each of these built a model on one lane and raised on the other.
 
 from __future__ import annotations
 
+import pandas as pd
 import pytest
 import yaml as pyyaml
 
 import farkas as ly
+from tests.conftest import DISPATCH_MODEL, override
 from tests.oracle import farkas_linopy  # skips the module without the [linopy] extra
-
-MODEL = {
-    'dimensions': {'snapshot': {'dtype': 'int'}, 'generator': {'values': ['wind', 'gas']}},
-    'parameters': {
-        'p_max': {'dims': ['generator']},
-        'cost': {'dims': ['generator']},
-        'load': {'dims': ['snapshot']},
-    },
-    'variables': {'p': {'foreach': ['snapshot', 'generator'], 'bounds': {'lower': 0, 'upper': 'p_max'}}},
-    'constraints': {
-        'balance': {'foreach': ['snapshot'], 'equations': [{'expression': 'sum(p, over=generator) == load'}]}
-    },
-    'objectives': {'total': {'sense': 'minimize', 'equations': [{'expression': 'sum(p * cost, over=generator)'}]}},
-}
 
 
 @pytest.fixture
 def data():
-    import pandas as pd
-
     return {
         'p_max': pd.Series({'wind': 100.0, 'gas': 200.0}),
         'cost': pd.Series({'wind': 0.0, 'gas': 50.0}),
@@ -42,23 +28,13 @@ def data():
 
 @pytest.fixture
 def coords():
-    import pandas as pd
-
     return {'snapshot': pd.RangeIndex(4, name='snapshot')}
 
 
 def _write(tmp_path, **patch):
-    import copy
-
-    raw = copy.deepcopy(MODEL)
-    for dotted, value in patch.items():
-        node = raw
-        *path, leaf = dotted.split('.')
-        for key in path:
-            node = node[key]
-        node[leaf] = value
+    """The eager lane only takes a path, so a varied model has to hit disk."""
     path = tmp_path / 'm.yaml'
-    path.write_text(pyyaml.safe_dump(raw))
+    path.write_text(pyyaml.safe_dump(override(DISPATCH_MODEL, **patch)))
     return path
 
 

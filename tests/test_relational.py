@@ -8,7 +8,6 @@ Each model is built three ways and must agree on the objective:
 
 from __future__ import annotations
 
-import highspy
 import numpy as np
 import pandas as pd
 import pytest
@@ -32,19 +31,9 @@ from farkas.relational.plan import (
     Variable,
     VariableDeclaration,
 )
+from tests.conftest import solve_lp_file
+from tests.differential import RTOL
 from tests.oracle import linopy, transport_eager_objective, xr
-
-RTOL = 1e-9
-
-
-def solve_lp_file(path) -> float:
-    h = highspy.Highs()
-    h.setOptionValue('output_flag', False)
-    h.readModel(str(path))
-    h.run()
-    assert h.getModelStatus() == highspy.HighsModelStatus.kOptimal
-    return h.getInfo().objective_function_value
-
 
 # ---------------------------------------------------------------------------
 # model 1: dispatch (the spec example)

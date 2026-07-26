@@ -6,15 +6,22 @@ the file reads as. None of them needs data to be caught.
 
 from __future__ import annotations
 
-import copy
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-import yaml as pyyaml
 
 from farkas.dimensions import DimensionError, check_schema, dims_of
 from farkas.resolution import Namespace, expression_of
-from farkas.schema import MathSchema
+from tests.conftest import override, schema_of
 
+if TYPE_CHECKING:
+    from farkas.schema import MathSchema
+
+#: A *network* dispatch model: `conftest.DISPATCH_MODEL` plus buses, so
+#: `group_sum` and per-bus loads are in scope. The dim rules are mostly about
+#: expressions that carry a dim their frame does not, which needs three dims to
+#: state at all.
 BASE = {
     'dimensions': {
         'snapshot': {'dtype': 'int'},
@@ -38,14 +45,7 @@ BASE = {
 
 
 def _schema(**overrides) -> MathSchema:
-    raw = copy.deepcopy(BASE)
-    for dotted, value in overrides.items():
-        node = raw
-        *path, leaf = dotted.split('.')
-        for key in path:
-            node = node.setdefault(key, {})
-        node[leaf] = value
-    return MathSchema(**raw)
+    return schema_of(BASE, **overrides)
 
 
 def _dims(expr: str, schema: MathSchema | None = None) -> frozenset[str]:
@@ -161,15 +161,13 @@ def test_checking_needs_no_data():
     so `ly.check()` catches them in CI with no sources bound."""
     import farkas as ly
 
-    raw = copy.deepcopy(BASE)
-    raw['constraints']['stray'] = {'foreach': ['snapshot'], 'equations': [{'expression': 'p <= p_max'}]}
+    raw = override(
+        BASE, **{'constraints.stray': {'foreach': ['snapshot'], 'equations': [{'expression': 'p <= p_max'}]}}
+    )
     with pytest.raises(DimensionError):
         ly.check(raw)
 
 
-def test_shipped_examples_typecheck(tmp_path):
-    from pathlib import Path
-
-    for path in sorted(Path('examples').glob('*.yaml')):
-        schema = MathSchema(**pyyaml.safe_load(path.read_text()))
-        check_schema(schema)
+@pytest.mark.parametrize('path', sorted(Path('examples').glob('*.yaml')), ids=lambda p: p.name)
+def test_shipped_examples_typecheck(path):
+    check_schema(schema_of(path))

@@ -1,4 +1,11 @@
-"""Tests for YAML schema validation."""
+"""Pydantic-level validation: what a well-formed declaration looks like.
+
+Everything here is decided from the YAML mapping alone — no expressions
+parsed, no dims inferred, no data. The rules are mostly of two kinds
+(a name that must be declared, a key that must be spelled right), so they are
+stated as tables: a new rule is a row, and a rule that silently stops firing
+is a row that stops failing.
+"""
 
 import pytest
 from pydantic import ValidationError
@@ -13,160 +20,154 @@ def test_empty_schema():
 
 
 def test_minimal_schema():
-    raw = {
-        'dimensions': {'x': {'values': [1, 2, 3]}},
-        'parameters': {'a': {'dims': ['x']}},
-        'variables': {'v': {'foreach': ['x']}},
-    }
-    s = MathSchema.model_validate(raw)
+    s = MathSchema.model_validate(
+        {
+            'dimensions': {'x': {'values': [1, 2, 3]}},
+            'parameters': {'a': {'dims': ['x']}},
+            'variables': {'v': {'foreach': ['x']}},
+        }
+    )
     assert 'x' in s.dimensions
     assert s.parameters['a'].dims == ['x']
     assert s.variables['v'].foreach == ['x']
 
 
-def test_undeclared_dim_in_parameter():
-    raw = {
-        'dimensions': {'x': {'values': [1]}},
-        'parameters': {'a': {'dims': ['y']}},
-    }
-    with pytest.raises(ValidationError, match="undeclared dimension 'y'"):
-        MathSchema.model_validate(raw)
+# ---------------------------------------------------------------------------
+# a name a declaration uses must be declared
+# ---------------------------------------------------------------------------
 
 
-def test_undeclared_dim_in_variable():
-    raw = {
-        'dimensions': {'x': {'values': [1]}},
-        'variables': {'v': {'foreach': ['y']}},
-    }
-    with pytest.raises(ValidationError, match="undeclared dimension 'y'"):
-        MathSchema.model_validate(raw)
+@pytest.mark.parametrize(
+    ('section', 'body', 'match'),
+    [
+        pytest.param('parameters', {'a': {'dims': ['y']}}, "undeclared dimension 'y'", id='parameter-dim'),
+        pytest.param('variables', {'v': {'foreach': ['y']}}, "undeclared dimension 'y'", id='variable-foreach'),
+        pytest.param(
+            'constraints',
+            {'c': {'foreach': ['y'], 'equations': [{'expression': 'v == 0'}]}},
+            "undeclared dimension 'y'",
+            id='constraint-foreach',
+        ),
+        pytest.param(
+            'variables',
+            {'v': {'foreach': ['x'], 'bounds': {'upper': 'nonexistent'}}},
+            "'nonexistent' is not a declared parameter",
+            id='bound-parameter',
+        ),
+    ],
+)
+def test_an_undeclared_name_is_rejected(section, body, match):
+    with pytest.raises(ValidationError, match=match):
+        MathSchema.model_validate({'dimensions': {'x': {'values': [1]}}, section: body})
 
 
-def test_undeclared_dim_in_constraint():
-    raw = {
-        'dimensions': {'x': {'values': [1]}},
-        'constraints': {
-            'c': {
-                'foreach': ['y'],
-                'equations': [{'expression': 'v == 0'}],
-            }
-        },
-    }
-    with pytest.raises(ValidationError, match="undeclared dimension 'y'"):
-        MathSchema.model_validate(raw)
-
-
-def test_binary_and_integer_conflict():
-    raw = {
-        'dimensions': {'x': {'values': [1]}},
-        'variables': {'v': {'foreach': ['x'], 'binary': True, 'integer': True}},
-    }
-    with pytest.raises(ValidationError, match='both binary and integer'):
-        MathSchema.model_validate(raw)
-
-
-def test_invalid_sense():
-    raw = {
-        'objectives': {'obj': {'sense': 'unknown', 'equations': [{'expression': 'v'}]}},
-    }
-    with pytest.raises(ValidationError, match=r'minimize|maximize'):
-        MathSchema.model_validate(raw)
-
-
-def test_undeclared_bound_parameter():
-    raw = {
-        'dimensions': {'x': {'values': [1]}},
-        'variables': {'v': {'foreach': ['x'], 'bounds': {'upper': 'nonexistent'}}},
-    }
-    with pytest.raises(ValidationError, match="'nonexistent' is not a declared parameter"):
-        MathSchema.model_validate(raw)
-
-
-def test_bound_parameter_reference_valid():
-    raw = {
-        'dimensions': {'x': {'values': [1]}},
-        'parameters': {'p_max': {'dims': ['x']}},
-        'variables': {'v': {'foreach': ['x'], 'bounds': {'upper': 'p_max'}}},
-    }
-    s = MathSchema.model_validate(raw)
-    assert s.variables['v'].bounds.upper == 'p_max'
-
-
-def test_omitted_bounds_default_to_linopy_s_infinities():
+def test_an_omitted_bound_means_unbounded_all_the_way_down():
     """A declaration that omits a bound means unbounded, exactly as in
     ``linopy.Model.add_variables`` — never an implicit ``>= 0``.
 
     Nothing else pins this: both lanes read the same default, so the
-    differential tests agree with each other whatever it is.
+    differential tests agree with each other whatever it is. The second half
+    checks the relational lane carries the default through rather than
+    re-defaulting it on the way to the plan.
     """
     from farkas.lowering import _bound_expression
 
     s = MathSchema.model_validate({'dimensions': {'x': {'values': [1]}}, 'variables': {'v': {'foreach': ['x']}}})
     bounds = s.variables['v'].bounds
-    assert (bounds.lower, bounds.upper) == (float('-inf'), float('inf'))
 
-    # and the relational lane carries it through rather than re-defaulting
+    assert (bounds.lower, bounds.upper) == (float('-inf'), float('inf'))
     assert _bound_expression(bounds.lower).value == float('-inf')
     assert _bound_expression(bounds.upper).value == float('inf')
 
 
-def test_unknown_key_in_variable_is_rejected_with_a_suggestion():
-    """A misspelled key used to be dropped, leaving the variable unbounded."""
-    raw = {
-        'dimensions': {'x': {'values': [1]}},
-        'variables': {'v': {'foreach': ['x'], 'boundz': {'lower': 0, 'upper': 5}}},
-    }
-    with pytest.raises(ValidationError, match=r"unknown key 'boundz'.*Did you mean 'bounds'"):
-        MathSchema.model_validate(raw)
-
-
-def test_unknown_key_without_a_near_miss_lists_the_valid_keys():
-    raw = {
-        'dimensions': {'x': {'values': [1]}},
-        'variables': {'v': {'foreach': ['x'], 'zzzz': 1}},
-    }
-    with pytest.raises(ValidationError, match='Valid keys: binary, bounds, foreach, integer, where'):
-        MathSchema.model_validate(raw)
-
-
-def test_unknown_top_level_section_is_rejected():
-    with pytest.raises(ValidationError, match="unknown key 'dimenzions' in the top level"):
-        MathSchema.model_validate({'dimenzions': {'x': {'values': [1]}}})
+def test_a_declared_bound_parameter_is_accepted():
+    s = MathSchema.model_validate(
+        {
+            'dimensions': {'x': {'values': [1]}},
+            'parameters': {'p_max': {'dims': ['x']}},
+            'variables': {'v': {'foreach': ['x'], 'bounds': {'upper': 'p_max'}}},
+        }
+    )
+    assert s.variables['v'].bounds.upper == 'p_max'
 
 
 @pytest.mark.parametrize(
-    ('section', 'body', 'typo'),
+    ('body', 'match'),
     [
-        ('dimensions', {'dtypo': 'str'}, 'dtypo'),
-        ('parameters', {'dims': ['x'], 'dtyp': 'float'}, 'dtyp'),
-        ('macros', {'template': 'a + b', 'arg': ['a']}, 'arg'),
-        ('piecewise', {'over': 'x', 'links': [['v', 'p'], ['w', 'q']], 'convx': True}, 'convx'),
+        pytest.param({'foreach': ['x'], 'binary': True, 'integer': True}, 'both binary and integer', id='two-vtypes'),
     ],
 )
-def test_every_schema_model_rejects_unknown_keys(section, body, typo):
-    """Strictness is on the shared base, so no model can opt out by omission."""
-    raw = {'dimensions': {'x': {'values': [1]}}, section: {'thing': body}}
-    with pytest.raises(ValidationError, match=f"unknown key '{typo}'"):
+def test_a_contradictory_declaration_is_rejected(body, match):
+    with pytest.raises(ValidationError, match=match):
+        MathSchema.model_validate({'dimensions': {'x': {'values': [1]}}, 'variables': {'v': body}})
+
+
+def test_invalid_sense():
+    with pytest.raises(ValidationError, match=r'minimize|maximize'):
+        MathSchema.model_validate({'objectives': {'obj': {'sense': 'unknown', 'equations': [{'expression': 'v'}]}}})
+
+
+# ---------------------------------------------------------------------------
+# a misspelled key is a different model, so it is an error
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ('raw', 'match'),
+    [
+        # strictness lives on the shared `_StrictBlock` base, so no model can
+        # opt out of it by omission — one row per model to prove it
+        pytest.param({'dimenzions': {'x': {'values': [1]}}}, "unknown key 'dimenzions' in the top level", id='top'),
+        pytest.param({'dimensions': {'thing': {'dtypo': 'str'}}}, "unknown key 'dtypo'", id='dimension'),
+        pytest.param(
+            {'dimensions': {'x': {'values': [1]}}, 'parameters': {'thing': {'dims': ['x'], 'dtyp': 'float'}}},
+            "unknown key 'dtyp'",
+            id='parameter',
+        ),
+        pytest.param(
+            {'dimensions': {'x': {'values': [1]}}, 'macros': {'thing': {'template': 'a + b', 'arg': ['a']}}},
+            "unknown key 'arg'",
+            id='macro',
+        ),
+        pytest.param(
+            {
+                'dimensions': {'x': {'values': [1]}},
+                'piecewise': {'thing': {'over': 'x', 'links': [['v', 'p'], ['w', 'q']], 'convx': True}},
+            },
+            "unknown key 'convx'",
+            id='piecewise',
+        ),
+        pytest.param(
+            {'dimensions': {'x': {'values': [1]}}, 'variables': {'v': {'foreach': ['x'], 'bounds': {'lowerr': 0}}}},
+            "unknown key 'lowerr' in a bounds block",
+            id='nested-bounds',
+        ),
+        pytest.param(
+            {
+                'dimensions': {'x': {'values': [1]}},
+                'variables': {'v': {'foreach': ['x']}},
+                'constraints': {'c': {'foreach': ['x'], 'equations': [{'expresion': 'v >= 0'}]}},
+            },
+            "unknown key 'expresion' in an equation",
+            id='nested-equation',
+        ),
+    ],
+)
+def test_an_unknown_key_is_rejected(raw, match):
+    with pytest.raises(ValidationError, match=match):
         MathSchema.model_validate(raw)
 
 
-def test_nested_bounds_block_rejects_unknown_keys():
-    raw = {
-        'dimensions': {'x': {'values': [1]}},
-        'variables': {'v': {'foreach': ['x'], 'bounds': {'lowerr': 0}}},
-    }
-    with pytest.raises(ValidationError, match="unknown key 'lowerr' in a bounds block"):
-        MathSchema.model_validate(raw)
+def test_a_near_miss_is_named_and_anything_else_lists_the_valid_keys():
+    """A misspelled key used to be dropped, leaving the variable unbounded —
+    so the message has to be good enough to act on without reading the source."""
+    base = {'dimensions': {'x': {'values': [1]}}}
 
+    with pytest.raises(ValidationError, match=r"unknown key 'boundz'.*Did you mean 'bounds'"):
+        MathSchema.model_validate({**base, 'variables': {'v': {'foreach': ['x'], 'boundz': {'lower': 0}}}})
 
-def test_equation_block_rejects_unknown_keys():
-    raw = {
-        'dimensions': {'x': {'values': [1]}},
-        'variables': {'v': {'foreach': ['x']}},
-        'constraints': {'c': {'foreach': ['x'], 'equations': [{'expresion': 'v >= 0'}]}},
-    }
-    with pytest.raises(ValidationError, match="unknown key 'expresion' in an equation"):
-        MathSchema.model_validate(raw)
+    with pytest.raises(ValidationError, match='Valid keys: binary, bounds, foreach, integer, where'):
+        MathSchema.model_validate({**base, 'variables': {'v': {'foreach': ['x'], 'zzzz': 1}}})
 
 
 # ---------------------------------------------------------------------------
@@ -193,26 +194,31 @@ def test_coords_mapping_allows_two_coordinates_onto_one_dimension():
     assert s.dimensions['line'].coords == {'from': 'bus', 'to': 'bus'}
 
 
-def test_a_coordinate_target_must_be_declared():
-    raw = {'dimensions': {'generator': {'values': ['w'], 'coords': ['bus']}}}
-    with pytest.raises(ValidationError, match="targets undeclared dimension 'bus'"):
-        MathSchema.model_validate(raw)
-
-
-def test_a_coordinate_may_not_target_its_own_dimension():
-    raw = {'dimensions': {'generator': {'values': ['w'], 'coords': {'g': 'generator'}}}}
-    with pytest.raises(ValidationError, match="targets 'generator' itself"):
-        MathSchema.model_validate(raw)
-
-
-def test_a_coordinate_may_not_shadow_a_different_dimension():
-    """`coords: {bus: zone}` would read as a bus coordinate and be a zone one."""
-    raw = {
-        'dimensions': {
-            'bus': {'values': ['n']},
-            'zone': {'values': ['z']},
-            'generator': {'values': ['w'], 'coords': {'bus': 'zone'}},
-        }
-    }
-    with pytest.raises(ValidationError, match='shadows the dimension of the same name'):
-        MathSchema.model_validate(raw)
+@pytest.mark.parametrize(
+    ('dimensions', 'match'),
+    [
+        pytest.param(
+            {'generator': {'values': ['w'], 'coords': ['bus']}},
+            "targets undeclared dimension 'bus'",
+            id='target-undeclared',
+        ),
+        pytest.param(
+            {'generator': {'values': ['w'], 'coords': {'g': 'generator'}}},
+            "targets 'generator' itself",
+            id='target-self',
+        ),
+        pytest.param(
+            # `coords: {bus: zone}` would read as a bus coordinate and be a zone one
+            {
+                'bus': {'values': ['n']},
+                'zone': {'values': ['z']},
+                'generator': {'values': ['w'], 'coords': {'bus': 'zone'}},
+            },
+            'shadows the dimension of the same name',
+            id='shadows-a-dimension',
+        ),
+    ],
+)
+def test_a_coordinate_that_does_not_name_a_target_is_rejected(dimensions, match):
+    with pytest.raises(ValidationError, match=match):
+        MathSchema.model_validate({'dimensions': dimensions})
