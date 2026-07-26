@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling>=1.27", "hatch-vcs"]  # 1.27 is the first with PEP 639 license fields
 build-backend = "hatchling.build"
 
 [project]
@@ -8,13 +8,13 @@ name = "linopy-yaml"
 dynamic = ["version"]
 description = "Declarative optimisation: YAML math on a streaming relational engine"
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Development Status :: 3 - Alpha",
-    "License :: OSI Approved :: MIT License",
 ]
 requires-python = ">=3.11"
 dependencies = [
