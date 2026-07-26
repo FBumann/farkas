@@ -44,7 +44,7 @@ def test_dispatch_yaml_agrees_variable_by_variable(dispatch_yaml, dispatch_input
         # primal agrees with the eager solution variable-by-variable, not only
         # in total — an objective can agree while the dispatch behind it differs
         eager_p = run.model.solution['p'].to_dataframe(name='value').reset_index()
-        rel_p = run.sol.primal('p')
+        rel_p = run.result.primal('p')
         merged = eager_p.merge(rel_p, on=['snapshot', 'generator'], suffixes=('_eager', '_rel'))
         # masked (gas is unmasked; all p_max > 0 here) rows align 1:1
         assert len(merged) == len(rel_p)

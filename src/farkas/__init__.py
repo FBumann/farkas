@@ -10,11 +10,11 @@ Example::
 
     import farkas as ly
 
-    # Solution owns the duckdb executor backing primal/to_* — close it
-    with ly.solve('model.yaml', {'p_max': 'p_max.parquet', 'load': 'load.parquet'}) as sol:
-        sol.objective
-        sol.primal('p')  # tidy DataFrame
-        sol.to_dataarray('p')  # labelled, for array post-processing
+    # Result owns the duckdb executor backing primal/to_* — close it
+    with ly.solve('model.yaml', {'p_max': 'p_max.parquet', 'load': 'load.parquet'}) as result:
+        result.objective
+        result.primal('p')  # tidy DataFrame
+        result.to_dataarray('p')  # labelled, for array post-processing
 """
 
 from importlib.metadata import PackageNotFoundError

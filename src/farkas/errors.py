@@ -62,11 +62,22 @@ class DataError(LinopyYamlError):
     """Data bound to a valid model is missing or the wrong shape."""
 
 
+class NoSolutionError(LinopyYamlError):
+    """The solve returned no values to read — infeasible, unbounded, errored.
+
+    Neither the model nor the data was wrong; the answer is that there is no
+    answer. It has its own class because the caller's response differs: a
+    scenario sweep catches this and records the outcome, where a
+    :class:`LanguageError` means the file needs editing.
+    """
+
+
 __all__ = [
     'DataError',
     'DimensionError',
     'LanguageError',
     'LinopyYamlError',
+    'NoSolutionError',
     'PiecewiseExpansionError',
     'SchemaError',
 ]

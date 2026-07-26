@@ -63,7 +63,7 @@ src/farkas/
 ```python
 import farkas as ly
 
-# Solution holds the duckdb executor that backs primal/to_* — use a with block
+# Result holds the duckdb executor that backs primal/to_* — use a with block
 # (or sol.close()); ly.build(...) returns the live executor for multiple sinks.
 with ly.solve("model.yaml", {"p_max": "p_max.parquet", "load": "load.parquet"}) as sol:
     sol.objective

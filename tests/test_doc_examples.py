@@ -4,7 +4,7 @@ Every example here was wrong at some point: ``ly.write_lp`` never existed, a
 dimension index was passed as a bare ``RangeIndex`` where the streaming lane
 wants a ``coords=`` entry, the ``piecewise:`` block carried a sign on three
 links while the prose two lines below said a sign needs exactly two, and four
-module docstrings leaked the executor by never closing the ``Solution``. Three
+module docstrings leaked the executor by never closing the ``Result``. Three
 separate hand sweeps found three separate batches, which is the argument for
 this file: an example nobody runs is a claim nobody checked.
 
@@ -50,7 +50,7 @@ import pytest
 import yaml
 
 import farkas as ly
-from farkas.relational.executor import DuckdbExecutor, Solution
+from farkas.relational.executor import DuckdbExecutor, Result
 from farkas.schema import MathSchema
 
 try:
@@ -70,7 +70,7 @@ TRACKED = ['README.md', 'SPEC.md', 'ARCHITECTURE.md', 'ROADMAP.md']
 ROOTS: dict[str, Any] = {
     'ly': ly,
     'farkas_linopy': linopy_lane,
-    'sol': Solution,
+    'result': Result,
     'ex': DuckdbExecutor,
     'schema': MathSchema,
 }
@@ -187,7 +187,7 @@ def test_python_block_parses(block: Block) -> None:
 
 @pytest.mark.parametrize('block', _blocks('python'), ids=lambda b: b.where)
 def test_python_block_uses_real_api(block: Block) -> None:
-    """Every ``ly.x`` / ``sol.x`` an example shows must exist.
+    """Every ``ly.x`` / ``result.x`` an example shows must exist.
 
     This is the check that would have caught ``ly.write_lp``, which was
     documented for months and never existed.
@@ -225,14 +225,14 @@ def test_readme_example_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     ns: dict[str, Any] = {}
     exec(compile(script.code, 'README.md', 'exec'), ns)
 
-    sol = ns['sol']
-    assert sol.status == 'Optimal'
+    result = ns['result']
+    assert result.is_ok
 
     # the README states the objective in a trailing comment; keep them in sync
     claimed = re.search(r'#\s*([0-9]+\.?[0-9]*)\s*$', script.code, re.MULTILINE)
     assert claimed, 'README example no longer states its objective in a comment'
-    assert sol.objective == pytest.approx(float(claimed.group(1))), (
-        f'README claims objective {claimed.group(1)}, run produced {sol.objective}'
+    assert result.objective == pytest.approx(float(claimed.group(1))), (
+        f'README claims objective {claimed.group(1)}, run produced {result.objective}'
     )
 
 

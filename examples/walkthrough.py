@@ -155,10 +155,10 @@ def main() -> None:
         # --------------------------------------------------------------
         banner(6, 'sink: batches -> highspy -> solution tables', 'relational/executor.py')
         # Read back by label join, never densified.
-        sol = ex.solve()
-        print(f'    status     {sol.status}')
-        print(f'    objective  {sol.objective:,.1f}')
-        print(_indent(sol.primal('p').head(6)))
+        result = ex.solve()
+        print(f'    status     {result.status} ({result.termination_condition})')
+        print(f'    objective  {result.objective:,.1f}')
+        print(_indent(result.primal('p').head(6)))
 
     # ------------------------------------------------------------------
     banner(7, 'and what the language refuses', 'validation.py, lowering.py')

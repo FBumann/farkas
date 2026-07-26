@@ -20,23 +20,23 @@ from tests.conftest import schema_of, solve_lp_file
 
 def test_solve(dispatch_yaml, dispatch_inputs):
     sources, coords = dispatch_inputs
-    sol = ly.solve(dispatch_yaml, sources, coords=coords, memory_limit='256MB')
+    result = ly.solve(dispatch_yaml, sources, coords=coords, memory_limit='256MB')
     try:
-        assert sol.status == 'Optimal'
-        assert np.isfinite(sol.objective)
-        primal = sol.primal('p')
+        assert result.is_ok
+        assert np.isfinite(result.objective)
+        primal = result.primal('p')
         balance = primal.groupby('snapshot')['value'].sum().sort_index()
         assert np.allclose(balance, sources['load'].sort_index())
     finally:
-        sol.close()
+        result.close()
 
 
 def test_build_context_manager_and_write_lp(dispatch_yaml, dispatch_inputs, tmp_path):
     sources, coords = dispatch_inputs
     with ly.build(dispatch_yaml, sources, coords=coords) as ex:
-        sol = ex.solve()
-        assert sol.status == 'Optimal'
-        objective_direct = sol.objective
+        result = ex.solve()
+        assert result.is_ok
+        objective_direct = result.objective
 
     lp = ly.write(dispatch_yaml, sources, tmp_path / 'm.lp', coords=coords)
     assert solve_lp_file(lp) == pytest.approx(objective_direct, rel=1e-9)
@@ -52,15 +52,15 @@ def test_parquet_path_sources(dispatch_yaml, dispatch_inputs, tmp_path):
         df.to_parquet(p, index=False)
         paths[name] = str(p)
 
-    sol = ly.solve(dispatch_yaml, paths, coords=coords)
+    result = ly.solve(dispatch_yaml, paths, coords=coords)
     try:
-        assert sol.status == 'Optimal'
+        assert result.is_ok
     finally:
-        sol.close()
+        result.close()
 
     ref = ly.solve(dispatch_yaml, sources, coords=coords)
     try:
-        assert sol.objective == pytest.approx(ref.objective, rel=1e-9)
+        assert result.objective == pytest.approx(ref.objective, rel=1e-9)
     finally:
         ref.close()
 
@@ -76,7 +76,7 @@ def test_runtime_is_linopy_free(dispatch_yaml):
         assert "linopy" not in sys.modules, "package import pulled in linopy"
         assert "xarray" not in sys.modules, "package import pulled in xarray"
 
-        sol = ly.solve(
+        result = ly.solve(
             {str(dispatch_yaml)!r},
             {{
                 "p_max": pd.Series({{"wind": 100.0, "solar": 60.0, "gas": 200.0}}),
@@ -87,8 +87,8 @@ def test_runtime_is_linopy_free(dispatch_yaml):
             }},
             coords={{"snapshot": pd.RangeIndex(3, name="snapshot")}},
         )
-        assert sol.status == "Optimal"
-        sol.close()
+        assert result.is_ok
+        result.close()
         assert "linopy" not in sys.modules, "solve pulled in linopy"
         assert "xarray" not in sys.modules, "solve pulled in xarray"
         print("LINOPY_FREE_OK")
@@ -159,16 +159,16 @@ def test_solution_context_manager_and_to_parquet(dispatch_yaml, dispatch_inputs,
     import pyarrow.parquet as pq
 
     sources, coords = dispatch_inputs
-    with ly.solve(dispatch_yaml, sources, coords=coords) as sol:
-        assert sol.status == 'Optimal'
-        written = sol.to_parquet(tmp_path / 'solution')
+    with ly.solve(dispatch_yaml, sources, coords=coords) as result:
+        assert result.is_ok
+        written = result.to_parquet(tmp_path / 'solution')
         assert set(written) == {'p'}
         table = pq.read_table(written['p'])
         assert set(table.column_names) == {'snapshot', 'generator', 'value'}
-        assert table.num_rows == sol.primal('p').shape[0]
+        assert table.num_rows == result.primal('p').shape[0]
     # closed by the with-block: the workdir is gone
     with pytest.raises(Exception):  # noqa: B017 — any error is fine, it must not silently work
-        sol.primal('p')
+        result.primal('p')
 
 
 def test_no_helper_registry_anywhere():
@@ -192,9 +192,9 @@ def test_solution_to_dataarray(dispatch_yaml, dispatch_inputs):
     pytest.importorskip('xarray')
     sources, coords = dispatch_inputs
 
-    with ly.solve(dispatch_yaml, sources, coords=coords) as sol:
-        arr = sol.to_dataarray('p')
-        tidy = sol.primal('p')
+    with ly.solve(dispatch_yaml, sources, coords=coords) as result:
+        arr = result.to_dataarray('p')
+        tidy = result.primal('p')
 
     assert arr.name == 'p'  # not 'value', the tidy column it came from
     assert sorted(arr.dims) == ['generator', 'snapshot']
@@ -209,9 +209,9 @@ def test_solution_to_dataset(dispatch_yaml, dispatch_inputs):
     pytest.importorskip('xarray')
     sources, coords = dispatch_inputs
 
-    with ly.solve(dispatch_yaml, sources, coords=coords) as sol:
-        ds = sol.to_dataset('p')
-        tidy = sol.primal('p')
+    with ly.solve(dispatch_yaml, sources, coords=coords) as result:
+        ds = result.to_dataset('p')
+        tidy = result.primal('p')
 
     assert list(ds.data_vars) == ['p']
     assert sorted(ds['p'].dims) == ['generator', 'snapshot']
@@ -246,9 +246,9 @@ def test_to_dataset_defaults_to_every_variable():
         'load': pd.Series(np.full(n, 90.0), index=pd.RangeIndex(n, name='snapshot')),
     }
 
-    with ly.solve(TWO_VARIABLE_MODEL, sources, coords={'snapshot': pd.RangeIndex(n, name='snapshot')}) as sol:
-        ds = sol.to_dataset()
-        subset = sol.to_dataset('shed')
+    with ly.solve(TWO_VARIABLE_MODEL, sources, coords={'snapshot': pd.RangeIndex(n, name='snapshot')}) as result:
+        ds = result.to_dataset()
+        subset = result.to_dataset('shed')
 
     assert set(ds.data_vars) == {'p', 'shed'}
     assert sorted(ds['p'].dims) == ['generator', 'snapshot']

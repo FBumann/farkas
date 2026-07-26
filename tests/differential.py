@@ -22,7 +22,7 @@ Usage — the executor stays open for the length of the ``with`` block, so
 per-variable primal checks live inside it::
 
     with differential(NONCONVEX_YAML, data, coords, lp=True) as run:
-        assert run.sol.primal('op_cost') ...
+        assert run.result.primal('op_cost') ...
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ from tests.oracle import farkas_linopy, linopy
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
 
-    from farkas.relational.executor import Solution
+    from farkas.relational.executor import Result
     from farkas.schema import MathSchema
 
 #: Both lanes hand the same numbers to the same solver, so they must agree to
@@ -63,7 +63,7 @@ class Agreement:
     model: linopy.Model
     """The eager model, for structural assertions (labels, masks, solution)."""
 
-    sol: Solution
+    result: Result
     """The relational solution; live until the ``with`` block exits."""
 
     schema: MathSchema
@@ -102,9 +102,9 @@ def differential(
 
         with DuckdbExecutor(memory_limit='256MB') as ex:
             ex.build(lower_program(schema), tidy_sources(schema, data, coords))
-            sol = ex.solve()
-            assert sol.status == 'Optimal'
-            assert sol.objective == pytest.approx(oracle, rel=rel)
+            result = ex.solve()
+            assert result.is_ok
+            assert result.objective == pytest.approx(oracle, rel=rel)
 
             lp_path = None
             if lp:
@@ -112,7 +112,7 @@ def differential(
                 ex.write_lp(lp_path)
                 assert solve_lp_file(lp_path) == pytest.approx(oracle, rel=rel)
 
-            yield Agreement(oracle=oracle, model=m, sol=sol, schema=schema, executor=ex, lp=lp_path)
+            yield Agreement(oracle=oracle, model=m, result=result, schema=schema, executor=ex, lp=lp_path)
 
 
 def _write(path: Path, model: str | dict[str, Any]) -> Path:

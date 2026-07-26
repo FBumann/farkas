@@ -14,16 +14,48 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from farkas.relational.status import SolveStatus
+
 if TYPE_CHECKING:
     from farkas.relational.sinks.tables import ModelTables
 
 
-def solve_direct(model: ModelTables, batch_rows: int = 100_000) -> tuple[str, float]:
+#: HiGHS model status -> termination condition. Copied from linopy's own
+#: ``Highs.CONDITION_MAP``; ``tests/test_solve_status.py`` asserts it still
+#: matches, so a HiGHS release that adds a status shows up as a failure here
+#: rather than as a silent ``unknown``.
+_CONDITION_OF_HIGHS_STATUS = {
+    'kNotset': 'unknown',
+    'kLoadError': 'internal_solver_error',
+    'kModelError': 'internal_solver_error',
+    'kPresolveError': 'internal_solver_error',
+    'kSolveError': 'internal_solver_error',
+    'kPostsolveError': 'internal_solver_error',
+    'kModelEmpty': 'unknown',
+    'kMemoryLimit': 'resource_interrupt',
+    'kOptimal': 'optimal',
+    'kInfeasible': 'infeasible',
+    'kUnboundedOrInfeasible': 'infeasible_or_unbounded',
+    'kUnbounded': 'unbounded',
+    'kObjectiveBound': 'terminated_by_limit',
+    'kObjectiveTarget': 'terminated_by_limit',
+    'kTimeLimit': 'time_limit',
+    'kIterationLimit': 'iteration_limit',
+    'kSolutionLimit': 'terminated_by_limit',
+    'kInterrupt': 'user_interrupt',
+    'kUnknown': 'unknown',
+}
+
+
+def solve_direct(model: ModelTables, batch_rows: int = 100_000) -> tuple[SolveStatus, float]:
     """Stream the model into HiGHS and solve it. Returns ``(status, objective)``.
 
-    Leaves the primal values in a ``sol`` table on the connection, so reading
-    results back stays a label join like every other read — the caller owns
-    the mapping from solver column index to coordinates.
+    On a solve that left values worth reading, the primal lands in a ``sol``
+    table on the connection, so reading results back stays a label join like
+    every other read — the caller owns the mapping from solver column index to
+    coordinates. On any other outcome there is nothing to store: HiGHS still
+    hands back a full-length vector of zeros, and keeping it would only make it
+    reachable.
     """
     import highspy
     import numpy as np
@@ -76,7 +108,16 @@ def solve_direct(model: ModelTables, batch_rows: int = 100_000) -> tuple[str, fl
         h.changeObjectiveSense(highspy.ObjSense.kMaximize)
     h.run()
 
-    status = str(h.getModelStatus()).rsplit('.', 1)[-1].removeprefix('k')
+    highs_status = str(h.getModelStatus()).rsplit('.', 1)[-1]
+    status = SolveStatus(
+        termination_condition=_CONDITION_OF_HIGHS_STATUS.get(highs_status, 'unknown'),
+        solver_wording=h.modelStatusToString(h.getModelStatus()),
+    )
+    if not status.is_ok:
+        # linopy's convention, and an honest one: nan is a sentinel that
+        # propagates through a scenario sweep, where 0.0 reads as an answer
+        return status, float('nan')
+
     objective = h.getInfo().objective_function_value + model.objective_constant
 
     import pyarrow as pa
