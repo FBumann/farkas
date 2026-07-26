@@ -18,10 +18,14 @@ Example::
     import linopy_yaml as ly
 
     # Solution holds the executor backing primal/to_* — use a with block
-    with ly.solve("model.yaml", {"p_max": "p_max.parquet", ...},
-                  coords={"snapshot": range(8760)}, memory_limit="2GB") as sol:
+    with ly.solve(
+        'model.yaml',
+        {'p_max': 'p_max.parquet', 'load': 'load.parquet'},
+        coords={'snapshot': range(8760)},
+        memory_limit='2GB',
+    ) as sol:
         sol.objective
-        sol.primal("p")      # tidy DataFrame (coords..., value)
+        sol.primal('p')  # tidy DataFrame (coords..., value)
 """
 
 from __future__ import annotations
