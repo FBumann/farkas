@@ -98,16 +98,28 @@ static checks and CI's bare-install job proves the dependency claims.*
    tests an oracle rather than a comparison of dialects. A construct outside the
    language is a load error naming the construct and its rewrite, never a
    redirection to the other lane.
-4. **Peak memory is a function of the configured budget, not of model size.**
-   That is the invariant; "nothing full-model in process" is the *mechanism*
-   that delivers it at scale — build under a duckdb `memory_limit`, hand off in
+4. **Nothing full-model is ever resident in Python.** That is the invariant, and
+   it is the mechanism too — build under a duckdb `memory_limit`, hand off in
    batches, read back by label join, never materialise dense arrays or a full
-   CSR. Two residencies are exempt because neither scales with the budget's
-   purpose: the solver's own model when solving in-process, and a model small
-   enough that the budget exceeds it (the planned in-memory executor holds
-   everything by design — ROADMAP Track 5). A new feature is judged against the
-   invariant, not the mechanism: the question is whether peak still tracks the
-   budget, not whether some array was briefly contiguous.
+   CSR. What it buys is measured, not assumed: at 35.6M variables the eager lane
+   peaks at 6.28 GB against the streaming lane's 0.76 GB, and the LP write that
+   nearly triples the first costs the second nothing
+   ([benchmarks](docs/benchmarks.md), reproducible with `bench/memory.py`).
+
+   `memory_limit` is a **lever, not a ceiling** — do not read it as a bound.
+   Measured: a ~81 MiB floor the budget never touches, plus tracked usage that
+   overshoots the configured limit by up to 3.3x at tight settings and saturates
+   once the working set fits, so peak tracks
+   `min(working set, a small multiple of the budget)`. A budget too low to build
+   under raises `OutOfMemoryException` rather than spilling harder.
+
+   Two residencies are exempt because neither scales with the budget's purpose:
+   the solver's own model when solving in-process, and a model small enough that
+   the budget exceeds it (the planned in-memory executor holds everything by
+   design — ROADMAP Track 5). A new feature is judged on the invariant and then
+   on the numbers: whether it keeps the full model out of process, and whether
+   `bench/memory.py` still shows peak growing far slower than the model at a
+   fixed budget — not whether some array was briefly contiguous.
 5. **Backend-visible YAML files are self-contained.** No Python-side state
    (registries, session objects) may change what a file means.
 6. **The public interface is a declared model, not a Python API.** YAML is the
@@ -234,11 +246,13 @@ side effect of an expression; formulations are model *transformations*. Variable
 the streaming lane. Reimplementing linopy's reformulation passes inside the plan
 is explicitly rejected: that duplicates the library this package consumes.
 
-**Chunk only what cannot spill.** duckdb's joins and plain numeric hash
-aggregates spill under `memory_limit` on their own, so only label assignment and
-the LP-text `string_agg` need hand-managed partitioning, and the database must
-be file-backed. The measurements behind those rules — and the operators that
-OOM instead of spilling — are in
+**Chunk only what cannot spill.** duckdb's joins spill under `memory_limit` on
+their own, so label assignment and the LP-text `string_agg` are hand-partitioned
+and most operators are not, and the database must be file-backed. The rule has a
+measured exception: the `A` assembly's hash aggregate spills, but not far enough
+to hold a tight budget at scale, which is what sets the floor on how low a budget
+can go. The measurements behind these rules — and the operators that OOM instead
+of spilling — are in
 [docs/benchmarks.md](docs/benchmarks.md#operational-findings).
 
 **Sinks are capped, explicitly.** Today every sink expresses the same three

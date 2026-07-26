@@ -4,9 +4,10 @@
 
 Write the math in YAML, bind data at runtime, solve. Today that means linear and
 mixed-integer programs. The model itself is never a Python object: it is tidy
-tables in duckdb, built under a hard `memory_limit` and streamed straight into
-the solver, so build peak RAM is set by a budget you choose rather than by the
-size of the model. A 107-million-variable dispatch model builds in ~0.6 GB
+tables in duckdb, built under a `memory_limit` you choose and streamed straight
+into the solver, so build peak RAM tracks that budget instead of the size of the
+model. A 35.6-million-variable dispatch model builds and writes its LP in
+0.76 GB, against 6.28 GB for the same model built eagerly
 ([benchmarks](docs/benchmarks.md)).
 
 And because the math is a closed spec known before any data is touched, every
@@ -89,9 +90,11 @@ exposing the Arrow PyCapsule protocol is accepted without conversion.
 - **Declarative math** — readable without knowing the implementation, and
   self-contained: no Python state changes what a file means. It diffs cleanly in
   review and travels as a research artefact.
-- **Memory as a config knob** — `memory_limit` is an invariant, not a hint. Masks
-  are row absence rather than dense arrays, labels *are* the solver's own row and
-  column indices, and no full-model object is ever resident in Python.
+- **Memory as a config knob** — no full-model object is ever resident in Python:
+  masks are row absence rather than dense arrays, and labels *are* the solver's
+  own row and column indices. `memory_limit` (with `chunk_rows`) is the lever
+  that trades peak against time — a real one, [measured](docs/benchmarks.md),
+  though not a hard ceiling on process RSS.
 - **Fail early, fail loud** — every expression, `where` string and even *uncalled*
   macro template is parsed and name-checked before a single source is bound.
   Errors name the problem and its rewrite; nothing falls back silently.
