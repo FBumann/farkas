@@ -231,8 +231,21 @@ def run_child(phase: str, cfg: dict[str, Any]) -> dict[str, Any]:
     for line in proc.stdout.splitlines():
         if line.startswith(MARKER):
             return json.loads(line[len(MARKER) :])
-    tail = (proc.stderr or proc.stdout).strip().splitlines()
-    return {'error': tail[-1] if tail else f'child exited {proc.returncode} with no output'}
+    return {'error': _exception_line(proc.stderr or proc.stdout, proc.returncode), 'stderr': proc.stderr[-4000:]}
+
+
+def _exception_line(output: str, returncode: int) -> str:
+    """The line that says what went wrong, not the last line printed.
+
+    duckdb's OOM message ends with a documentation URL, so the naive "tail -1"
+    reports the footer and loses the operator that could not be spilled — which
+    is the only part worth recording.
+    """
+    lines = [line.strip() for line in output.strip().splitlines() if line.strip()]
+    for line in reversed(lines):
+        if 'Error' in line or 'error' in line:
+            return line
+    return lines[-1] if lines else f'child exited {returncode} with no output'
 
 
 def _mib(n: float) -> str:
