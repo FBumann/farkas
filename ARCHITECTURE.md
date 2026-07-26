@@ -56,8 +56,10 @@ a `Program` or raises `ly.LanguageError` — so it cannot drift from what the
 engine supports. Errors split model from run: everything under `LanguageError`
 is decidable without data, `DataError` is what a source failed to supply, and
 both are `LinopyYamlError` (`errors.py`). `ly.check()` is exactly parse
-→ validate → expand → lower with no data bound, so a model repository can
-compile-check its math in CI.
+→ expand → validate → lower with no data bound, so a model repository can
+compile-check its math in CI. Expansion precedes validation in **both** lanes,
+because a formulation emits declarations and those are language too — a stray
+dim in generated math is the same error as a stray dim in a written one.
 
 ## Hard rules
 
