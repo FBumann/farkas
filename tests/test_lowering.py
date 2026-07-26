@@ -15,7 +15,7 @@ import pandas as pd
 import pytest
 import yaml as pyyaml
 
-from linopy_yaml.errors import LanguageError
+from linopy_yaml.errors import DataError, LanguageError
 from linopy_yaml.lowering import lower_program, tidy_sources
 from linopy_yaml.relational import (
     DuckdbExecutor,
@@ -144,12 +144,23 @@ def test_unknown_where_name_is_an_error_in_both_lanes(dispatch_schema):
         _lower_where('no_such_param', Namespace.of(dispatch_schema), 't')
 
 
-def test_sum_over_absent_dim_is_noop(dispatch_schema):
-    # eager parity: sum(load, over=generator) leaves load unchanged
+def test_sum_over_absent_dim_raises_at_lowering_too(dispatch_schema):
+    """A no-op sum is an error at *every* layer, not only at the front door.
+
+    SPEC §"dims" and alpha.4 settled the language question: summing over a dim
+    the operand does not carry builds a model that solves and is wrong, so it
+    is an error rather than the silent identity it once was. ``check_schema``
+    raises it for anything entering through ``ly.check``; this pins that
+    ``_lower_expr`` does not quietly disagree one layer down, which is what it
+    used to do — it returned the operand unchanged, and the comment claiming
+    eager parity outlived the parity.
+    """
+    from linopy_yaml.errors import DimensionError
     from linopy_yaml.lowering import _lower_expr
 
     ast = resolved('sum(load, over=generator)', dispatch_schema)
-    assert _lower_expr(ast, dispatch_schema, 't') == Parameter('load')
+    with pytest.raises(DimensionError, match='no-op that builds and solves wrong'):
+        _lower_expr(ast, dispatch_schema, 't')
 
 
 def test_unsupported_features_rejected(dispatch_schema):
@@ -166,3 +177,45 @@ def test_unsupported_features_rejected(dispatch_schema):
     schema_dict['variables']['p']['bounds'] = {}
     program = lower_program(MathSchema(**schema_dict))
     assert program.variable('p').variable_type == 'binary'
+
+
+NETWORK = {
+    'dimensions': {'from_bus': {'values': ['n1', 'n2']}, 'to_bus': {'values': ['n1', 'n2']}},
+    'parameters': {'cap': {'dims': ['from_bus', 'to_bus']}},
+    'variables': {'f': {'foreach': ['from_bus', 'to_bus'], 'bounds': {'lower': 0, 'upper': 'cap'}}},
+    'objectives': {'c': {'sense': 'maximize', 'equations': [{'expression': 'f'}]}},
+}
+
+#: Asymmetric, so a transposition changes the answer rather than hiding in it.
+CAPS = {('n1', 'n1'): 1.0, ('n2', 'n1'): 5.0, ('n1', 'n2'): 500.0, ('n2', 'n2'): 1.0}
+
+
+def _caps(names):
+    return pd.Series(list(CAPS.values()), index=pd.MultiIndex.from_tuples(list(CAPS), names=names))
+
+
+def _tidy_cap(names):
+    schema = MathSchema(**NETWORK)
+    # tidy_sources normalises to Arrow, so read the columns back by name —
+    # which is the point: a transposition would show up as swapped values
+    table = tidy_sources(schema, {'cap': _caps(names)})['cap'].to_pydict()
+    return dict(zip(zip(table['from_bus'], table['to_bus'], strict=True), table['value'], strict=True))
+
+
+def test_a_named_index_binds_by_name_not_position():
+    """Two dims over the same label space make a transposed index type-check
+    and cover every coordinate, so nothing downstream can catch it. Was: the
+    declared dims overwrote the user's level names and the matrix came out
+    transposed, with no error.
+    """
+    assert _tidy_cap(['from_bus', 'to_bus']) == CAPS
+    assert _tidy_cap(['to_bus', 'from_bus']) == {(f, t): v for (t, f), v in CAPS.items()}
+
+
+def test_an_unnamed_index_still_binds_positionally():
+    assert _tidy_cap([None, None]) == CAPS
+
+
+def test_an_index_name_outside_the_declared_dims_is_an_error():
+    with pytest.raises(DataError, match='do not match its declared dims'):
+        _tidy_cap(['banana', 'to_bus'])

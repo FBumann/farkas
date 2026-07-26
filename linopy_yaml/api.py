@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Any
 
 from linopy_yaml._yaml import read_yaml
 from linopy_yaml.lowering import lower_program, tidy_sources
+from linopy_yaml.piecewise import expand_piecewise
 from linopy_yaml.relational.executor import DuckdbExecutor, Solution
 from linopy_yaml.schema import MathSchema
 from linopy_yaml.validation import validate_expressions
@@ -48,7 +49,16 @@ def load_schema(model: str | Path | dict[str, Any] | MathSchema) -> MathSchema:
 
     Accepts a YAML file path, an already-parsed dict, or a ``MathSchema``.
     Validation is complete at this point: schema shape, every expression and
-    where string, every named expression and macro template.
+    where string, every named expression and macro template — and every
+    declaration a formulation emits, since those are language too. That is why
+    expansion runs *before* validation here, the order the compat lane already
+    uses: validating the file as written checks a strict subset of the model
+    that gets built.
+
+    Returns the schema *as the file declares it*, with ``piecewise:`` blocks
+    intact — expansion is idempotent and each lane redoes it, while the
+    curvature data guard needs the blocks themselves
+    (``validate_piecewise_data``).
     """
     if isinstance(model, (list, tuple)):
         msg = (
@@ -62,12 +72,12 @@ def load_schema(model: str | Path | dict[str, Any] | MathSchema) -> MathSchema:
         schema = MathSchema(**model)
     else:
         schema = MathSchema(**read_yaml(Path(model)))
-    validate_expressions(schema)
+    validate_expressions(expand_piecewise(schema))
     return schema
 
 
 def check(model: str | Path | dict[str, Any] | MathSchema) -> MathSchema:
-    """Compile-check a model without data: parse, validate, expand, lower.
+    """Compile-check a model without data: parse, expand, validate, lower.
 
     Lowering needs no sources, so this works on a bare YAML file — the CI
     verb for model repositories. Raises :class:`LanguageError` when the model

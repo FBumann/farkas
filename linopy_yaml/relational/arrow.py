@@ -37,9 +37,13 @@ def as_table(obj: object, dims: Sequence[str] = ()) -> Any | None:
 
     import pyarrow as pa
 
-    if isinstance(obj, bool):  # a bool is an int; nothing here wants one
-        return None
-    if isinstance(obj, (int, float)) and not dims:
+    # a bool is an int, so it is caught first — and kept boolean rather than
+    # widened to a float. A bool parameter is a mask, and the executor reads
+    # its truthiness from the column *type*: as a float it would silently fall
+    # back to the present-and-finite rule instead (#47).
+    if isinstance(obj, bool) and not dims:
+        return pa.table({'value': pa.array([obj], type=pa.bool_())})
+    if isinstance(obj, (int, float)) and not isinstance(obj, bool) and not dims:
         return pa.table({'value': pa.array([float(obj)], type=pa.float64())})
     if isinstance(obj, pa.Table):
         return obj

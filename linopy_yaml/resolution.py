@@ -33,7 +33,7 @@ from linopy_yaml.expression_parser import (
     UnaryOperatorNode,
     VariableNode,
 )
-from linopy_yaml.helpers import BUILTIN_NAMES
+from linopy_yaml.helpers import BUILTINS, call_shape_error
 from linopy_yaml.where_parser import (
     AndNode,
     BooleanLiteralNode,
@@ -51,13 +51,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
     from linopy_yaml.schema import MathSchema
-
-#: helper kwargs whose *value* names a dimension — ``sum(x, over=generator)``
-_DIM_VALUE_KWARGS: dict[str, tuple[str, ...]] = {'sum': ('over',), 'group_sum': ('over',)}
-
-#: helper kwargs whose *value* names a coordinate on a sibling ``over=`` dim —
-#: ``group_sum(x, over=line, by=to)``
-_COORDINATE_VALUE_KWARGS: dict[str, tuple[str, ...]] = {'group_sum': ('by',)}
 
 
 class Namespace:
@@ -173,6 +166,10 @@ def resolve_expression(
 
     Appends to *errors* and returns ``None`` if anything failed to resolve, so
     a caller collecting problems across a whole schema reports them together.
+
+    Helper *call shapes* are checked here too (``helpers.call_shape_error``).
+    Arity is a language rule, and this is the pass every consumer goes through,
+    so neither backend has to state a signature a second time.
     """
     before = len(errors)
     if isinstance(node, ComparisonNode):
@@ -223,22 +220,24 @@ def _resolve_arith(node: ArithmeticNode, ns: Namespace, context: str, errors: li
         )
 
     if isinstance(node, FunctionCallNode):
-        if node.name not in BUILTIN_NAMES:
+        if node.name not in BUILTINS:
             from linopy_yaml.helpers import unknown_helper_message
 
             errors.append(f'{context}: {unknown_helper_message(node.name)}')
             return node
+        builtin = BUILTINS[node.name]
+        shape_error = call_shape_error(node.name, len(node.args), node.kwargs)
+        if shape_error is not None:
+            errors.append(f'{context}: {shape_error}')
         args = [_resolve_arith(a, ns, context, errors) for a in node.args]
         kwargs: dict[str, ArithmeticNode] = {}
-        dim_valued = _DIM_VALUE_KWARGS.get(node.name, ())
-        coordinate_valued = _COORDINATE_VALUE_KWARGS.get(node.name, ())
         for key, value in node.kwargs.items():
             # roll(x, snapshot=1): the dim is the key, so there is no node to type
-            if node.name in _DIM_KEY_HELPERS and key not in ns.dimensions:
+            if builtin.dimension_is_key and key not in ns.dimensions:
                 errors.append(_undeclared_dim(context, node.name, f'{key}=...', key, ns))
-            if key in dim_valued:
+            if key in builtin.dimension_kwargs:
                 kwargs[key] = _resolve_dim_ref(value, ns, context, node.name, key, errors)
-            elif key in coordinate_valued:
+            elif key in builtin.coordinate_kwargs:
                 # scoped to the sibling over= dim, so that kwarg has to be read
                 # here rather than resolved on its own
                 kwargs[key] = _resolve_coordinate_ref(
@@ -249,10 +248,6 @@ def _resolve_arith(node: ArithmeticNode, ns: Namespace, context: str, errors: li
         return FunctionCallNode(node.name, args, kwargs)
 
     assert_never(node)
-
-
-#: helpers whose keyword *key* names a dimension — ``roll(x, snapshot=1)``
-_DIM_KEY_HELPERS = frozenset({'roll', 'shift'})
 
 
 def _undeclared_dim(context: str, helper: str, shown: str, name: str, ns: Namespace) -> str:

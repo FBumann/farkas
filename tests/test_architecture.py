@@ -12,11 +12,18 @@ from pathlib import Path
 
 PKG = Path(__file__).parent.parent / 'linopy_yaml'
 
-#: The compat/oracle lane — the ONLY modules allowed to import linopy/xarray
-#: at module level (they load only via `import linopy_yaml.compat`).
-COMPAT_LANE = {'builder.py', 'loader.py', 'compat.py'}
-
 FORBIDDEN_RUNTIME = {'linopy', 'xarray'}
+
+
+def _in_compat_lane(path: Path) -> bool:
+    """The compat/oracle lane — the ONLY modules allowed to import linopy or
+    xarray at module level (they load only via ``import linopy_yaml.compat``).
+
+    Structural, not a filename allowlist: membership is "lives under
+    ``compat/``". A new eager-lane module therefore cannot land outside the
+    fence by being spelled differently.
+    """
+    return 'compat' in path.relative_to(PKG).parts
 
 
 def _module_level_imports(path: Path) -> set[str]:
@@ -50,7 +57,7 @@ def test_runtime_lane_never_imports_linopy_or_xarray():
     """Hard rule 3: linopy is compat/oracle only — never a runtime import."""
     offenders = {}
     for path in _all_modules():
-        if path.name in COMPAT_LANE:
+        if _in_compat_lane(path):
             continue
         bad = _module_level_imports(path) & FORBIDDEN_RUNTIME
         if bad:
@@ -79,7 +86,7 @@ def test_lazy_oracle_imports_stay_on_the_allowlist():
     """
     offenders = {}
     for path in _all_modules():
-        if path.name in COMPAT_LANE or path.name in LAZY_ORACLE_ALLOWED:
+        if _in_compat_lane(path) or path.name in LAZY_ORACLE_ALLOWED:
             continue
         tree = ast.parse(path.read_text())
         bad = set()
@@ -183,12 +190,12 @@ def test_both_lanes_implement_exactly_the_closed_helper_set():
     evaluates but the relational lane cannot lower (or vice versa) is a
     dialect split, and it would make the differential tests meaningless.
 
-    Read statically: ``builder`` imports xarray at module level (it is compat
-    lane), and this check must still run on a bare install.
+    Read statically: ``compat/builder.py`` imports xarray at module level (it
+    is compat lane), and this check must still run on a bare install.
     """
     from linopy_yaml.helpers import BUILTIN_NAMES
 
-    tree = ast.parse((PKG / 'builder.py').read_text())
+    tree = ast.parse((PKG / 'compat' / 'builder.py').read_text())
     table = next(
         node.value for node in tree.body if isinstance(node, ast.AnnAssign) and ast.unparse(node.target) == '_HELPERS'
     )

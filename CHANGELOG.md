@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.0.0-alpha.5](https://github.com/FBumann/linopy-yaml/compare/v0.0.0-alpha.4...v0.0.0-alpha.5) (2026-07-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* a file declaring more than one objective no longer loads.
+* a Series or DataArray whose index names are not the declared dims is now a DataError; previously the names were discarded.
+* a dimension declares the coordinates its labels carry ([#100](https://github.com/FBumann/linopy-yaml/issues/100))
+* every IR, AST and schema class is renamed, and `ly.LanguageError` no longer covers data-binding failures — those are `ly.DataError`. Both remain under `ly.LinopyYamlError`, as does the deprecated `RelationalBuildError` alias.
+
+### Features
+
+* a dimension declares the coordinates its labels carry ([#100](https://github.com/FBumann/linopy-yaml/issues/100)) ([49b790b](https://github.com/FBumann/linopy-yaml/commit/49b790b5bfa36e30dff617db8bda02876ad51757))
+
+
+### Bug Fixes
+
+* a bool parameter is a mask, on both lanes ([#47](https://github.com/FBumann/linopy-yaml/issues/47)) ([#96](https://github.com/FBumann/linopy-yaml/issues/96)) ([a3f3926](https://github.com/FBumann/linopy-yaml/commit/a3f39261500323329b2b902cf36e7ffbcb59ce5e))
+* a declared coordinate must be its declared dtype ([#65](https://github.com/FBumann/linopy-yaml/issues/65)) ([#101](https://github.com/FBumann/linopy-yaml/issues/101)) ([5349991](https://github.com/FBumann/linopy-yaml/commit/5349991cfbdd7f3fe8da302a0a570573314395d2))
+* a named index binds by name, not by position ([#91](https://github.com/FBumann/linopy-yaml/issues/91)) ([#98](https://github.com/FBumann/linopy-yaml/issues/98)) ([3e14be8](https://github.com/FBumann/linopy-yaml/commit/3e14be8a445d38d60cb664d04c033ce0dc2ddb42))
+* a second objective is a load error, not a silent drop ([#49](https://github.com/FBumann/linopy-yaml/issues/49)) ([#97](https://github.com/FBumann/linopy-yaml/issues/97)) ([24f5849](https://github.com/FBumann/linopy-yaml/commit/24f58494bcf378018aed6c1c3c5f4f2bb96d3c06))
+* one place per language rule, and formulations judged like the rest ([#99](https://github.com/FBumann/linopy-yaml/issues/99)) ([3137fbc](https://github.com/FBumann/linopy-yaml/commit/3137fbcc21b176392058c28ec48134b33cae9782))
+
+
+### Refactoring
+
+* names say what they mean, and errors are one tree ([#94](https://github.com/FBumann/linopy-yaml/issues/94)) ([0c1300c](https://github.com/FBumann/linopy-yaml/commit/0c1300c56f951448f8d765df6e2054c811bf57ac))
+* the compat lane is a directory, so the fence is structural ([#95](https://github.com/FBumann/linopy-yaml/issues/95)) ([4015131](https://github.com/FBumann/linopy-yaml/commit/40151315e7dec4e489d0e7f0db03a24b5d1aba95))
+
+
+### Documentation
+
+* consolidate the doc set and cut it by two thirds ([#87](https://github.com/FBumann/linopy-yaml/issues/87)) ([0a89d7d](https://github.com/FBumann/linopy-yaml/commit/0a89d7d908df6e89bb987a3cf6a799a95ed61fa4))
+* runnable architecture walkthrough, one stage at a time ([#54](https://github.com/FBumann/linopy-yaml/issues/54)) ([0f0910f](https://github.com/FBumann/linopy-yaml/commit/0f0910fc90e97eb918b06f53268b79aae6efa0d3))
+* say plainly that breaking changes land without a deprecation cycle ([#102](https://github.com/FBumann/linopy-yaml/issues/102)) ([6131342](https://github.com/FBumann/linopy-yaml/commit/6131342ed345776239ba60709a462746e2140f93))
+* split sink capability from the expressive ceiling ([#88](https://github.com/FBumann/linopy-yaml/issues/88)) ([4e58227](https://github.com/FBumann/linopy-yaml/commit/4e582271eb826be6dda353ef0e4c3786c8a2a4ab))
+* the composition seam exists, and value-only re-solve has a precondition ([#93](https://github.com/FBumann/linopy-yaml/issues/93)) ([2dffd89](https://github.com/FBumann/linopy-yaml/commit/2dffd89250d1a3f68215e398ddca984d72a0705d))
+
 ## [0.0.0-alpha.4](https://github.com/FBumann/linopy-yaml/compare/v0.0.0-alpha.3...v0.0.0-alpha.4) (2026-07-25)
 
 

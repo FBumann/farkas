@@ -99,7 +99,8 @@ storage_balance:
 **`objectives`** — `sense` ∈ {`minimize`, `maximize`}, default `minimize`. An
 objective is a scalar by definition, so **every dim the expression carries is
 summed**; writing the sums out says nothing extra. Only `equations[0]` is used.
-Multiple objectives are not an error, but only the last added takes effect.
+Declaring more than one objective is a load error — combine them into one
+expression, or keep one per file.
 
 ## 3. `expressions` and `macros`
 
@@ -305,12 +306,15 @@ are unwrapped first — but only if that library is already imported, never by
 importing it.
 
 Compat lane (`data=`): `int`/`float` as a scalar that broadcasts freely; `dict`
-and `pd.Series` for 1-D (keys / index values become coordinates, and a Series
-index name must match the dim); `pd.DataFrame` for 2-D (index name → `d1`,
-column name → `d2`); `xr.DataArray` directly, with dim names a subset of the
-declared dims. `np.ndarray` and `list` have no named axes, so only 0-D or 1-D
-matching one declared dim is accepted — anything else is refused with a
-message asking for a named object.
+and `pd.Series` for 1-D (keys / index values become coordinates);
+`pd.DataFrame` for 2-D (index name → `d1`, column name → `d2`); `xr.DataArray`
+directly, with dim names a subset of the declared dims. `np.ndarray` and `list`
+have no named axes, so only 0-D or 1-D matching one declared dim is accepted —
+anything else is refused with a message asking for a named object.
+
+Index names are optional but **binding**: an unnamed index binds positionally
+to the declared `dims`, a named one binds by name in any order, and a name
+outside the declared dims raises rather than being overwritten.
 
 Coordinate values in the data must be a subset of the master coordinate; values
 outside it raise rather than being dropped silently. Every declared parameter

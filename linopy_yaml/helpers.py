@@ -1,4 +1,4 @@
-"""The closed set of built-in helper names.
+"""The closed set of built-in helpers and their call shapes.
 
 The set is closed: there is no Python registry. Both lanes therefore accept
 exactly the same language, which is what makes the differential tests a
@@ -7,15 +7,80 @@ built-ins belong in ``macros:``; math the language cannot say belongs in a
 declared ``escape:`` island (#38), not in a helper that reads like a
 built-in on the page.
 
-This module is the *language* side of a helper — its name, and nothing else.
-It is imported by the linopy-free lane (``validation.py``, ``lowering.py``),
-so it must stay dependency-free. The eager evaluations live with the eager
-backend (``builder.py``); the relational ones are lowering cases and SQL.
+This module is the *language* side of a helper — its name and its signature,
+and nothing else. The signature lives here because four passes need it
+(resolution types the dimension arguments, validation name-checks macro
+bodies, lowering and the eager builder consume the call), and a helper whose
+arity is spelled out once per pass is a helper the passes can disagree about.
+It is imported by the linopy-free lane, so it must stay dependency-free — it
+knows nothing of the AST, only counts and keyword names. The eager
+evaluations live with the eager backend (``builder.py``); the relational ones
+are lowering cases and SQL.
 """
 
 from __future__ import annotations
 
-BUILTIN_NAMES = frozenset({'sum', 'roll', 'shift', 'group_sum'})
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+
+@dataclass(frozen=True)
+class Builtin:
+    """The call shape of one built-in helper.
+
+    Keyword arguments come in three kinds, and which kind a name is decides
+    what resolution turns its value into. ``dimension_kwargs`` name a dimension
+    in the *value* (``sum(x, over=generator)``); ``coordinate_kwargs`` name a
+    coordinate carried by the sibling ``over=`` dimension
+    (``group_sum(x, over=line, by=to)``), so they are only meaningful together;
+    ``dimension_is_key`` marks the helpers that instead name the dimension in
+    the keyword *key* (``roll(x, snapshot=1)``) and therefore take exactly one,
+    whatever it is called. ``usage`` is the one wording every lane quotes back.
+    """
+
+    positional: int
+    usage: str
+    dimension_kwargs: tuple[str, ...] = ()
+    coordinate_kwargs: tuple[str, ...] = ()
+    dimension_is_key: bool = False
+
+    @property
+    def keywords(self) -> frozenset[str]:
+        """Every keyword the call must carry, when they are named at all."""
+        return frozenset(self.dimension_kwargs) | frozenset(self.coordinate_kwargs)
+
+
+BUILTINS: dict[str, Builtin] = {
+    'sum': Builtin(1, 'sum(<expr>, over=<dim>)', dimension_kwargs=('over',)),
+    'group_sum': Builtin(
+        1,
+        'group_sum(<expr>, over=<dim>, by=<coord>)',
+        dimension_kwargs=('over',),
+        coordinate_kwargs=('by',),
+    ),
+    'roll': Builtin(1, 'roll(<expr>, <dim>=<n>)', dimension_is_key=True),
+    'shift': Builtin(1, 'shift(<expr>, <dim>=<n>)', dimension_is_key=True),
+}
+
+BUILTIN_NAMES = frozenset(BUILTINS)
+
+
+def call_shape_error(name: str, positional: int, kwargs: Iterable[str]) -> str | None:
+    """Why a call to *name* does not fit its signature; ``None`` if it fits.
+
+    Arity is a language rule, so it is checked in resolution — the pass every
+    consumer goes through — and the same wording is available to any lane that
+    wants to state it again.
+    """
+    builtin = BUILTINS[name]
+    keys = set(kwargs)
+    fits = positional == builtin.positional and (
+        len(keys) == 1 if builtin.dimension_is_key else keys == builtin.keywords
+    )
+    return None if fits else f'{name}() expects {builtin.usage}'
 
 
 def unknown_helper_message(name: str) -> str:

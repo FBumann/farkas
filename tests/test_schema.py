@@ -99,15 +99,15 @@ def test_omitted_bounds_default_to_linopy_s_infinities():
     Nothing else pins this: both lanes read the same default, so the
     differential tests agree with each other whatever it is.
     """
-    from linopy_yaml.lowering import _lower_bound
+    from linopy_yaml.lowering import _bound_expression
 
     s = MathSchema.model_validate({'dimensions': {'x': {'values': [1]}}, 'variables': {'v': {'foreach': ['x']}}})
     bounds = s.variables['v'].bounds
     assert (bounds.lower, bounds.upper) == (float('-inf'), float('inf'))
 
     # and the relational lane carries it through rather than re-defaulting
-    assert _lower_bound(bounds.lower).value == float('-inf')
-    assert _lower_bound(bounds.upper).value == float('inf')
+    assert _bound_expression(bounds.lower).value == float('-inf')
+    assert _bound_expression(bounds.upper).value == float('inf')
 
 
 def test_unknown_key_in_variable_is_rejected_with_a_suggestion():

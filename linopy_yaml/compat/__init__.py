@@ -47,9 +47,9 @@ except ModuleNotFoundError as exc:  # linopy / xarray absent
 
 from linopy_yaml._notes import note
 from linopy_yaml._yaml import read_yaml
-from linopy_yaml.builder import build_model
+from linopy_yaml.compat.builder import build_model
+from linopy_yaml.compat.loader import build_dim_coords, build_master_coords, dim_index_of, load_parameters
 from linopy_yaml.errors import LanguageError
-from linopy_yaml.loader import build_dim_coords, build_master_coords, dim_index_of, load_parameters
 from linopy_yaml.piecewise import expand_piecewise, validate_piecewise_data
 from linopy_yaml.schema import MathSchema
 from linopy_yaml.validation import validate_expressions

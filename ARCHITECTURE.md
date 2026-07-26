@@ -40,8 +40,8 @@ flowchart TB
 
     subgraph EAGER["Compat/oracle lane — opt-in via linopy_yaml.compat · the ONLY lane with linopy · not a runtime dependency"]
         direction TB
-        DE[("data<br/>parquet paths / pandas")] --> LOAD["loader.py<br/>coerce data → xr.Dataset"]
-        LOAD --> BUILD["builder.py<br/>evaluate AST"]
+        DE[("data<br/>parquet paths / pandas")] --> LOAD["compat/loader.py<br/>coerce data → xr.Dataset"]
+        LOAD --> BUILD["compat/builder.py<br/>evaluate AST"]
         BUILD --> MODEL[linopy.Model] --> SOLVE["linopy solve / writers"]
     end
 
@@ -56,8 +56,10 @@ a `Program` or raises `ly.LanguageError` — so it cannot drift from what the
 engine supports. Errors split model from run: everything under `LanguageError`
 is decidable without data, `DataError` is what a source failed to supply, and
 both are `LinopyYamlError` (`errors.py`). `ly.check()` is exactly parse
-→ validate → expand → lower with no data bound, so a model repository can
-compile-check its math in CI.
+→ expand → validate → lower with no data bound, so a model repository can
+compile-check its math in CI. Expansion precedes validation in **both** lanes,
+because a formulation emits declarations and those are language too — a stray
+dim in generated math is the same error as a stray dim in a written one.
 
 ## Hard rules
 
@@ -70,10 +72,15 @@ static checks and CI's bare-install job proves the dependency claims.*
    resolved** — names are typed `Variable`/`Parameter`/`Dimension` nodes — so a backend cannot
    hold its own opinion about what a name refers to. Resolving independently is
    how the two lanes silently disagreed about scoping before.
-2. **The relational lane is linopy-free.** `linopy_yaml/relational/` imports
-   neither the eager builder nor linopy: duckdb → highspy → solver, with
-   linopy's semantics as a spec to match rather than code to share.
-   Engine-internal naming encodes neither "duckdb" nor "yaml".
+2. **The engine knows nothing about linopy, xarray or YAML.**
+   `linopy_yaml/relational/` goes duckdb → highspy → solver, with linopy's
+   semantics as a spec to match rather than code to share; it never sees the
+   schema, the AST, or the eager builder. Engine-internal naming encodes
+   neither "duckdb" nor "yaml". Enforced *more* strictly than stated — the
+   engine imports nothing from the package at all, bar declared
+   dependency-free leaves (`errors.py` today, listed in `ENGINE_MAY_IMPORT`)
+   — because a near-zero import surface is what keeps the subpackage
+   extractable. Widening that list is a decision, not an accident.
 3. **One language, two lanes — not fast-vs-slow versions of each other.** The
    streaming engine builds models declared in YAML; the compat lane attaches
    YAML math to a `linopy.Model` already in memory, which is structurally eager.
@@ -136,9 +143,10 @@ stream first:
 | dim table only, no data join | coordinate-space | admissible (free) |
 | window over unbounded rows, or a recursive CTE | global | **reject**, with the rewrite |
 
-This is the case analysis `_sum_piece`, `_group_piece` and `_shift_piece`
-already implement, so a candidate fitting none of those shapes has no executor
-to be written into. Two limits: **degree is not a SQL property**, and it
+This is the case analysis `_sum_fragment`, `_group_fragment` and
+`_translate_fragment` already implement — each rewriting one fragment on its
+own, which is what *pointwise* and *bounded-halo* mean in code — so a candidate
+fitting none of those shapes has no executor to be written into. Two limits: **degree is not a SQL property**, and it
 presumes `GROUP BY row, col` stays the only aggregate a *term* passes through.
 A primitive is finished when `lowering.py` accepts it and the differential test
 against the linopy oracle passes.
@@ -261,15 +269,22 @@ than the plan level, which is
 | `validation.py` | load-time: parse, expand, resolve, check everything |
 | `piecewise.py` | `piecewise:` → λ-formulation declarations + curvature guard |
 | `api.py` | native entry point: `check` / `solve` / `write`, linopy-free |
-| `compat.py` | opt-in shim: `build` / `extend` on a `linopy.Model` |
-| `loader.py` | compat lane: data coercion to `xr.Dataset`, master coords |
-| `builder.py` | eager backend: core AST → `linopy.Model` |
 | `lowering.py` | core AST → logical plan (defines the relational subset) |
+| `helpers.py` | the closed set of built-in operators: their *names* and *call shapes* — no registry |
+| `errors.py` | the exception hierarchy; the one module the engine may import |
 | `relational/plan.py` | frozen logical-plan dataclasses |
 | `relational/arrow.py` | the Arrow boundary — caller tables in, via the PyCapsule protocol |
 | `relational/executor.py` | duckdb execution + `lp_file` / `solver_direct` sinks |
-| `helpers.py` | the closed set of built-in operator *names* — no registry |
-| `errors.py` | the exception hierarchy; the one module the engine may import |
+| `compat/__init__.py` | opt-in shim: `build` / `extend` on a `linopy.Model` |
+| `compat/loader.py` | data coercion to `xr.Dataset`, master coords |
+| `compat/builder.py` | eager backend: core AST → `linopy.Model` |
+
+Two subpackages, and the directory *is* the rule in both cases. Everything
+under `relational/` is the engine and imports nothing else from the package;
+everything under `compat/` is the opt-in linopy lane and is the only code
+allowed to import linopy or xarray. `tests/test_architecture.py` reads
+membership off the path, so neither fence can be stepped over by naming a
+file differently.
 
 ### Naming across the layers
 
@@ -296,6 +311,18 @@ Two rules follow from that table, and a PR that adds a construct keeps them:
 
 **Add a macro or named expression:** edit YAML. Nothing else.
 
-**Add a primitive:** grammar (usually free — `f(x, k=v)` already parses) → eager
-helper → plan node + locality class → executor → lowering case → differential test
-on both sinks → SPEC §5/§7, and this file if structural.
+**Add a primitive:** grammar (usually free — `f(x, k=v)` already parses) →
+signature in `helpers.BUILTINS` (arity and which arguments name dimensions —
+resolution, validation and lowering all read it from there, so the shape is
+declared once) → eager helper → plan node + locality class → executor →
+lowering case → differential test on both sinks → SPEC §5/§7, and this file if
+structural.
+
+Two things are deliberately *not* per-primitive work, because they are one
+implementation each: a primitive's dim rule lives only in `dimensions.py` —
+both its dim *set* and its verdict on an operand that lacks the dim being
+reduced along, which lowering asks for rather than deciding again — and the
+dense-label assignment that gives a coordinate its solver index lives only in
+`DuckdbExecutor._label_frame`, shared by variables and constraint rows. What a
+lowering case still owns is what is about the plan: which node the call becomes,
+and the shapes that node cannot represent.
