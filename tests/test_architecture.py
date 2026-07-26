@@ -170,19 +170,20 @@ def test_expansion_has_no_mutable_module_state():
     )
 
 
-def test_every_ir_expr_node_is_handled_by_the_executor():
-    """Two-tier economy: a primitive is not done until the executor consumes
-    it. Grep-level drift alarm — the differential tests prove semantics."""
+def test_every_plan_node_is_handled_by_the_compiler():
+    """Two-tier economy: a primitive is not done until the engine consumes it.
+
+    The compiler is the consumer — it is the module that turns plan nodes into
+    SQL, so a node it does not mention has no relational meaning however much
+    the executor moves around it. Grep-level drift alarm; the differential
+    tests prove semantics.
+    """
     import linopy_yaml.relational.plan as plan
 
-    executor_src = (PKG / 'relational' / 'executor.py').read_text()
-    unhandled = [cls.__name__ for cls in plan.Expression.__subclasses__() if f'plan.{cls.__name__}' not in executor_src]
-    assert not unhandled, f'plan.Expression nodes unknown to the executor: {unhandled}'
-
-    unhandled_pred = [
-        cls.__name__ for cls in plan.Predicate.__subclasses__() if f'plan.{cls.__name__}' not in executor_src
-    ]
-    assert not unhandled_pred, f'plan.Predicate nodes unknown to the executor: {unhandled_pred}'
+    compiler_src = (PKG / 'relational' / 'compiler.py').read_text()
+    for base in (plan.Expression, plan.Predicate):
+        unhandled = [c.__name__ for c in base.__subclasses__() if f'plan.{c.__name__}' not in compiler_src]
+        assert not unhandled, f'plan.{base.__name__} nodes unknown to the compiler: {unhandled}'
 
 
 def test_both_lanes_implement_exactly_the_closed_helper_set():
@@ -213,9 +214,16 @@ def test_both_lanes_implement_exactly_the_closed_helper_set():
     assert not missing, f'built-in helpers with no lowering case: {missing}'
 
 
-def test_architecture_doc_mentions_every_module():
-    """ARCHITECTURE.md's module map stays complete (its own first paragraph)."""
-    doc = (PKG.parent / 'ARCHITECTURE.md').read_text()
+def test_every_module_is_documented_somewhere():
+    """No module is undocumented — but the doc need not be ARCHITECTURE.md.
+
+    A subpackage that grows a member per variant (one sink per module) would
+    push its whole membership list into the top-level map, which is the thing
+    that map exists *not* to be. A ``README.md`` beside the code counts
+    instead: it is what you read when you open the directory, and it stays
+    next to the thing it describes.
+    """
+    architecture = (PKG.parent / 'ARCHITECTURE.md').read_text()
     missing = []
     for path in _all_modules():
         name = path.name
@@ -223,9 +231,14 @@ def test_architecture_doc_mentions_every_module():
             continue  # private plumbing (_notes) needs no doc entry
         if name == '__init__.py':
             continue
-        if name not in doc:
+        local_readme = path.parent / 'README.md'
+        documented = name in architecture or (local_readme.exists() and name in local_readme.read_text())
+        if not documented:
             missing.append(str(path.relative_to(PKG)))
-    assert not missing, f"modules absent from ARCHITECTURE.md's map: {missing}"
+    assert not missing, (
+        f'undocumented modules: {missing} — add each to ARCHITECTURE.md, or to a '
+        f'README.md in its own directory if it is one member of a family'
+    )
 
 
 def test_every_schema_model_is_strict():
