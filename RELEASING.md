@@ -74,15 +74,41 @@ validates both. Fixing a title is an edit to the PR, not a branch rewrite.
 ## Branch protection
 
 `main` is covered by a repository ruleset: no deletion, no force-push,
-squash-only merges through a PR, and two required checks — `CI ok` (from
-[`ci.yml`](.github/workflows/ci.yml), aggregating `native` and the `full`
-matrix) and `Conventional commit subject`. `CI ok` exists so the ruleset never
-names matrix legs directly: requiring `full (3.11)` would mean adding a Python
-version leaves it unrequired, and dropping one blocks every PR on a check that
-can no longer report. A required check must exist on `main` before it is
-required — land the workflow first, then add it to the ruleset. Approvals are
-not required (solo repo); a review count of 0 still forces the PR, the squash
-and the checks.
+squash-only merges through a PR, and two required checks — `ci` (from
+[`ci.yml`](.github/workflows/ci.yml)) and `Conventional commit subject`. The CI
+job has a fixed name and no matrix, so the ruleset names it directly and never
+needs updating; keep it that way. If a Python matrix ever comes back, put an
+aggregating gate job in front of it rather than naming legs — requiring
+`full (3.11)` would mean adding a version leaves it unrequired, and dropping
+one blocks every PR on a check that can no longer report.
+
+A required check must exist on `main` before it is required — land the workflow
+first, then add it to the ruleset. Approvals are not required (solo repo); a
+review count of 0 still forces the PR, the squash and the checks.
+
+### Relaxed while in early development
+
+Actions bills per job, rounded up to the minute, and the suite takes ~5s. So CI
+cost is job count, and while the project is on the `0.0.0-alpha.N` stream — no
+downstream users to break, runner minutes the scarcer resource — it is one job
+that deliberately trades coverage for cost. What that gives up:
+
+- **Only Python 3.11 is tested.** The 3.12 and 3.13 classifiers in
+  `pyproject.toml` are untested claims. 3.11 is the floor, so it catches the
+  common breakage (reaching for a newer stdlib feature) but not the reverse: a
+  removal or deprecation that only bites on 3.13.
+- **Only two dependency sets are installed:** current-with-dev, and the declared
+  floors bare. The floors are exercised *without* linopy/xarray, so the linopy
+  lane is only ever tested against current linopy — narrow, since the pin is
+  already `>=0.9.0,<0.10`.
+- **The PR-title check does not re-run on `synchronize`.** A force-push that
+  leaves a PR at exactly one commit with a non-conventional subject is not
+  re-validated. The cost is a missing CHANGELOG line, not a broken release.
+
+Tighten these before the first non-alpha release — that is the point where a
+missed regression reaches somebody rather than just us. A Python matrix is the
+first thing to add back, behind a gate job. Until then, prefer spending minutes
+on the suite over spending them on matrix breadth.
 
 ## Overriding the version
 

@@ -1,5 +1,11 @@
 name: CI
 
+# Billing is per job, rounded up to the minute, and the suite takes ~5s. So the
+# cost of CI is the number of jobs, not their duration: five jobs doing ninety
+# seconds of work cost five minutes. Hence one job, one Python, two installs.
+# Do not split a step out into a job of its own to parallelise it — that trades
+# a few seconds of wall clock for a whole billed minute.
+
 on:
   push:
     branches: [main]
@@ -10,73 +16,47 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  native:
-    # bare install: the streaming product with no linopy/xarray on disk.
-    # Proves the runtime dependency claim and runs the native suite.
-    runs-on: ubuntu-latest
+  ci:
+    # The single required check. Fixed name, no matrix, so the branch ruleset can
+    # name it directly and never needs updating.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
         with:
-          python-version: "3.12"
+          # The floor, and the only version we test. If it works on the oldest
+          # supported interpreter it almost certainly works on the newer ones;
+          # the common real breakage is reaching for a 3.12+ stdlib feature,
+          # which is exactly what this catches. Note that this leaves the 3.12
+          # and 3.13 classifiers in pyproject.toml as untested claims — see the
+          # early-development section of RELEASING.md.
+          python-version: "3.11"
           enable-cache: true
-      - run: uv sync --no-default-groups --no-editable
-      - run: uv pip install pytest
-      - name: assert linopy is absent
-        run: uv run --no-sync python -c "import importlib.util, sys; sys.exit(importlib.util.find_spec('linopy') is not None)"
-      - run: uv run --no-sync pytest -q
 
-  full:
-    # dev group (incl. linopy/xarray for the oracle): lint, format, types, differential tests.
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      matrix:
-        python-version: ["3.11", "3.13"]
-    steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
-        with:
-          python-version: ${{ matrix.python-version }}
-          enable-cache: true
+      # Current dependencies, dev group: lint, format, types, suite.
       - run: uv sync --group dev
       - run: uv run --no-sync ruff check .
       - run: uv run --no-sync ruff format --check .
-      # Only here, not in `native`: missing-import is an error, and the linopy
-      # lane imports linopy/xarray, which the bare install deliberately lacks.
+      # Only meaningful here, not below: missing-import is an error, and the
+      # linopy lane imports linopy/xarray, which a bare install deliberately lacks.
       - run: uv run --no-sync pyrefly check --output-format=github
       - run: uv run --no-sync pytest -q
 
-  floors:
-    # The declared dependency floors, actually installed. Without this the lower
-    # bounds are decoration: `>=1.0` on duckdb was five minor versions below the
-    # first release with `to_arrow_reader`, and nothing noticed.
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-        with:
-          python-version: "3.11"  # the lowest supported: old releases have no newer wheels
-          enable-cache: true
-      - run: uv sync --group dev --resolution lowest-direct
-      - run: uv run --no-sync pytest -q
-
-  ok:
-    # The single check the branch ruleset requires. Naming the matrix legs directly
-    # would pin the ruleset to the Python versions — adding 3.14 would silently
-    # leave it unrequired, and dropping 3.11 would block every PR on a check that
-    # can no longer report. This job tracks the matrix instead.
-    name: CI ok
-    needs: [native, full, floors]
-    if: always()  # must report a conclusion even when a dependency fails, or the ruleset waits forever
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Fail if anything upstream did not succeed
-        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
+      # Re-sync the same checkout into the shipped shape, at the declared floors.
+      # Two claims in one install:
+      #   1. the streaming product runs with no linopy/xarray on disk;
+      #   2. the lower bounds in pyproject.toml are real. Without this they are
+      #      decoration — `>=1.0` on duckdb was five minor versions below the
+      #      first release with `to_arrow_reader`, and nothing noticed.
+      # Safe to share the checkout: uv.lock is gitignored, so it is a byproduct
+      # of each sync rather than a committed pin, and uv records the resolution
+      # strategy in it — this re-resolves instead of inheriting what the sync
+      # above locked. Verified: pandas 2.2.0 / numpy 1.26.0 / pyarrow 16.0.0 /
+      # duckdb 1.5.0 / pydantic 2.0. Do not add `--frozen`.
+      - name: bare install, at the dependency floors
         run: |
-          echo "::error::native=${{ needs.native.result }} full=${{ needs.full.result }} floors=${{ needs.floors.result }}"
-          exit 1
-      - run: echo "native, full and floors all green"
+          uv sync --no-default-groups --no-editable --resolution lowest-direct
+          uv pip install pytest
+          uv run --no-sync python -c "import importlib.util, sys; sys.exit(importlib.util.find_spec('linopy') is not None)"
+          uv run --no-sync pytest -q
