@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.0-alpha.11](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.10...v0.0.0-alpha.11) (2026-07-26)
+
+
+### Documentation
+
+* lead with what the package is; YAML is the format we ship, not the interface ([#132](https://github.com/FBumann/farkas/issues/132)) ([5bd5240](https://github.com/FBumann/farkas/commit/5bd52400a9dd2a9e94eb3f29a2f0ebb6466c78ba))
+
 ## [0.0.0-alpha.10](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.9...v0.0.0-alpha.10) (2026-07-26)
 
 
