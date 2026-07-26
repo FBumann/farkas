@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.0-alpha.7](https://github.com/FBumann/linopy-yaml/compare/v0.0.0-alpha.6...v0.0.0-alpha.7) (2026-07-26)
+
+
+### Refactoring
+
+* the package moves under src/, so CI tests the artifact ([#118](https://github.com/FBumann/linopy-yaml/issues/118)) ([7eb39a6](https://github.com/FBumann/linopy-yaml/commit/7eb39a6229e86cd446fe476078de7bf8ef13c4ca))
+
 ## [0.0.0-alpha.6](https://github.com/FBumann/linopy-yaml/compare/v0.0.0-alpha.5...v0.0.0-alpha.6) (2026-07-26)
 
 
