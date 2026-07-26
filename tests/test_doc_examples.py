@@ -32,9 +32,17 @@ import pytest
 import yaml
 
 import linopy_yaml as ly
-from linopy_yaml import compat
 from linopy_yaml.relational.executor import DuckdbExecutor, Solution
 from linopy_yaml.schema import MathSchema
+
+try:
+    from linopy_yaml import compat
+except ModuleNotFoundError:
+    # Bare install, no [compat] extra. The rest of this file is linopy-free and
+    # must still run on the native lane, so the module cannot skip itself the
+    # way tests/oracle.py does — only the checks that need compat step aside,
+    # and they do it by skipping rather than by quietly checking less.
+    compat = None
 
 REPO = Path(__file__).resolve().parent.parent
 TRACKED = ['README.md', 'SPEC.md', 'ARCHITECTURE.md', 'ROADMAP.md']
@@ -48,6 +56,20 @@ ROOTS: dict[str, Any] = {
     'ex': DuckdbExecutor,
     'schema': MathSchema,
 }
+
+# Every root an example may name, whether or not this install can resolve it.
+# Recognising an example must not depend on the extras: a compat example is
+# still a compat example on a bare install, it just cannot be name-checked.
+ROOT_NAMES = frozenset(ROOTS)
+ROOTS = {name: obj for name, obj in ROOTS.items() if obj is not None}
+
+
+def _unresolvable(code: str) -> set[str]:
+    """Roots this example names that the install cannot supply."""
+    return {root for root in ROOT_NAMES - set(ROOTS) if f'{root}.' in code}
+
+
+_EXTRA = 'needs the [compat] extra to check {}'
 
 _FENCE = re.compile(
     r'(?:<!--\s*doctest:\s*(?P<note>[^>]*?)\s*-->\s*\n)?```(?P<lang>python|yaml)\n(?P<code>.*?)```',
@@ -123,6 +145,8 @@ def test_python_block_uses_real_api(block: Block) -> None:
     """
     if block.note == 'skip':
         pytest.skip('explicitly skipped')
+    if missing := _unresolvable(block.code):
+        pytest.skip(_EXTRA.format(sorted(missing)))
     tree = ast.parse(block.code)
     bad: list[str] = []
     for node in ast.walk(tree):
@@ -262,30 +286,57 @@ def _docstring_examples(path: Path) -> list[str]:
         if not text.strip():
             continue
         dedented = '\n'.join(ln.removeprefix('    ') for ln in text.splitlines())
-        if any(f'{root}.' in dedented for root in ROOTS):
+        if any(f'{root}.' in dedented for root in ROOT_NAMES):
             out.append(dedented)
     return out
 
 
+class Example(NamedTuple):
+    module: str
+    index: int
+    code: str
+
+    @property
+    def where(self) -> str:
+        return f'{self.module} (docstring example #{self.index})'
+
+
+def _docstring_cases() -> list[Example]:
+    """One case per example, so an install that cannot check one of them says
+    so about that example rather than about the whole module."""
+    return [
+        Example(module, i, code)
+        for module in DOCSTRING_MODULES
+        for i, code in enumerate(_docstring_examples(REPO / module))
+    ]
+
+
 @pytest.mark.parametrize('module', DOCSTRING_MODULES)
-def test_docstring_examples_use_real_api(module: str) -> None:
-    path = REPO / module
-    examples = _docstring_examples(path)
-    assert examples, f'{module}: no API example found in the module docstring'
-    for code in examples:
-        try:
-            tree = ast.parse(code)
-        except SyntaxError as exc:
-            pytest.fail(f'{module} docstring example is not valid Python: {exc}\n{code}')
-        bad = [
-            f'{n.value.id}.{n.attr}'
-            for n in ast.walk(tree)
-            if isinstance(n, ast.Attribute)
-            and isinstance(n.value, ast.Name)
-            and n.value.id in ROOTS
-            and n.attr not in _public(ROOTS[n.value.id])
-        ]
-        assert not bad, f'{module} docstring uses names that do not exist: {sorted(set(bad))}'
+def test_module_documents_its_api(module: str) -> None:
+    """A module docstring that stops showing its API is a doc regression the
+    per-example tests below cannot see — they would just collect nothing."""
+    assert _docstring_examples(REPO / module), f'{module}: no API example found in the module docstring'
+
+
+@pytest.mark.parametrize('example', _docstring_cases(), ids=lambda e: e.where)
+def test_docstring_example_uses_real_api(example: Example) -> None:
+    try:
+        tree = ast.parse(example.code)
+    except SyntaxError as exc:
+        pytest.fail(f'{example.where} is not valid Python: {exc}\n{example.code}')
+    # syntax is checked above on every install; only the name check below needs
+    # the object behind the root, so only that part stands down
+    if missing := _unresolvable(example.code):
+        pytest.skip(_EXTRA.format(sorted(missing)))
+    bad = [
+        f'{n.value.id}.{n.attr}'
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Attribute)
+        and isinstance(n.value, ast.Name)
+        and n.value.id in ROOTS
+        and n.attr not in _public(ROOTS[n.value.id])
+    ]
+    assert not bad, f'{example.where} uses names that do not exist: {sorted(set(bad))}'
 
 
 @pytest.mark.parametrize('module', DOCSTRING_MODULES)
