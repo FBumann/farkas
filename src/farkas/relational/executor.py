@@ -425,6 +425,25 @@ class DuckdbExecutor:
         per_chunk = max(1, int(self.chunk_rows // max(1.0, other_card)))
         return [(s, min(s + per_chunk, card)) for s in range(0, card, per_chunk)]
 
+    def _predicate_dims(self, where: plan.Predicate | None) -> frozenset[str]:
+        """The dims a mask reads. Empty means it filters nothing per-coordinate."""
+        if where is None:
+            return frozenset()
+        assert self._program is not None, 'build() has not run'
+        param_dims = {p.name: frozenset(p.dims) for p in self._program.parameters}
+        match where:
+            case plan.BooleanConstant():
+                return frozenset()
+            case plan.DimensionComparison(dimension=d):
+                return frozenset({d})
+            case plan.ParameterComparison(parameter=n) | plan.ParameterDefined(parameter=n):
+                return param_dims.get(n, frozenset())
+            case plan.Not(operand=x):
+                return self._predicate_dims(x)
+            case plan.And(left=a, right=b) | plan.Or(left=a, right=b):
+                return self._predicate_dims(a) | self._predicate_dims(b)
+        raise LanguageError(f'unhandled predicate {type(where).__name__}')
+
     def _label_frame(
         self,
         table: str,
@@ -451,6 +470,33 @@ class DuckdbExecutor:
 
         lead, *rest = dims
         other = math.prod(self._dim_card[d] for d in rest)
+
+        # When the mask does not read the leading dim, the surviving trailing
+        # coordinates are identical for every leading value. Rank them once
+        # over a table of size `other` and the label is arithmetic: no window
+        # function, no per-chunk sort. Same labels as the general path below.
+        if rest and lead not in self._predicate_dims(where):
+            surv_from, surv_where, surv_order = self._sql.frame(tuple(rest), where)
+            surv_cols = ', '.join(f't_{d}.val AS {d}' for d in rest)
+            self._con.execute(f'DROP TABLE IF EXISTS surv_{table}')
+            self._con.execute(
+                f'CREATE TABLE surv_{table} AS SELECT {surv_cols}, '
+                f'ROW_NUMBER() OVER (ORDER BY {surv_order}) - 1 AS _rank '
+                f'FROM {surv_from} WHERE {surv_where}'
+            )
+            width = self._scalar(f'SELECT count(*) FROM surv_{table}')
+            picks = ', '.join(f's.{d}' for d in rest)
+            next_label = start
+            for lo, hi in self._chunk_starts(lead, other):
+                next_label += self._scalar(
+                    f'INSERT INTO {table} SELECT t_{lead}.val AS {lead}, {picks}, '
+                    f'{next_label} + (t_{lead}.ord - {lo}) * {width} + s._rank '
+                    f'FROM dim_{lead} t_{lead} CROSS JOIN surv_{table} s '
+                    f'WHERE t_{lead}.ord >= {lo} AND t_{lead}.ord < {hi}'
+                )
+            self._con.execute(f'DROP TABLE surv_{table}')
+            return next_label
+
         next_label = start
         for lo, hi in self._chunk_starts(lead, other):
             next_label += self._scalar(

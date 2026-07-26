@@ -158,7 +158,9 @@ def main() -> None:
         sol = ex.solve()
         print(f'    status     {sol.status}')
         print(f'    objective  {sol.objective:,.1f}')
-        print(_indent(sol.primal('p').head(6)))
+        # sort explicitly: primal() is a label join, and a join has no
+        # inherent row order — leaving it unsorted pins storage layout
+        print(_indent(sol.primal('p').sort_values(['snapshot', 'generator'], ignore_index=True).head(6)))
 
     # ------------------------------------------------------------------
     banner(7, 'and what the language refuses', 'validation.py, lowering.py')
