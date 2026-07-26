@@ -3,9 +3,9 @@
 The lane is described in ARCHITECTURE.md, "The relational lane".
 
 This module owns the *connection* and the tables in it. It does not own the
-SQL — :mod:`linopy_yaml.relational.compiler` turns plan nodes into strings and
+SQL — :mod:`farkas.relational.compiler` turns plan nodes into strings and
 never touches a connection — and it does not own the way a model leaves:
-:mod:`linopy_yaml.relational.sinks` drains the tables into LP text or into
+:mod:`farkas.relational.sinks` drains the tables into LP text or into
 HiGHS, one module per sink.
 
 What is left here is what genuinely needs the database: binding sources,
@@ -48,10 +48,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from linopy_yaml.errors import DataError, LanguageError, LinopyYamlError
-from linopy_yaml.relational import plan, sinks
-from linopy_yaml.relational.arrow import as_table
-from linopy_yaml.relational.compiler import SqlCompiler
+from farkas.errors import DataError, LanguageError, LinopyYamlError
+from farkas.relational import plan, sinks
+from farkas.relational.arrow import as_table
+from farkas.relational.compiler import SqlCompiler
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -67,8 +67,8 @@ _ROW_POSITION = '__row position__'
 
 
 #: Deprecated. The engine's failures are now split between
-#: :class:`~linopy_yaml.errors.LanguageError` (the program says something the
-#: engine cannot build) and :class:`~linopy_yaml.errors.DataError` (a source is
+#: :class:`~farkas.errors.LanguageError` (the program says something the
+#: engine cannot build) and :class:`~farkas.errors.DataError` (a source is
 #: missing or the wrong shape). This alias is their common base, so an existing
 #: ``except RelationalBuildError`` keeps catching everything it used to.
 RelationalBuildError = LinopyYamlError
@@ -107,7 +107,7 @@ class Solution:
         Goes through ``pandas.DataFrame.to_xarray()`` rather than importing
         xarray here: the streaming lane is xarray-free (hard rule 2), and
         pandas does the optional import for us. Requires xarray to be
-        installed (it ships with the ``[compat]`` extra); missing coordinate
+        installed (it ships with the ``[linopy]`` extra); missing coordinate
         combinations come back as NaN, since a masked variable has no row.
         """
         frame = self.primal(name)

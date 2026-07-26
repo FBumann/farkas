@@ -1,6 +1,6 @@
 """Eager reading of a where AST — ``builder.evaluate_where``.
 
-Split out of test_parser.py when the evaluator moved to the compat lane:
+Split out of test_parser.py when the evaluator moved to the linopy lane:
 the grammar tests are dependency-free and must keep running on a bare
 install, so they cannot share a module with anything importing xarray.
 """
@@ -35,13 +35,13 @@ class TestWhereEvaluation:
         assert bool(mask) is True
 
     def _ns(self, parameters=('p_max',), dimensions=('g',)):
-        from linopy_yaml.resolution import Namespace
+        from farkas.resolution import Namespace
 
         return Namespace((), parameters, dimensions)
 
     def _where(self, text, ns=None):
         """Resolve then evaluate — the evaluator no longer takes strings."""
-        from linopy_yaml.resolution import where_of
+        from farkas.resolution import where_of
 
         return where_of(text, ns or self._ns(), 'test')
 
@@ -59,7 +59,7 @@ class TestWhereEvaluation:
     def test_missing_param_is_a_load_error(self):
         """Was: a scalar-False mask, i.e. a silently empty model. Resolution
         makes an undeclared name a load error in both lanes."""
-        from linopy_yaml.errors import LanguageError
+        from farkas.errors import LanguageError
 
         with pytest.raises(LanguageError, match="'nonexistent' not found"):
             self._where('nonexistent')

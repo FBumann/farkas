@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-import linopy_yaml as ly
-from linopy_yaml._yaml import read_yaml
-from linopy_yaml.schema import MathSchema
+import farkas as ly
+from farkas._yaml import read_yaml
+from farkas.schema import MathSchema
 
 MODEL = """dimensions:
   snapshot: {dtype: int, values: [0, 1]}

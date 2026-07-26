@@ -16,19 +16,19 @@ import pandas as pd
 import pytest
 import yaml as pyyaml
 
-from linopy_yaml.errors import LanguageError
-from linopy_yaml.lowering import lower_program
-from linopy_yaml.relational import (
+from farkas.errors import LanguageError
+from farkas.lowering import lower_program
+from farkas.relational import (
     DuckdbExecutor,
 )
-from linopy_yaml.relational.plan import (
+from farkas.relational.plan import (
     Translate,
     Variable,
 )
-from linopy_yaml.schema import MathSchema
-from linopy_yaml.sources import tidy_sources
+from farkas.schema import MathSchema
+from farkas.sources import tidy_sources
 from tests.conftest import resolved
-from tests.oracle import compat
+from tests.oracle import farkas_linopy
 
 RTOL = 1e-9
 
@@ -58,7 +58,7 @@ def storage_inputs():
 def test_storage_yaml_differential(storage_inputs, tmp_path):
     data, coords = storage_inputs
 
-    m = compat.build(STORAGE_YAML, data=data, coords=coords)
+    m = farkas_linopy.build(STORAGE_YAML, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     oracle = float(m.objective.value)
     assert np.isfinite(oracle)
@@ -95,7 +95,7 @@ def test_storage_yaml_differential(storage_inputs, tmp_path):
 
 def test_roll_lowering_structure():
     schema = MathSchema(**pyyaml.safe_load(Path(STORAGE_YAML).read_text()))
-    from linopy_yaml.lowering import _lower_expr
+    from farkas.lowering import _lower_expr
 
     assert _lower_expr(resolved('roll(soc, snapshot=1)', schema), schema, 't') == Translate(
         Variable('soc'), 'snapshot', 1
@@ -109,7 +109,7 @@ def test_roll_lowering_structure():
 
 def test_roll_lowering_errors():
     schema = MathSchema(**pyyaml.safe_load(Path(STORAGE_YAML).read_text()))
-    from linopy_yaml.lowering import _lower_expr
+    from farkas.lowering import _lower_expr
 
     with pytest.raises(LanguageError, match=r'roll\(nope=\.\.\.\) does not name a declared dimension'):
         _lower_expr(resolved('roll(soc, nope=1)', schema), schema, 't')
@@ -133,7 +133,7 @@ def test_shift_acyclic_differential(storage_inputs, tmp_path):
     yaml_path = tmp_path / 'storage_acyclic.yaml'
     yaml_path.write_text(yaml_text)
 
-    m = compat.build(yaml_path, data=data, coords=coords)
+    m = farkas_linopy.build(yaml_path, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     oracle = float(m.objective.value)
     assert np.isfinite(oracle)
@@ -159,7 +159,7 @@ def test_shift_acyclic_differential(storage_inputs, tmp_path):
 
 def test_shift_lowering_structure():
     schema = MathSchema(**pyyaml.safe_load(Path(STORAGE_YAML).read_text()))
-    from linopy_yaml.lowering import _lower_expr
+    from farkas.lowering import _lower_expr
 
     assert _lower_expr(resolved('shift(soc, snapshot=1)', schema), schema, 't') == Translate(
         Variable('soc'), 'snapshot', 1, wrap=False
@@ -187,7 +187,7 @@ def test_roll_unsorted_string_coords_differential(tmp_path):
     yaml_path = tmp_path / 'storage_str.yaml'
     yaml_path.write_text(yaml_text)
 
-    m = compat.build(yaml_path, data=data, coords=coords)
+    m = farkas_linopy.build(yaml_path, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     oracle = float(m.objective.value)
     assert np.isfinite(oracle)
@@ -210,9 +210,9 @@ def test_differential_where_on_dimension_coordinates(tmp_path):
     duckdb = pytest.importorskip('duckdb')  # noqa: F841
     highspy = pytest.importorskip('highspy')  # noqa: F841
 
-    from linopy_yaml.lowering import lower_program
-    from linopy_yaml.relational import DuckdbExecutor
-    from linopy_yaml.sources import tidy_sources
+    from farkas.lowering import lower_program
+    from farkas.relational import DuckdbExecutor
+    from farkas.sources import tidy_sources
 
     yaml_text = """
 dimensions:
@@ -259,7 +259,7 @@ objectives:
     }
     coords = {'snapshot': pd.RangeIndex(n_s, name='snapshot')}
 
-    m = compat.build(yaml_file, data=data, coords=coords)
+    m = farkas_linopy.build(yaml_file, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     oracle = float(m.objective.value)
     assert np.isfinite(oracle)

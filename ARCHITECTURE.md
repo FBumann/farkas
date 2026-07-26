@@ -25,7 +25,7 @@ flowchart TB
     Y[YAML file] -->|"parse + validate<br/>(schema.py, validation.py)"| MS[MathSchema]
     MS -->|"expand macros: / expressions: (expansion.py)<br/>expand piecewise: blocks (piecewise.py)<br/>resolve names to typed nodes (resolution.py)<br/>check dim sets (dimensions.py)<br/>— backends never see any of them"| AST["core AST<br/>= the only contract between layers<br/>fully typed: names resolved, dims checked"]
     AST -->|"api.py: check / build / solve / write"| LOWER
-    AST -.->|"linopy_yaml.compat<br/>(opt-in shim: build / extend)"| BUILD
+    AST -.->|"farkas.linopy<br/>(opt-in shim: build / extend)"| BUILD
     LOWER -->|"outside the language:<br/>LanguageError naming the construct"| ERR["load error<br/>(no fallback)"]
 
     subgraph REL["Relational lane — streaming · memory-bounded · linopy-free"]
@@ -39,10 +39,10 @@ flowchart TB
         DIRECT --> SOL["solution tables<br/>(label join, never dense)"]
     end
 
-    subgraph EAGER["Compat/oracle lane — opt-in via linopy_yaml.compat · the ONLY lane with linopy · not a runtime dependency"]
+    subgraph EAGER["Linopy lane (eager/oracle) — opt-in via farkas.linopy · the ONLY lane importing linopy · not a runtime dependency"]
         direction TB
-        DE[("data<br/>parquet paths / pandas")] --> LOAD["compat/loader.py<br/>coerce data → xr.Dataset"]
-        LOAD --> BUILD["compat/builder.py<br/>evaluate AST"]
+        DE[("data<br/>parquet paths / pandas")] --> LOAD["linopy/loader.py<br/>coerce data → xr.Dataset"]
+        LOAD --> BUILD["linopy/builder.py<br/>evaluate AST"]
         BUILD --> MODEL[linopy.Model] --> SOLVE["linopy solve / writers"]
     end
 
@@ -82,7 +82,7 @@ static checks and CI's bare-install job proves the dependency claims.*
    hold its own opinion about what a name refers to. Resolving independently is
    how the two lanes silently disagreed about scoping before.
 2. **The engine knows nothing about linopy, xarray or YAML.**
-   `src/linopy_yaml/relational/` goes duckdb → highspy → solver, with linopy's
+   `src/farkas/relational/` goes duckdb → highspy → solver, with linopy's
    semantics as a spec to match rather than code to share; it never sees the
    schema, the AST, or the eager builder. Engine-internal naming encodes
    neither "duckdb" nor "yaml". Enforced *more* strictly than stated — the
@@ -91,7 +91,7 @@ static checks and CI's bare-install job proves the dependency claims.*
    — because a near-zero import surface is what keeps the subpackage
    extractable. Widening that list is a decision, not an accident.
 3. **One language, two lanes — not fast-vs-slow versions of each other.** The
-   streaming engine builds models declared in YAML; the compat lane attaches
+   streaming engine builds models declared in YAML; the linopy lane attaches
    YAML math to a `linopy.Model` already in memory, which is structurally eager.
    **Both accept exactly the same language**, and no helper registry exists that
    could create a divergence — that equality is what makes the differential
@@ -256,8 +256,8 @@ table and a single `group_sum` balance. **Topology is data, not structure** —
 wiring a specific system is rows in a connectivity table, never generated YAML,
 so structure is bounded by the number of component *types* while cardinality
 lives entirely in data. Schema merge is therefore a pure **compose-then-build**
-step producing one `MathSchema` before a single lower/stream pass (`compat.extend`
-is a compat-lane shim; native merge is #30). Namespacing via qualified names is
+step producing one `MathSchema` before a single lower/stream pass (`linopy.extend`
+is a linopy-lane shim; native merge is #30). Namespacing via qualified names is
 the missing primitive (#29) — the port/flow surface stays deliberately shared, as
 the coupling contract between templates — and signs and bidirectional flows need
 bounds-as-expressions (#31).
@@ -295,14 +295,14 @@ native schema merge (#30) is what would force the question.
 | `relational/arrow.py` | the Arrow boundary — caller tables in, via the PyCapsule protocol |
 | `relational/compiler.py` | plan → SQL text; pure, no connection |
 | `relational/executor.py` | duckdb: bind sources, label, assemble the tables |
-| `relational/sinks/` | how a built model leaves: `lp_file`, `solver_direct` (one module each, [README](src/linopy_yaml/relational/sinks/README.md)) |
-| `compat/__init__.py` | opt-in shim: `build` / `extend` on a `linopy.Model` |
-| `compat/loader.py` | data coercion to `xr.Dataset`, master coords |
-| `compat/builder.py` | eager backend: core AST → `linopy.Model` |
+| `relational/sinks/` | how a built model leaves: `lp_file`, `solver_direct` (one module each, [README](src/farkas/relational/sinks/README.md)) |
+| `linopy/__init__.py` | opt-in shim: `build` / `extend` on a `linopy.Model` |
+| `linopy/loader.py` | data coercion to `xr.Dataset`, master coords |
+| `linopy/builder.py` | eager backend: core AST → `linopy.Model` |
 
 Two subpackages, and the directory *is* the rule in both cases. Everything
 under `relational/` is the engine and imports nothing else from the package;
-everything under `compat/` is the opt-in linopy lane and is the only code
+everything under `linopy/` is the opt-in eager lane and is the only code
 allowed to import linopy or xarray. `tests/test_architecture.py` reads
 membership off the path, so neither fence can be stepped over by naming a
 file differently.

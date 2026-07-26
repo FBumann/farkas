@@ -2,7 +2,7 @@
 
 import pytest
 
-from linopy_yaml.expression_parser import (
+from farkas.expression_parser import (
     BinaryOperatorNode,
     ComparisonNode,
     FunctionCallNode,
@@ -11,7 +11,7 @@ from linopy_yaml.expression_parser import (
     UnaryOperatorNode,
     parse_expression,
 )
-from linopy_yaml.where_parser import parse_where
+from farkas.where_parser import parse_where
 
 
 class TestExpressionParser:
@@ -85,21 +85,21 @@ class TestExpressionParser:
 
 class TestWhereParser:
     def test_bool_literal_true(self):
-        from linopy_yaml.where_parser import BooleanLiteralNode
+        from farkas.where_parser import BooleanLiteralNode
 
         node = parse_where('True')
         assert isinstance(node, BooleanLiteralNode)
         assert node.value is True
 
     def test_existence_check(self):
-        from linopy_yaml.where_parser import UnresolvedNameNode
+        from farkas.where_parser import UnresolvedNameNode
 
         node = parse_where('p_max')
         assert isinstance(node, UnresolvedNameNode)
         assert node.name == 'p_max'
 
     def test_comparison(self):
-        from linopy_yaml.where_parser import UnresolvedComparisonNode
+        from farkas.where_parser import UnresolvedComparisonNode
 
         node = parse_where('p_max > 0')
         assert isinstance(node, UnresolvedComparisonNode)
@@ -107,25 +107,25 @@ class TestWhereParser:
         assert node.value == 0
 
     def test_and(self):
-        from linopy_yaml.where_parser import AndNode
+        from farkas.where_parser import AndNode
 
         node = parse_where('a AND b')
         assert isinstance(node, AndNode)
 
     def test_or(self):
-        from linopy_yaml.where_parser import OrNode
+        from farkas.where_parser import OrNode
 
         node = parse_where('a OR b')
         assert isinstance(node, OrNode)
 
     def test_not(self):
-        from linopy_yaml.where_parser import NotNode
+        from farkas.where_parser import NotNode
 
         node = parse_where('NOT a')
         assert isinstance(node, NotNode)
 
     def test_precedence_and_over_or(self):
-        from linopy_yaml.where_parser import AndNode, OrNode
+        from farkas.where_parser import AndNode, OrNode
 
         node = parse_where('a OR b AND c')
         assert isinstance(node, OrNode)

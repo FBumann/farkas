@@ -11,8 +11,8 @@ from __future__ import annotations
 import pytest
 import yaml as pyyaml
 
-import linopy_yaml as ly
-from tests.oracle import compat  # skips the module without the [compat] extra
+import farkas as ly
+from tests.oracle import farkas_linopy  # skips the module without the [linopy] extra
 
 MODEL = {
     'dimensions': {'snapshot': {'dtype': 'int'}, 'generator': {'values': ['wind', 'gas']}},
@@ -79,7 +79,7 @@ def test_both_lanes_refuse_the_same_where(tmp_path, data, coords, where, match, 
     path = _write(tmp_path, **{'variables.p.where': where})
 
     with pytest.raises(ValueError, match=match):
-        compat.build(path, data=data, coords=coords)  # was: {was}
+        farkas_linopy.build(path, data=data, coords=coords)  # was: {was}
 
     with pytest.raises(ValueError, match=match):
         ly.check(path)
@@ -104,7 +104,7 @@ ACCEPTED = [
 def test_both_lanes_build_the_same_model(tmp_path, data, coords, where):
     path = _write(tmp_path, **{'variables.p.where': where})
 
-    m = compat.build(path, data=data, coords=coords)
+    m = farkas_linopy.build(path, data=data, coords=coords)
     eager_rows = int((m.variables['p'].labels != -1).sum())
     eager_status = m.solve(solver_name='highs')[1]
 
@@ -130,8 +130,8 @@ def test_every_resolved_predicate_is_parity_tested():
     """
     from typing import get_args
 
-    from linopy_yaml.resolution import Namespace, where_of
-    from linopy_yaml.where_parser import UnresolvedComparisonNode, UnresolvedNameNode, WhereNode
+    from farkas.resolution import Namespace, where_of
+    from farkas.where_parser import UnresolvedComparisonNode, UnresolvedNameNode, WhereNode
 
     unresolved = {UnresolvedNameNode, UnresolvedComparisonNode}  # rewritten by resolution, never evaluated
     expected = set(get_args(WhereNode)) - unresolved
@@ -170,7 +170,7 @@ def test_a_constraint_row_left_with_no_variables(tmp_path, data, coords):
     """
     path = _write(tmp_path, **{'variables.p.where': 'snapshot > 0'})
 
-    m = compat.build(path, data=data, coords=coords)
+    m = farkas_linopy.build(path, data=data, coords=coords)
     eager_status = m.solve(solver_name='highs')[1]
 
     with ly.build(path, data, coords=coords) as ex:
@@ -202,7 +202,7 @@ def test_a_bool_parameter_is_a_mask_on_both_lanes(tmp_path):
         'cap': pd.Series({0: 1.0, 1: 1.0, 2: 1.0}),
     }
 
-    m = compat.build(path, data=data)
+    m = farkas_linopy.build(path, data=data)
     m.solve(solver_name='highs')
     eager = float(m.objective.value)
 

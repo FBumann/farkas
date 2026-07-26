@@ -2,7 +2,7 @@
 
 There is no runtime fallback — the streaming subset IS the language
 (ARCHITECTURE.md). The eager builder survives only as the opt-in
-compatibility layer (`linopy_yaml.compat`) and the differential oracle.
+compatibility layer (`farkas.linopy`) and the differential oracle.
 Errors must carry the construct and its context, verbatim.
 """
 
@@ -13,9 +13,9 @@ from pathlib import Path
 import pytest
 import yaml as pyyaml
 
-from linopy_yaml.errors import LanguageError
-from linopy_yaml.lowering import lower_program
-from linopy_yaml.schema import MathSchema
+from farkas.errors import LanguageError
+from farkas.lowering import lower_program
+from farkas.schema import MathSchema
 
 
 def _schema(path: str = 'examples/dispatch.yaml', **overrides) -> MathSchema:

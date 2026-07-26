@@ -5,7 +5,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from tests.oracle import compat, linopy
+from tests.oracle import farkas_linopy, linopy
 
 
 def _has_note(exc: BaseException, substring: str) -> bool:
@@ -25,7 +25,7 @@ def test_from_yaml_malformed_where_fails_at_load(tmp_path):
     )
 
     with pytest.raises(ValueError, match='Failed to parse where string') as ei:
-        compat.build(bad)
+        farkas_linopy.build(bad)
 
     assert "Variable 'p'" in str(ei.value)
     assert _has_note(ei.value, f"while loading YAML '{bad}'")
@@ -48,7 +48,7 @@ def test_from_yaml_missing_comparison_fails_at_load(tmp_path):
     )
 
     with pytest.raises(ValueError, match='exactly one comparison') as ei:
-        compat.build(bad)
+        farkas_linopy.build(bad)
 
     assert "Constraint 'c'" in str(ei.value)
     assert _has_note(ei.value, f"while loading YAML '{bad}'")
@@ -70,7 +70,7 @@ def test_from_yaml_objective_comparison_fails_at_load(tmp_path):
     )
 
     with pytest.raises(ValueError, match='must not contain a comparison') as ei:
-        compat.build(bad)
+        farkas_linopy.build(bad)
 
     assert "Objective 'obj'" in str(ei.value)
     assert _has_note(ei.value, f"while loading YAML '{bad}'")
@@ -93,7 +93,7 @@ def test_build_failure_attaches_constraint_note(tmp_path):
     )
 
     with pytest.raises(TypeError) as ei:
-        compat.build(bad)
+        farkas_linopy.build(bad)
 
     assert _has_note(ei.value, "while building constraint 'c'")
     assert _has_note(ei.value, f"while loading YAML '{bad}'")
@@ -110,6 +110,6 @@ def test_extend_attaches_path_note(tmp_path):
     )
 
     with pytest.raises(ValueError) as ei:
-        compat.extend(model, ext)
+        farkas_linopy.extend(model, ext)
 
     assert _has_note(ei.value, f"while extending with YAML '{ext}'")

@@ -1,4 +1,4 @@
-# linopy-yaml
+# farkas
 
 Declarative optimisation: define the math in YAML, supply data at runtime, solve.
 
@@ -6,7 +6,7 @@ Models build on a **relational/streaming engine** — tidy tables in duckdb unde
 a hard `memory_limit`, streamed straight to the solver, so build peak memory
 tracks that budget rather than the size of the model.
 [linopy](https://github.com/PyPSA/linopy) is not a
-runtime dependency; it is kept as an opt-in **compat shim** (YAML math onto a
+runtime dependency; it is kept as an opt-in **linopy shim** (YAML math onto a
 `linopy.Model` already built in Python) and as the **oracle** every language
 feature is differentially tested against. There is no routing and no fallback:
 both lanes accept exactly the same language, and a construct outside it is a
@@ -19,13 +19,13 @@ flowchart LR
     R -->|"yes"| S["streaming engine<br/>duckdb · fixed memory_limit"]
     S --> OUT["solver (batched) / LP file"]
     R -->|"no"| ERR["load error<br/>naming the construct + rewrite"]
-    AST -.->|"opt-in shim: same language,<br/>for models already in memory"| E["linopy_yaml.compat"]
+    AST -.->|"opt-in shim: same language,<br/>for models already in memory"| E["farkas.linopy"]
     E --> LS["linopy.Model → solve"]
 
     classDef stream fill:#f0f7f0,stroke:#3a7d44,stroke-width:2px,color:#111
-    classDef compat fill:#eef1fb,stroke:#4a5fc1,stroke-width:2px,color:#111
+    classDef linopylane fill:#eef1fb,stroke:#4a5fc1,stroke-width:2px,color:#111
     class S,OUT stream
-    class E,LS compat
+    class E,LS linopylane
     class ERR err
     classDef err fill:#fdf3e7,stroke:#b7791f,color:#111
 ```
@@ -59,7 +59,7 @@ objectives:
 ```
 
 ```python
-import linopy_yaml as ly, pandas as pd
+import farkas as ly, pandas as pd
 
 sources = {
     "p_max": pd.Series({"wind": 100.0, "solar": 60.0, "gas": 200.0}),
@@ -100,7 +100,9 @@ inside wiring code, and a Python function is not a sharable artefact. When the
 modification *is just math*, a file fixes all three:
 
 ```python
-compat.extend(m, "ramp.yaml", data={"ramp_max": network.generators["ramp_max"]})
+from farkas import linopy as farkas_linopy
+
+farkas_linopy.extend(m, "ramp.yaml", data={"ramp_max": network.generators["ramp_max"]})
 ```
 ```yaml
 # ramp.yaml — `p` comes from the model; dims are declared here but their
@@ -124,8 +126,8 @@ is refused.
 To see it rather than read it, `python examples/walkthrough.py` runs one small model through every stage — YAML → schema → core AST → IR → duckdb tables → LP text → solution — printing the artifact each stage produces, plus two models the language refuses and why. Its output is committed as [examples/walkthrough.out](examples/walkthrough.out) if you would rather just read that.
 
 ```bash
-pip install linopy-yaml            # the streaming engine (duckdb, highspy)
-pip install "linopy-yaml[compat]"  # adds linopy + xarray for the shim and oracle
+pip install farkas            # the streaming engine (duckdb, highspy)
+pip install "farkas[linopy]"  # adds linopy + xarray for the shim and oracle
 ```
 
 Not a solver wrapper, not a domain package, not a data-loading layer — bring

@@ -39,8 +39,8 @@ from __future__ import annotations
 from types import MappingProxyType
 from typing import TYPE_CHECKING, assert_never
 
-from linopy_yaml.errors import DimensionError
-from linopy_yaml.expression_parser import (
+from farkas.errors import DimensionError
+from farkas.expression_parser import (
     ArithmeticNode,
     BinaryOperatorNode,
     ComparisonNode,
@@ -54,8 +54,8 @@ from linopy_yaml.expression_parser import (
     UnaryOperatorNode,
     VariableNode,
 )
-from linopy_yaml.resolution import Namespace, expression_of, where_of
-from linopy_yaml.where_parser import (
+from farkas.resolution import Namespace, expression_of, where_of
+from farkas.where_parser import (
     AndNode,
     BooleanLiteralNode,
     DimensionComparisonNode,
@@ -71,7 +71,7 @@ from linopy_yaml.where_parser import (
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from linopy_yaml.schema import MathSchema
+    from farkas.schema import MathSchema
 
 
 def dims_of(
@@ -83,7 +83,7 @@ def dims_of(
     """The dim set of a resolved expression, checking every rule on the way.
 
     ``external`` gives the dims of variables that live on a model rather than
-    in this schema — ``compat.extend()``'s case, mirroring how
+    in this schema — ``linopy.extend()``'s case, mirroring how
     ``known_variables`` widens the namespace.
     """
     if isinstance(node, ComparisonNode):
@@ -186,7 +186,7 @@ def check_schema(
     """Check every declaration's dim rules. Raises :class:`DimensionError`.
 
     ``external`` maps variables already on a model to their dims, so
-    ``compat.extend()`` can reference them (hard rule 5 keeps parameters
+    ``linopy.extend()`` can reference them (hard rule 5 keeps parameters
     schema-local, but variables legitimately come from the model argument).
     """
     ns = Namespace.of(schema, external)

@@ -2,13 +2,13 @@
 
 import pandas as pd
 
-import linopy_yaml as ly
-from tests.oracle import compat
+import farkas as ly
+from tests.oracle import farkas_linopy
 
 
 def test_dispatch_builds(dispatch_yaml):
     """Build the dispatch model from YAML and verify structure."""
-    m = compat.build(
+    m = farkas_linopy.build(
         dispatch_yaml,
         data={
             'p_max': pd.Series({'wind': 100, 'solar': 60, 'gas': 200}),
@@ -33,7 +33,7 @@ def test_dispatch_builds(dispatch_yaml):
     assert m.objective is not None
 
     # The model stands for itself; the schema is re-read from the file when
-    # wanted, never carried on the model (compat is a pure producer).
+    # wanted, never carried on the model (farkas_linopy is a pure producer).
     schema = ly.load_schema(dispatch_yaml)
     assert schema.variables['p'].foreach == ['snapshot', 'generator']
     assert schema.parameters['load'].dims == ['snapshot']
@@ -41,7 +41,7 @@ def test_dispatch_builds(dispatch_yaml):
 
 def test_dispatch_solves(dispatch_yaml):
     """Build and solve the dispatch model, check solution is feasible."""
-    m = compat.build(
+    m = farkas_linopy.build(
         dispatch_yaml,
         data={
             'p_max': pd.Series({'wind': 100, 'solar': 60, 'gas': 200}),

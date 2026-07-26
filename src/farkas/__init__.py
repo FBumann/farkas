@@ -4,11 +4,11 @@ Models build relationally (duckdb under a hard ``memory_limit``) and stream
 to the solver, so build peak memory tracks that budget rather than the model
 size — see ARCHITECTURE.md. linopy is not imported at runtime; it serves as
 the differential-test oracle and as an opt-in compatibility shim
-(``from linopy_yaml import compat`` — ``compat.build`` / ``compat.extend``).
+(``from farkas import linopy as farkas_linopy``).
 
 Example::
 
-    import linopy_yaml as ly
+    import farkas as ly
 
     # Solution owns the duckdb executor backing primal/to_* — close it
     with ly.solve('model.yaml', {'p_max': 'p_max.parquet', 'load': 'load.parquet'}) as sol:
@@ -20,8 +20,8 @@ Example::
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _installed_version
 
-from linopy_yaml.api import build, check, load_schema, solve, write
-from linopy_yaml.errors import (
+from farkas.api import build, check, load_schema, solve, write
+from farkas.errors import (
     DataError,
     DimensionError,
     LanguageError,
@@ -29,7 +29,7 @@ from linopy_yaml.errors import (
     PiecewiseExpansionError,
     SchemaError,
 )
-from linopy_yaml.schema import MathSchema
+from farkas.schema import MathSchema
 
 __all__ = [
     'DataError',
@@ -48,6 +48,6 @@ __all__ = [
 
 try:
     # the git tag is the source of truth; hatch-vcs bakes it into the metadata
-    __version__ = _installed_version('linopy-yaml')
+    __version__ = _installed_version('farkas')
 except PackageNotFoundError:  # running from a source tree with nothing installed
     __version__ = '0.0.0'

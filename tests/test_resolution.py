@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import pytest
 
-from linopy_yaml.errors import LanguageError
-from linopy_yaml.lowering import lower_program
-from linopy_yaml.resolution import Namespace, expression_of, where_of
-from linopy_yaml.schema import MathSchema
-from linopy_yaml.validation import validate_expressions
+from farkas.errors import LanguageError
+from farkas.lowering import lower_program
+from farkas.resolution import Namespace, expression_of, where_of
+from farkas.schema import MathSchema
+from farkas.validation import validate_expressions
 
 BASE = {
     'dimensions': {'snapshot': {'dtype': 'int'}, 'generator': {'values': ['wind', 'gas']}},
@@ -48,7 +48,7 @@ def _schema(**overrides) -> MathSchema:
 
 
 def test_no_unresolved_name_survives_the_pass():
-    from linopy_yaml.expression_parser import NameNode
+    from farkas.expression_parser import NameNode
 
     schema = _schema()
     ast = expression_of('sum(p * cost, over=generator) == load', schema, Namespace.of(schema), 't')
@@ -67,7 +67,7 @@ def test_no_unresolved_name_survives_the_pass():
 
 
 def test_names_are_typed_by_kind():
-    from linopy_yaml.expression_parser import DimensionNode, ParameterNode, VariableNode
+    from farkas.expression_parser import DimensionNode, ParameterNode, VariableNode
 
     schema = _schema()
     ast = expression_of('sum(p * cost, over=generator)', schema, Namespace.of(schema), 't')

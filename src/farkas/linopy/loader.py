@@ -8,10 +8,10 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from linopy_yaml.errors import DataError
+from farkas.errors import DataError
 
 if TYPE_CHECKING:
-    from linopy_yaml.schema import MathSchema
+    from farkas.schema import MathSchema
 
 
 def build_master_coords(

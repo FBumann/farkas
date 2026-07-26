@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-`linopy_yaml` is a YAML-based math definition layer for [linopy](https://github.com/PyPSA/linopy).
+`farkas` is a YAML-based math definition layer for [linopy](https://github.com/PyPSA/linopy).
 It lets users define optimisation problems declaratively in YAML and build them into `linopy.Model` objects at runtime.
 
 Three docs, kept short on purpose — if a change makes one of them longer, check whether it belongs in another:
@@ -18,7 +18,7 @@ A PR that adds, renames, or retires a construct updates `SPEC.md`. Rationale bel
 ## Common Commands
 
 ```bash
-# Install (uv-managed venv; [compat] extra = linopy/xarray for the shim + oracle)
+# Install (uv-managed venv; [linopy] extra = linopy/xarray for the shim + oracle)
 uv sync  # dev group (tools + oracle deps) is default
 
 # Run tests
@@ -41,7 +41,7 @@ uv run pre-commit install
 See `ARCHITECTURE.md` for the authoritative module map. In brief:
 
 ```
-src/linopy_yaml/
+src/farkas/
 ├── api.py               # native entry point: check / build / solve / write — linopy-free
 ├── schema.py            # pydantic schema (incl. expressions:, macros:, piecewise:)
 ├── expression_parser.py # pyparsing grammar for math expressions
@@ -54,14 +54,14 @@ src/linopy_yaml/
 ├── sources.py           # bind runtime data to a validated schema
 ├── errors.py            # the exception hierarchy (LinopyYamlError root)
 ├── relational/          # plan.py + compiler.py + executor.py + sinks/ (duckdb; linopy-free)
-└── compat/              # opt-in linopy lane ([compat] extra): the ONLY code
+└── linopy/              # opt-in linopy lane ([linopy] extra): the ONLY code
                          # importing linopy/xarray — __init__.py, builder.py, loader.py
 ```
 
 ## API
 
 ```python
-import linopy_yaml as ly
+import farkas as ly
 
 # Solution holds the duckdb executor that backs primal/to_* — use a with block
 # (or sol.close()); ly.build(...) returns the live executor for multiple sinks.
@@ -70,15 +70,14 @@ with ly.solve("model.yaml", {"p_max": "p_max.parquet", "load": "load.parquet"}) 
     sol.primal("p")
 ```
 
-Compat lane — YAML math on a `linopy.Model` that already exists in memory
-(requires the `[compat]` extra):
+Linopy lane — YAML math on a `linopy.Model` that already exists in memory
+(requires the `[linopy]` extra):
 
 ```python
-from linopy import Model
-from linopy_yaml import compat
+from farkas import linopy as farkas_linopy
 
-m = compat.build("model.yaml", data={...})          # YAML -> linopy.Model
-compat.extend(m, "ramp_constraint.yaml", data={...})  # YAML math onto an existing model
+m = farkas_linopy.build("model.yaml", data={...})            # YAML -> linopy.Model
+farkas_linopy.extend(m, "ramp_constraint.yaml", data={...})  # YAML math onto an existing model
 ```
 
 ## Development Guidelines

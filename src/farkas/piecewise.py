@@ -42,13 +42,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from linopy_yaml.dimensions import dims_of
-from linopy_yaml.errors import LanguageError, PiecewiseExpansionError
-from linopy_yaml.expression_parser import ComparisonNode, parse_expression
-from linopy_yaml.lowering import check_core_subset
-from linopy_yaml.relational.arrow import as_table
-from linopy_yaml.resolution import Namespace, resolve_expression
-from linopy_yaml.schema import MathSchema, PiecewiseBlock
+from farkas.dimensions import dims_of
+from farkas.errors import LanguageError, PiecewiseExpansionError
+from farkas.expression_parser import ComparisonNode, parse_expression
+from farkas.lowering import check_core_subset
+from farkas.relational.arrow import as_table
+from farkas.resolution import Namespace, resolve_expression
+from farkas.schema import MathSchema, PiecewiseBlock
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -178,7 +178,7 @@ def validate_piecewise_data(schema: MathSchema, values: Mapping[str, Any] | Any)
     breakpoint values in hand (which the schema never has), both are
     checkable. *values* maps parameter names to whatever its lane holds: the
     tidy ``pyarrow.Table`` / parquet path of
-    :func:`~linopy_yaml.lowering.tidy_sources`, or the compat lane's
+    :func:`~farkas.lowering.tidy_sources`, or the linopy lane's
     ``xr.Dataset``. Blocks whose parameters are missing, or bound to a path
     (not readable in process), are skipped; a missing parameter errors
     elsewhere.
@@ -193,7 +193,7 @@ def validate_piecewise_data(schema: MathSchema, values: Mapping[str, Any] | Any)
         except ImportError as exc:
             msg = (
                 f"piecewise '{name}': convex curvature validation currently "
-                f'requires xarray — pip install "linopy-yaml[compat]" '
+                f'requires xarray — pip install "farkas[linopy]" '
                 f'(see issue #27: make this check numpy-only)'
             )
             raise ModuleNotFoundError(msg) from exc
@@ -227,7 +227,7 @@ def validate_piecewise_data(schema: MathSchema, values: Mapping[str, Any] | Any)
 def _as_dataarray(schema: MathSchema, pname: str, values: Mapping[str, Any] | Any) -> Any:
     """One source as a DataArray indexed by its declared dims.
 
-    Two shapes reach here: the compat lane hands over its ``xr.Dataset``
+    Two shapes reach here: the linopy lane hands over its ``xr.Dataset``
     entries directly, and the relational lane hands over the tidy Arrow tables
     :func:`lowering.tidy_sources` normalised. Arrow's hop out costs no
     dependency the caller has not taken — asking for a curvature check already

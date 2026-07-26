@@ -15,9 +15,9 @@ from typing import TYPE_CHECKING, Any, assert_never
 import numpy as np
 import xarray as xr
 
-from linopy_yaml._notes import note
-from linopy_yaml.errors import DataError, LanguageError
-from linopy_yaml.expression_parser import (
+from farkas._notes import note
+from farkas.errors import DataError, LanguageError
+from farkas.expression_parser import (
     ArithmeticNode,
     BinaryOperatorNode,
     ComparisonNode,
@@ -30,10 +30,10 @@ from linopy_yaml.expression_parser import (
     UnaryOperatorNode,
     VariableNode,
 )
-from linopy_yaml.helpers import unknown_helper_message
-from linopy_yaml.resolution import Namespace, expression_of, where_of
-from linopy_yaml.schema import equation_name
-from linopy_yaml.where_parser import (
+from farkas.helpers import unknown_helper_message
+from farkas.resolution import Namespace, expression_of, where_of
+from farkas.schema import equation_name
+from farkas.where_parser import (
     AndNode,
     BooleanLiteralNode,
     DimensionComparisonNode,
@@ -52,7 +52,7 @@ if TYPE_CHECKING:
     import linopy
     import pandas as pd
 
-    from linopy_yaml.schema import MathSchema
+    from farkas.schema import MathSchema
 
 # Mapping from YAML comparison operators to linopy sign strings
 _SIGN_MAP = {'==': '=', '<=': '<=', '>=': '>='}
@@ -327,7 +327,7 @@ def _coordinate_array(by: CoordinateNode, ctx: EvaluationContext) -> Any:
 # LinearExpression. xarray is imported inside the bodies, not at module level,
 # so this module still imports on a bare install — that is what lets
 # ``tests/test_architecture.py`` check ``_HELPERS`` against the closed name
-# set without the [compat] extra.
+# set without the [linopy] extra.
 
 
 def _helper_sum(array: Any, *, over: str) -> Any:

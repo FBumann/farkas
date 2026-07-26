@@ -11,11 +11,11 @@ import pandas as pd
 import pytest
 import yaml as pyyaml
 
-from linopy_yaml.expansion import parse_and_expand
-from linopy_yaml.expression_parser import parse_expression
-from linopy_yaml.schema import MathSchema
-from linopy_yaml.validation import validate_expressions
-from tests.oracle import compat
+from farkas.expansion import parse_and_expand
+from farkas.expression_parser import parse_expression
+from farkas.schema import MathSchema
+from farkas.validation import validate_expressions
+from tests.oracle import farkas_linopy
 
 WEIGHTED_SUM = {
     'args': ['array', 'weights'],
@@ -213,9 +213,9 @@ def test_macro_templates_validated_even_when_unused():
 
 def test_differential_named_expression_and_macro(tmp_path):
 
-    from linopy_yaml.lowering import lower_program
-    from linopy_yaml.relational import DuckdbExecutor
-    from linopy_yaml.sources import tidy_sources
+    from farkas.lowering import lower_program
+    from farkas.relational import DuckdbExecutor
+    from farkas.sources import tidy_sources
 
     yaml_text = """
 dimensions:
@@ -263,7 +263,7 @@ objectives:
     }
     coords = {'snapshot': pd.RangeIndex(n_s, name='snapshot')}
 
-    m = compat.build(yaml_file, data=data, coords=coords)
+    m = farkas_linopy.build(yaml_file, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     oracle = float(m.objective.value)
     assert np.isfinite(oracle)
@@ -283,12 +283,12 @@ def test_no_python_helper_registry():
     makes the differential tests an oracle rather than a comparison of
     dialects (ARCHITECTURE.md, "The expressive ceiling").
     """
-    import linopy_yaml
-    import linopy_yaml.helpers as helpers
+    import farkas
+    import farkas.helpers as helpers
 
     assert not hasattr(helpers, 'register')
     assert not hasattr(helpers, '_REGISTRY')
-    assert not hasattr(linopy_yaml, 'register')
+    assert not hasattr(farkas, 'register')
 
 
 def test_unknown_helper_rejected_at_load_time_with_the_rewrite():
