@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.0-alpha.8](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.7...v0.0.0-alpha.8) (2026-07-26)
+
+
+### Refactoring
+
+* one lazy import left, and it is the only real cycle ([#117](https://github.com/FBumann/farkas/issues/117)) ([ecad711](https://github.com/FBumann/farkas/commit/ecad71113f561f231388045dcdbe2b5b85fde416))
+
 ## [0.0.0-alpha.7](https://github.com/FBumann/linopy-yaml/compare/v0.0.0-alpha.6...v0.0.0-alpha.7) (2026-07-26)
 
 
