@@ -157,7 +157,7 @@ def main() -> None:
         sol = ex.solve()
         print(f'    status     {sol.status}')
         print(f'    objective  {sol.objective:,.1f}')
-        print(_indent(sol.primal('p').to_pandas().head(6)))
+        print(_indent(sol.primal('p').head(6)))
 
     # ------------------------------------------------------------------
     banner(7, 'and what the language refuses', 'validation.py, lowering.py')

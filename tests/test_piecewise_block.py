@@ -102,7 +102,7 @@ def test_nonconvex_on_curve_differential(nonconvex_inputs, tmp_path):
         assert sol.status == 'Optimal'
         assert sol.objective == pytest.approx(oracle, rel=RTOL)
 
-        cost = sol.primal('op_cost').to_pandas().set_index('snapshot')['value']
+        cost = sol.primal('op_cost').set_index('snapshot')['value']
         for s, load_v in data['load'].items():
             assert cost[s] == pytest.approx(curve(load_v, data['bp_x'], data['bp_y']), abs=1e-6)
 
@@ -196,8 +196,8 @@ def test_chp_three_links(tmp_path):
         assert sol.objective == pytest.approx(oracle, rel=RTOL)
 
         # all three linked primals sit at the same curve position
-        fuel = sol.primal('fuel').to_pandas().set_index('snapshot')['value']
-        heat = sol.primal('heat').to_pandas().set_index('snapshot')['value']
+        fuel = sol.primal('fuel').set_index('snapshot')['value']
+        heat = sol.primal('heat').set_index('snapshot')['value']
         for s, load_v in load.items():
             assert fuel[s] == pytest.approx(curve(load_v, power_bp, fuel_bp), abs=1e-6)
             assert heat[s] == pytest.approx(curve(load_v, power_bp, heat_bp), abs=1e-6)
@@ -305,7 +305,7 @@ def test_active_gating(nonconvex_inputs, tmp_path):
         assert sol.status == 'Optimal'
         assert sol.objective == pytest.approx(oracle, rel=RTOL)
 
-        cost = sol.primal('op_cost').to_pandas().set_index('snapshot')['value']
+        cost = sol.primal('op_cost').set_index('snapshot')['value']
         for s in on_flag.index:
             # on: cost sits ON the curve at the pinned load; off: pinned to zero
             expected = curve(data['load'][s], data['bp_x'], data['bp_y']) if on_flag[s] else 0.0
@@ -404,8 +404,8 @@ def test_example_per_generator_curves(tmp_path):
         assert sol.objective == pytest.approx(oracle, rel=RTOL)
 
         # each generator's cost sits on its own curve (hull is exact: convex + min)
-        p = sol.primal('p').to_pandas().set_index(['snapshot', 'generator'])['value']
-        cost = sol.primal('op_cost').to_pandas().set_index(['snapshot', 'generator'])['value']
+        p = sol.primal('p').set_index(['snapshot', 'generator'])['value']
+        cost = sol.primal('op_cost').set_index(['snapshot', 'generator'])['value']
         for (s, g), pv in p.items():
             expected = curve(pv, bp_x.sel(generator=g).to_series(), bp_y.sel(generator=g).to_series())
             assert cost[(s, g)] == pytest.approx(expected, abs=1e-5)

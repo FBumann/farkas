@@ -52,8 +52,13 @@ def as_table(obj: object, dims: Sequence[str] = ()) -> Any | None:
     pd = sys.modules.get('pandas')
     if pd is not None and isinstance(obj, pd.Series):
         # a Series exposes a capsule too, but it describes the values alone —
-        # the index (which holds the dims) has to be promoted to columns first
-        obj = obj.rename('value').rename_axis(dims).reset_index()
+        # the index, which holds the dims, has to be promoted to columns first.
+        # Levels the caller named are left alone and bind by name: overwriting
+        # them with *dims* transposes the data silently when two dims share a
+        # label space, and nothing downstream can catch that.
+        if any(n is None for n in obj.index.names):
+            obj = obj.rename_axis(dims)
+        obj = obj.rename('value').reset_index()
 
     if hasattr(obj, '__arrow_c_stream__'):
         try:

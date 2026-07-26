@@ -81,9 +81,9 @@ def test_storage_yaml_differential(storage_inputs, tmp_path):
         assert h.getInfo().objective_function_value == pytest.approx(oracle, rel=RTOL)
 
         # the relational soc trace satisfies the cyclic recurrence
-        soc = sol.primal('soc').to_pandas().set_index('snapshot')['value'].sort_index()
-        charge = sol.primal('charge').to_pandas().set_index('snapshot')['value'].sort_index()
-        discharge = sol.primal('discharge').to_pandas().set_index('snapshot')['value'].sort_index()
+        soc = sol.primal('soc').set_index('snapshot')['value'].sort_index()
+        charge = sol.primal('charge').set_index('snapshot')['value'].sort_index()
+        discharge = sol.primal('discharge').set_index('snapshot')['value'].sort_index()
         soc_prev = np.roll(soc.to_numpy(), 1)
         assert np.allclose(
             soc.to_numpy(),
@@ -145,9 +145,9 @@ def test_shift_acyclic_differential(storage_inputs, tmp_path):
         assert sol.objective == pytest.approx(oracle, rel=RTOL)
 
         # acyclic recurrence: soc[0] has no predecessor (starts from zero)
-        soc = sol.primal('soc').to_pandas().set_index('snapshot')['value'].sort_index()
-        charge = sol.primal('charge').to_pandas().set_index('snapshot')['value'].sort_index()
-        discharge = sol.primal('discharge').to_pandas().set_index('snapshot')['value'].sort_index()
+        soc = sol.primal('soc').set_index('snapshot')['value'].sort_index()
+        charge = sol.primal('charge').set_index('snapshot')['value'].sort_index()
+        discharge = sol.primal('discharge').set_index('snapshot')['value'].sort_index()
         soc_prev = np.concatenate([[0.0], soc.to_numpy()[:-1]])
         assert np.allclose(
             soc.to_numpy(),

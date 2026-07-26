@@ -354,7 +354,7 @@ schema = ly.load_schema("model.yaml")  # MathSchema
 
 with ly.solve("model.yaml", sources, memory_limit="512MB") as sol:
     sol.status, sol.objective
-    sol.primal("p")            # tidy pyarrow.Table (dims…, value) — the native shape
+    sol.primal("p")            # tidy DataFrame (dims…, value) — the native shape
     sol.to_dataarray("p")      # the same, labelled: .sel / resample / plot
     sol.to_dataset()           # every variable by default; names for a subset
     sol.to_parquet(directory)  # streamed to disk, never through this process
@@ -375,13 +375,12 @@ with ly.build("model.yaml", sources, memory_limit="512MB") as ex:
     sol = ex.solve()       # read sol here — closing ex invalidates it
 ```
 
-**Arrow is the boundary on the streaming lane.** `sources` maps parameter and
-dimension names to parquet paths, scalars, or any table exposing the Arrow
-PyCapsule protocol — pyarrow, polars and pandas all qualify, and none of them
-is a dependency. Results come back the same way: `primal` returns a
-`pyarrow.Table`, so convert with the receiving library's own reader
-(`.to_pandas()`, `polars.from_arrow(...)`) or use `to_dataarray`. Nothing on
-this path imports linopy, xarray or pandas. Build knobs, shared by all three
+`sources` maps parameter and dimension names to parquet paths, scalars, or any
+table exposing the Arrow PyCapsule protocol — pyarrow, polars and pandas all
+qualify, and the recogniser imports none of them. Nothing on this path imports
+linopy. What the *readers* return is unsettled and tracked separately
+([#105](https://github.com/FBumann/linopy-yaml/issues/105)); today `primal`
+returns a pandas DataFrame. Build knobs, shared by all three
 entry points: `coords`, `memory_limit` (default `'1GB'`), `chunk_rows`,
 `threads`, `workdir`. `to_dataset` costs what it says — each variable arrives
 dense over its own dims, so a model built for the memory budget this engine

@@ -18,16 +18,14 @@ classifiers = [
 ]
 requires-python = ">=3.11"
 dependencies = [
+    "pandas",
     "numpy",
     "pyparsing>=3.0",
     "pydantic>=2.0",
     "pyyaml>=6.0",
     "duckdb>=1.0",
-    # Arrow is the lane's boundary: sources in and results out are pyarrow
-    # tables, and the solver_direct sink streams COO batches to highspy through
-    # duckdb's .to_arrow_reader(). No dataframe library is a dependency —
-    # pandas, polars and xarray are shapes we accept and return, not ones we
-    # import (see linopy_yaml/relational/arrow.py).
+    # required by the solver_direct sink: duckdb's .to_arrow_reader() streams
+    # COO batches to highspy. Used through duckdb, never imported by name.
     "pyarrow",
     "highspy",
 ]

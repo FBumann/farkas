@@ -51,7 +51,7 @@ from linopy_yaml.relational.arrow import as_table
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    import pyarrow as pa
+    import pandas as pd
 
 _IDENT = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 
@@ -104,14 +104,7 @@ class Solution:
     objective: float
     _executor: DuckdbExecutor
 
-    def primal(self, name: str) -> pa.Table:
-        """The variable's solution as a tidy ``pyarrow.Table`` ``(dims…, value)``.
-
-        Arrow is the native shape because it is what duckdb already holds — no
-        dataframe library sits between the engine and the caller. Convert with
-        the receiving library's own reader when you want one:
-        ``.to_pandas()``, ``polars.from_arrow(...)``, or :meth:`to_dataarray`.
-        """
+    def primal(self, name: str) -> pd.DataFrame:
         return self._executor._primal(name)
 
     def to_dataarray(self, name: str) -> Any:
@@ -129,12 +122,11 @@ class Solution:
 
         Goes through ``pandas.DataFrame.to_xarray()`` rather than importing
         xarray here: the streaming lane is xarray-free (hard rule 2), and
-        asking for a DataArray already implies xarray — which brings pandas
-        with it, so the hop costs no dependency the caller has not taken. Both
-        ship with the ``[compat]`` extra. Missing coordinate combinations come
-        back as NaN, since a masked variable has no row.
+        pandas does the optional import for us. Requires xarray to be
+        installed (it ships with the ``[compat]`` extra); missing coordinate
+        combinations come back as NaN, since a masked variable has no row.
         """
-        frame = self.primal(name).to_pandas()
+        frame = self.primal(name)
         dims = [c for c in frame.columns if c != 'value']
         if not dims:
             return frame['value'].to_xarray().rename(name)
@@ -930,13 +922,11 @@ class DuckdbExecutor:
         self._con.unregister('sol_src')
         return Solution(status=status, objective=objective, _executor=self)
 
-    def _primal(self, name: str) -> pa.Table:
+    def _primal(self, name: str) -> pd.DataFrame:
         assert self._program is not None
         dims = self._program.variable(name).dims
         collist = ', '.join([*(f'v.{d}' for d in dims), 's.value'])
-        return self._con.execute(
-            f'SELECT {collist} FROM var_{name} v JOIN sol s ON s.col = v.var_label'
-        ).to_arrow_table()
+        return self._con.execute(f'SELECT {collist} FROM var_{name} v JOIN sol s ON s.col = v.var_label').df()
 
     def _solution_to_parquet(self, directory: Path) -> dict[str, Path]:
         assert self._program is not None

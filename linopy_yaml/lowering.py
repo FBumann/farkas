@@ -177,6 +177,14 @@ def tidy_sources(
                 f'table — pass any Arrow-compatible table with columns '
                 f'{[*pdef.dims, "value"]} (pyarrow, polars, pandas), or a parquet path'
             )
+        if any(d not in table.column_names for d in pdef.dims):
+            # names are binding, so a mismatch is caught here rather than
+            # positionally rewritten — see as_table on why that matters
+            raise DataError(
+                f"parameter '{pname}': source columns {table.column_names} "
+                f'do not match its declared dims {list(pdef.dims)}. Rename them to the '
+                f'declared dims, or drop the index names to bind positionally.'
+            )
         sources[pname] = table
 
     for dname, ddef in schema.dimensions.items():
