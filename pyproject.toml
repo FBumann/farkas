@@ -15,19 +15,20 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Development Status :: 3 - Alpha",
+    "Typing :: Typed",
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "pandas",
-    "numpy",
-    "pyparsing>=3.0",
+    "pandas>=2.2",
+    "numpy>=1.26",
+    "pyparsing>=3.1",
     "pydantic>=2.0",
     "pyyaml>=6.0",
-    "duckdb>=1.0",
+    "duckdb>=1.5",
     # required by the solver_direct sink: duckdb's .to_arrow_reader() streams
     # COO batches to highspy. Used through duckdb, never imported by name.
-    "pyarrow",
-    "highspy",
+    "pyarrow>=16",
+    "highspy>=1.10",
 ]
 
 [project.optional-dependencies]
@@ -117,6 +118,9 @@ runtime-evaluated-base-classes = ["pydantic.BaseModel"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = ["--strict-markers", "--strict-config", "-ra"]
+xfail_strict = true
+filterwarnings = ["error"]
 
 [tool.pyrefly]
 # check against the *lowest* supported interpreter, so 3.12+ syntax and stdlib
