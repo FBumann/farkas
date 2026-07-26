@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.0.0-alpha.6](https://github.com/FBumann/linopy-yaml/compare/v0.0.0-alpha.5...v0.0.0-alpha.6) (2026-07-26)
+
+
+### Features
+
+* accept any Arrow-compatible table as a source ([#104](https://github.com/FBumann/linopy-yaml/issues/104)) ([e8a699e](https://github.com/FBumann/linopy-yaml/commit/e8a699ede9cccc4bb688c7ed519c98c38d0992c3))
+
+
+### Refactoring
+
+* three modules in the engine, one per box in the diagram ([#107](https://github.com/FBumann/linopy-yaml/issues/107)) ([f6b30b2](https://github.com/FBumann/linopy-yaml/commit/f6b30b241cf2d438e7072200dfc169046a0c2d31))
+
+
+### Documentation
+
+* the seam's level is decided, so stop pointing at an open issue ([#111](https://github.com/FBumann/linopy-yaml/issues/111)) ([7d1a992](https://github.com/FBumann/linopy-yaml/commit/7d1a9929626ba8f48f56fac5bfad12770bed1d6e))
+
 ## [0.0.0-alpha.5](https://github.com/FBumann/linopy-yaml/compare/v0.0.0-alpha.4...v0.0.0-alpha.5) (2026-07-26)
 
 
