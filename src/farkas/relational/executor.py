@@ -398,10 +398,16 @@ class DuckdbExecutor:
                 )
 
     def _check_coordinate_containment(self, d: str, cname: str, target: str) -> None:
-        """Every coordinate value must be a label of the dimension it targets."""
+        """Every coordinate value must be a label of the dimension it targets.
+
+        A *null* value is not a violation: it says the label belongs to no
+        group, which is the same row-absence idiom the rest of the engine uses
+        for "not present". Only a value that is present and unknown is a typo,
+        and that is the case worth stopping — it would drop terms silently.
+        """
         bad = self._con.execute(
             f'SELECT g."{cname}" FROM dim_{d} g LEFT JOIN dim_{target} t ON t.val = g."{cname}" '
-            f'WHERE t.val IS NULL GROUP BY g."{cname}" LIMIT 5'
+            f'WHERE t.val IS NULL AND g."{cname}" IS NOT NULL GROUP BY g."{cname}" LIMIT 5'
         ).fetchall()
         if not bad:
             return

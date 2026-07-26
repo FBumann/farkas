@@ -16,6 +16,7 @@ import pandas as pd
 import pytest
 import yaml as pyyaml
 
+import farkas as fk
 from farkas.errors import DataError, LanguageError
 from farkas.lowering import lower_program
 from farkas.relational import (
@@ -178,3 +179,71 @@ def test_a_coordinate_bearing_dim_needs_an_index_source(transport_data):
     schema = MathSchema(**pyyaml.safe_load(Path(TRANSPORT_YAML).read_text()))
     with DuckdbExecutor(memory_limit='256MB') as ex, pytest.raises(DataError, match='no index source'):
         ex.build(lower_program(schema), tidy_sources(schema, data, coords))
+
+
+PARTIAL_YAML = """
+dimensions:
+  g: {dtype: str}
+  item:
+    dtype: str
+    coords: {grp: g}
+parameters:
+  cap: {dims: [item]}
+  target: {dims: [g]}
+variables:
+  x:
+    foreach: [item]
+    bounds: {lower: 0, upper: cap}
+constraints:
+  meet:
+    foreach: [g]
+    equations:
+      - expression: group_sum(x, over=item, by=grp) >= target
+objectives:
+  obj:
+    sense: minimize
+    equations:
+      - expression: sum(x, over=item)
+"""
+
+
+def _partial_inputs(grp_labels):
+    """`item` carries coordinate `grp`; *grp_labels* is one label per item."""
+    items = ['i0', 'i1', 'i2']
+    index = pd.DataFrame({'item': items, 'grp': grp_labels})
+    return (
+        {  # relational sources
+            'item': index,
+            'g': pd.DataFrame({'g': ['g0']}),
+            'cap': pd.DataFrame({'item': items, 'value': [5.0, 5.0, 5.0]}),
+            'target': pd.DataFrame({'g': ['g0'], 'value': [3.0]}),
+        },
+        {  # eager data / coords
+            'cap': pd.Series([5.0, 5.0, 5.0], index=pd.Index(items, name='item')),
+            'target': pd.Series([3.0], index=pd.Index(['g0'], name='g')),
+        },
+        {'item': index, 'g': pd.Index(['g0'], name='g')},
+    )
+
+
+def test_a_partial_coordinate_places_its_orphans_nowhere(tmp_path):
+    """A null coordinate means "this label is in no group", not "typo".
+
+    Row absence is the language's idiom for "not present" everywhere else —
+    an absent parameter row is a structural zero — and a coordinate is the one
+    place it used to be an error. `i2` belongs to no group, so `group_sum`
+    places its terms nowhere and only `i0`/`i1` can meet the target of 3.
+    """
+    path = tmp_path / 'partial.yaml'
+    path.write_text(PARTIAL_YAML)
+    sources, data, coords = _partial_inputs(['g0', 'g0', None])
+
+    with fk.solve(path, sources) as sol:
+        assert sol.status == 'Optimal'
+        assert sol.objective == pytest.approx(3.0)
+        # the orphan is still a variable; it just carries no group obligation
+        assert sol.primal('x').set_index('item')['value']['i2'] == pytest.approx(0.0)
+
+    model = farkas_linopy.build(path, data=data, coords=coords)
+    model.solve(solver_name='highs', output_flag=False)
+    assert float(model.objective.value) == pytest.approx(3.0)
