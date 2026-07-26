@@ -3,29 +3,22 @@ dimensions:
     dtype: int
   generator:
     dtype: str
+    coords: [bus]           # every generator sits on a bus
   bus:
     dtype: str
   line:
     dtype: str
+    coords: {from: bus, to: bus}   # both endpoints are buses
 
 parameters:
   p_max:
     dims: [generator]
   cost:
     dims: [generator]
-  gen_bus:
-    dims: [generator]
-    dtype: str
   cap:
     dims: [line]
   neg_cap:
     dims: [line]
-  line_from:
-    dims: [line]
-    dtype: str
-  line_to:
-    dims: [line]
-    dtype: str
   load:
     dims: [snapshot, bus]
 
@@ -45,7 +38,7 @@ constraints:
   balance:
     foreach: [snapshot, bus]
     equations:
-      - expression: group_sum(p, gen_bus, into=bus) + group_sum(f, line_to, into=bus) - group_sum(f, line_from, into=bus) == load
+      - expression: group_sum(p, over=generator, by=bus) + group_sum(f, over=line, by=to) - group_sum(f, over=line, by=from) == load
 
 objectives:
   total_cost:

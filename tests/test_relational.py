@@ -20,6 +20,7 @@ from linopy_yaml.relational import (
 from linopy_yaml.relational.plan import (
     Constant,
     ConstraintDeclaration,
+    DimensionDeclaration,
     GroupSum,
     ObjectiveDeclaration,
     Parameter,
@@ -157,18 +158,15 @@ def test_dispatch_roundtrip(dispatch_data, tmp_path):
 
 def transport_program() -> Program:
     injection = (
-        GroupSum(Variable('p'), mapping='gen_bus', into='bus')
-        + GroupSum(Variable('f'), mapping='line_to', into='bus')
-        - GroupSum(Variable('f'), mapping='line_from', into='bus')
+        GroupSum(Variable('p'), over='generator', coordinate='bus', into='bus')
+        + GroupSum(Variable('f'), over='line', coordinate='to', into='bus')
+        - GroupSum(Variable('f'), over='line', coordinate='from', into='bus')
     )
     return Program(
         parameters=(
             ParameterDeclaration('p_max', ('generator',)),
             ParameterDeclaration('cost', ('generator',)),
-            ParameterDeclaration('gen_bus', ('generator',)),
             ParameterDeclaration('cap', ('line',)),
-            ParameterDeclaration('line_from', ('line',)),
-            ParameterDeclaration('line_to', ('line',)),
             ParameterDeclaration('load', ('snapshot', 'bus')),
         ),
         variables=(
@@ -195,6 +193,10 @@ def transport_program() -> Program:
             ),
         ),
         objective=ObjectiveDeclaration('min', Sum(Variable('p') * Parameter('cost'), over=('generator', 'snapshot'))),
+        dimensions=(
+            DimensionDeclaration('generator', (('bus', 'bus'),)),
+            DimensionDeclaration('line', (('from', 'bus'), ('to', 'bus'))),
+        ),
     )
 
 
@@ -202,13 +204,13 @@ def transport_sources(gens, lines, load) -> dict:
     return {
         'p_max': gens[['generator', 'p_max']].rename(columns={'p_max': 'value'}),
         'cost': gens[['generator', 'cost']].rename(columns={'cost': 'value'}),
-        'gen_bus': gens[['generator', 'bus']].rename(columns={'bus': 'value'}),
         'cap': lines[['line', 'cap']].rename(columns={'cap': 'value'}),
-        'line_from': lines[['line', 'from_bus']].rename(columns={'from_bus': 'value'}),
-        'line_to': lines[['line', 'to_bus']].rename(columns={'to_bus': 'value'}),
         'load': load,
         'snapshot': load[['snapshot']],
         'bus': load[['bus']],
+        # dims carrying declared coordinates need an index source that has them
+        'generator': gens[['generator', 'bus']],
+        'line': lines[['line', 'from_bus', 'to_bus']].rename(columns={'from_bus': 'from', 'to_bus': 'to'}),
     }
 
 

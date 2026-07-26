@@ -31,6 +31,7 @@ from linopy_yaml.expression_parser import (
     ArithmeticNode,
     BinaryOperatorNode,
     ComparisonNode,
+    CoordinateNode,
     DimensionNode,
     FunctionCallNode,
     NameNode,
@@ -134,7 +135,10 @@ def lower_program(schema: MathSchema) -> plan.Program:
         _lower_expr(ast, schema, f"objective '{oname}'"),
     )
 
-    return plan.Program(parameters, tuple(variables), tuple(constraints), objective)
+    dimensions = tuple(
+        plan.DimensionDeclaration(dname, tuple(ddef.coords.items())) for dname, ddef in schema.dimensions.items()
+    )
+    return plan.Program(parameters, tuple(variables), tuple(constraints), objective, dimensions)
 
 
 def tidy_sources(
@@ -191,8 +195,10 @@ def tidy_sources(
         if dname in data:
             sources[dname] = data[dname]  # explicit index source (path or frame)
         elif coords and dname in coords:
-            idx = pd.Index(coords[dname])
-            sources[dname] = pd.DataFrame({dname: idx})
+            src = coords[dname]
+            # a frame carries declared coordinate columns alongside the labels;
+            # flattening it to an index here would drop them
+            sources[dname] = src if isinstance(src, pd.DataFrame) else pd.DataFrame({dname: pd.Index(src)})
         elif ddef.values is not None:
             sources[dname] = pd.DataFrame({dname: ddef.values})
 
@@ -214,7 +220,7 @@ def _lower_expr(node: ArithmeticNode, schema: MathSchema, context: str) -> plan.
     if isinstance(node, ParameterNode):
         return plan.Parameter(node.name)
 
-    if isinstance(node, (NameNode, DimensionNode)):
+    if isinstance(node, (NameNode, DimensionNode, CoordinateNode)):
         msg = (
             f'{type(node).__name__}({node.name!r}) reached lowering. Expressions '
             f'must go through resolution.expression_of() first '
@@ -271,28 +277,21 @@ def _lower_expr(node: ArithmeticNode, schema: MathSchema, context: str) -> plan.
             return plan.Sum(inner, (over_node.name,))
 
         if node.name == 'group_sum':
-            if len(node.args) != 2 or set(node.kwargs) != {'into'}:
-                raise LanguageError(
-                    f'{context}: group_sum() expects group_sum(<expr>, <mapping-parameter>, into=<dim>)'
-                )
-            mapping_node = node.args[1]
-            into_node = node.kwargs['into']
-            if not isinstance(mapping_node, ParameterNode):
-                raise LanguageError(f'{context}: group_sum() mapping must name a declared parameter')
-            mdims = schema.parameters[mapping_node.name].dims
-            if len(mdims) != 1:
-                raise LanguageError(
-                    f"{context}: group_sum() mapping '{mapping_node.name}' must have exactly one dim (has {mdims})"
-                )
-            if not isinstance(into_node, DimensionNode):
-                raise LanguageError(f'{context}: group_sum(into=...) must name a declared dimension')
+            if len(node.args) != 1 or set(node.kwargs) != {'over', 'by'}:
+                raise LanguageError(f'{context}: group_sum() expects group_sum(<expr>, over=<dim>, by=<coord>)')
+            over_node = node.kwargs['over']
+            by_node = node.kwargs['by']
+            if not isinstance(over_node, DimensionNode):
+                raise LanguageError(f'{context}: group_sum(over=...) must name a dimension')
+            if not isinstance(by_node, CoordinateNode):
+                raise LanguageError(f'{context}: group_sum(by=...) must name a coordinate')
             inner = _lower_expr(node.args[0], schema, context)
-            if mdims[0] not in _dims_of(inner, schema):
+            if over_node.name not in _dims_of(inner, schema):
                 raise LanguageError(
-                    f"{context}: group_sum() over '{mdims[0]}' but the expression "
+                    f"{context}: group_sum() over '{over_node.name}' but the expression "
                     f'has dims {sorted(_dims_of(inner, schema))}'
                 )
-            return plan.GroupSum(inner, mapping=mapping_node.name, into=into_node.name)
+            return plan.GroupSum(inner, over=over_node.name, coordinate=by_node.name, into=by_node.into)
 
         if node.name in ('roll', 'shift'):
             wrap = node.name == 'roll'
@@ -362,8 +361,7 @@ def _dims_of(expr: plan.Expression, schema: MathSchema) -> frozenset[str]:
     if isinstance(expr, plan.Translate):
         return _dims_of(expr.operand, schema)
     if isinstance(expr, plan.GroupSum):
-        d = schema.parameters[expr.mapping].dims[0]
-        return (_dims_of(expr.operand, schema) - {d}) | {expr.into}
+        return (_dims_of(expr.operand, schema) - {expr.over}) | {expr.into}
     raise LanguageError(f'cannot infer dims of {type(expr).__name__}')
 
 

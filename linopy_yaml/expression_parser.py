@@ -65,6 +65,23 @@ class DimensionNode:
 
 
 @dataclass
+class CoordinateNode:
+    """A resolved reference to a coordinate declared on a dimension.
+
+    Only legal in helper kwarg *values* (``group_sum(x, over=line, by=to)``).
+    Like :class:`DimensionNode` this names a coordinate space, not data — but it
+    is scoped to the dimension carrying it, so ``name`` alone is meaningless
+    without the sibling ``over=`` dimension. ``dimension`` records that binding
+    and ``into`` the dimension the coordinate's values are labels of, both
+    resolved once here so no backend has to re-derive them.
+    """
+
+    name: str
+    dimension: str
+    into: str
+
+
+@dataclass
 class UnaryOperatorNode:
     op: str
     operand: ArithmeticNode
@@ -97,6 +114,7 @@ ArithmeticNode = (
     | VariableNode
     | ParameterNode
     | DimensionNode
+    | CoordinateNode
     | UnaryOperatorNode
     | BinaryOperatorNode
     | FunctionCallNode
@@ -104,7 +122,7 @@ ArithmeticNode = (
 
 #: The subset a backend may see: resolution has removed every NameNode.
 #: Both consumers assert on this rather than re-implementing name lookup.
-RESOLVED_REFERENCE_NODES = (VariableNode, ParameterNode, DimensionNode)
+RESOLVED_REFERENCE_NODES = (VariableNode, ParameterNode, DimensionNode, CoordinateNode)
 
 
 @dataclass

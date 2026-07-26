@@ -33,6 +33,29 @@ must be declared. `dtype` ∈ {`float`, `int`, `str`, `datetime`}, default `str`
 `values` is a list or null; if null, coordinates must arrive via `sources=`
 (`coords=` on the compat lane), else loading fails.
 
+`coords` declares non-index coordinates the dimension's labels carry — a
+generator's bus, a line's endpoints, a snapshot's month — mapping each
+coordinate name to **the dimension its values are labels of**. Written as a
+list when the two names coincide, or as a mapping when they do not:
+
+```yaml
+dimensions:
+  bus: {dtype: str}
+  generator:
+    coords: [bus]                  # same as {bus: bus}
+  line:
+    coords: {from: bus, to: bus}   # two coordinates onto one dimension
+```
+
+The target must be a declared dimension, must not be the dimension carrying
+the coordinate, and a coordinate must not be named after a *different*
+dimension. A coordinate is single-valued per label, and its values are checked
+to be coordinates of the target once data is bound (§8) — that check is what
+makes `group_sum` safe. A dimension declaring `coords` needs an index source
+carrying those columns; they are never inferred from the parameters that use
+the dimension, because inferring them would let a mistyped label extend the
+label space instead of being rejected.
+
 **`parameters`** — declared shape only; data binds by name at run time (§8).
 `dims` required (`[]` is a scalar); `dtype` ∈ {`float`, `int`, `bool`, `str`},
 default `float`.
@@ -191,7 +214,7 @@ both lanes agree by construction.
 | `-x`, `+x` | `dims(x)` | |
 | `a + b`, `a * b`, `a / b` | `dims(a) ∪ dims(b)` | |
 | `sum(x, over=d)` | `dims(x) − {d}` | if `d ∉ dims(x)` |
-| `group_sum(x, m, into=g)` | `(dims(x) − dims(m)) ∪ {g}` | unless `dims(m) ⊆ dims(x)` |
+| `group_sum(x, over=d, by=c)` | `(dims(x) − {d}) ∪ {target(c)}` | unless `d ∈ dims(x)`, or `d` declares no coordinate `c` |
 | `roll(x, d=n)`, `shift(x, d=n)` | `dims(x)` | if `d ∉ dims(x)` |
 
 Binary operators **union**: an outer product is legitimate when the frame
@@ -241,7 +264,7 @@ a comparison of dialects. Dimension arguments are name-checked at load time:
 | Operator | Result | Notes |
 |---|---|---|
 | `sum(array, over=dim)` | `dim` collapses | `array` must carry `dim` |
-| `group_sum(array, mapping, into=dim)` | `mapping`'s dim → `into` | `mapping` is a 1-D parameter whose *values* are group labels — the membership sum that makes topology data rather than structure; absent groups contribute nothing |
+| `group_sum(array, over=dim, by=coord)` | `over` → the dimension `coord` targets | `coord` is declared on `over` (§2); its values are the group labels, checked against the target dimension at bind time. The membership sum that makes topology data rather than structure; groups with no members contribute nothing |
 | `roll(array, dim=n)` | value at *t−n*, cyclic | coordinates fixed, values wrap |
 | `shift(array, dim=n)` | value at *t−n*, acyclic | vacated positions contribute **zero** |
 
@@ -258,13 +281,15 @@ highest precedence first:
 
 1. a key in `sources` — a DataFrame carrying a column of that name, or a
    parquet path; first occurrence of each value is its position
-2. `coords=` — anything `pd.Index()` accepts
+2. `coords=` — anything `pd.Index()` accepts, or a DataFrame carrying the
+   label column plus one column per declared coordinate (§2)
 3. `values:` in the YAML
 4. *streaming lane only* — derived from the parameter tables that carry the
    dim, as **sorted** distinct values
 
-Step 4 exists because a dim some parameter already spans needs no second
-declaration, but it costs the *declared order*, which `roll`/`shift` read
+Step 4 is unavailable to a dimension declaring `coords` — it reads index
+columns only, so it cannot supply a coordinate. Otherwise step 4 exists because
+a dim some parameter already spans needs no second declaration, but it costs the *declared order*, which `roll`/`shift` read
 positionally — so pass an explicit index whenever order matters. The compat
 lane has no step 4: a dimension with neither `coords=` nor `values:` raises
 there. A dim that no source names and no parameter carries raises on both.

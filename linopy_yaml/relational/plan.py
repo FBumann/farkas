@@ -12,7 +12,7 @@ tables; actual data is bound at execution time via a source registry.
 
 Expressions support operator sugar so plans read naturally in Python:
 
-    balance = GroupSum(Variable("p"), mapping="gen_bus", into="bus") - Parameter("load")
+    balance = GroupSum(Variable("p"), over="generator", coordinate="bus", into="bus") - Parameter("load")
 """
 
 from __future__ import annotations
@@ -128,14 +128,17 @@ class Sum(Expression):
 
 @dataclass(frozen=True)
 class GroupSum(Expression):
-    """Sum ``operand`` through a mapping parameter.
+    """Sum ``operand`` through a coordinate declared on dim ``over``.
 
-    ``mapping`` names a parameter with exactly one dim ``d`` whose value
-    column holds group keys; the result replaces dim ``d`` with dim ``into``.
+    ``coordinate`` names a coordinate carried by dim ``over`` whose values are
+    labels of dim ``into``; the result replaces ``over`` with ``into``. All
+    three are resolved before lowering, so the executor needs no schema lookup
+    to place the terms.
     """
 
     operand: Expression
-    mapping: str
+    over: str
+    coordinate: str
     into: str
 
 
@@ -224,6 +227,20 @@ class Not(Predicate):
 
 
 @dataclass(frozen=True)
+class DimensionDeclaration:
+    """A dimension and the coordinates its labels carry.
+
+    ``coordinates`` maps a coordinate name to the dimension its values are
+    labels of. The executor checks that containment once the dim tables exist,
+    which is what keeps a mistyped label from silently dropping its terms in
+    the inner join that places them.
+    """
+
+    name: str
+    coordinates: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True)
 class ParameterDeclaration:
     """Shape declaration; data is bound at execution time by name."""
 
@@ -273,6 +290,13 @@ class Program:
     variables: tuple[VariableDeclaration, ...]
     constraints: tuple[ConstraintDeclaration, ...]
     objective: ObjectiveDeclaration
+    dimensions: tuple[DimensionDeclaration, ...] = ()
+
+    def dimension(self, name: str) -> DimensionDeclaration:
+        for d in self.dimensions:
+            if d.name == name:
+                return d
+        return DimensionDeclaration(name)
 
     def parameter(self, name: str) -> ParameterDeclaration:
         for p in self.parameters:

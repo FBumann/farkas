@@ -208,8 +208,11 @@ class TestDimensionKwargs:
         foreach = ['snapshot'] if foreach is None else foreach
         return MathSchema.model_validate(
             {
-                'dimensions': {'snapshot': {'dtype': 'int'}, 'generator': {'values': ['wind']}},
-                'parameters': {'load': {'dims': ['snapshot']}, 'gen_bus': {'dims': ['generator'], 'dtype': 'str'}},
+                'dimensions': {
+                    'snapshot': {'dtype': 'int'},
+                    'generator': {'values': ['wind'], 'coords': {'zone': 'snapshot'}},
+                },
+                'parameters': {'load': {'dims': ['snapshot']}},
                 'variables': {'p': {'foreach': ['snapshot', 'generator']}},
                 'constraints': {'c': {'foreach': foreach, 'equations': [{'expression': expression}]}},
             }
@@ -220,9 +223,13 @@ class TestDimensionKwargs:
             validate_expressions(self._schema('sum(p, over=snapshto) == load'))
         assert 'sum(over=snapshto)' in str(ei.value)
 
-    def test_group_sum_into_typo_is_rejected(self):
+    def test_group_sum_over_typo_is_rejected(self):
         with pytest.raises(ValueError, match='does not name a declared dimension'):
-            validate_expressions(self._schema('group_sum(p, gen_bus, into=buss) == load'))
+            validate_expressions(self._schema('group_sum(p, over=generatr, by=zone) == load'))
+
+    def test_group_sum_coordinate_typo_is_rejected(self):
+        with pytest.raises(ValueError, match="does not name a coordinate of 'generator'"):
+            validate_expressions(self._schema('group_sum(p, over=generator, by=zne) == load'))
 
     def test_roll_and_shift_dim_key_is_checked(self):
         for helper in ('roll', 'shift'):
@@ -232,7 +239,7 @@ class TestDimensionKwargs:
     def test_declared_dimensions_still_pass(self):
         for expression, foreach in (
             ('sum(p, over=generator) == load', ['snapshot']),
-            ('group_sum(p, gen_bus, into=generator) == load', ['snapshot', 'generator']),
+            ('group_sum(p, over=generator, by=zone) == load', ['snapshot']),
             ('roll(p, snapshot=1) == load', ['snapshot', 'generator']),
             ('shift(p, snapshot=1) == load', ['snapshot', 'generator']),
         ):

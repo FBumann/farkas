@@ -111,7 +111,7 @@ enter as plan expression nodes.
 
 For any request, triage: **macro, primitive, or escape?** Most are compositions.
 New primitives must be **macro-friendly** — anything a user might parameterise
-goes in a *value* position like `over=`/`into=`, never a kwarg key; the
+goes in a *value* position like `over=`/`by=`, never a kwarg key; the
 `roll(x, snapshot=1)` dim-as-key design is the language's own counterexample.
 
 A candidate primitive is admissible iff it is all three of **degree 1 (affine)**
@@ -192,7 +192,10 @@ sink, is [ROADMAP Track 4](ROADMAP.md#track-4--sink-capabilities).
 `(frame dims…, var_label, coeff)` plus a constant part; constraint rows are
 `(row, sense, rhs)`; the coefficient matrix is COO `(row, col, coeff)`. Masks
 are **row absence** — no NaN sentinels, no `-1` labels. Broadcasting is a join,
-`sum` drops coordinate columns, `group_sum` joins a mapping parameter. Labels
+`sum` drops coordinate columns, `group_sum` joins the dim table and projects a
+declared coordinate in place of the grouped dim. Neither aggregates: both
+rewrite a fragment's dim tuple, and duplicates collapse in the terminal
+`SUM(coeff) GROUP BY row, col` at assembly. Labels
 are dense `0..n-1` by construction, so `var_label` **is** the solver column
 index and `row` the solver row index — no remapping. That is also why value-only
 re-solve is cheap and structural editing is out of scope.

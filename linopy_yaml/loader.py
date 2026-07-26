@@ -30,7 +30,7 @@ def build_master_coords(
 
     for dim_name, dim_def in schema.dimensions.items():
         if dim_name in coords:
-            master[dim_name] = pd.Index(coords[dim_name], name=dim_name)
+            master[dim_name] = dim_index_of(coords[dim_name], dim_name)
         elif dim_def.values is not None:
             master[dim_name] = pd.Index(dim_def.values, name=dim_name)
         else:
@@ -42,6 +42,92 @@ def build_master_coords(
             raise DataError(msg)
 
     return master
+
+
+def dim_index_of(source: Any, dim_name: str) -> pd.Index:
+    """A dimension index from a label sequence or a frame carrying coordinates."""
+    if isinstance(source, pd.DataFrame):
+        if dim_name not in source.columns:
+            msg = (
+                f"coords['{dim_name}'] is a DataFrame without a '{dim_name}' column "
+                f'(has {list(source.columns)}). The label column must be named after '
+                f'the dimension.'
+            )
+            raise DataError(msg)
+        return pd.Index(pd.unique(source[dim_name]), name=dim_name)
+    return pd.Index(source, name=dim_name)
+
+
+def build_dim_coords(
+    schema: MathSchema,
+    coords: dict[str, Any] | None,
+    master_coords: dict[str, pd.Index],
+) -> dict[str, dict[str, xr.DataArray]]:
+    """Assemble declared coordinates, checked against the dimension they target.
+
+    A coordinate is a column of the dimension's index source, so it arrives
+    through ``coords=`` as a DataFrame carrying the label column plus one
+    column per declared coordinate. The containment check mirrors the
+    relational lane's: a value that is not a label of the target dimension
+    would otherwise be dropped by xarray's inner-join alignment, silently
+    losing the term it carries.
+    """
+    coords = coords or {}
+    out: dict[str, dict[str, xr.DataArray]] = {}
+
+    for dim_name, dim_def in schema.dimensions.items():
+        if not dim_def.coords:
+            continue
+        source = coords.get(dim_name)
+        if not isinstance(source, pd.DataFrame):
+            got = type(source).__name__ if source is not None else 'nothing'
+            msg = (
+                f"Dimension '{dim_name}' declares coordinates {sorted(dim_def.coords)}, "
+                f"so coords['{dim_name}'] must be a DataFrame with a '{dim_name}' column "
+                f'plus one column per coordinate (got {got}).'
+            )
+            raise DataError(msg)
+        missing = [c for c in sorted(dim_def.coords) if c not in source.columns]
+        if missing:
+            msg = (
+                f"Dimension '{dim_name}' index is missing declared coordinate column(s) "
+                f'{missing} (has {list(source.columns)}).'
+            )
+            raise DataError(msg)
+
+        labels = master_coords[dim_name]
+        first = source.drop_duplicates(subset=[dim_name]).set_index(dim_name)
+        counts = source.groupby(dim_name, sort=False)[sorted(dim_def.coords)].nunique()
+        out[dim_name] = {}
+        for cname, target in dim_def.coords.items():
+            if (counts[cname] > 1).any():
+                offending = sorted(counts.index[counts[cname] > 1].astype(str))[:5]
+                msg = (
+                    f"Dimension '{dim_name}': label(s) {offending} carry more than one "
+                    f"value for coordinate '{cname}'. A coordinate is single-valued per "
+                    f'label.'
+                )
+                raise DataError(msg)
+            series = first[cname].reindex(labels)
+            known = set(master_coords[target])
+            unknown = sorted({str(v) for v in series if v not in known})[:5]
+            if unknown:
+                msg = (
+                    f"Dimension '{dim_name}' coordinate '{cname}' has value(s) that are "
+                    f"not '{target}' coordinates: {', '.join(unknown)}. Every value must "
+                    f"be a declared '{target}' label — otherwise "
+                    f'group_sum(over={dim_name}, by={cname}) drops those terms and the '
+                    f'model builds and solves without them.'
+                )
+                raise DataError(msg)
+            out[dim_name][cname] = xr.DataArray(
+                series.to_numpy(),
+                dims=[dim_name],
+                coords={dim_name: labels},
+                name=cname,
+            )
+
+    return out
 
 
 def load_parameters(
