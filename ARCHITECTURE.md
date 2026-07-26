@@ -227,6 +227,12 @@ are dense `0..n-1` by construction, so `var_label` **is** the solver column
 index and `row` the solver row index — no remapping. That is also why value-only
 re-solve is cheap and structural editing is out of scope.
 
+Labels are also **row-major over the coordinate product**, and that is a
+contract rather than a side effect of how they are computed: it is what makes a
+build reproducible run to run. Unmasked frames get it in closed form instead of
+by sorting for it (`_label_frame`); masked frames keep the window, because no
+closed form knows which rows a predicate leaves behind.
+
 **The plan is affine-by-design.** No node introduces variables or constraints as a
 side effect of an expression; formulations are model *transformations*. Variable
 *types* are not formulations — binary/integer are a `vtype` column, LP

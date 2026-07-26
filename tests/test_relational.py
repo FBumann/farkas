@@ -228,6 +228,87 @@ def test_transport_roundtrip(transport_data, tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# label assignment
+# ---------------------------------------------------------------------------
+
+
+def _label_program(where):
+    """One variable over three dims of distinct cardinality, masked or not."""
+    return Program(
+        parameters=(ParameterDeclaration('cap', ('line',)),),
+        variables=(
+            VariableDeclaration(
+                'f', ('snapshot', 'bus', 'line'), where=where, lower=Constant(0.0), upper=Constant(1.0)
+            ),
+        ),
+        constraints=(
+            ConstraintDeclaration(
+                'cap_row',
+                ('snapshot',),
+                lhs=Sum(Variable('f'), over=('bus', 'line')),
+                sense='<=',
+                rhs=Constant(1e6),
+            ),
+        ),
+        objective=ObjectiveDeclaration('min', Sum(Variable('f'), over=('snapshot', 'bus', 'line'))),
+    )
+
+
+def _label_sources(n_snapshot=5, n_bus=3, n_line=4, zero_caps=()):
+    lines = [f'l{i}' for i in range(n_line)]
+    caps = [0.0 if i in zero_caps else 10.0 + i for i in range(n_line)]
+    return {
+        'cap': pd.DataFrame({'line': lines, 'value': caps}),
+        'snapshot': pd.DataFrame({'snapshot': np.arange(n_snapshot)}),
+        'bus': pd.DataFrame({'bus': [f'b{i}' for i in range(n_bus)]}),
+        'line': pd.DataFrame({'line': lines}),
+    }
+
+
+@pytest.mark.parametrize('chunk_rows', [12, 1_000_000], ids=['chunked', 'single-chunk'])
+def test_unmasked_labels_are_the_ones_the_window_would_assign(chunk_rows):
+    """The arithmetic fast path must emit the labels the sort it replaces did.
+
+    Unmasked frames skip ``ROW_NUMBER`` for a closed form
+    (``_row_major_label``). Labels *are* the solver's column indices, so
+    "dense and valid" is not the bar — they have to be the same integers, or
+    the LP section order, ``solver_direct``'s batching and the walkthrough
+    golden all shift underneath us for no stated reason.
+
+    Three dims of distinct cardinality, so a swapped stride cannot pass, and
+    both chunk regimes, since the running offset is what stitches the chunks
+    back into one dense range.
+    """
+    with DuckdbExecutor(memory_limit='256MB', chunk_rows=chunk_rows) as ex:
+        ex.build(_label_program(where=None), _label_sources())
+        got = ex._con.execute('SELECT snapshot, bus, line, var_label FROM var_f ORDER BY var_label').fetchall()
+
+    # what ROW_NUMBER() OVER (ORDER BY ord, ord, ord) means, spelled out
+    expected = [
+        (s, f'b{b}', f'l{ln}', i)
+        for i, (s, b, ln) in enumerate((s, b, ln) for s in range(5) for b in range(3) for ln in range(4))
+    ]
+    assert got == expected
+
+
+def test_masked_labels_stay_dense():
+    """A mask keeps the window, and the labels stay a dense bijection.
+
+    The closed form knows nothing about which rows survive a predicate, so
+    masked frames must not take it — this is the test that fails if the fast
+    path is ever widened to cover them.
+    """
+    where = ParameterComparison('cap', '>', 0)
+    with DuckdbExecutor(memory_limit='256MB', chunk_rows=12) as ex:
+        ex.build(_label_program(where), _label_sources(zero_caps=(1,)))
+        labels = [r[0] for r in ex._con.execute('SELECT var_label FROM var_f ORDER BY var_label').fetchall()]
+        surviving = ex._con.execute('SELECT count(*) FROM var_f').fetchone()[0]
+
+    assert surviving == 5 * 3 * 3  # one line of four masked out everywhere
+    assert labels == list(range(surviving))
+
+
+# ---------------------------------------------------------------------------
 # error paths
 # ---------------------------------------------------------------------------
 
