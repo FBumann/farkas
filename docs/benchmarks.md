@@ -9,7 +9,7 @@ and read straight off [`bench/results/latest.jsonl`](../bench/results/latest.jso
 which carries the machine fingerprint and library versions that produced it:
 
 ```bash
-uv run python -m bench.run --sizes xs s m l --repeat 2 --memory-limits 256MB 1GB 4GB
+uv run python -m bench.run --sizes all --repeat 2 --memory-limits 256MB 1GB 4GB
 uv run python -m bench.report bench/results/latest.jsonl
 ```
 
@@ -24,73 +24,116 @@ reports, one process per measurement.
 ## Results
 
 macOS 26.2, M-series, 24 GB RAM · python 3.13.2 · farkas 0.0.0a13, linopy 0.9.0,
-duckdb 1.5.5, polars 1.43.0, xarray 2026.7.0. Parity gate: both cases agree to
-0 relative (bit-identical objectives). Best of two repeats; wall time excludes
-import.
+duckdb 1.5.5, polars 1.43.0, xarray 2026.7.0. Parity gate: all three cases agree
+to 0 relative (bit-identical objectives). Best of two repeats; wall time excludes
+import and includes teardown. `live` is the fraction of the coordinate product
+that survived the model's `where` — measured, not assumed.
 
 ### dispatch — pointwise bounds + one `sum` per row
 
-| variables | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
-|---|---|---|---|---|---|---|---|---|
-| 10k | 100 | 0.05 s | 0.18 s | 0.26x | 0.16 GB | 0.21 GB | 0.74x | 1 MB |
-| 100k | 1k | 0.19 s | 0.22 s | 0.85x | 0.18 GB | 0.26 GB | 0.69x | 7 MB |
-| 1M | 10k | 0.82 s | 0.40 s | 2.04x | 0.40 GB | 0.59 GB | 0.67x | 74 MB |
-| 10M | 100k | 6.67 s | 3.19 s | 2.09x | 0.88 GB | 2.19 GB | 0.40x | 768 MB |
+| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP | scratch |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 10k | 100% | 100 | 0.06 s | 0.19 s | 0.29x | 0.16 GB | 0.21 GB | 0.73x | 1 MB | 0.00 GB |
+| 100k | 100% | 1k | 0.18 s | 0.21 s | 0.86x | 0.18 GB | 0.26 GB | 0.69x | 7 MB | 0.01 GB |
+| 1M | 100% | 10k | 0.71 s | 0.35 s | 2.06x | 0.40 GB | 0.58 GB | 0.69x | 74 MB | 0.02 GB |
+| 10M | 100% | 100k | 5.84 s | 1.98 s | 2.96x | 0.88 GB | 2.24 GB | **0.39x** | 768 MB | 0.22 GB |
+
+### nodal — a technology portfolio per node
+
+Dispatch over `(snapshot, node, tech)` where a technology only generates at a
+node it is installed at. 50 nodes x 12 technologies is 600 coordinates per
+snapshot; 3 per node exist. This is the sparsity every real multi-node model
+has, and it is structural — `installed` carries node and tech, never snapshot.
+
+| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP | scratch |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 3k | 25% | 1k | 0.05 s | 0.20 s | 0.25x | 0.16 GB | 0.21 GB | 0.76x | 0 MB | 0.00 GB |
+| 30k | 25% | 10k | 0.11 s | 0.20 s | 0.52x | 0.17 GB | 0.24 GB | 0.71x | 2 MB | 0.00 GB |
+| 300k | 25% | 100k | 0.46 s | 0.27 s | 1.73x | 0.25 GB | 0.45 GB | 0.55x | 25 MB | 0.01 GB |
+| 3M | 25% | 1M | 3.48 s | 0.94 s | 3.69x | 0.58 GB | 1.55 GB | **0.38x** | 257 MB | 0.09 GB |
 
 ### transport — three `group_sum` joins per row
 
-| variables | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
-|---|---|---|---|---|---|---|---|---|
-| 9.8k | 1.4k | 0.08 s | 0.34 s | 0.24x | 0.17 GB | 0.22 GB | 0.76x | 1 MB |
-| 98k | 14k | 0.24 s | 0.36 s | 0.66x | 0.20 GB | 0.28 GB | 0.71x | 7 MB |
-| 980k | 140k | 1.41 s | 0.56 s | 2.53x | 0.40 GB | 0.65 GB | 0.63x | 76 MB |
-| 9.8M | 1.4M | 9.25 s | 3.96 s | 2.34x | 1.35 GB | 1.88 GB | 0.72x | 794 MB |
+| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP | scratch |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 9.8k | 100% | 1.4k | 0.07 s | 0.25 s | 0.29x | 0.17 GB | 0.22 GB | 0.76x | 1 MB | 0.00 GB |
+| 98k | 100% | 14k | 0.24 s | 0.26 s | 0.94x | 0.20 GB | 0.29 GB | 0.71x | 7 MB | 0.01 GB |
+| 980k | 100% | 140k | 0.93 s | 0.44 s | 2.12x | 0.40 GB | 0.66 GB | 0.61x | 76 MB | 0.02 GB |
+| 9.8M | 100% | 1.4M | 7.74 s | 2.68 s | 2.89x | 1.35 GB | 1.89 GB | 0.71x | 794 MB | 0.25 GB |
+
+### The mask sweep
+
+`nodal` at one model size (1.2M nominal), varying only how many of the 12
+technologies each node has installed: 12 / 6 / 3 / 1.
+
+| live | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
+|---|---|---|---|---|---|---|---|
+| 100% | 1.2M | 1.22 s | 0.39 s | 3.10x | 0.48 GB | 0.63 GB | 0.77x |
+| 50% | 600k | 0.73 s | 0.32 s | 2.28x | 0.35 GB | 0.60 GB | 0.58x |
+| 25% | 300k | 0.44 s | 0.28 s | 1.56x | 0.25 GB | 0.45 GB | 0.55x |
+| 8% | 100k | 0.30 s | 0.24 s | **1.25x** | 0.20 GB | 0.35 GB | 0.59x |
 
 ### Peak RSS against the budget
 
-farkas at three `memory_limit` settings, 16× apart end to end:
+farkas at three `memory_limit` settings, 16x apart end to end:
 
 | case | variables | `256MB` | `1GB` | `4GB` | linopy |
 |---|---|---|---|---|---|
-| dispatch | 10k | 0.16 GB | 0.16 GB | 0.16 GB | 0.21 GB |
-| dispatch | 100k | 0.18 GB | 0.18 GB | 0.18 GB | 0.26 GB |
-| dispatch | 1M | 0.39 GB | 0.40 GB | 0.41 GB | 0.59 GB |
-| dispatch | 10M | 0.77 GB | 0.88 GB | 0.90 GB | 2.19 GB |
-| transport | 9.8k | 0.17 GB | 0.17 GB | 0.16 GB | 0.22 GB |
-| transport | 98k | 0.20 GB | 0.20 GB | 0.20 GB | 0.28 GB |
-| transport | 980k | 0.39 GB | 0.40 GB | 0.42 GB | 0.65 GB |
-| transport | 9.8M | **OOM** | 1.35 GB | 1.34 GB | 1.88 GB |
+| dispatch | 1M | 0.38 GB | 0.40 GB | 0.40 GB | 0.58 GB |
+| dispatch | 10M | 0.76 GB | 0.88 GB | 0.92 GB | 2.24 GB |
+| nodal | 300k | 0.26 GB | 0.25 GB | 0.25 GB | 0.45 GB |
+| nodal | 3M | 0.69 GB | 0.58 GB | 0.59 GB | 1.55 GB |
+| transport | 980k | 0.39 GB | 0.40 GB | 0.40 GB | 0.66 GB |
+| transport | 9.8M | **OOM** | 1.35 GB | 1.35 GB | 1.89 GB |
 
 ## What the numbers say
 
-**The memory win is real but modest at these sizes, and it widens with the
-model.** 0.74× at 10k is nothing but a fixed import floor (~0.16 GB of python +
-duckdb + pyarrow, which the eager lane pays too, plus xarray). At 10M variables
-dispatch is 2.5× better; the earlier spike measured 13.6× at 35.6M, and the trend
-here is consistent with that even though the absolute numbers are not comparable.
+**Sparsity is where the gap closes, and real models are sparse.** On the mask
+sweep, farkas costs what survives while the eager lane costs the product: from
+12 technologies per node down to 1, our wall time falls 4x (1.22 -> 0.30 s) and
+linopy's falls 1.6x (0.39 -> 0.24 s), so the ratio goes 3.10x -> 1.25x. Peak
+follows the same way, 0.77x -> 0.59x. `docs/benchmarks.md` used to list this
+sweep under "not measured yet" and predicted the difference would be
+*"qualitative rather than 2x"*. It is qualitative — the two lanes scale on
+different quantities — though at the densities real portfolios have it shows up
+as a factor rather than an order.
 
-**farkas is ~2× slower to build once the model is over ~10⁶ variables, and
-faster below ~10⁵** — the crossover is linopy's fixed overhead, not anything
-about the engines. This matches the earlier finding and is the honest headline:
-the trade is memory for wall time.
+**The memory win is decisive at scale and best where the model is sparse.**
+0.39x on `dispatch` at 10M and 0.38x on `nodal` at 3M live variables, against
+~0.75x at the small end where a fixed ~0.16 GB import floor dominates.
 
-**Peak does not track the budget.** Across a 16× range of `memory_limit`, peak
-RSS at 10M variables moves 0.77 → 0.90 GB — under 20%, and 2–3× the budget
-itself. Whatever dominates at this scale is outside duckdb's accounting (LP text
-buffers, Arrow batches, and the label tables are the candidates), so hard rule 4
-is currently supported in its *comparative* form (peak is flat in model size
-relative to the eager lane) and **not** in its literal one (peak is a function of
-the budget). Wall time is likewise budget-insensitive, which the earlier harness
-also found.
+**Build is ~2-3x slower above ~10⁶ variables, and faster below ~10⁵.** The
+crossover is linopy's fixed overhead rather than anything about the engines.
+This is the honest headline: the trade is memory for wall time, and the price
+went *up* when the harness was made fair — see below.
 
-**One shape OOMs instead of spilling.** `transport` at 9.8M variables under
-256 MB dies in the terminal `SUM(coeff) GROUP BY row, col` assembly
-(`executor.py::_build_constraint`) — the one place the code comments assert that
-"joins and the plain numeric hash aggregate spill under `memory_limit` on their
-own — no chunking needed". At the same size `dispatch` is fine, so the trigger is
-the `group_sum` join fan-in, not scale alone. Operational finding 1 said not every
-operator spills; this is the same class, now in a shape the shipped executor does
-not chunk.
+**Peak does not track the budget.** Across a 16x range of `memory_limit`, peak
+at 10M variables moves 0.76 -> 0.92 GB — under 20%, and 2-3x the budget itself.
+Hard rule 4 is supported in its *comparative* form (peak is far below the eager
+lane and the gap widens with model size) and not in its literal one.
+
+**One shape still OOMs instead of spilling.** `transport` at 9.8M variables
+under 256 MB dies in the terminal `SUM(coeff) GROUP BY row, col`
+(`executor.py::_build_constraint`), where a comment asserts that plain hash
+aggregates spill on their own. `dispatch` at 10M and `nodal` at 3M are fine, so
+the trigger is the `group_sum` join fan-in, not scale.
+
+**The engine also spends disk.** The `scratch` column is the duckdb working
+database at the end of emit — 0.25 GB at 9.8M variables. Small beside the LP
+file it is writing, but it is a cost the peak-RSS number does not show, so the
+harness records it.
+
+### The numbers got worse when the harness got fairer
+
+`dispatch` at 10M went from 2.09x to 2.96x between the first ladder and this
+one, and almost none of that is the engine. linopy's `to_file` defaults
+`progress` to `m._xCounter > 10_000`, so every rung above the smallest had been
+rendering tqdm progress bars that the farkas arm has no equivalent of; the
+harness now passes `progress=False`. In the other direction, farkas is now
+charged for `ex.close()` — releasing the scratch database — which it previously
+got for free. Both changes move against us. The boundaries are documented in
+[bench/README.md](../bench/README.md#where-the-clock-starts-and-stops); the rule
+is that a phase counts only if both arms could pay it.
 
 ## Earlier numbers, not reproducible
 

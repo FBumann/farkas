@@ -6,14 +6,21 @@ Cases are chosen so each stresses a *different* SQL shape (ARCHITECTURE.md,
 
 ``dispatch``   pointwise bounds + one ``sum`` — raw throughput, and the case
                where a dense eager broadcast is at its best, so our worst ratio.
+               Its ``where`` is declared but *vacuous*, which is a measurement
+               in itself: the engine pays for a mask that removes nothing.
+``nodal``      dispatch over (snapshot, node, tech) where a technology only
+               exists at the nodes it is installed at — the sparsity every real
+               multi-node model has, and the one axis where the two lanes do
+               different *amounts* of work rather than the same work in a
+               different order.
 ``transport``  three ``group_sum`` joins per row — the mapping-table path, where
                the eager lane has to materialise a bus x generator product.
 
 Data is generated once per (case, shape) into a cache directory and both arms
 read the same parquet files, so no arm pays a generation cost and neither can
-be measured against different numbers. Feasibility is by construction: every
-bus can serve its own load without any flow, so a solve is never the thing that
-fails at 3am in a benchmark.
+be measured against different numbers. Feasibility is by construction — every
+bus serves its own load with no flow, and ``sparse`` sizes its load against the
+tightest snapshot — so a solve never fails for a reason the harness invented.
 """
 
 from __future__ import annotations
@@ -36,15 +43,24 @@ DEFAULT_CACHE = BENCH_DIR / '.cache'
 
 @dataclass(frozen=True)
 class Shape:
-    """One rung of a size ladder: the dimension cardinalities of a run."""
+    """One rung of a ladder: the dimension cardinalities, and how much survives.
+
+    ``density`` is the fraction of the coordinate product a case's mask keeps.
+    It is a rung axis rather than a case, because sparsity is the one place the
+    two representations of a mask differ in kind — row absence relationally,
+    NaN-padding in a dense array — so it has to be swept, not sampled once.
+    Cases with no mask leave it at 1.0.
+    """
 
     label: str
     sizes: dict[str, int]
     nominal_variables: int
+    density: float = 1.0
 
     @property
     def key(self) -> str:
-        return '-'.join(f'{k}{v}' for k, v in sorted(self.sizes.items()))
+        dims = '-'.join(f'{k}{v}' for k, v in sorted(self.sizes.items()))
+        return dims if self.density == 1.0 else f'{dims}-d{self.density:g}'
 
 
 @dataclass(frozen=True)
@@ -139,6 +155,111 @@ def _dispatch_eager(paths: dict[str, str]) -> tuple[dict[str, Any], dict[str, An
 
 
 # --------------------------------------------------------------------------
+# nodal — a technology portfolio per node, which is where real sparsity comes from
+
+#: Technologies a system might have. Which ones a given node *has* is the mask.
+TECHNOLOGIES = (
+    'onwind',
+    'offwind',
+    'solar',
+    'hydro',
+    'ror',
+    'biomass',
+    'geothermal',
+    'ccgt',
+    'ocgt',
+    'coal',
+    'nuclear',
+    'oil',
+)
+
+
+def _portfolios(rng: np.random.Generator, n_node: int, n_tech: int, density: float) -> np.ndarray:
+    """Which (node, tech) pairs exist — a boolean node x tech matrix.
+
+    Every node gets at least one technology, or its demand cannot be met and
+    the parity gate has no two objectives to compare. The rest are drawn to hit
+    the requested density; what is actually achieved is reported, never assumed.
+    """
+    per_node = max(1, round(density * n_tech))
+    installed = np.zeros((n_node, n_tech), dtype=bool)
+    for i in range(n_node):
+        installed[i, rng.choice(n_tech, size=per_node, replace=False)] = True
+    return installed
+
+
+def _nodal_data(shape: Shape, dest: Path) -> dict[str, str]:
+    rng = _seed(shape)
+    n_snap, n_node = shape.sizes['snapshot'], shape.sizes['node']
+    techs = list(TECHNOLOGIES[: shape.sizes['tech']])
+    nodes = [f'n{i:04d}' for i in range(n_node)]
+
+    installed = _portfolios(rng, n_node, len(techs), shape.density)
+    capacity = installed * rng.uniform(200.0, 800.0, (n_node, len(techs)))
+    cost = rng.uniform(10.0, 100.0, len(techs))
+
+    # every node meets its own demand from its own portfolio: this model has no
+    # transmission, so feasibility must not depend on the draw
+    at_node = capacity.sum(axis=1)
+    demand = at_node[None, :] * 0.5 * (0.8 + 0.4 * rng.random((n_snap, n_node)))
+
+    return _dump(
+        {
+            # only installed pairs are stored — the tidy table *is* the sparsity
+            'installed': pd.DataFrame(
+                {
+                    'node': np.repeat(nodes, len(techs))[installed.reshape(-1)],
+                    'tech': np.tile(techs, n_node)[installed.reshape(-1)],
+                    'value': capacity.reshape(-1)[installed.reshape(-1)],
+                }
+            ),
+            'cost': pd.DataFrame({'tech': techs, 'value': cost}),
+            'demand': pd.DataFrame(
+                {
+                    'snapshot': np.repeat(np.arange(n_snap), n_node),
+                    'node': nodes * n_snap,
+                    'value': demand.reshape(-1),
+                }
+            ),
+            'node': pd.DataFrame({'node': nodes}),
+            'tech': pd.DataFrame({'tech': techs}),
+            'snapshot': pd.DataFrame({'snapshot': np.arange(n_snap)}),
+        },
+        dest,
+    )
+
+
+def _nodal_eager(paths: dict[str, str]) -> tuple[dict[str, Any], dict[str, Any]]:
+    import xarray as xr
+
+    nodes = pd.read_parquet(paths['node'])['node']
+    techs = pd.read_parquet(paths['tech'])['tech']
+    cost = pd.read_parquet(paths['cost']).set_index('tech')['value']
+    demand = pd.read_parquet(paths['demand'])
+    # the eager lane cannot hold an absent pair: reindexing over the full
+    # node x tech product is what turns structural sparsity into NaN padding,
+    # and doing it here rather than pretending otherwise is the point of the case
+    installed = (
+        pd.read_parquet(paths['installed'])
+        .set_index(['node', 'tech'])['value']
+        .unstack()
+        .reindex(index=nodes, columns=techs)
+        .fillna(0.0)
+    )
+    data = {
+        'installed': installed,
+        'cost': cost,
+        'demand': xr.DataArray.from_series(demand.set_index(['snapshot', 'node'])['value']),
+    }
+    coords = {
+        'snapshot': pd.Index(sorted(demand['snapshot'].unique()), name='snapshot'),
+        'node': pd.Index(nodes, name='node'),
+        'tech': pd.Index(techs, name='tech'),
+    }
+    return data, coords
+
+
+# --------------------------------------------------------------------------
 # transport
 
 
@@ -204,10 +325,31 @@ def _transport_eager(paths: dict[str, str]) -> tuple[dict[str, Any], dict[str, A
 # --------------------------------------------------------------------------
 
 
-def _ladder(sizes: dict[str, int], snapshots: Sequence[int], per_snapshot: int) -> tuple[Shape, ...]:
+def _ladder(
+    sizes: dict[str, int],
+    snapshots: Sequence[int],
+    per_snapshot: int,
+    density: float = 1.0,
+) -> tuple[Shape, ...]:
     labels = ('xs', 's', 'm', 'l', 'xl')
     return tuple(
-        Shape(labels[i], {**sizes, 'snapshot': n}, n * per_snapshot) for i, n in enumerate(snapshots) if i < len(labels)
+        Shape(labels[i], {**sizes, 'snapshot': n}, n * per_snapshot, density)
+        for i, n in enumerate(snapshots)
+        if i < len(labels)
+    )
+
+
+def _density_sweep(
+    sizes: dict[str, int], snapshots: int, per_snapshot: int, densities: Sequence[float]
+) -> tuple[Shape, ...]:
+    """One model size, several mask densities — rungs named ``d100``/``d30``/…
+
+    Held at one size on purpose: sweeping both axes at once would leave no way
+    to tell a density effect from a size effect.
+    """
+    return tuple(
+        Shape(f'd{round(d * 100):02d}', {**sizes, 'snapshot': snapshots}, snapshots * per_snapshot, d)
+        for d in densities
     )
 
 
@@ -219,6 +361,20 @@ CASES: dict[str, Case] = {
         ladder=_ladder({'generator': 100}, (100, 1_000, 10_000, 100_000), per_snapshot=100),
         write=_dispatch_data,
         eager_inputs=_dispatch_eager,
+    ),
+    'nodal': Case(
+        name='nodal',
+        model=MODELS / 'nodal.yaml',
+        # 50 nodes x 12 technologies = 600 coordinates per snapshot, of which 3
+        # per node are installed. `nominal_variables` is the *full* product;
+        # what survives is measured, never assumed (see `live` in the report).
+        # The density sweep is 12 / 6 / 3 / 1 technologies per node.
+        ladder=(
+            *_ladder({'node': 50, 'tech': 12}, (20, 200, 2_000, 20_000), per_snapshot=600, density=0.25),
+            *_density_sweep({'node': 50, 'tech': 12}, 2_000, 600, (1.0, 0.5, 0.25, 0.083)),
+        ),
+        write=_nodal_data,
+        eager_inputs=_nodal_eager,
     ),
     'transport': Case(
         name='transport',

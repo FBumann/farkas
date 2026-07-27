@@ -149,13 +149,16 @@ def _echo(record: dict[str, Any]) -> None:
         return
     gb = record['peak_rss_bytes'] / 1e9
     phases = ' '.join(f'{k} {v:.2f}s' for k, v in record['phases'].items())
-    print(f'{head} {record["wall_seconds"]:>7.2f}s  peak {gb:>5.2f} GB  ({phases})')
+    live = f'{record["counts"]["columns"] / 1e6:.2f}M cols'
+    print(f'{head} {record["wall_seconds"]:>7.2f}s  peak {gb:>5.2f} GB  {live:>11}  ({phases})')
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--cases', nargs='+', default=sorted(CASES), choices=sorted(CASES))
-    ap.add_argument('--sizes', nargs='+', default=['xs', 's', 'm'])
+    ap.add_argument(
+        '--sizes', nargs='+', default=['xs', 's', 'm'], help="rung labels, or 'all' for every rung a case has"
+    )
     ap.add_argument('--arms', nargs='+', default=['farkas', 'linopy'])
     ap.add_argument('--repeat', type=int, default=1)
     ap.add_argument('--memory-limits', nargs='+', default=['1GB'], help='duckdb budgets to sweep (farkas arm)')
@@ -185,7 +188,11 @@ def main(argv: list[str] | None = None) -> int:
 
     print('\ntimings')
     for case in opts.cases:
-        sizes = [s for s in opts.sizes if any(rung.label == s for rung in CASES[case].ladder)]
+        rungs = [r.label for r in CASES[case].ladder]
+        # a rung a case does not have is skipped rather than an error: the
+        # density sweep only exists on masked cases, and `--sizes all` should
+        # still mean "everything this case has"
+        sizes = rungs if 'all' in opts.sizes else [s for s in opts.sizes if s in rungs]
         records += timings(case, sizes, opts.arms, opts)
 
     _save(opts.out, records)

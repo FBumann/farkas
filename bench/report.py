@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -68,9 +69,21 @@ def _ratio(a: float | None, b: float | None) -> str:
     return f'{a / b:.2f}x' if a and b else '—'
 
 
-def sizes_of(case: str, rows: dict[Key, Row]) -> list[str]:
-    """Rung labels for *case*, smallest model first."""
-    seen = {s: r['counts']['columns'] for (c, s, _, _), r in rows.items() if c == case}
+_DENSITY_RUNG = re.compile(r'd\d+$')
+
+
+def sizes_of(case: str, rows: dict[Key, Row], *, density: bool = False) -> list[str]:
+    """Rung labels for *case*, smallest model first.
+
+    The density sweep is held at one model size, so mixing it into the size
+    ladder would sort four densities in among four sizes and read as a single
+    monotone column that is really two axes. They get separate tables.
+    """
+    seen = {
+        s: r['counts']['columns']
+        for (c, s, _, _), r in rows.items()
+        if c == case and bool(_DENSITY_RUNG.match(s)) == density
+    }
     return sorted(seen, key=lambda s: seen[s])
 
 
@@ -80,8 +93,8 @@ def table(case: str, rows: dict[Key, Row], budget: str) -> str:
         '',
         f'farkas at `memory_limit={budget}`, linopy through its `lp-polars` writer.',
         '',
-        '| variables | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |',
-        '|---|---|---|---|---|---|---|---|---|',
+        '| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP | scratch |',
+        '|---|---|---|---|---|---|---|---|---|---|---|',
     ]
     for size in sizes_of(case, rows):
         arms = {'farkas': rows.get((case, size, 'farkas', budget)), 'linopy': rows.get((case, size, 'linopy', ''))}
@@ -90,16 +103,70 @@ def table(case: str, rows: dict[Key, Row], budget: str) -> str:
             continue
         wall = {a: (r['wall_seconds'] if r else None) for a, r in arms.items()}
         peak = {a: (r['peak_rss_bytes'] if r else None) for a, r in arms.items()}
+        scratch = (arms['farkas'] or {}).get('workdir_bytes')
         cells = [
             _si(ref['counts']['columns']),
+            _live(ref),
             _si(ref['counts']['rows']),
             *(f'{wall[a]:.2f} s' if wall[a] else '—' for a in ARMS),
             _ratio(wall['farkas'], wall['linopy']),
             *(f'{_gb(peak[a])} GB' if peak[a] else '—' for a in ARMS),
             _ratio(peak['farkas'], peak['linopy']),
             f'{ref["lp_bytes"] / 1e6:.0f} MB',
+            f'{scratch / 1e9:.2f} GB' if scratch else '—',
         ]
         lines.append('| ' + ' | '.join(cells) + ' |')
+    return '\n'.join(lines)
+
+
+def _live(r: Row) -> str:
+    """What fraction of the coordinate product survived the mask.
+
+    Reported rather than assumed. `dispatch` declares `where: p_max > 0` and
+    keeps 100% of its product — the engine pays for a mask that removes
+    nothing, and that only shows up if the harness measures it.
+    """
+    frac = r.get('live_fraction')
+    return '—' if frac is None else f'{frac * 100:.0f}%'
+
+
+def density(rows: dict[Key, Row], budget: str) -> str:
+    """One model size, four mask densities — the axis the ladder cannot show.
+
+    A mask is row absence relationally and a NaN-padded dense array eagerly, so
+    this is the one comparison where the two lanes are not doing the same work
+    in different orders — they are doing different amounts of work.
+    """
+    cases = [c for c in sorted({c for c, _, _, _ in rows}) if sizes_of(c, rows, density=True)]
+    if not cases:
+        return ''
+    lines = [
+        '### The mask sweep',
+        '',
+        f'One model size, farkas at `memory_limit={budget}`. For `nodal`, `live` is '
+        'how many of the 12 technologies each node has installed: 12 / 6 / 3 / 1.',
+        '',
+        '| case | live | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |',
+        '|---|---|---|---|---|---|---|---|---|',
+    ]
+    for case in cases:
+        for size in reversed(sizes_of(case, rows, density=True)):
+            arms = {'farkas': rows.get((case, size, 'farkas', budget)), 'linopy': rows.get((case, size, 'linopy', ''))}
+            ref = next((r for r in arms.values() if r), None)
+            if ref is None:
+                continue
+            wall = {a: (r['wall_seconds'] if r else None) for a, r in arms.items()}
+            peak = {a: (r['peak_rss_bytes'] if r else None) for a, r in arms.items()}
+            cells = [
+                case,
+                _live(ref),
+                _si(ref['counts']['columns']),
+                *(f'{wall[a]:.2f} s' if wall[a] else '—' for a in ARMS),
+                _ratio(wall['farkas'], wall['linopy']),
+                *(f'{_gb(peak[a])} GB' if peak[a] else '—' for a in ARMS),
+                _ratio(peak['farkas'], peak['linopy']),
+            ]
+            lines.append('| ' + ' | '.join(cells) + ' |')
     return '\n'.join(lines)
 
 
@@ -170,6 +237,10 @@ def main(argv: list[str] | None = None) -> int:
     for case in sorted({c for c, _, _, _ in rows}):
         print()
         print(table(case, rows, opts.budget))
+    density_table = density(rows, opts.budget)
+    if density_table:
+        print()
+        print(density_table)
     knob_table = knob(rows, failed)
     if knob_table:
         print()

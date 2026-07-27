@@ -51,32 +51,49 @@ class Phases:
         self.times[name] = now - self._start
         self._start = now
 
+    def reset(self) -> None:
+        """Restart the clock, so untimed work between phases is not charged."""
+        self._start = time.perf_counter()
+
 
 def _run_farkas(
     case: Case, paths: dict[str, str], lp: Path, phases: Phases, opts: argparse.Namespace
 ) -> dict[str, Any]:
     import farkas as fk
 
-    phases.mark('import')
+    # The parameter/dimension split is harness bookkeeping — it re-parses the
+    # YAML only because the runner, not farkas, decides which parquet file is
+    # which. Doing it before the clock starts is the difference between timing
+    # the engine and timing the harness; the linopy arm has no counterpart.
     sources, coords = _split_sources(case, paths)
-    with fk.build(
+
+    phases.mark('import')
+    ex = fk.build(
         case.model,
         sources,
         coords=coords,
         memory_limit=opts.memory_limit,
         chunk_rows=opts.chunk_rows,
-    ) as ex:
-        phases.mark('build')
-        ex.write_lp(lp)
-        phases.mark('emit')
-        # counts have no public accessor yet — the harness reads the sink's view
-        tables = ex._tables()
-        counts = {
-            'columns': tables.column_count,
-            'rows': tables.row_count,
-            'nonzeros': tables.scalar('SELECT count(*) FROM A'),
-        }
-    return {'phases': phases.times, 'counts': counts}
+    )
+    phases.mark('build')
+    ex.write_lp(lp)
+    phases.mark('emit')
+
+    # read after the clock stops: counts are the harness's, not the engine's
+    tables = ex._tables()
+    counts = {
+        'columns': tables.column_count,
+        'rows': tables.row_count,
+        'nonzeros': tables.scalar('SELECT count(*) FROM A'),
+    }
+    # what the RSS number does not show: the engine trades memory for a
+    # scratch database on disk, and someone pays to write and delete it
+    workdir_bytes = sum(f.stat().st_size for f in ex.workdir.rglob('*') if f.is_file())
+
+    phases.reset()
+    ex.close()
+    phases.mark('teardown')
+    return {'phases': phases.times, 'counts': counts, 'workdir_bytes': workdir_bytes}
 
 
 def _run_linopy(
@@ -88,10 +105,13 @@ def _run_linopy(
     data, coords = case.eager_inputs(paths)
     m = farkas_linopy.build(case.model, data=data, coords=coords)
     phases.mark('build')
-    m.to_file(lp, io_api=opts.io_api)
+    # progress defaults to `m._xCounter > 10_000`, so every rung above `xs`
+    # would render tqdm bars the farkas arm has no equivalent of — ~7% of the
+    # write at 10M variables, and stderr noise in a harness that parses stdout
+    m.to_file(lp, io_api=opts.io_api, progress=False)
     phases.mark('emit')
     counts = {'columns': int(m.nvars), 'rows': int(m.ncons), 'nonzeros': None}
-    return {'phases': phases.times, 'counts': counts}
+    return {'phases': phases.times, 'counts': counts, 'workdir_bytes': 0}
 
 
 ARMS = {'farkas': _run_farkas, 'linopy': _run_linopy}
@@ -151,6 +171,7 @@ def main(argv: list[str] | None = None) -> int:
         'arm': opts.arm,
         'dimensions': shape.sizes,
         'nominal_variables': shape.nominal_variables,
+        'density': shape.density,
         'memory_limit': opts.memory_limit if opts.arm == 'farkas' else None,
         'chunk_rows': opts.chunk_rows if opts.arm == 'farkas' else None,
         'io_api': opts.io_api if opts.arm == 'linopy' else None,
@@ -170,7 +191,12 @@ def main(argv: list[str] | None = None) -> int:
         record['lp_bytes'] = lp.stat().st_size
 
     record.update(result)
+    # import is excluded — it is fixed, paid once per process, and at the
+    # smallest rungs it is larger than the whole build. Every other phase
+    # counts, teardown included: releasing a scratch database is work a user
+    # pays for, and leaving it out would flatter the arm that has one.
     record['wall_seconds'] = sum(v for k, v in record['phases'].items() if k != 'import')
+    record['live_fraction'] = record['counts']['columns'] / max(shape.nominal_variables, 1)
     record['peak_rss_bytes'] = peak_rss_bytes()
     record['threads'] = os.cpu_count()
     print(json.dumps(record))
