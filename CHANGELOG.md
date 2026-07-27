@@ -89,7 +89,7 @@
 * a file declaring more than one objective no longer loads.
 * a Series or DataArray whose index names are not the declared dims is now a DataError; previously the names were discarded.
 * a dimension declares the coordinates its labels carry ([#100](https://github.com/FBumann/linopy-yaml/issues/100))
-* every IR, AST and schema class is renamed, and `ly.LanguageError` no longer covers data-binding failures — those are `ly.DataError`. Both remain under `ly.LinopyYamlError`, as does the deprecated `RelationalBuildError` alias.
+* every IR, AST and schema class is renamed, and `fk.LanguageError` no longer covers data-binding failures — those are `fk.DataError`. Both remain under `fk.LinopyYamlError`, as does the deprecated `RelationalBuildError` alias.
 
 ### Features
 

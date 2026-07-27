@@ -365,12 +365,12 @@ def test_both_lanes_check_the_declarations_a_formulation_emits(tmp_path):
     A link's dims come from its values parameter, so a values parameter
     carrying a dim the links do not is a stray dim in generated math — one row
     per zone where the file reads as one per snapshot. The native lane used to
-    validate the file as written, which made ``ly.check()`` pass on a model
+    validate the file as written, which made ``fk.check()`` pass on a model
     ``farkas_linopy.build`` refused: the same YAML, two answers (hard rule 3).
     """
     import yaml as pyyaml
 
-    import farkas as ly
+    import farkas as fk
     from farkas.errors import DimensionError
 
     raw = override(
@@ -380,7 +380,7 @@ def test_both_lanes_check_the_declarations_a_formulation_emits(tmp_path):
     stray = r"cost_curve_link1.*\['zone'\]"
 
     with pytest.raises(DimensionError, match=stray):
-        ly.check(raw)
+        fk.check(raw)
 
     path = tmp_path / 'stray_dim.yaml'
     path.write_text(pyyaml.safe_dump(raw))

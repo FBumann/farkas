@@ -14,13 +14,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import farkas as ly
+import farkas as fk
 from tests.conftest import schema_of, solve_lp_file
 
 
 def test_solve(dispatch_yaml, dispatch_inputs):
     sources, coords = dispatch_inputs
-    result = ly.solve(dispatch_yaml, sources, coords=coords, memory_limit='256MB')
+    result = fk.solve(dispatch_yaml, sources, coords=coords, memory_limit='256MB')
     try:
         assert result.is_ok
         assert np.isfinite(result.objective)
@@ -33,12 +33,12 @@ def test_solve(dispatch_yaml, dispatch_inputs):
 
 def test_build_context_manager_and_write_lp(dispatch_yaml, dispatch_inputs, tmp_path):
     sources, coords = dispatch_inputs
-    with ly.build(dispatch_yaml, sources, coords=coords) as ex:
+    with fk.build(dispatch_yaml, sources, coords=coords) as ex:
         result = ex.solve()
         assert result.is_ok
         objective_direct = result.objective
 
-    lp = ly.write(dispatch_yaml, sources, tmp_path / 'm.lp', coords=coords)
+    lp = fk.write(dispatch_yaml, sources, tmp_path / 'm.lp', coords=coords)
     assert solve_lp_file(lp) == pytest.approx(objective_direct, rel=1e-9)
 
 
@@ -52,13 +52,13 @@ def test_parquet_path_sources(dispatch_yaml, dispatch_inputs, tmp_path):
         df.to_parquet(p, index=False)
         paths[name] = str(p)
 
-    result = ly.solve(dispatch_yaml, paths, coords=coords)
+    result = fk.solve(dispatch_yaml, paths, coords=coords)
     try:
         assert result.is_ok
     finally:
         result.close()
 
-    ref = ly.solve(dispatch_yaml, sources, coords=coords)
+    ref = fk.solve(dispatch_yaml, sources, coords=coords)
     try:
         assert result.objective == pytest.approx(ref.objective, rel=1e-9)
     finally:
@@ -72,11 +72,11 @@ def test_runtime_is_linopy_free(dispatch_yaml):
         assert "linopy" not in sys.modules
 
         import pandas as pd
-        import farkas as ly
+        import farkas as fk
         assert "linopy" not in sys.modules, "package import pulled in linopy"
         assert "xarray" not in sys.modules, "package import pulled in xarray"
 
-        result = ly.solve(
+        result = fk.solve(
             {str(dispatch_yaml)!r},
             {{
                 "p_max": pd.Series({{"wind": 100.0, "solar": 60.0, "gas": 200.0}}),
@@ -101,7 +101,7 @@ def test_runtime_is_linopy_free(dispatch_yaml):
 def test_check_and_load_schema_need_no_data(dispatch_yaml):
     """The model stands for itself: the schema is read from the file when
     wanted, never carried on a built model."""
-    for schema in (ly.check(dispatch_yaml), ly.load_schema(dispatch_yaml)):
+    for schema in (fk.check(dispatch_yaml), fk.load_schema(dispatch_yaml)):
         assert schema.variables['p'].foreach == ['snapshot', 'generator']
         assert schema.parameters['load'].dims == ['snapshot']
 
@@ -117,49 +117,49 @@ def test_check_and_load_schema_need_no_data(dispatch_yaml):
 def test_check_reports_language_errors_before_any_data_is_bound(dispatch_yaml, dispatch_inputs, expression, match):
     raw = schema_of(dispatch_yaml, **{'objectives.total_cost.equations': [{'expression': expression}]}).model_dump()
 
-    with pytest.raises(ly.LanguageError, match=match):
-        ly.check(raw)
+    with pytest.raises(fk.LanguageError, match=match):
+        fk.check(raw)
     # ...and build says the same thing rather than deferring it to the solver
     sources, coords = dispatch_inputs
-    with pytest.raises(ly.LanguageError, match=match):
-        ly.build(raw, sources, coords=coords)
+    with pytest.raises(fk.LanguageError, match=match):
+        fk.build(raw, sources, coords=coords)
 
 
 def test_error_hierarchy_is_one_catchable_tree():
     """One ``except`` covers the package, and the model/run split is real."""
     from farkas.relational import RelationalBuildError
 
-    for cls in (ly.LanguageError, ly.DataError):
-        assert issubclass(cls, ly.LinopyYamlError)
-    for cls in (ly.SchemaError, ly.DimensionError, ly.PiecewiseExpansionError):
-        assert issubclass(cls, ly.LanguageError)
-    assert not issubclass(ly.DataError, ly.LanguageError)
-    assert issubclass(ly.LinopyYamlError, ValueError)
+    for cls in (fk.LanguageError, fk.DataError):
+        assert issubclass(cls, fk.LinopyYamlError)
+    for cls in (fk.SchemaError, fk.DimensionError, fk.PiecewiseExpansionError):
+        assert issubclass(cls, fk.LanguageError)
+    assert not issubclass(fk.DataError, fk.LanguageError)
+    assert issubclass(fk.LinopyYamlError, ValueError)
 
     # the retired name still catches everything it used to
-    assert RelationalBuildError is ly.LinopyYamlError
+    assert RelationalBuildError is fk.LinopyYamlError
 
 
 def test_multi_file_composition_reserved(dispatch_yaml):
     with pytest.raises(NotImplementedError, match='issues/30'):
-        ly.check([dispatch_yaml, dispatch_yaml])
+        fk.check([dispatch_yaml, dispatch_yaml])
 
 
 def test_write_suffix_dispatch(dispatch_yaml, dispatch_inputs, tmp_path):
     sources, coords = dispatch_inputs
-    out = ly.write(dispatch_yaml, sources, tmp_path / 'm.lp', coords=coords)
+    out = fk.write(dispatch_yaml, sources, tmp_path / 'm.lp', coords=coords)
     assert out.stat().st_size > 0
     with pytest.raises(NotImplementedError, match='mps'):
-        ly.write(dispatch_yaml, sources, tmp_path / 'm.mps', coords=coords)
+        fk.write(dispatch_yaml, sources, tmp_path / 'm.mps', coords=coords)
     with pytest.raises(ValueError, match='unsupported output format'):
-        ly.write(dispatch_yaml, sources, tmp_path / 'm.nc', coords=coords)
+        fk.write(dispatch_yaml, sources, tmp_path / 'm.nc', coords=coords)
 
 
 def test_solution_context_manager_and_to_parquet(dispatch_yaml, dispatch_inputs, tmp_path):
     import pyarrow.parquet as pq
 
     sources, coords = dispatch_inputs
-    with ly.solve(dispatch_yaml, sources, coords=coords) as result:
+    with fk.solve(dispatch_yaml, sources, coords=coords) as result:
         assert result.is_ok
         written = result.to_parquet(tmp_path / 'solution')
         assert set(written) == {'p'}
@@ -181,7 +181,7 @@ def test_no_helper_registry_anywhere():
     """
     import farkas.helpers as helpers
 
-    assert not hasattr(ly, 'register')
+    assert not hasattr(fk, 'register')
     assert not hasattr(helpers, 'register')
     assert not hasattr(helpers, '_REGISTRY')
 
@@ -192,7 +192,7 @@ def test_solution_to_dataarray(dispatch_yaml, dispatch_inputs):
     pytest.importorskip('xarray')
     sources, coords = dispatch_inputs
 
-    with ly.solve(dispatch_yaml, sources, coords=coords) as result:
+    with fk.solve(dispatch_yaml, sources, coords=coords) as result:
         arr = result.to_dataarray('p')
         tidy = result.primal('p')
 
@@ -209,7 +209,7 @@ def test_solution_to_dataset(dispatch_yaml, dispatch_inputs):
     pytest.importorskip('xarray')
     sources, coords = dispatch_inputs
 
-    with ly.solve(dispatch_yaml, sources, coords=coords) as result:
+    with fk.solve(dispatch_yaml, sources, coords=coords) as result:
         ds = result.to_dataset('p')
         tidy = result.primal('p')
 
@@ -246,7 +246,7 @@ def test_to_dataset_defaults_to_every_variable():
         'load': pd.Series(np.full(n, 90.0), index=pd.RangeIndex(n, name='snapshot')),
     }
 
-    with ly.solve(TWO_VARIABLE_MODEL, sources, coords={'snapshot': pd.RangeIndex(n, name='snapshot')}) as result:
+    with fk.solve(TWO_VARIABLE_MODEL, sources, coords={'snapshot': pd.RangeIndex(n, name='snapshot')}) as result:
         ds = result.to_dataset()
         subset = result.to_dataset('shed')
 

@@ -9,7 +9,7 @@ The split that matters is **the model versus the run**:
 
 * :class:`LanguageError` — the file says something the language does not
   accept. Nothing about the data would change the outcome; it is decidable at
-  load time, and ``ly.check()`` raises exactly these.
+  load time, and ``fk.check()`` raises exactly these.
 * :class:`DataError` — the file is fine; what was bound to it is not. An
   unbound source, a column that does not carry the declared dims.
 

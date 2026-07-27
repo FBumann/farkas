@@ -293,7 +293,7 @@ def _has_var(expr: plan.Expression) -> bool:
     """Whether *expr* contains a decision variable.
 
     Degree 1 is the first clause of the expressive ceiling, so it has to be
-    decidable without data — that is what makes ``ly.check()`` a real gate.
+    decidable without data — that is what makes ``fk.check()`` a real gate.
     The executor repeats the check when it compiles terms, for hand-built plans.
     """
     if isinstance(expr, plan.Variable):

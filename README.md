@@ -64,7 +64,7 @@ objectives:
 ```
 
 ```python
-import farkas as ly, pandas as pd
+import farkas as fk, pandas as pd
 
 sources = {
     "p_max": pd.Series({"wind": 100.0, "solar": 60.0, "gas": 200.0}),
@@ -74,7 +74,7 @@ sources = {
 }
 
 # the model lives in duckdb, so the Result owns the executor that backs it
-with ly.solve("dispatch.yaml", sources,
+with fk.solve("dispatch.yaml", sources,
               coords={"snapshot": pd.RangeIndex(6, name="snapshot")},
               memory_limit="512MB") as result:
     print(result.objective)   # 1920.0

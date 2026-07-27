@@ -357,30 +357,30 @@ exception tree rooted at `LinopyYamlError`: `LanguageError` (with `SchemaError`,
 was bound to it.
 
 ```python
-import farkas as ly
+import farkas as fk
 
-ly.check("model.yaml")                 # parse → validate → lower, no data bound
-schema = ly.load_schema("model.yaml")  # MathSchema
+fk.check("model.yaml")                 # parse → validate → lower, no data bound
+schema = fk.load_schema("model.yaml")  # MathSchema
 
-with ly.solve("model.yaml", sources, memory_limit="512MB") as result:
+with fk.solve("model.yaml", sources, memory_limit="512MB") as result:
     result.status, result.objective
     result.primal("p")            # tidy DataFrame (dims…, value) — the native shape
     result.to_dataarray("p")      # the same, labelled: .sel / resample / plot
     result.to_dataset()           # every variable by default; names for a subset
     result.to_parquet(directory)  # streamed to disk, never through this process
 
-ly.write("model.yaml", sources, "model.lp")   # sink chosen by the suffix
+fk.write("model.yaml", sources, "model.lp")   # sink chosen by the suffix
 ```
 
 **Lifetime is explicit, because the model lives in duckdb, not in Python.**
 `Result` holds the executor open — its label tables are what back `primal`
 and the `to_*` readers — so it is a context manager, and the readers are only
-valid inside the block. Without one, call `result.close()`. `ly.build` returns the
+valid inside the block. Without one, call `result.close()`. `fk.build` returns the
 live executor for the same reason, when one build should feed more than one
 sink:
 
 ```python
-with ly.build("model.yaml", sources, memory_limit="512MB") as ex:
+with fk.build("model.yaml", sources, memory_limit="512MB") as ex:
     ex.write_lp("model.lp")
     sol = ex.solve()       # read sol here — closing ex invalidates it
 ```
@@ -410,7 +410,7 @@ farkas_linopy.extend(m, "ramp.yaml", data={...})                  # mutates m in
 
 `build` returns a plain `linopy.Model` — no accessor, no attached schema, no
 patched attributes — so nothing is lost across `pickle`, `deepcopy` or
-`to_netcdf`; to inspect the math, re-read the file with `ly.load_schema`.
+`to_netcdf`; to inspect the math, re-read the file with `fk.load_schema`.
 `extend` may reference variables already on the model (they come from the model
 argument, not from Python-side history), while the YAML must still declare every
 parameter *and dimension* it uses — the declaration is required, the `values:`

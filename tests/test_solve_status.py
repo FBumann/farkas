@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-import farkas as ly
+import farkas as fk
 from farkas.errors import NoSolutionError
 from farkas.relational.sinks.highs import _CONDITION_OF_HIGHS_STATUS
 from farkas.relational.status import STATUS_TO_TERMINATION_CONDITIONS, SolveStatus
@@ -95,7 +95,7 @@ def test_ok_means_values_worth_reading_not_optimality():
 
 
 def test_an_infeasible_solve_reports_both_axes_and_a_nan_objective():
-    with ly.solve(INFEASIBLE, _infeasible_sources()) as solution:
+    with fk.solve(INFEASIBLE, _infeasible_sources()) as solution:
         assert solution.status == 'warning'
         assert solution.termination_condition == 'infeasible'
         assert not solution.is_ok
@@ -105,7 +105,7 @@ def test_an_infeasible_solve_reports_both_axes_and_a_nan_objective():
 def test_reading_results_without_a_solution_raises(tmp_path):
     """HiGHS returns a full-length vector of zeros whatever the status, so
     handing it back would be indistinguishable from an answer."""
-    with ly.solve(INFEASIBLE, _infeasible_sources()) as solution:
+    with fk.solve(INFEASIBLE, _infeasible_sources()) as solution:
         with pytest.raises(NoSolutionError, match='infeasible'):
             solution.primal('p')
         with pytest.raises(NoSolutionError):

@@ -12,7 +12,7 @@ import pandas as pd
 import pytest
 import yaml as pyyaml
 
-import farkas as ly
+import farkas as fk
 from tests.conftest import DISPATCH_MODEL, override
 from tests.oracle import farkas_linopy  # skips the module without the [linopy] extra
 
@@ -58,7 +58,7 @@ def test_both_lanes_refuse_the_same_where(tmp_path, data, coords, where, match, 
         farkas_linopy.build(path, data=data, coords=coords)  # was: {was}
 
     with pytest.raises(ValueError, match=match):
-        ly.check(path)
+        fk.check(path)
 
 
 #: Where-strings that must build *identically* on both lanes. Chosen to cover
@@ -84,7 +84,7 @@ def test_both_lanes_build_the_same_model(tmp_path, data, coords, where):
     eager_rows = int((m.variables['p'].labels != -1).sum())
     eager_status = m.solve(solver_name='highs')[1]
 
-    with ly.build(path, data, coords=coords) as ex:
+    with fk.build(path, data, coords=coords) as ex:
         relational_rows = ex._con.execute('SELECT count(*) FROM var_p').fetchone()[0]
         relational_status = ex.solve().termination_condition
 
@@ -149,7 +149,7 @@ def test_a_constraint_row_left_with_no_variables(tmp_path, data, coords):
     m = farkas_linopy.build(path, data=data, coords=coords)
     eager_status = m.solve(solver_name='highs')[1]
 
-    with ly.build(path, data, coords=coords) as ex:
+    with fk.build(path, data, coords=coords) as ex:
         relational_status = ex.solve().termination_condition
 
     assert eager_status == relational_status
@@ -182,7 +182,7 @@ def test_a_bool_parameter_is_a_mask_on_both_lanes(tmp_path):
     m.solve(solver_name='highs')
     eager = float(m.objective.value)
 
-    with ly.solve(path, data) as result:
+    with fk.solve(path, data) as result:
         relational = result.objective
 
     assert eager == relational == 1.0

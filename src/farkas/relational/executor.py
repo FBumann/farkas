@@ -87,7 +87,7 @@ class Result:
     needs to notice. ``primal(name)`` joins labels back to coords.
 
     Tethered to its executor's label tables — use it as a context manager
-    (``with ly.solve(...) as result:``) or call :meth:`close`. For big models,
+    (``with fk.solve(...) as result:``) or call :meth:`close`. For big models,
     :meth:`to_parquet` streams every variable's tidy solution table to disk
     without materialising any of them in memory.
     """

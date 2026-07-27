@@ -8,10 +8,10 @@ the differential-test oracle and as an opt-in compatibility shim
 
 Example::
 
-    import farkas as ly
+    import farkas as fk
 
     # Result owns the duckdb executor backing primal/to_* — close it
-    with ly.solve('model.yaml', {'p_max': 'p_max.parquet', 'load': 'load.parquet'}) as result:
+    with fk.solve('model.yaml', {'p_max': 'p_max.parquet', 'load': 'load.parquet'}) as result:
         result.objective
         result.primal('p')  # tidy DataFrame
         result.to_dataarray('p')  # labelled, for array post-processing
