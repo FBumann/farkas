@@ -108,8 +108,17 @@ class Result:
 
     @property
     def is_ok(self) -> bool:
-        """Whether the solve left values worth reading. Not "was it optimal"."""
+        """linopy's rollup: not an error, an abort or a refusal."""
         return self._status.is_ok
+
+    @property
+    def has_primal(self) -> bool:
+        """Whether there are values to read — what the accessors gate on.
+
+        Narrower than :attr:`is_ok`: a run stopped at a time limit before
+        finding any incumbent is ``ok`` and has nothing to read.
+        """
+        return self._status.is_readable
 
     @property
     def objective(self) -> float:
@@ -117,12 +126,12 @@ class Result:
         return self._objective
 
     def _require_solution(self, what: str) -> None:
-        if self._status.is_ok:
+        if self._status.is_readable:
             return
         raise NoSolutionError(
             f'cannot read {what}: the solve terminated {self.termination_condition!r} '
             f'({self._status.solver_wording}), so there are no values to read. Test '
-            f'`is_ok` first. This raises rather than returning, because the solver '
+            f'`has_primal` first. This raises rather than returning, because the solver '
             f'hands back a full-length vector of zeros either way and it is '
             f'indistinguishable from an answer.'
         )
@@ -594,9 +603,17 @@ class DuckdbExecutor:
         """Sink the built model to an LP file."""
         sinks.write_lp_file(self._tables(), path)
 
-    def solve(self, batch_rows: int = 100_000) -> Result:
-        """Sink the built model straight into HiGHS and solve it."""
-        status, objective = sinks.solve_direct(self._tables(), batch_rows)
+    def solve(
+        self,
+        batch_rows: int = 100_000,
+        solver_options: Mapping[str, Any] | None = None,
+    ) -> Result:
+        """Sink the built model straight into HiGHS and solve it.
+
+        ``solver_options`` is forwarded verbatim to the solver, the way
+        linopy's is — ``{'time_limit': 60, 'mip_rel_gap': 0.01}``.
+        """
+        status, objective = sinks.solve_direct(self._tables(), batch_rows, solver_options)
         return Result(_status=status, _objective=objective, _executor=self)
 
     def _solution_sql(self, name: str) -> str:

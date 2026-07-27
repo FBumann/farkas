@@ -362,8 +362,11 @@ import farkas as fk
 fk.check("model.yaml")                 # parse → validate → lower, no data bound
 schema = fk.load_schema("model.yaml")  # MathSchema
 
-with fk.solve("model.yaml", sources, memory_limit="512MB") as result:
-    result.status, result.objective
+with fk.solve("model.yaml", sources, memory_limit="512MB",
+             solver_options={"time_limit": 60}) as result:
+    result.status, result.termination_condition, result.objective
+    result.is_ok        # linopy's rollup: not an error, abort or refusal
+    result.has_primal   # narrower: are there values to read
     result.primal("p")            # tidy DataFrame (dims…, value) — the native shape
     result.to_dataarray("p")      # the same, labelled: .sel / resample / plot
     result.to_dataset()           # every variable by default; names for a subset
@@ -392,7 +395,17 @@ linopy. What the *readers* return is unsettled and tracked separately
 ([#105](https://github.com/FBumann/farkas/issues/105)); today `primal`
 returns a pandas DataFrame. Build knobs, shared by all three
 entry points: `coords`, `memory_limit` (default `'1GB'`), `chunk_rows`,
-`threads`, `workdir`. `to_dataset` costs what it says — each variable arrives
+`threads`, `workdir`. **`solver_options` is separate and is not a build knob**
+— it is forwarded verbatim to the solver, the shape linopy takes
+(`{"time_limit": 60, "mip_rel_gap": 0.01}`); build knobs govern construction
+and never reach it.
+
+**`is_ok` is not `has_primal`.** `is_ok` is linopy's rollup of the termination
+condition; `has_primal` adds the solver's own verdict on whether an incumbent
+exists, and it is what every reader gates on. They differ exactly when a run
+stops early: a MIP that hits `time_limit` before finding any feasible point is
+`ok` with nothing to read. Reading anyway raises `NoSolutionError`, and
+`objective` is `nan`. `to_dataset` costs what it says — each variable arrives
 dense over its own dims, so a model built for the memory budget this engine
 exists for should name a subset or use `to_parquet`. Duals are not exposed yet
 (the solve path reads `col_value` only) — ROADMAP Track 2b. `.lp` is the only
