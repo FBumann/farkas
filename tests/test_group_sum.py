@@ -216,11 +216,11 @@ def test_a_partial_coordinate_places_its_orphans_nowhere(tmp_path):
     path.write_text(PARTIAL_YAML)
     sources, data, coords = _partial_inputs(['g0', 'g0', None])
 
-    with fk.solve(path, sources) as sol:
-        assert sol.status == 'Optimal'
-        assert sol.objective == pytest.approx(3.0)
+    with fk.solve(path, sources) as result:
+        assert result.is_ok
+        assert result.objective == pytest.approx(3.0)
         # the orphan is still a variable; it just carries no group obligation
-        assert sol.primal('x').set_index('item')['value']['i2'] == pytest.approx(0.0)
+        assert result.primal('x').set_index('item')['value']['i2'] == pytest.approx(0.0)
 
     model = farkas_linopy.build(path, data=data, coords=coords)
     model.solve(solver_name='highs', output_flag=False)

@@ -86,13 +86,13 @@ def test_both_lanes_build_the_same_model(tmp_path, data, coords, where):
 
     with ly.build(path, data, coords=coords) as ex:
         relational_rows = ex._con.execute('SELECT count(*) FROM var_p').fetchone()[0]
-        relational_status = ex.solve().status
+        relational_status = ex.solve().termination_condition
 
     # a mask that excludes snapshot 0 leaves the balance row unsatisfiable —
     # the point is that both lanes agree on *which* model they built, not that
     # every mask yields a feasible one
     assert eager_rows == relational_rows, f'{where}: {eager_rows} vs {relational_rows} variables'
-    assert eager_status.lower() == relational_status.lower(), f'{where}: {eager_status} vs {relational_status}'
+    assert eager_status == relational_status, f'{where}: {eager_status} vs {relational_status}'
 
 
 def test_every_resolved_predicate_is_parity_tested():
@@ -150,9 +150,9 @@ def test_a_constraint_row_left_with_no_variables(tmp_path, data, coords):
     eager_status = m.solve(solver_name='highs')[1]
 
     with ly.build(path, data, coords=coords) as ex:
-        relational_status = ex.solve().status
+        relational_status = ex.solve().termination_condition
 
-    assert eager_status.lower() == relational_status.lower()
+    assert eager_status == relational_status
 
 
 BOOL_MASK_MODEL = {
@@ -182,7 +182,7 @@ def test_a_bool_parameter_is_a_mask_on_both_lanes(tmp_path):
     m.solve(solver_name='highs')
     eager = float(m.objective.value)
 
-    with ly.solve(path, data) as sol:
-        relational = sol.objective
+    with ly.solve(path, data) as result:
+        relational = result.objective
 
     assert eager == relational == 1.0

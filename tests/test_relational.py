@@ -122,16 +122,16 @@ def test_dispatch_roundtrip(dispatch_data, tmp_path):
     with DuckdbExecutor(memory_limit='256MB', chunk_rows=500) as ex:
         ex.build(dispatch_program(), dispatch_sources(gens, load))
 
-        sol = ex.solve()
-        assert sol.status == 'Optimal'
-        assert sol.objective == pytest.approx(oracle, rel=RTOL)
+        result = ex.solve()
+        assert result.is_ok
+        assert result.objective == pytest.approx(oracle, rel=RTOL)
 
         lp = tmp_path / 'dispatch.lp'
         ex.write_lp(lp)
         assert solve_lp_file(lp) == pytest.approx(oracle, rel=RTOL)
 
         # masked variable rows are absent, and primal joins back to coords
-        primal = sol.primal('p')
+        primal = result.primal('p')
         n_active = int((gens['p_max'] > 0).sum())
         assert len(primal) == n_active * len(load)
         assert set(primal.columns) == {'snapshot', 'generator', 'value'}
@@ -212,16 +212,16 @@ def test_transport_roundtrip(transport_data, tmp_path):
     with DuckdbExecutor(memory_limit='256MB', chunk_rows=300) as ex:
         ex.build(transport_program(), transport_sources(gens, lines, load))
 
-        sol = ex.solve()
-        assert sol.status == 'Optimal'
-        assert sol.objective == pytest.approx(oracle, rel=RTOL)
+        result = ex.solve()
+        assert result.is_ok
+        assert result.objective == pytest.approx(oracle, rel=RTOL)
 
         lp = tmp_path / 'transport.lp'
         ex.write_lp(lp)
         assert solve_lp_file(lp) == pytest.approx(oracle, rel=RTOL)
 
         # flows respect line capacity bounds
-        primal_f = sol.primal('f')
+        primal_f = result.primal('f')
         caps = lines.set_index('line')['cap']
         limits = primal_f['line'].map(caps)
         assert (primal_f['value'].abs() <= limits + 1e-6).all()
@@ -301,7 +301,7 @@ def test_a_quote_in_a_path_does_not_end_the_statement(tmp_path):
     sources = {'load': str(odd / 'load.parquet'), 'snapshot': str(odd / 'index.parquet')}
 
     with fk.solve(model, sources, workdir=str(odd / 'work')) as solution:
-        assert solution.status == 'Optimal'
+        assert solution.is_ok
         assert solution.objective == pytest.approx(3.0)
         written = solution.to_parquet(odd / 'out')
         assert written['p'].exists()

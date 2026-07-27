@@ -73,12 +73,12 @@ sources = {
                        index=pd.RangeIndex(6, name="snapshot")),
 }
 
-# the model lives in duckdb, so the Solution owns the executor that backs it
+# the model lives in duckdb, so the Result owns the executor that backs it
 with ly.solve("dispatch.yaml", sources,
               coords={"snapshot": pd.RangeIndex(6, name="snapshot")},
-              memory_limit="512MB") as sol:
-    print(sol.objective)   # 1920.0
-    print(sol.primal("p"))
+              memory_limit="512MB") as result:
+    print(result.objective)   # 1920.0
+    print(result.primal("p"))
 ```
 
 Sources can also be polars or pyarrow tables, or parquet paths — anything

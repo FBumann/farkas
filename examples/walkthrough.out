@@ -65,7 +65,7 @@ model: examples/walkthrough.yaml
     ... (76 lines total)
 
 [6] sink: batches -> highspy -> solution tables  (relational/executor.py)
-    status     Optimal
+    status     ok (optimal)
     objective  1,000.0
        snapshot generator  value
     0         0      wind   80.0

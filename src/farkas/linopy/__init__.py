@@ -27,8 +27,8 @@ For models declared entirely in YAML, use the native API — it streams::
 
     import farkas as ly
 
-    with ly.solve('model.yaml', {...}) as sol:
-        sol.primal('p')
+    with ly.solve('model.yaml', {...}) as result:
+        result.primal('p')
 """
 
 from __future__ import annotations

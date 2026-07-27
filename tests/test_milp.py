@@ -80,7 +80,7 @@ def test_commitment_milp_agrees_and_stays_integral(commitment_inputs):
         assert float(run.model.solution['u'].sum()) < run.model.solution['u'].size
 
         # binary variables actually take integral 0/1 values
-        u = run.sol.primal('u')['value'].to_numpy()
+        u = run.result.primal('u')['value'].to_numpy()
         assert np.allclose(u, np.round(u), atol=1e-6)
         assert set(np.round(u)) <= {0.0, 1.0}
 

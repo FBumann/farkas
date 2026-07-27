@@ -118,7 +118,7 @@
 
 ### Features
 
-* Solution.to_xarray() — the labelled form, one call away ([#75](https://github.com/FBumann/linopy-yaml/issues/75)) ([7df73b4](https://github.com/FBumann/linopy-yaml/commit/7df73b4e75a1d1656b4b1a1d928d0e4bf5814a99))
+* Result.to_xarray() — the labelled form, one call away ([#75](https://github.com/FBumann/linopy-yaml/issues/75)) ([7df73b4](https://github.com/FBumann/linopy-yaml/commit/7df73b4e75a1d1656b4b1a1d928d0e4bf5814a99))
 * static dim checking — the type is a set of dim names ([#68](https://github.com/FBumann/linopy-yaml/issues/68)) ([f96bcb4](https://github.com/FBumann/linopy-yaml/commit/f96bcb4f12797514ef93afd1cd8e771cf8490d0b))
 
 
@@ -175,4 +175,4 @@
 
 ### Features
 
-* API polish — check(), write(), LanguageError, Solution lifecycle ([#36](https://github.com/FBumann/linopy-yaml/issues/36)) ([fc36af5](https://github.com/FBumann/linopy-yaml/commit/fc36af515eb9baafdf81c036a27ad8ca9431297f))
+* API polish — check(), write(), LanguageError, Result lifecycle ([#36](https://github.com/FBumann/linopy-yaml/issues/36)) ([fc36af5](https://github.com/FBumann/linopy-yaml/commit/fc36af515eb9baafdf81c036a27ad8ca9431297f))

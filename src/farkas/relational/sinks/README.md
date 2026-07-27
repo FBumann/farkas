@@ -57,7 +57,7 @@ sink take it". Two notes for whoever writes it:
   module. `__init__.py` collects them; it does not own them.
 - Make the set of sinks **closed**, like `helpers.BUILTINS` — not an open
   `register_sink()`. An installed plugin that can change the answer to
-  `ly.check(model, sink=...)` is hard rule 5's failure mode one level down.
+  `fk.check(model, sink=...)` is hard rule 5's failure mode one level down.
 
 ## Known issue
 

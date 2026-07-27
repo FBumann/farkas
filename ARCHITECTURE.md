@@ -297,6 +297,7 @@ native schema merge (#30) is what would force the question.
 | `relational/arrow.py` | the Arrow boundary — caller tables in, via the PyCapsule protocol |
 | `relational/compiler.py` | plan → SQL text; pure, no connection |
 | `relational/sql.py` | how a value is spelled in SQL — quoting for caller-supplied paths |
+| `relational/status.py` | solve outcome on two axes; linopy's vocabulary, copied not imported |
 | `relational/executor.py` | duckdb: bind sources, label, assemble the tables |
 | `relational/sinks/` | how a built model leaves: `lp_file`, `solver_direct` (one module each, [README](src/farkas/relational/sinks/README.md)) |
 | `linopy/__init__.py` | opt-in shim: `build` / `extend` on a `linopy.Model` |
@@ -330,6 +331,28 @@ Two rules follow from that table, and a PR that adds a construct keeps them:
 - **Nothing is abbreviated.** `Cmp` became `ParameterComparison`, `vtype`
   became `variable_type`. The one place abbreviation survives is SQL column
   names inside the executor, which are not Python identifiers.
+
+### Where a concept is already linopy's, use linopy's name
+
+For anything this package shares with linopy — solve statuses, result shapes,
+solver metrics, duals — adopt **linopy's primitive**: its spelling, its field
+names, its decomposition. `Result` is the envelope (status + solution +
+report) and `Solution` the raw arrays, because that is what those words mean
+in linopy; `status` / `termination_condition` are two axes and `is_ok` is the
+rollup, because that is linopy's model. Our audience arrives from
+linopy/PyPSA, and a second vocabulary for one fact is a tax on every one of
+them. It also keeps the oracle honest: the two lanes can be compared exactly
+rather than through case-folding.
+
+**Copy it; do not import it.** The engine may not import linopy (rule 2), so
+the tables live here — and a test imports linopy and asserts the copy still
+matches (`tests/test_solve_status.py`). A copy nobody checks is a copy that
+rots, and the failure should be a red test rather than a user handed two
+dialects.
+
+This applies to vocabulary we *share*. Where the design genuinely differs it
+stays ours: we have no `Solution` of dense arrays to hold, because the values
+live in duckdb and are read by label join.
 
 ## Extension checklists
 

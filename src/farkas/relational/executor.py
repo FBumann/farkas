@@ -48,7 +48,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from farkas.errors import DataError, LanguageError, LinopyYamlError
+from farkas.errors import DataError, LanguageError, LinopyYamlError, NoSolutionError
 from farkas.relational import plan, sinks
 from farkas.relational.arrow import as_table
 from farkas.relational.compiler import SqlCompiler
@@ -58,6 +58,8 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     import pandas as pd
+
+    from farkas.relational.status import SolveStatus
 
 _IDENT = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 
@@ -76,20 +78,57 @@ RelationalBuildError = LinopyYamlError
 
 
 @dataclass
-class Solution:
-    """Solve result. ``primal(name)`` joins labels back to coords.
+class Result:
+    """What a solve returned — the outcome, and access to any values.
+
+    Named for linopy's envelope rather than its ``Solution``, and for a
+    reason local to this class: it is returned when the solve produced
+    *nothing*, so "solution" would be a lie in exactly the case a caller most
+    needs to notice. ``primal(name)`` joins labels back to coords.
 
     Tethered to its executor's label tables — use it as a context manager
-    (``with ly.solve(...) as sol:``) or call :meth:`close`. For big models,
+    (``with ly.solve(...) as result:``) or call :meth:`close`. For big models,
     :meth:`to_parquet` streams every variable's tidy solution table to disk
     without materialising any of them in memory.
     """
 
-    status: str
-    objective: float
+    _status: SolveStatus
+    _objective: float
     _executor: DuckdbExecutor
 
+    @property
+    def status(self) -> str:
+        """Coarse outcome: ``ok`` / ``warning`` / ``error`` / ``aborted`` / ``unknown``."""
+        return self._status.status
+
+    @property
+    def termination_condition(self) -> str:
+        """What the solver said — ``optimal``, ``infeasible``, ``time_limit``…"""
+        return self._status.termination_condition
+
+    @property
+    def is_ok(self) -> bool:
+        """Whether the solve left values worth reading. Not "was it optimal"."""
+        return self._status.is_ok
+
+    @property
+    def objective(self) -> float:
+        """The objective value, or ``nan`` when there is no solution."""
+        return self._objective
+
+    def _require_solution(self, what: str) -> None:
+        if self._status.is_ok:
+            return
+        raise NoSolutionError(
+            f'cannot read {what}: the solve terminated {self.termination_condition!r} '
+            f'({self._status.solver_wording}), so there are no values to read. Test '
+            f'`is_ok` first. This raises rather than returning, because the solver '
+            f'hands back a full-length vector of zeros either way and it is '
+            f'indistinguishable from an answer.'
+        )
+
     def primal(self, name: str) -> pd.DataFrame:
+        self._require_solution(f"the primal of '{name}'")
         return self._executor._primal(name)
 
     def to_dataarray(self, name: str) -> Any:
@@ -146,13 +185,14 @@ class Solution:
         through this process's memory. Other formats may follow the same
         shape (``to_csv``, ...) — parquet is the canonical one.
         """
+        self._require_solution('the solution')
         return self._executor._solution_to_parquet(Path(directory))
 
     def close(self) -> None:
         """Release the executor backing this solution's label tables."""
         self._executor.close()
 
-    def __enter__(self) -> Solution:
+    def __enter__(self) -> Result:
         return self
 
     def __exit__(self, *exc: object) -> Literal[False]:
@@ -554,10 +594,10 @@ class DuckdbExecutor:
         """Sink the built model to an LP file."""
         sinks.write_lp_file(self._tables(), path)
 
-    def solve(self, batch_rows: int = 100_000) -> Solution:
+    def solve(self, batch_rows: int = 100_000) -> Result:
         """Sink the built model straight into HiGHS and solve it."""
         status, objective = sinks.solve_direct(self._tables(), batch_rows)
-        return Solution(status=status, objective=objective, _executor=self)
+        return Result(_status=status, _objective=objective, _executor=self)
 
     def _solution_sql(self, name: str) -> str:
         """The tidy solution of variable *name*: ``(dims…, value)``.
