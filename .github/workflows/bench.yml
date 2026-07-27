@@ -1,0 +1,98 @@
+name: Bench
+
+# Cost, in the same terms as ci.yml: this is a second billed job, so it only
+# runs when a PR touches the engine or the harness. Most PRs pay nothing. When
+# it does run it is ~4 billed minutes — two suite passes plus the install — and
+# that is the floor for a *comparison*: a benchmark against no baseline is a
+# number without a claim.
+#
+# Not a required check. It gates on memory, which is deterministic, and reports
+# time without gating, which is not (see the job comments).
+
+on:
+  pull_request:
+    paths:
+      - 'src/farkas/relational/**'
+      - 'bench/**'
+      - 'pyproject.toml'
+      - '.github/workflows/bench.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # the base commit has to be reachable to check out
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - run: uv sync --group bench
+
+      # Generate the parquet inputs once, outside both measured passes, so
+      # neither arm is charged for it and both read byte-identical data.
+      - name: warm the data cache
+        run: |
+          uv run --no-sync python - <<'PY'
+          from bench.cases import CASES
+          from bench.regressions.test_build import WORKLOADS
+
+          for case, size in WORKLOADS:
+              CASES[case].data(CASES[case].shape(size))
+          PY
+
+      # Vary the engine, hold the harness fixed. Checking out only src/ from the
+      # base is what makes the two passes comparable: if the benchmark code
+      # differed too, a harness change would read as a performance change.
+      - name: baseline — the engine as it is on the base branch
+        run: |
+          git checkout ${{ github.event.pull_request.base.sha }} -- src/
+          uv run --no-sync pytest bench/regressions --benchmark-memory --benchmark-autosave -q
+          git checkout ${{ github.event.pull_request.head.sha }} -- src/
+
+      - name: this PR's engine
+        run: uv run --no-sync pytest bench/regressions --benchmark-memory --benchmark-autosave -q
+
+      # The table goes in the job summary whether or not the gate trips, because
+      # "no regression" is also a result worth being able to read.
+      - name: report
+        if: always()
+        run: |
+          {
+            echo '## Benchmarks: base → this PR'
+            echo
+            uv run --no-sync benchmem compare .benchmarks/*/0001_*.json .benchmarks/*/0002_*.json \
+              --columns peak,rss,time --diff --format md
+            echo
+            echo '`peak` is memray'"'"'s allocator high-water mark and is deterministic — it is what the gate reads.'
+            echo '`rss` and `time` are reported but never gated: a shared runner'"'"'s wall clock and page cache are noise.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Gate on peak only, at 20%, and both halves of that are measured rather
+      # than picked.
+      #
+      # The floor is noise: four runs of `dispatch-m` on *identical code* gave a
+      # 5.6% spread in memray peak, and the smallest workload — where a fixed
+      # ~30 MiB is most of the number — gave 16%. A 10% gate would cry wolf.
+      #
+      # The ceiling is what we actually want caught: every real change measured
+      # so far moved peak or build by 40-60% (the label sort 41%, vtype 45%,
+      # the objective aggregate 63%). Nothing we care about hides under 20%.
+      #
+      # Time is deliberately not gated. Back-to-back runs of the same code on
+      # the same machine differed by 80% on the small workload — a shared CI
+      # runner is worse. It is reported so a human can look; a machine must not
+      # branch on it.
+      - name: gate
+        run: |
+          uv run --no-sync benchmem compare .benchmarks/*/0001_*.json .benchmarks/*/0002_*.json \
+            --columns peak --fail-on peak:20%
