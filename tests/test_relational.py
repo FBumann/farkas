@@ -8,6 +8,8 @@ Each model is built three ways and must agree on the objective:
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -225,6 +227,35 @@ def test_transport_roundtrip(transport_data, tmp_path):
         caps = lines.set_index('line')['cap']
         limits = primal_f['line'].map(caps)
         assert (primal_f['value'].abs() <= limits + 1e-6).all()
+
+
+# ---------------------------------------------------------------------------
+# labels
+# ---------------------------------------------------------------------------
+
+
+def test_a_mask_that_removes_nothing_labels_exactly_like_no_mask(dispatch_data):
+    """The two paths through ``_label_frame`` must agree row for row.
+
+    Unmasked, a label is arithmetic on the dim ordinals; masked, it is counted
+    by a chunked ``ROW_NUMBER``. A label *is* the solver column index, so
+    "same number of rows" is not the property that matters — which coordinate
+    got which index is. ``chunk_rows`` is small enough to force several chunks,
+    since a disagreement would live in the running offset between them.
+    """
+    gens, load = dispatch_data
+    gens = gens.assign(p_max=gens['p_max'].where(gens['p_max'] > 0, 1.0))  # leave the mask nothing to remove
+    variable = dispatch_program().variables[0]
+
+    labelled = {}
+    for name, where in (('masked', ParameterComparison('p_max', '>', 0)), ('unmasked', None)):
+        program = replace(dispatch_program(), variables=(replace(variable, where=where),))
+        with DuckdbExecutor(memory_limit='256MB', chunk_rows=60) as ex:
+            ex.build(program, dispatch_sources(gens, load))
+            labelled[name] = ex._con.execute('SELECT snapshot, generator, var_label FROM var_p ORDER BY var_label').df()
+
+    assert len(labelled['unmasked']) == len(gens) * len(load)
+    pd.testing.assert_frame_equal(labelled['masked'], labelled['unmasked'])
 
 
 # ---------------------------------------------------------------------------

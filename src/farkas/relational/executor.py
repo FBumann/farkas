@@ -15,9 +15,11 @@ building the dim tables, assigning labels, assembling ``cols``/``obj``/
 Hand-managed chunking exists in exactly two places, both forced by operators
 duckdb cannot spill:
 
-1. Label assignment (here) — a global ``ROW_NUMBER`` window materialises its
-   whole input, so labels are assigned per-chunk of the leading dim with a
-   running offset. This is one generic mechanism; every operator inherits it.
+1. *Masked* label assignment (here) — a global ``ROW_NUMBER`` window
+   materialises its whole input, so labels are assigned per-chunk of the
+   leading dim with a running offset. This is one generic mechanism; every
+   operator inherits it. Without a mask there is no window to chunk: a label
+   is then its row's position in the product, which is arithmetic.
 2. LP-text ``string_agg`` (in the sink) — string aggregates don't spill, and a
    fixed conservative chunk size costs nothing in the debugging sink.
 
@@ -511,14 +513,29 @@ class DuckdbExecutor:
         dense ``label`` column continuing from *start*. Returns the next label.
 
         Variables (``var_label``) and constraint rows (``row``) are the same
-        operation over different tables, and it is the one place chunking is
-        hand-managed: a global ``ROW_NUMBER`` window materialises its whole
-        input, so labels are assigned per-chunk of the leading dim with a
-        running offset. Writing that twice is how the two would come to
-        disagree about which coordinate gets which solver index.
+        operation over different tables, and writing it twice is how the two
+        would come to disagree about which coordinate gets which solver index.
+
+        Two paths, and the mask is what chooses between them. **Unmasked**,
+        every coordinate of the product exists, so a row's label is its
+        position — arithmetic on the dim ordinals
+        (:meth:`SqlCompiler.positional_label`), with no window, no sort and
+        therefore nothing to chunk. **Masked**, which rows survive is not known
+        until the predicate has run, so the position has to be counted: that is
+        the ``ROW_NUMBER`` below, and it is the one place chunking is
+        hand-managed, because a global window materialises its whole input.
+        Labels are assigned per-chunk of the leading dim with a running offset.
         """
         collist = ', '.join(f't_{d}.val AS {d}' for d in dims)
         from_clause, where_clause, order_key = self._sql.frame(dims, where)
+
+        if where is None:
+            self._con.execute(
+                f'CREATE TABLE {table} AS SELECT {collist}, '
+                f'{self._sql.positional_label(dims, start)} AS {label} FROM {from_clause}'
+            )
+            return start + math.prod(self._dim_card[d] for d in dims)
+
         self._con.execute(
             f'CREATE TABLE {table} AS SELECT {collist}, 0::BIGINT AS {label} FROM {from_clause} WHERE FALSE'
         )

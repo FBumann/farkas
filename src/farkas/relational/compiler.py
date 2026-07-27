@@ -88,6 +88,31 @@ class SqlCompiler:
             conds.append(cond)
         return ' '.join(froms), (' AND '.join(conds) if conds else 'TRUE'), ', '.join(f't_{d}.ord' for d in dims)
 
+    def positional_label(self, dims: tuple[str, ...], start: int) -> str:
+        """The dense label of an *unmasked* frame row, as arithmetic on ordinals.
+
+        Labels are row-major positions in the coordinate product, so when no
+        mask removes anything the position is computable rather than countable:
+        ``start + Σ ord_d · stride_d``, the strides being the products of the
+        trailing dims' cardinalities. Same numbers a ``ROW_NUMBER`` over
+        :meth:`frame`'s ``order_key`` would assign — which is the point, since
+        a variable's label *is* its solver column index and the two paths must
+        agree on it exactly.
+
+        Only valid without a mask. Under one the surviving rows are not known
+        until the predicate has run, and counting them is what the window is
+        for; :meth:`frame`'s ``order_key`` stays the definition of the order.
+        """
+        strides: list[int] = []
+        stride = 1
+        for d in reversed(dims):
+            strides.append(stride)
+            stride *= self.dimension_cardinality[d]
+        parts = [f't_{d}.ord' if s == 1 else f't_{d}.ord * {s}' for d, s in zip(dims, reversed(strides), strict=True)]
+        if start:
+            parts.append(str(start))
+        return f'({" + ".join(parts)})::BIGINT'
+
     def parameter_join(
         self,
         param: str,
