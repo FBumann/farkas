@@ -1,5 +1,11 @@
 # Measured results: relational vs eager LP construction
 
+**Cost lives here, not in the architecture's rules.** What a build costs is a
+property of the engine and it is settled by measurement; the rules in
+`ARCHITECTURE.md` constrain the language and would survive an engine swap
+untouched. That separation is why this file can be rewritten by a benchmark run
+without anything in `SPEC.md` moving.
+
 **Build memory alone is not the claim.** It is a small fraction of what solving
 costs, so shrinking it further changes nothing a caller feels — the tables below
 are the input to two claims that do, and both live further down: end-to-end peak
@@ -28,19 +34,19 @@ highspy 1.15.1. Parity gate: all three cases agree with the eager lane to
 
 | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
 |---|---|---|---|---|---|---|
-| 10k | 0.05 s | 0.18 s | **0.30x** | 0.17 GB | 0.21 GB | **0.81x** |
-| 100k | 0.07 s | 0.20 s | **0.37x** | 0.22 GB | 0.26 GB | **0.85x** |
-| 1M | 0.25 s | 0.35 s | **0.70x** | 0.54 GB | 0.61 GB | **0.88x** |
-| 10M | 2.79 s | 2.09 s | 1.33x | 2.38 GB | 2.15 GB | 1.11x |
+| 10k | 0.09 s | 0.30 s | **0.30x** | 0.17 GB | 0.21 GB | **0.82x** |
+| 100k | 0.15 s | 0.31 s | **0.47x** | 0.23 GB | 0.26 GB | **0.86x** |
+| 1M | 0.44 s | 0.53 s | **0.83x** | 0.55 GB | 0.58 GB | **0.95x** |
+| 10M | 4.64 s | 3.25 s | 1.43x | 2.78 GB | 2.26 GB | 1.23x |
 
 ### nodal — `(snapshot, node, tech)` at 25% density
 
 | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
 |---|---|---|---|---|---|---|
-| 3k | 0.06 s | 0.20 s | **0.29x** | 0.17 GB | 0.21 GB | **0.81x** |
-| 30k | 0.07 s | 0.20 s | **0.33x** | 0.21 GB | 0.24 GB | **0.88x** |
-| 300k | 0.18 s | 0.26 s | **0.68x** | 0.46 GB | 0.46 GB | 1.02x |
-| 3M | 1.46 s | 0.93 s | 1.56x | 1.91 GB | 1.58 GB | 1.21x |
+| 3k | 0.09 s | 0.31 s | **0.30x** | 0.17 GB | 0.21 GB | **0.81x** |
+| 30k | 0.10 s | 0.32 s | **0.33x** | 0.21 GB | 0.24 GB | **0.90x** |
+| 300k | 0.32 s | 0.41 s | **0.79x** | 0.46 GB | 0.46 GB | 1.00x |
+| 3M | 2.44 s | 1.50 s | 1.63x | 1.93 GB | 1.54 GB | 1.25x |
 
 ### sector — dense snapshots and carriers, sparse portfolio
 
@@ -51,19 +57,19 @@ then reduces the sparse one.
 
 | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
 |---|---|---|---|---|---|---|
-| 1k | 0.07 s | 0.21 s | **0.34x** | 0.17 GB | 0.21 GB | **0.81x** |
-| 10k | 0.07 s | 0.23 s | **0.32x** | 0.20 GB | 0.24 GB | **0.83x** |
-| 100k | 0.21 s | 0.34 s | **0.61x** | 0.41 GB | 0.53 GB | **0.78x** |
-| 1M | 1.28 s | 1.28 s | 1.00x | **1.26 GB** | 2.97 GB | **0.42x** |
+| 1k | 0.09 s | 0.32 s | **0.28x** | 0.17 GB | 0.21 GB | **0.81x** |
+| 10k | 0.10 s | 0.33 s | **0.31x** | 0.20 GB | 0.24 GB | **0.85x** |
+| 100k | 0.18 s | 0.33 s | **0.56x** | 0.41 GB | 0.53 GB | **0.79x** |
+| 1M | 1.47 s | 1.39 s | 1.05x | **1.24 GB** | 2.97 GB | **0.42x** |
 
 ### transport — three `group_sum` joins per row
 
 | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
 |---|---|---|---|---|---|---|
-| 9.8k | 0.07 s | 0.22 s | **0.30x** | 0.18 GB | 0.22 GB | **0.83x** |
-| 98k | 0.10 s | 0.24 s | **0.41x** | 0.25 GB | 0.29 GB | **0.88x** |
-| 980k | 0.35 s | 0.43 s | **0.81x** | 0.70 GB | 0.64 GB | 1.08x |
-| 9.8M | 4.64 s | 2.78 s | 1.67x | 3.66 GB | 1.89 GB | 1.94x |
+| 9.8k | 0.10 s | 0.32 s | **0.31x** | 0.18 GB | 0.22 GB | **0.83x** |
+| 98k | 0.14 s | 0.36 s | **0.40x** | 0.25 GB | 0.28 GB | **0.87x** |
+| 980k | 0.54 s | 0.64 s | **0.85x** | 0.70 GB | 0.65 GB | 1.09x |
+| 9.8M | 6.71 s | 3.71 s | 1.81x | 2.87 GB | 1.93 GB | 1.48x |
 
 ## What this says
 
@@ -88,9 +94,12 @@ than counted. That path cut `transport`'s build from 2.57 s to 0.87 s and
 `dispatch`'s from 0.97 s to 0.49 s at the `l` rung — the largest single win in
 this file, and one that has nothing to do with which engine executes it.
 
-**What is left at scale is the LP writer** — 3.6 s of `dispatch`'s 4.1 s
-build-and-write at 10M, and a similar share elsewhere. That is where the next
-wall-time work belongs.
+**What is left at scale is the LP writer and the terminal aggregate.** The
+writer is the larger share; the aggregate over every nonzero is the other, and
+it is a no-op for most constraints — [#161](https://github.com/FBumann/farkas/issues/161)
+measures skipping it at ~30% of build peak and roughly 3x build time. It is not
+done here deliberately: eliding it is a correctness-critical change that has
+earned its own review rather than an engine swap's coat-tails.
 
 **Sparsity separates them, but only once the coordinate product is large.**
 The `sector` row above is the clearest result in this file — 2.2x less memory
@@ -200,8 +209,8 @@ coordinates) `Q` is **diagonal**, so it costs 16 bytes per quadratic column:
 | 3.56×10⁷ | 0.57 GB |
 | 10⁸ | 1.60 GB |
 
-Against a `solver_direct` peak already dominated by HiGHS's own model, which
-hard rule 4 exempts, that is a small fraction. On `lp_file` a quadratic
+Against a `solver_direct` peak already dominated by HiGHS's own model, that is
+a small fraction. On `lp_file` a quadratic
 objective is a text section and sinks like any other. So this is a cost, not an
 invariant violation. Two caveats:
 

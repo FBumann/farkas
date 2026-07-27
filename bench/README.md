@@ -84,9 +84,9 @@ disk; `workdir_bytes` records how much, so a peak-RSS win cannot quietly hide a
 multi-gigabyte temp file. It is sampled at the end of emit, not at its peak.
 
 **Failures are results.** A run that dies is written to the JSONL with the
-exception line that killed it, and the report renders it as a cell. An OOM at a
-declared budget is the single most informative thing this harness can find — it
-falsifies hard rule 4 for that shape.
+exception line that killed it, and the report renders it as a cell. An OOM is
+the single most informative thing this harness can find — and this is where a
+cost claim is settled, because cost is not one of the architecture's rules.
 
 **Repeats collapse by minimum.** Noise only ever adds.
 

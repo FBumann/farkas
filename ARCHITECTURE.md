@@ -68,6 +68,13 @@ dim in generated math is the same error as a stray dim in a written one.
 *Enforced, not aspirational: `tests/test_architecture.py` encodes these as
 static checks and CI's bare-install job proves the dependency claims.*
 
+**These rules constrain the language.** What a construct may say, which layer
+may know what, and what a file means on its own — each survives any engine, and
+each decides what can enter `SPEC.md`. How much a build *costs* is a property of
+the engine, measured in [docs/benchmarks.md](docs/benchmarks.md) and not a rule.
+It was one once, phrased around a `memory_limit` that only one engine had, and
+that made an implementation choice load-bearing in the language's rulebook.
+
 0. **The layers are ordered, and imports prove it.** Every module imports only
    downward, at module level, with exactly one declared exception: `lowering.py`
    reaches `piecewise.py` lazily, because a formulation must expand *before*
@@ -99,26 +106,9 @@ static checks and CI's bare-install job proves the dependency claims.*
    tests an oracle rather than a comparison of dialects. A construct outside the
    language is a load error naming the construct and its rewrite, never a
    redirection to the other lane.
-4. **Peak memory tracks the model, not its coordinate product.** A mask is an
-   absent row rather than a NaN in a dense array; a variable's label *is* the
-   solver's own column index; the matrix is COO. So a model that populates 3%
-   of its coordinate product costs 3%, and nothing on the build path ever
-   holds a dense array over the product or a full CSR. That is the invariant a
-   new feature is judged against — not whether some array was briefly
-   contiguous, but whether peak still tracks what the model actually contains.
-   Two residencies are exempt because neither is the build: the solver's own
-   model when solving in process, which is the dominant term by roughly an
-   order of magnitude at scale
-   ([benchmarks](docs/benchmarks.md)); and the **solution vector**, which
-   `solve()` receives from the solver as one dense array of length `n_cols`.
-   That one is deliberate and it is not the model — it is `O(n_cols)` where
-   the model is `O(nnz)`, it exists once rather than at every operator, and the
-   solver already holds an identical copy, so we are never the dominant term.
-   `Result.to_parquet` sinks straight to disk for anyone who cannot afford
-   even that.
-5. **Backend-visible YAML files are self-contained.** No Python-side state
+4. **Backend-visible YAML files are self-contained.** No Python-side state
    (registries, session objects) may change what a file means.
-6. **The public interface is a declared model, not a Python API.** YAML is the
+5. **The public interface is a declared model, not a Python API.** YAML is the
    format we ship and document; the contract underneath it is `MathSchema`, and
    whether that seam is ever blessed is open (see Composition). The Python
    surface is the runner (`api.py`); the plan is internal, and a stable
@@ -183,13 +173,12 @@ request can ever be met:
 Impossible **in the symbolic plan**: conditionals, iteration, any data-dependent
 structure inside expressions. What is protected here is *static* boundedness —
 the plan must know every component's extent before data is touched — which is a
-different property from rule 4's memory invariant, though the two meet at the
+different property from how much a build costs, though the two meet at the
 escape hatch. That is why an `escape:` island (#38) is admissible where a
 registered Python helper was not: its extent is fixed by the preceding `where`
-mask, it is terminal, and it is named in the file. Its **label budget is how it
-satisfies rule 4** — the same "peak tracks a declared budget" bargain the rest
-of the engine makes, denominated in labels rather than bytes, and enforced
-before any Python runs rather than after it allocates.
+mask, it is terminal, and it is named in the file. Its **label budget is what keeps it
+accountable** — an island's cost is bounded by what it may emit, declared and
+enforced before any Python runs rather than discovered after it allocates.
 
 An escape buys back the *relational* and *local* rules (it returns affine COO
 rows — a running-sum island still emits affine rows, just O(T²) of them) but

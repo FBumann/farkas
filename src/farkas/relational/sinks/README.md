@@ -30,7 +30,7 @@ another method on `DuckdbExecutor`.
 4. If it needs an optional dependency, import it **inside the function**. The
    module boundary is the fence; the lazy import is what keeps importing this
    package free for callers who will never use that sink.
-5. Stream. Nothing here may materialise the model — hard rule 4. Aggregate
+5. Stream. Nothing here may materialise the model a second time. Aggregate
    inside duckdb, or hand the solver batches.
 
 ## Why one module per sink

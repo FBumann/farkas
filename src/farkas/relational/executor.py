@@ -558,6 +558,10 @@ class PolarsExecutor:
         Terms normalise to the left, constants to the right. Each constant
         fragment is aggregated to its own coordinates and left-joined, so a
         coordinate it has no row for contributes zero.
+
+        The terminal aggregate always runs: it is where duplicates from ``Sum``
+        and ``GroupSum`` — which project rather than aggregate — collapse.
+        Skipping it where nothing can collapse is #161.
         """
         import polars as pl
 
@@ -610,10 +614,8 @@ class PolarsExecutor:
                     (sign * pl.col('coeff')).cast(pl.Float64).alias('coeff'),
                 )
             )
-        stacked = pl.concat(pieces)
-        if _needs_aggregate([fragment for fragment, _ in terms]):
-            stacked = stacked.group_by('row', 'col').agg(pl.col('coeff').sum())
-        return rows, stacked.collect(engine='streaming')
+        matrix = pl.concat(pieces).group_by('row', 'col').agg(pl.col('coeff').sum())
+        return rows, matrix.collect(engine='streaming')
 
     def _build_objective(self, o: plan.ObjectiveDeclaration) -> pl.DataFrame | None:
         """The objective as ``(col, coeff)``, or ``None`` if it has no terms."""
@@ -760,8 +762,11 @@ def _needs_aggregate(terms: Sequence[TermFragment]) -> bool:
     Two fragments may both carry the same variable — ``x + 2 * x`` is one row
     each and one column — and a single fragment that is not
     :attr:`~farkas.relational.compiler.TermFragment.keyed` already holds a
-    label twice. Everything else preserves distinctness, including the
-    placement join against constraint rows that are distinct by construction.
+    label twice.
+
+    Used for the objective only. The same reasoning extends to the constraint
+    matrix, where it is worth far more, but that is #161's to land on its own
+    evidence rather than an engine swap's to carry.
     """
     return len(terms) != 1 or not terms[0].keyed
 
