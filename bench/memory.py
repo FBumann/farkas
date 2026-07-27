@@ -196,9 +196,23 @@ def _phase_build(cfg: dict[str, Any]) -> dict[str, Any]:
             workdir=workdir,
         ) as ex:
             build_seconds = time.perf_counter() - started
+            extra: dict[str, Any] = {}
             if cfg['sink'] == 'lp':
                 ex.write_lp(Path(workdir) / 'model.lp')
-        return {'build_seconds': build_seconds, 'total_seconds': time.perf_counter() - started}
+            elif cfg['sink'] == 'solve':
+                # the point of comparison for the whole budget argument: what
+                # the solver costs once it holds the model. Hard rule 4 exempts
+                # this residency, so it is never in a build number — but it is
+                # the ceiling a caller actually hits, and the build budget only
+                # matters to the extent it is not dwarfed here.
+                solved = time.perf_counter()
+                result = ex.solve()
+                extra = {
+                    'solve_seconds': time.perf_counter() - solved,
+                    'status': result.status,
+                    'objective': result.objective,
+                }
+        return {'build_seconds': build_seconds, 'total_seconds': time.perf_counter() - started, **extra}
 
 
 def _phase_build_eager(cfg: dict[str, Any]) -> dict[str, Any]:
@@ -322,7 +336,7 @@ def main() -> int:
     parser.add_argument('--budgets', nargs='+', default=['128MB', '256MB', '512MB', '1GB', '2GB'])
     parser.add_argument('--chunk-rows', type=int, default=25_000)
     parser.add_argument('--threads', type=int, nargs='+', default=[0], help='0 = duckdb default')
-    parser.add_argument('--sink', choices=['none', 'lp'], default='none')
+    parser.add_argument('--sink', choices=['none', 'lp', 'solve'], default='none')
     parser.add_argument(
         '--eager', action='store_true', help='also build each size through the linopy lane ([linopy] extra)'
     )
