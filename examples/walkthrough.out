@@ -53,15 +53,15 @@ model: examples/walkthrough.yaml
     min
     
     obj:
-    +0 x0
-    +0 x1
-    +50 x2
-    +0 x3
-    +0 x4
-    +50 x5
-    +0 x6
-    +0 x7
-    +50 x8
+    +0.0 x0
+    +0.0 x1
+    +50.0 x2
+    +0.0 x3
+    +0.0 x4
+    +50.0 x5
+    +0.0 x6
+    +0.0 x7
+    +50.0 x8
     ... (76 lines total)
 
 [6] sink: batches -> highspy -> solution tables  (relational/executor.py)

@@ -1,0 +1,118 @@
+"""The LP sink renders doubles exactly.
+
+``lp_file`` writes numbers with duckdb's ``::VARCHAR`` cast rather than
+``printf('%.17g')`` because the cast is 30-40% faster and emit is almost
+entirely float-to-text. That trade is only free if the cast is
+shortest-*round-trip* and not merely shortest, so the property is pinned here
+rather than left to the golden file — a golden proves the bytes did not move,
+not that they are correct.
+"""
+
+from __future__ import annotations
+
+import math
+import struct
+import tempfile
+from pathlib import Path
+
+import pandas as pd
+import pytest
+
+import farkas as fk
+from farkas.relational.sinks.lp_file import _signed
+from tests.conftest import DISPATCH_MODEL
+
+#: Doubles that break naive formatters: repeating binary fractions, the
+#: extremes of the exponent range, a denormal, and the signed zeros.
+AWKWARD = [
+    0.1,
+    1 / 3,
+    2 / 3,
+    0.3,
+    1e-17,
+    1.7976931348623157e308,
+    2.2250738585072014e-308,
+    5e-324,
+    123456789.12345679,
+    1e20,
+    -0.0,
+    0.0,
+]
+
+
+def _duckdb_text(expr: str, values: list[float]) -> list[str]:
+    """``expr`` (over column ``v``) applied to ``values``, in order."""
+    import duckdb
+
+    con = duckdb.connect()
+    con.execute('CREATE TABLE t (i BIGINT, v DOUBLE)')
+    con.executemany('INSERT INTO t VALUES (?, ?)', list(enumerate(values)))
+    return [r[0] for r in con.execute(f'SELECT {expr} FROM t ORDER BY i').fetchall()]
+
+
+def _bits(x: float) -> bytes:
+    """The bit pattern, so ``-0.0`` and ``0.0`` compare unequal."""
+    return struct.pack('<d', x)
+
+
+@pytest.mark.parametrize('value', AWKWARD, ids=repr)
+def test_plain_cast_round_trips(value: float) -> None:
+    """``v::VARCHAR`` — how bounds and right-hand sides are written."""
+    (text,) = _duckdb_text('v::VARCHAR', [value])
+    assert _bits(float(text)) == _bits(value)
+
+
+@pytest.mark.parametrize('value', AWKWARD, ids=repr)
+def test_signed_coefficient_round_trips(value: float) -> None:
+    """``_signed`` — how objective and matrix coefficients are written.
+
+    The sign is normalised away for ``-0.0`` (see :func:`_signed`), so the
+    round-trip is checked on magnitude there: ``+0.0`` and ``-0.0`` are the
+    same coefficient, and only one of them is expressible after a ``+``.
+    """
+    (text,) = _duckdb_text(_signed('v'), [value])
+    assert text[0] in '+-', f'coefficient {text!r} carries no explicit sign'
+    assert text[:2] != '+-', f'coefficient {text!r} carries two signs'
+    assert float(text) == value  # -0.0 == 0.0, which is the whole point
+
+
+def test_negative_zero_coefficient_is_written_once() -> None:
+    """The trap ``+ 0.0`` in :func:`_signed` exists to close.
+
+    ``-0.0`` is reachable — any negative coefficient times a zero parameter —
+    and it satisfies ``>= 0``, so a naive sign arm emits ``+`` in front of a
+    cast that still reads ``-0.0``.
+    """
+    (text,) = _duckdb_text(_signed('v'), [-0.0])
+    assert text == '+0.0'
+
+
+def test_extremes_do_not_become_infinite() -> None:
+    """A formatter that drops exponent digits turns ``1e308`` into ``inf``."""
+    for text in _duckdb_text('v::VARCHAR', [1.7976931348623157e308, 5e-324]):
+        assert math.isfinite(float(text))
+        assert float(text) != 0.0
+
+
+def test_written_bounds_are_bit_exact() -> None:
+    """End to end: awkward data in, the same doubles back out of the file."""
+    upper = [1 / 3, 1e-17]
+    cost = [2 / 3, 1.7976931348623157e308]
+    data = {
+        'p_max': pd.Series(upper, index=pd.Index(['wind', 'gas'], name='generator')),
+        'cost': pd.Series(cost, index=pd.Index(['wind', 'gas'], name='generator')),
+        'load': pd.Series([0.0], index=pd.RangeIndex(1, name='snapshot')),
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        lp = Path(tmp) / 'model.lp'
+        with fk.build(DISPATCH_MODEL, data) as ex:
+            ex.write_lp(lp)
+        text = lp.read_text()
+
+    section = text.split('bounds\n')[1].split('\nend')[0]
+    written = sorted(float(line.rsplit('<=', 1)[1]) for line in section.strip().splitlines())
+    assert written == sorted(upper)
+
+    objective = text.split('obj:\n')[1].split('\ns.t.')[0]
+    coefficients = sorted(float(line.split(' x')[0]) for line in objective.strip().splitlines())
+    assert coefficients == sorted(cost)
