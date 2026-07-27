@@ -91,6 +91,15 @@ falsifies hard rule 4 for that shape.
 
 **Repeats collapse by minimum.** Noise only ever adds.
 
+**Comparing two versions of the same arm? Alternate them.** Repeats inside one
+invocation collapse noise *within* a few seconds; they do nothing about drift
+across a session, and this machine has drifted 2x on wall time between the
+start of a session and the end of one. Check out A, measure, check out B,
+measure, and go back — not A once and B once an hour later. The tell that you
+needed to is the other arm: if linopy moved too, the machine moved, because
+nothing in `src/farkas/relational/` can reach it. Peak RSS is far steadier than
+wall time and is usually the honest half of a before/after claim.
+
 ## The cases
 
 Chosen so each stresses a *different* SQL shape (ARCHITECTURE.md, "read the
