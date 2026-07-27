@@ -202,7 +202,11 @@ class Result:
 class PolarsExecutor:
     """Build a :class:`Program` into polars frames, then sink it."""
 
-    def __init__(self) -> None:
+    def __init__(self, partitioned: bool = False) -> None:
+        # PROTOTYPE (not for merge): defer the matrix instead of materialising
+        # it, so the whole model is never resident. See matrix_blocks().
+        self._partitioned = partitioned
+        self._deferred: list[tuple[Any, Any, list[Any]]] = []
         self._program: plan.Program | None = None
         self._compiler: PolarsCompiler | None = None
         self._parameters: dict[str, pl.LazyFrame] = {}
@@ -620,6 +624,11 @@ class PolarsExecutor:
                     (sign * pl.col('coeff')).cast(pl.Float64).alias('coeff'),
                 )
             )
+        if self._partitioned:
+            # the whole point: `row` is the leading group key, so blocks are
+            # independent and nothing has to hold the matrix whole
+            self._deferred.append((frame, terms, rows.height))
+            return rows, None
         stacked = pl.concat(pieces)
         if _needs_aggregate([fragment for fragment, _ in terms]):
             stacked = stacked.group_by('row', 'col').agg(pl.col('coeff').sum())
@@ -649,6 +658,48 @@ class PolarsExecutor:
     # ------------------------------------------------------------------
     # sinks — see relational/sinks/; the executor only supplies the frames
     # ------------------------------------------------------------------
+
+    def matrix_blocks(self, rows_per_block: int):
+        """PROTOTYPE (not for merge): the matrix a row-range at a time.
+
+        `row` is the leading group key of the terminal aggregate, so a block's
+        groups cannot reach outside it and each block is assembled, drained and
+        dropped independently. Nothing ever holds the whole matrix, which is the
+        property `pl.DataFrame` cannot have and duckdb got from keeping the
+        result in a file-backed database rather than in the process.
+
+        The cost is that each block re-joins against the full variable frame, so
+        the work is O(blocks x variables) where the whole-matrix path is O(1) —
+        which is the trade the measurement is for.
+        """
+        import polars as pl
+
+        for frame, terms, _height in self._deferred:
+            bounds = frame.select(pl.col('row').min().alias('lo'), pl.col('row').max().alias('hi')).collect()
+            if bounds.height == 0 or bounds['lo'][0] is None:
+                continue
+            first, last = int(bounds['lo'][0]), int(bounds['hi'][0])
+            for lo in range(first, last + 1, rows_per_block):
+                hi = min(lo + rows_per_block, last + 1)
+                window = frame.filter(pl.col('row').is_between(lo, hi, closed='left'))
+                pieces = []
+                for p, sign in terms:
+                    placed = (
+                        window.join(p.frame, on=list(p.dims), how='inner')
+                        if p.dims
+                        else window.join(p.frame, how='cross')
+                    )
+                    pieces.append(
+                        placed.select(
+                            'row',
+                            pl.col('var_label').alias('col'),
+                            (sign * pl.col('coeff')).cast(pl.Float64).alias('coeff'),
+                        )
+                    )
+                stacked = pl.concat(pieces)
+                if _needs_aggregate([fragment for fragment, _ in terms]):
+                    stacked = stacked.group_by('row', 'col').agg(pl.col('coeff').sum())
+                yield lo, hi, stacked.collect(engine='streaming')
 
     def _tables(self) -> sinks.ModelTables:
         assert self._cols is not None and self._obj is not None
