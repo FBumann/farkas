@@ -187,6 +187,15 @@ resulting rules and this is the evidence behind them.
    bounds every operator: labels = per-chunk `ROW_NUMBER` + running offset;
    constraint blocks = per-chunk `GROUP BY` + `COPY`, parts concatenated. Chunk
    size and memory limit trade off directly; 25k snapshots fits in 256 MB.
+   Better still is not to run the operator: *unmasked*, a label is its row's
+   position in the coordinate product, so it is arithmetic on the dim ordinals
+   rather than a window to be chunked. `bench/profile_build.py` put label
+   assignment at 52% of `dispatch/l`'s build before that; on `transport`, which
+   carries no mask at all, build went 5.54 s -> 3.10 s and peak 1.35 -> 1.17 GB
+   at 9.8M variables. Masked declarations still count, because which rows
+   survive is not known until the predicate has run — so `dispatch` and `nodal`,
+   whose variables are masked, keep the window and gain only on their
+   constraint frames.
 3. **LP section order is free.** Line order inside sections is irrelevant to
    solvers (labels live in the text), so no global sorts are needed — hence
    `SET preserve_insertion_order=false`.

@@ -173,6 +173,37 @@ def test_a_frame_cross_joins_its_dim_tables_and_orders_by_ordinal():
     assert order_key == 't_snapshot.ord, t_generator.ord'
 
 
+def test_a_positional_label_is_row_major_arithmetic_on_the_ordinals():
+    """No window, no sort — the trailing dim has stride 1 and is left bare."""
+    sql = compiler().positional_label(('snapshot', 'generator'), 0)
+    assert sql == '(t_snapshot.ord * 3 + t_generator.ord)::BIGINT'
+    assert 'OVER (' not in sql
+
+
+def test_a_positional_label_carries_the_running_offset():
+    assert compiler().positional_label(('generator',), 72) == '(t_generator.ord + 72)::BIGINT'
+
+
+def test_a_positional_label_agrees_with_the_window_it_replaces():
+    """The two paths assign solver indices, so agreeing 'in spirit' is not
+    enough — evaluate the arithmetic against the order key's enumeration."""
+    dims = ('snapshot', 'generator', 'bus')
+    sql = compiler().positional_label(dims, 5)
+    ordinals = [
+        (s, g, b)
+        for s in range(CARDINALITY['snapshot'])
+        for g in range(CARDINALITY['generator'])
+        for b in range(CARDINALITY['bus'])
+    ]
+    for expected, (s, g, b) in enumerate(ordinals, start=5):
+        expression = sql.removesuffix('::BIGINT').replace('t_snapshot.ord', str(s))
+        expression = expression.replace('t_generator.ord', str(g)).replace('t_bus.ord', str(b))
+        # `+` and `*` on integer literals mean the same thing in both languages,
+        # so python evaluates the emitted SQL faithfully — and this file has no
+        # duckdb to ask instead
+        assert eval(expression) == expected
+
+
 def test_a_parameter_bound_joins_on_the_variable_frame():
     variable = PROGRAM.variables[0]
     sql, joins = compiler().bound(plan.Parameter('cost'), variable)

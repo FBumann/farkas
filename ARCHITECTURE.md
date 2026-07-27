@@ -244,10 +244,12 @@ the streaming lane. Reimplementing linopy's reformulation passes inside the plan
 is explicitly rejected: that duplicates the library this package consumes.
 
 **Chunk only what cannot spill.** duckdb's joins and plain numeric hash
-aggregates spill under `memory_limit` on their own, so only label assignment and
-the LP-text `string_agg` need hand-managed partitioning, and the database must
-be file-backed. The measurements behind those rules — and the operators that
-OOM instead of spilling — are in
+aggregates spill under `memory_limit` on their own, so only *masked* label
+assignment and the LP-text `string_agg` need hand-managed partitioning, and the
+database must be file-backed. Unmasked there is no window to chunk: every
+coordinate of the product exists, so a label is its row's position and falls out
+of arithmetic on the dim ordinals. The measurements behind those rules — and the
+operators that OOM instead of spilling — are in
 [docs/benchmarks.md](docs/benchmarks.md#operational-findings).
 
 **Sinks are capped, explicitly.** Today every sink expresses the same three
