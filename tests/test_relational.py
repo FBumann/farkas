@@ -18,6 +18,7 @@ import farkas as fk
 from farkas.errors import DataError, LanguageError
 from farkas.relational import (
     DuckdbExecutor,
+    chunking,
 )
 from farkas.relational.plan import (
     Constant,
@@ -523,14 +524,37 @@ def test_row_chunks_are_bounded_by_nonzeros_not_by_rows():
         assert tables.scalar('SELECT count(*) FROM A') == n_g * n_s
 
         def widest(ranges):
-            return max(
-                tables.scalar(f'SELECT count(*) FROM A WHERE row >= {lo} AND row < {hi}') for lo, hi in ranges
-            )
+            return max(tables.scalar(f'SELECT count(*) FROM A WHERE row >= {lo} AND row < {hi}') for lo, hi in ranges)
 
         budget = 100
         bounded = list(tables.row_chunks_by_nonzeros(budget))
         assert widest(bounded) <= budget
 
-        # the same budget read as rows puts every entry in one chunk — 2x the
-        # budget here, and unbounded in general, since nothing caps a row's width
-        assert widest(list(tables.row_chunks(budget))) == n_g * n_s
+        # the same budget spent as if a row cost one element puts every entry
+        # in one chunk — 2x the budget here, and unbounded in general, because
+        # nothing caps how wide a row gets
+        assert widest(list(chunking.ranges(tables.row_count, budget, 1.0))) == n_g * n_s
+
+
+@pytest.mark.parametrize(
+    ('total', 'budget', 'width'),
+    [(0, 100, 1.0), (1, 100, 1.0), (10, 3, 1.0), (10, 100, 1.0), (10, 3, 7.0), (10, 3, 0.25), (10, 1, 1e9)],
+)
+def test_chunk_ranges_are_contiguous_gapless_and_cover_everything(total, budget, width):
+    """The property the whole hand-off rests on, at every awkward size.
+
+    ``addCols`` and ``addRows`` append: column *k* must be the *k*-th row handed
+    over. That holds only if the ranges are ordered, consecutive and gapless —
+    a dropped range silently shortens the model, an overlapping one relabels
+    it, and neither shows up as an error. The widths here include one below 1
+    and one far above the budget, the two ends where a ``//`` can produce a
+    zero step or a chunk wider than asked for.
+    """
+    got = list(chunking.ranges(total, budget, width))
+
+    assert all(lo < hi for lo, hi in got), 'an empty range means a wasted pass'
+    assert [lo for lo, _ in got] == sorted(lo for lo, _ in got), 'ranges must ascend'
+    assert [i for lo, hi in got for i in range(lo, hi)] == list(range(total)), 'gap, overlap, or short'
+    if total:
+        widest = max(hi - lo for lo, hi in got)
+        assert widest * max(1.0, width) <= max(budget, max(1.0, width)), 'a chunk exceeded the budget'
