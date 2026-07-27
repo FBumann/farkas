@@ -87,51 +87,52 @@ def write_lp_file(model: ModelTables, path: str | Path) -> None:
             f.write(b'\nend\n')
 
 
+#: Sort keys placing a row's header before its terms and its sense after them.
+#: A term sorts on its own column index, which is why the footer has to outrank
+#: every column a model could have.
+_HEADER, _PLACEHOLDER, _FOOTER = -2, -1, 2**62
+
+
 def _constraint_blocks(model: ModelTables) -> pl.LazyFrame:
-    """One text block per row: its name, its terms one per line, its sense and rhs.
+    """Every constraint line, as one sorted stream of ``(row, ord, line)``.
 
-    A row with no terms still needs a line the solver can parse, hence the
-    placeholder coefficient.
+    One line per output line rather than one block per row: the pieces are
+    built independently and interleaved by sorting, so nothing has to gather a
+    row's terms into a string first. That is what makes the bytes reproducible
+    — a hash join hands back groups in whatever order it finishes them, and no
+    amount of sorting the *rows* afterwards fixes the order *within* one.
+
+    A row with no terms still needs a line a solver can parse, and the anti-join
+    is what a group-by gave for free.
     """
     import polars as pl
 
-    return (
-        model.rows.lazy()
-        .join(_sorted_terms(model), on='row', how='left')
-        .group_by('row')
-        .agg(
-            pl.col('sense').first(),
-            pl.col('rhs').first(),
-            pl.col('term').drop_nulls().str.join('\n').alias('body'),
-        )
-        .sort('row')
-        .select(
-            pl.lit('c')
-            + _digits(pl.col('row'))
-            + pl.lit(':\n')
-            + pl.when(pl.col('body').str.len_chars() > 0).then(pl.col('body')).otherwise(pl.lit('+0 x0'))
-            + pl.lit('\n')
-            + pl.col('sense').replace({'==': '='})
-            + pl.lit(' ')
-            + _number(pl.col('rhs'))
-        )
+    rows = model.rows.lazy()
+    header = rows.select(
+        'row',
+        pl.lit(_HEADER, dtype=pl.Int64).alias('ord'),
+        (pl.lit('c') + _digits(pl.col('row')) + pl.lit(':')).alias('line'),
     )
-
-
-def _sorted_terms(model: ModelTables) -> pl.LazyFrame:
-    """``(row, term)`` for every nonzero, in label order.
-
-    Sorted by label before formatting, not after: ordering millions of rendered
-    strings costs many times what ordering the two integers behind them does,
-    for exactly the same output.
-    """
-    import polars as pl
-
-    return (
+    placeholder = rows.join(model.matrix.lazy().select('row').unique(), on='row', how='anti').select(
+        'row',
+        pl.lit(_PLACEHOLDER, dtype=pl.Int64).alias('ord'),
+        pl.lit('+0 x0').alias('line'),
+    )
+    terms = (
         model.matrix.lazy()
         .sort('row', 'col')
-        .select('row', (_signed(pl.col('coeff')) + pl.lit(' x') + _digits(pl.col('col'))).alias('term'))
+        .select(
+            'row',
+            pl.col('col').cast(pl.Int64).alias('ord'),
+            (_signed(pl.col('coeff')) + pl.lit(' x') + _digits(pl.col('col'))).alias('line'),
+        )
     )
+    footer = rows.select(
+        'row',
+        pl.lit(_FOOTER, dtype=pl.Int64).alias('ord'),
+        (pl.col('sense').replace({'==': '='}) + pl.lit(' ') + _number(pl.col('rhs'))).alias('line'),
+    )
+    return pl.concat([header, placeholder, terms, footer]).sort('row', 'ord').select('line')
 
 
 def _number(value: pl.Expr) -> pl.Expr:

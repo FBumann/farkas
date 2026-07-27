@@ -1,14 +1,18 @@
-"""The LP sink renders doubles exactly.
+"""The LP sink renders doubles exactly, and writes the same bytes twice.
 
 ``lp_file`` writes numbers by casting them to string, because emit is almost
 entirely float-to-text and a cast is far cheaper than a format string. That
 trade is only free if the cast is shortest-*round-trip* and not merely
 shortest, so the property is pinned here rather than left to the golden file —
 a golden proves the bytes did not move, not that they are correct.
+
+Reproducibility (#109) is pinned here too, for the same reason: a golden file
+proves one write, and the failure mode is two writes of one model differing.
 """
 
 from __future__ import annotations
 
+import hashlib
 import math
 import struct
 import tempfile
@@ -19,7 +23,7 @@ import pytest
 
 import farkas as fk
 from farkas.relational.sinks.lp_file import _number, _signed
-from tests.conftest import DISPATCH_MODEL
+from tests.conftest import DISPATCH_MODEL, override
 
 #: Doubles that break naive formatters: repeating binary fractions, the
 #: extremes of the exponent range, a denormal, and the signed zeros.
@@ -111,3 +115,32 @@ def test_written_bounds_are_bit_exact() -> None:
     objective = text.split('obj:\n')[1].split('\ns.t.')[0]
     coefficients = sorted(float(line.split(' x')[0]) for line in objective.strip().splitlines())
     assert coefficients == sorted(cost)
+
+
+def test_one_model_writes_the_same_bytes_every_time(tmp_path: Path) -> None:
+    """#109 — reproducible output, which is a property of the whole file.
+
+    Sized well past one morsel on purpose. The constraint section is the only
+    place ordering can escape: its terms arrive by join, and a parallel engine
+    hands back one row's terms in whatever order it finished them, which no
+    amount of ordering the rows afterwards repairs. So the model needs many
+    terms per row and enough rows for the engine to split the work — a handful
+    of constraints would pass whatever the sink did.
+    """
+    generators = [f'g{i}' for i in range(20)]
+    snapshots = 200
+    schema = override(DISPATCH_MODEL, **{'dimensions.generator.values': generators})
+    data = {
+        'p_max': pl.DataFrame({'generator': generators, 'value': [100.0 + i for i in range(len(generators))]}),
+        'cost': pl.DataFrame({'generator': generators, 'value': [1.0 + i / 8 for i in range(len(generators))]}),
+        'load': pl.DataFrame({'snapshot': list(range(snapshots)), 'value': [50.0 + t % 7 for t in range(snapshots)]}),
+    }
+
+    written = []
+    with fk.build(schema, data) as ex:
+        for attempt in range(3):
+            lp = tmp_path / f'{attempt}.lp'
+            ex.write_lp(lp)
+            written.append(hashlib.sha256(lp.read_bytes()).hexdigest())
+
+    assert len(set(written)) == 1, 'the same model wrote different bytes'
