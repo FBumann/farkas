@@ -493,3 +493,44 @@ def test_infinite_bounds_survive_the_arrow_handoff(batch_rows):
         assert unbounded.termination_condition in ('unbounded', 'infeasible_or_unbounded'), (
             f'a finite upper bound reached the solver: {unbounded.termination_condition}'
         )
+
+
+def test_row_chunks_are_bounded_by_nonzeros_not_by_rows():
+    """A chunk of rows is a chunk of *entries*, and only entries are residency.
+
+    Both sinks read ``A`` a range at a time and hold that range while they work
+    it. Sizing the range in rows bounds the wrong quantity: the same 100k-row
+    range is 900k entries in ``transport`` and 10M in ``dispatch``, so what a
+    sink actually holds is set by the model's shape rather than by the budget —
+    which is precisely what hard rule 4 says peak must not be.
+
+    Wide rows are the case that separates the two, so this builds them: 50
+    generators summed into each of 4 snapshots is 50 entries per row.
+    """
+    n_g, n_s = 50, 4
+    gens = pd.DataFrame(
+        {
+            'generator': [f'g{i}' for i in range(n_g)],
+            'p_max': np.full(n_g, 10.0),
+            'cost': np.arange(1.0, n_g + 1.0),
+        }
+    )
+    load = pd.DataFrame({'snapshot': np.arange(n_s), 'value': np.full(n_s, 100.0)})
+
+    with DuckdbExecutor(memory_limit='256MB') as ex:
+        ex.build(dispatch_program(), dispatch_sources(gens, load))
+        tables = ex._tables()
+        assert tables.scalar('SELECT count(*) FROM A') == n_g * n_s
+
+        def widest(ranges):
+            return max(
+                tables.scalar(f'SELECT count(*) FROM A WHERE row >= {lo} AND row < {hi}') for lo, hi in ranges
+            )
+
+        budget = 100
+        bounded = list(tables.row_chunks_by_nonzeros(budget))
+        assert widest(bounded) <= budget
+
+        # the same budget read as rows puts every entry in one chunk — 2x the
+        # budget here, and unbounded in general, since nothing caps a row's width
+        assert widest(list(tables.row_chunks(budget))) == n_g * n_s

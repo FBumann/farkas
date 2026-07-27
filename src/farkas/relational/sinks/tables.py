@@ -43,6 +43,22 @@ class ModelTables:
         """``(lo, hi)`` half-open row ranges covering the constraint matrix."""
         yield from _chunks(self.row_count, per_chunk)
 
+    def row_chunks_by_nonzeros(self, per_chunk: int) -> Iterator[tuple[int, int]]:
+        """Row ranges holding roughly ``per_chunk`` *nonzeros* each.
+
+        Every sink that reads ``A`` a chunk at a time pays in nonzeros, not in
+        rows: a range of 100k rows is 900k entries in one model and 10M in
+        another, and only the second is a problem. Sizing by ``row_chunks``
+        alone therefore bounds the wrong quantity — the residency it leaves is
+        a function of the model's shape rather than of the budget, which is
+        the one thing hard rule 4 says peak must not be.
+
+        Both sinks want this, so it lives here rather than in either of them.
+        """
+        nnz = self.scalar('SELECT count(*) FROM A')
+        per_row = max(1, nnz // max(1, self.row_count))
+        yield from self.row_chunks(max(1, per_chunk // per_row))
+
     def col_chunks(self, per_chunk: int) -> Iterator[tuple[int, int]]:
         """``(lo, hi)`` half-open column ranges covering the model's columns.
 

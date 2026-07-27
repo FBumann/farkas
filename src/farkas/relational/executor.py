@@ -693,13 +693,15 @@ class DuckdbExecutor:
 
     def solve(
         self,
-        batch_rows: int = 100_000,
+        batch_rows: int | None = None,
         solver_options: Mapping[str, Any] | None = None,
     ) -> Result:
         """Sink the built model straight into HiGHS and solve it.
 
         ``solver_options`` is forwarded verbatim to the solver, the way
         linopy's is — ``{'time_limit': 60, 'mip_rel_gap': 0.01}``.
+        ``batch_rows`` defaults to this executor's ``chunk_rows``, so the
+        budget that governs the build governs the hand-off too.
         """
         status, objective, has_duals = sinks.solve_direct(self._tables(), batch_rows, solver_options)
         return Result(_status=status, _objective=objective, _executor=self, _has_duals=has_duals)
