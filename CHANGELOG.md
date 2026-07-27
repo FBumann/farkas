@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.0-alpha.20](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.19...v0.0.0-alpha.20) (2026-07-27)
+
+
+### Bug Fixes
+
+* the HiGHS sink's column ingest was an unbounded global sort ([#181](https://github.com/FBumann/farkas/issues/181)) ([271b0d7](https://github.com/FBumann/farkas/commit/271b0d7254c3cb0b94e740542071185ad0608b8d))
+
 ## [0.0.0-alpha.19](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.18...v0.0.0-alpha.19) (2026-07-27)
 
 
