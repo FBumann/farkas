@@ -53,15 +53,21 @@ def solve_direct(
     model: ModelTables,
     batch_rows: int = 100_000,
     solver_options: Mapping[str, Any] | None = None,
-) -> tuple[SolveStatus, float]:
-    """Stream the model into HiGHS and solve it. Returns ``(status, objective)``.
+) -> tuple[SolveStatus, float, bool]:
+    """Stream the model into HiGHS and solve it.
 
-    On a solve that left values worth reading, the primal lands in a ``sol``
-    table on the connection, so reading results back stays a label join like
-    every other read — the caller owns the mapping from solver column index to
-    coordinates. On any other outcome there is nothing to store: HiGHS still
-    hands back a full-length vector of zeros, and keeping it would only make it
-    reachable.
+    Returns ``(status, objective, has_duals)``. On a solve that left values
+    worth reading, the primal lands in a ``sol`` table on the connection — and
+    the duals in a ``dual`` table when HiGHS produced valid ones — so reading
+    results back stays a label join like every other read: the caller owns the
+    mapping from solver index to coordinates. On any other outcome there is
+    nothing to store: HiGHS still hands back a full-length vector of zeros, and
+    keeping it would only make it reachable.
+
+    ``has_duals`` is the sink's verdict rather than the caller's guess. A MIP
+    has no dual solution at all, and neither does a run stopped short of a
+    simplex basis — both are ``dual_valid = False``, and in both the table is
+    absent rather than zero-filled.
     """
     import highspy
     import numpy as np
@@ -128,20 +134,41 @@ def solve_direct(
     if not status.is_readable:
         # linopy's convention, and an honest one: nan is a sentinel that
         # propagates through a scenario sweep, where 0.0 reads as an answer
-        return status, float('nan')
+        return status, float('nan'), False
 
     objective = h.getInfo().objective_function_value + model.objective_constant
 
+    solution = h.getSolution()
+    _store(con, 'sol', 'col', model.column_count, solution.col_value)
+
+    # Same bargain as the primal above, one quantity down: HiGHS says whether a
+    # dual solution exists, so drop the table when it does not rather than
+    # storing the zeros it hands back regardless.
+    con.execute('DROP TABLE IF EXISTS dual')
+    has_duals = bool(solution.dual_valid)
+    if has_duals:
+        _store(con, 'dual', 'row', model.row_count, solution.row_dual)
+
+    return status, objective, has_duals
+
+
+def _store(con: Any, table: str, label: str, count: int, values: Any) -> None:
+    """Materialise *values* as ``(label, value)``, densely labelled ``0..count``.
+
+    Solver output arrives as one array per quantity, positionally indexed by
+    the solver's own index — which *is* our label, densely assigned. So the
+    join column is an ``arange`` rather than anything read back.
+    """
+    import numpy as np
     import pyarrow as pa
 
-    primal = pa.table(
+    source = pa.table(
         {
-            'col': pa.array(np.arange(model.column_count, dtype=np.int64)),
-            'value': pa.array(np.asarray(h.getSolution().col_value, dtype=np.float64)),
+            label: pa.array(np.arange(count, dtype=np.int64)),
+            'value': pa.array(np.asarray(values, dtype=np.float64)),
         }
     )
-    con.execute('DROP TABLE IF EXISTS sol')
-    con.register('sol_src', primal)
-    con.execute('CREATE TABLE sol AS SELECT * FROM sol_src')
-    con.unregister('sol_src')
-    return status, objective
+    con.execute(f'DROP TABLE IF EXISTS {table}')
+    con.register(f'{table}_src', source)
+    con.execute(f'CREATE TABLE {table} AS SELECT * FROM {table}_src')
+    con.unregister(f'{table}_src')

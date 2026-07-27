@@ -95,6 +95,7 @@ class Result:
     _status: SolveStatus
     _objective: float
     _executor: DuckdbExecutor
+    _has_duals: bool = False
 
     @property
     def status(self) -> str:
@@ -139,6 +140,29 @@ class Result:
     def primal(self, name: str) -> pd.DataFrame:
         self._require_solution(f"the primal of '{name}'")
         return self._executor._primal(name)
+
+    def dual(self, name: str) -> pd.DataFrame:
+        """Shadow prices of constraint *name*: ``(dims…, value)``.
+
+        The same label join :meth:`primal` does, against the constraint's row
+        table rather than a variable's column table. A nodal balance's dual is
+        the price at that node, so this is a headline output and not a
+        diagnostic.
+
+        There are two ways to have nothing to return, and they are different
+        failures. No values at all is :class:`~farkas.errors.NoSolutionError`,
+        the same gate :meth:`primal` passes through. A solve that *did* leave
+        values but no duals — any integer or binary variable makes them
+        undefined — is not that one: the primals are perfectly readable, and
+        only this quantity is missing. Both raise rather than returning zeros.
+
+        Duals exist only on this sink: a model written to LP and solved
+        elsewhere never passes back through here.
+        """
+        self._require_solution(f"the dual of '{name}'")
+        if not self._has_duals:
+            raise LinopyYamlError(self._executor._no_duals_reason(self.termination_condition))
+        return self._executor._dual(name)
 
     def to_dataarray(self, name: str) -> Any:
         """``primal(name)`` as a labelled :class:`xarray.DataArray`.
@@ -613,8 +637,8 @@ class DuckdbExecutor:
         ``solver_options`` is forwarded verbatim to the solver, the way
         linopy's is — ``{'time_limit': 60, 'mip_rel_gap': 0.01}``.
         """
-        status, objective = sinks.solve_direct(self._tables(), batch_rows, solver_options)
-        return Result(_status=status, _objective=objective, _executor=self)
+        status, objective, has_duals = sinks.solve_direct(self._tables(), batch_rows, solver_options)
+        return Result(_status=status, _objective=objective, _executor=self, _has_duals=has_duals)
 
     def _solution_sql(self, name: str) -> str:
         """The tidy solution of variable *name*: ``(dims…, value)``.
@@ -628,6 +652,41 @@ class DuckdbExecutor:
 
     def _primal(self, name: str) -> pd.DataFrame:
         return self._con.execute(self._solution_sql(name)).df()
+
+    def _dual_sql(self, name: str) -> str:
+        """The tidy duals of constraint *name*: ``(dims…, value)``.
+
+        The adjoint of :meth:`_solution_sql` — same join, against the row
+        labels instead of the column ones.
+        """
+        assert self._program is not None
+        collist = ', '.join([*(f'c.{d}' for d in self._program.constraint(name).dims), 'd.value'])
+        return f'SELECT {collist} FROM con_{name} c JOIN dual d ON d.row = c.row'
+
+    def _dual(self, name: str) -> pd.DataFrame:
+        return self._con.execute(self._dual_sql(name)).df()
+
+    def _no_duals_reason(self, termination_condition: str) -> str:
+        """Why a solve that *did* leave values still has no duals.
+
+        Integrality is decidable from the program, so the model's own reason
+        is preferred over the solver's: naming the variable is actionable in a
+        way that "HiGHS reported no dual solution" is not.
+        """
+        assert self._program is not None
+        discrete = sorted(v.name for v in self._program.variables if v.variable_type != 'continuous')
+        if discrete:
+            names = ', '.join(f"'{n}'" for n in discrete)
+            return (
+                f'duals are undefined for a mixed-integer model: {names} '
+                f'{"is" if len(discrete) == 1 else "are"} not continuous. '
+                f'Drop the integrality to price the LP relaxation instead.'
+            )
+        return (
+            f'the solver returned no dual solution, though the solve terminated '
+            f'{termination_condition!r}. Duals come from a simplex basis, which a '
+            f'run stopped short of one does not have.'
+        )
 
     def _solution_to_parquet(self, directory: Path) -> dict[str, Path]:
         assert self._program is not None

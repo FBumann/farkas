@@ -79,6 +79,7 @@ with fk.solve("dispatch.yaml", sources,
               memory_limit="512MB") as result:
     print(result.objective)   # 1920.0
     print(result.primal("p"))
+    print(result.dual("power_balance"))   # the price at each snapshot
 ```
 
 Sources can also be polars or pyarrow tables, or parquet paths — anything
