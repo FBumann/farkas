@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.0-alpha.22](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.21...v0.0.0-alpha.22) (2026-07-27)
+
+
+### Performance
+
+* **lp:** render doubles with ::VARCHAR instead of printf('%.17g') ([#190](https://github.com/FBumann/farkas/issues/190)) ([b1df538](https://github.com/FBumann/farkas/commit/b1df538c3c0c4e0195d7d2d5ff2be7fb887608f1))
+
 ## [0.0.0-alpha.21](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.20...v0.0.0-alpha.21) (2026-07-27)
 
 
