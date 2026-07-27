@@ -454,3 +454,42 @@ def test_objective_keeps_the_aggregate_when_a_reduction_hides_extra_rows():
 
     # one row per column, the three generator prices summed — not three rows
     assert rows == [(0, 6.0), (1, 6.0)]
+
+
+@pytest.mark.parametrize('batch_rows', [2, 3, 100_000], ids=['ragged', 'exact', 'one-chunk'])
+def test_infinite_bounds_survive_the_arrow_handoff(batch_rows):
+    """An absent upper bound must reach HiGHS as infinity, not as a number.
+
+    The column loop converts Arrow to numpy directly rather than through
+    ``to_pydict``, and infinities are the values a conversion is most likely to
+    mangle — ``nan_to_num`` maps them by keyword, and a column that arrived as
+    nan instead of inf would silently become ``0.0``. A finite upper bound here
+    is not a wrong answer, it is a *different model*: minimising still succeeds
+    while maximising stops being unbounded. So both directions are asserted,
+    and the batch sizes make the infinities straddle a chunk boundary.
+    """
+    program = Program(
+        parameters=(ParameterDeclaration('floor', ('snapshot',)),),
+        variables=(
+            VariableDeclaration('x', ('snapshot',), where=None, lower=Parameter('floor'), upper=Constant(float('inf'))),
+        ),
+        constraints=(),
+        objective=ObjectiveDeclaration('min', Sum(Variable('x'), over=('snapshot',))),
+    )
+    sources = {'floor': pd.DataFrame({'snapshot': [0, 1, 2], 'value': [5.0, 7.0, 9.0]})}
+
+    with DuckdbExecutor(memory_limit='256MB') as ex:
+        ex.build(program, sources)
+        assert ex._con.execute("SELECT count(*) FROM cols WHERE ub = 'infinity'::DOUBLE").fetchone()[0] == 3
+        result = ex.solve(batch_rows=batch_rows)
+        assert result.is_ok
+        assert result.objective == pytest.approx(21.0, rel=RTOL)
+
+    with DuckdbExecutor(memory_limit='256MB') as ex:
+        ex.build(
+            replace(program, objective=ObjectiveDeclaration('max', Sum(Variable('x'), over=('snapshot',)))), sources
+        )
+        unbounded = ex.solve(batch_rows=batch_rows)
+        assert unbounded.termination_condition in ('unbounded', 'infeasible_or_unbounded'), (
+            f'a finite upper bound reached the solver: {unbounded.termination_condition}'
+        )
