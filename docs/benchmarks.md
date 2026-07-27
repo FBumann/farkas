@@ -191,8 +191,13 @@ resulting rules and this is the evidence behind them.
    position in the coordinate product, so it is arithmetic on the dim ordinals
    rather than a window to be chunked. `bench/profile_build.py` put label
    assignment at 52% of `dispatch/l`'s build before that; on `transport`, which
-   carries no mask at all, build went 5.54 s -> 3.10 s and peak 1.35 -> 1.17 GB
-   at 9.8M variables. Masked declarations still count, because which rows
+   carries no mask at all, build went 6.46 s -> 4.34 s and peak 1.35 -> 1.13 GB
+   at 9.8M variables — the two builds run *alternately*, best of four each,
+   because a single before/after pair straddling half an hour measured the
+   machine warming up as much as the change (it read 5.54 -> 3.10 s, and the
+   linopy arm, which this cannot touch, drifted just as far in the same
+   window). Peak was the stable half throughout, and it separates cleanly.
+   Masked declarations still count, because which rows
    survive is not known until the predicate has run — so `dispatch` and `nodal`,
    whose variables are masked, keep the window and gain only on their
    constraint frames.
