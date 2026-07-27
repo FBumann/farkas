@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.0-alpha.21](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.20...v0.0.0-alpha.21) (2026-07-27)
+
+
+### Performance
+
+* **relational:** a label is a position, so compute it instead of counting it ([#186](https://github.com/FBumann/farkas/issues/186)) ([a31645b](https://github.com/FBumann/farkas/commit/a31645bde58974a041f175a18c56e3251bf6d5cd))
+
 ## [0.0.0-alpha.20](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.19...v0.0.0-alpha.20) (2026-07-27)
 
 
