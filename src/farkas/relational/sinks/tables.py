@@ -1,8 +1,7 @@
 """What every sink reads, and nothing more.
 
-The contract between the executor and the sinks: four frames, plus the handful
-of scalars a writer needs to size its own batching. A sink that needs a fifth
-thing states it here, where both sides can see it.
+Four frames plus the scalars a writer needs to size its batching. A sink that
+needs a fifth thing states it here, where both sides can see it.
 """
 
 from __future__ import annotations
@@ -20,15 +19,13 @@ if TYPE_CHECKING:
 class ModelTables:
     """The built model, as a sink sees it.
 
-    Four frames — ``cols`` (col, lb, ub, vtype), ``obj`` (col, coeff), ``rows``
-    (row, sense, rhs) and ``matrix``, the coefficient matrix in COO form
-    (row, col, coeff). The scalars alongside are the ones a sink cannot cheaply
-    recover: the counts it batches by, and the objective's sense and constant,
-    which live outside the frames because a constant has no column to attach
-    to.
+    ``cols`` (col, lb, ub, vtype), ``obj`` (col, coeff), ``rows`` (row, sense,
+    rhs) and ``matrix`` in COO (row, col, coeff). The scalars are what a sink
+    cannot cheaply recover; the objective constant lives outside the frames
+    because it has no column to attach to.
 
-    ``col`` and ``row`` are dense ``0..n-1`` by construction, so they *are* the
-    solver's own indices and no sink has to build a mapping.
+    ``col`` and ``row`` are dense ``0..n-1``, so they *are* the solver's own
+    indices and no sink builds a mapping.
     """
 
     cols: pl.DataFrame

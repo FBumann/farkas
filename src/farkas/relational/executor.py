@@ -1,36 +1,14 @@
 """Polars executor: fill the model frames, then hand them to a sink.
 
-The lane is described in ARCHITECTURE.md, "The relational lane".
-
-This module owns the *data*. It does not own the query —
-:mod:`farkas.relational.compiler` turns plan nodes into lazy frames and reads
-nothing — and it does not own the way a model leaves:
-:mod:`farkas.relational.sinks` drains the frames into LP text or into HiGHS,
-one module per sink.
-
-What is left here is what genuinely needs the data: binding sources, building
-the dim frames, assigning labels, assembling ``cols``/``obj``/``rows``/``A``,
-and joining solution values back to coordinates.
+Owns the *data* — sources, dim frames, labels, the four model frames, and the
+join that reads solution values back. Owns neither the query
+(:mod:`farkas.relational.compiler`) nor the exit (:mod:`.sinks`). The lane is
+described in ARCHITECTURE.md.
 
 **Labels are the one place order is load-bearing.** ``var_label`` *is* the
-solver column index and ``row`` *is* the solver row index, so both are assigned
-by sorting the masked coordinate product on its dimensions' declared ordinals
-and numbering the result. Variables and constraint rows are the same operation
-over different frames (:meth:`PolarsExecutor._label_frame`); writing it twice is
-how the two would come to disagree about which coordinate gets which index.
-
-Operators are still classified by coordinate locality: pointwise (joins, masks,
-group_sum) and bounded-halo (roll: t±k) compose freely; genuinely global
-operators (running sums, normalisations) are rejected at lowering with a rewrite
-hint, e.g. running sum → state-variable recurrence.
-
-polars is the only table this module knows: sources arrive as
-:class:`polars.LazyFrame` (or a parquet path polars scans itself) and results
-leave as :class:`polars.DataFrame`, which is Arrow-backed and exports the
-PyCapsule protocol — so a caller can hand it to pyarrow, pandas or duckdb
-without this package depending on any of them. ``sources.tidy_sources`` is
-where a caller's pandas/pyarrow/xarray object is turned into one, and
-:meth:`Result.to_pandas` is the one exit that asks for pandas back.
+solver column index and ``row`` its row index, so both come from
+:meth:`PolarsExecutor._label_frame` — written once, because two copies would
+disagree about which coordinate gets which index.
 """
 
 from __future__ import annotations
@@ -85,16 +63,13 @@ RelationalBuildError = LinopyYamlError
 class Result:
     """What a solve returned — the outcome, and access to any values.
 
-    Named for linopy's envelope rather than its ``Solution``, and for a
-    reason local to this class: it is returned when the solve produced
-    *nothing*, so "solution" would be a lie in exactly the case a caller most
-    needs to notice. ``primal(name)`` joins labels back to coords.
+    Named for linopy's envelope rather than its ``Solution``: it is returned
+    when the solve produced *nothing*, so "solution" would be a lie in exactly
+    the case a caller most needs to notice.
 
-    **No lifetime to manage.** The built model is frames owned by this
-    process, so the readers stay valid for as long as the object does.
-    :meth:`close` and the context-manager protocol exist because releasing a
-    large model early is worth doing and ``with`` reads well, but nothing
-    breaks if you skip them.
+    **No lifetime to manage.** The model is frames this process owns, so the
+    readers stay valid as long as the object does; :meth:`close` releases a
+    large one early but nothing breaks without it.
     """
 
     _status: SolveStatus
@@ -121,8 +96,8 @@ class Result:
     def has_primal(self) -> bool:
         """Whether there are values to read — what the accessors gate on.
 
-        Narrower than :attr:`is_ok`: a run stopped at a time limit before
-        finding any incumbent is ``ok`` and has nothing to read.
+        Narrower than :attr:`is_ok`: a run stopped at a time limit before any
+        incumbent is ``ok`` with nothing to read.
         """
         return self._status.is_readable
 
@@ -143,34 +118,20 @@ class Result:
         )
 
     def primal(self, name: str) -> pl.DataFrame:
-        """The tidy solution of *name* — ``(dims…, value)``.
-
-        A :class:`polars.DataFrame`, which is the engine's own shape and also
-        Arrow-backed: it exports the PyCapsule protocol, so pyarrow, pandas and
-        duckdb all take it without a conversion this package has to depend on.
-        :meth:`to_pandas`, :meth:`to_dataarray` and :meth:`to_parquet` are the
-        named bridges out, each saying what it costs.
-        """
+        """The tidy solution of *name* — ``(dims…, value)``."""
         self._require_solution(f"the primal of '{name}'")
         return self._executor._primal(name)
 
     def dual(self, name: str) -> pl.DataFrame:
         """Shadow prices of constraint *name*: ``(dims…, value)``.
 
-        The same label join :meth:`primal` does, against the constraint's row
-        frame rather than a variable's column frame. A nodal balance's dual is
-        the price at that node, so this is a headline output and not a
-        diagnostic.
+        :meth:`primal`'s join against the row frame rather than a column one.
 
-        There are two ways to have nothing to return, and they are different
-        failures. No values at all is :class:`~farkas.errors.NoSolutionError`,
-        the same gate :meth:`primal` passes through. A solve that *did* leave
-        values but no duals — any integer or binary variable makes them
-        undefined — is not that one: the primals are perfectly readable, and
-        only this quantity is missing. Both raise rather than returning zeros.
-
-        Duals exist only on this sink: a model written to LP and solved
-        elsewhere never passes back through here.
+        The two empty cases are different failures and both raise rather than
+        return zeros: no values at all is
+        :class:`~farkas.errors.NoSolutionError`, while primals without duals —
+        any integer variable makes them undefined — raises
+        :class:`~farkas.errors.LinopyYamlError`. Duals exist only on this sink.
         """
         self._require_solution(f"the dual of '{name}'")
         if not self._has_duals:
@@ -180,13 +141,8 @@ class Result:
     def to_pandas(self, name: str) -> pd.DataFrame:
         """:meth:`primal` as a tidy :class:`pandas.DataFrame`.
 
-        Requires pandas, which is not a dependency of this package — it ships
-        with the ``[linopy]`` extra, or install it directly.
-
-        Built column by column rather than through polars' own ``to_pandas``,
-        which reaches for pyarrow: a bridge that pulls in a third library to
-        cross one boundary is not a bridge anyone wants. The cost is a copy of
-        a table that is already tidy and already the size of the answer.
+        Needs pandas, which ships with the ``[linopy]`` extra. Built column by
+        column, since polars' own ``to_pandas`` reaches for pyarrow.
         """
         import pandas as pd
 
@@ -197,40 +153,22 @@ class Result:
     def to_dataarray(self, name: str) -> Any:
         """``primal(name)`` as a labelled :class:`xarray.DataArray`.
 
-        Named for what it returns, pairing with :meth:`to_dataset` — pandas'
-        ``to_xarray`` returns either type depending on the receiver, and that
-        ambiguity is not worth inheriting when both forms exist here.
-
-        Long tables are the right shape for slicing and joining, and the wrong
-        one for the array math post-processing is mostly made of —
-        ``.sel(generator='wind')``, resampling, duration curves. This is the
-        bridge, and it is one line so that its absence never reads as "results
-        are hard to use".
-
-        Goes through ``pandas.DataFrame.to_xarray()`` rather than importing
-        xarray here: the streaming lane is xarray-free (hard rule 2), and
-        pandas does the optional import for us. Requires xarray to be
-        installed (it ships with the ``[linopy]`` extra, and brings pandas with
-        it); missing coordinate combinations come back as NaN, since a masked
-        variable has no row.
+        The bridge to array post-processing — ``.sel``, resampling, duration
+        curves. Needs the ``[linopy]`` extra; a masked coordinate has no row
+        and comes back NaN.
         """
         frame = self.to_pandas(name)
         dims = [c for c in frame.columns if c != 'value']
         if not dims:
             return frame['value'].to_xarray().rename(name)
-        # the tidy column is 'value'; the array should carry the variable's name
         return frame.set_index(dims).to_xarray()['value'].rename(name)
 
     def to_dataset(self, *names: str) -> Any:
         """Variables as one :class:`xarray.Dataset`; all of them by default.
 
-        A small model wants every variable at once — that is what linopy's
-        ``model.solution`` gives you, and naming them would be busywork.
-
-        Costs what it says: each variable arrives *dense* over its own dims, so
-        the Dataset holds the full coordinate product regardless of what the
-        mask removed, and all of them at once. On a large model, name the few
-        you need or use :meth:`to_parquet`, which streams.
+        Costs what it says: each variable arrives dense over its own dims,
+        whatever the mask removed, and all of them at once. On a large model,
+        name the few you need or use :meth:`to_parquet`.
         """
         assert self._executor._program is not None
         wanted = names or tuple(v.name for v in self._executor._program.variables)
@@ -241,13 +179,9 @@ class Result:
         return dataset
 
     def to_parquet(self, directory: str | Path) -> dict[str, Path]:
-        """Stream per-variable solution tables to ``directory`` (one parquet
-        file per variable, columns ``(dims..., value)``). Returns name → path.
+        """One parquet file per variable, ``(dims…, value)``. Returns name → path.
 
-        polars sinks each frame straight to disk, so the solution is never
-        copied into a second in-process representation on the way out. Other
-        formats may follow the same shape (``to_csv``, ...) — parquet is the
-        canonical one.
+        Sunk straight to disk, never copied into a second representation.
         """
         self._require_solution('the solution')
         return self._executor._solution_to_parquet(Path(directory))
@@ -270,8 +204,6 @@ class PolarsExecutor:
     def __init__(self) -> None:
         self._program: plan.Program | None = None
         self._compiler: PolarsCompiler | None = None
-        #: Read by the compiler at compile time, not at construction — see
-        #: :class:`~farkas.relational.compiler.PolarsCompiler`.
         self._parameters: dict[str, pl.LazyFrame] = {}
         self._dimensions: dict[str, pl.LazyFrame] = {}
         self._variables: dict[str, pl.LazyFrame] = {}
@@ -294,7 +226,13 @@ class PolarsExecutor:
     # ------------------------------------------------------------------
 
     def build(self, program: plan.Program, sources: Mapping[str, Any]) -> None:
-        """Load sources, create dim/parameter frames, variables, constraints."""
+        """Load sources, create dim/parameter frames, variables, constraints.
+
+        The compiler comes after the data, because two of its answers depend on
+        it. Declarations are built one at a time and concatenated at the end:
+        their rows are independent, which is what lets the model be four frames
+        rather than a graph.
+        """
 
         self._program = program
 
@@ -302,9 +240,6 @@ class PolarsExecutor:
             self._create_param_frame(p, sources)
         self._create_dim_frames(program, sources)
 
-        # the compiler is built after the data, because two of its answers
-        # depend on it: sum over an absent dim scales by that dim's size, and
-        # `defined` on a boolean parameter tests the value, not its finiteness
         self._compiler = PolarsCompiler(
             program,
             dict(self._dim_card),
@@ -314,9 +249,6 @@ class PolarsExecutor:
             self._variables,
         )
 
-        # one declaration at a time, concatenated at the end: a declaration's
-        # rows are independent of every other's, which is what lets the whole
-        # model be a handful of frames rather than a graph
         cols = [self._build_variable(v) for v in program.variables]
         built = [self._build_constraint(c) for c in program.constraints]
         objective = self._build_objective(program.objective)
@@ -336,6 +268,7 @@ class PolarsExecutor:
     # ------------------------------------------------------------------
 
     def _create_param_frame(self, p: plan.ParameterDeclaration, sources: Mapping[str, Any]) -> None:
+        """Bind one parameter's source and register it as a tidy frame."""
         import polars as pl
 
         if p.name not in sources:
@@ -357,15 +290,11 @@ class PolarsExecutor:
     def _check_one_row_per_coordinate(self, p: plan.ParameterDeclaration, frame: pl.LazyFrame) -> None:
         """A parameter is a function of its dims: one row per coordinate.
 
-        Two rows for one coordinate has no defined meaning — the eager lane
-        refuses to lay such a source out at all — so it is a data bug worth
-        naming rather than silently resolving into a sum.
-
-        Checking it also *earns* something: knowing every parameter is keyed is
-        what lets the assembly skip an aggregate over every nonzero in the
-        model (see ``TermFragment.keyed``). The check costs one pass over the
-        source, which is orders of magnitude smaller than the matrix it saves
-        aggregating.
+        Two rows for one has no defined meaning, and the eager lane refuses to
+        lay such a source out at all, so naming it beats silently summing it.
+        It also earns the assembly's skipped aggregate
+        (:attr:`~farkas.relational.compiler.TermFragment.keyed`), for one pass
+        over a source orders of magnitude smaller than the matrix.
         """
         import polars as pl
 
@@ -398,6 +327,13 @@ class PolarsExecutor:
         )
 
     def _create_dim_frames(self, program: plan.Program, sources: Mapping[str, Any]) -> None:
+        """Build every dimension's frame, then check its coordinates.
+
+        A dimension with no explicit index has no declared order, so its labels
+        are sorted. Containment runs once every frame exists: it stops a
+        mistyped coordinate from vanishing in the join that places its terms,
+        leaving a model that builds and solves without them.
+        """
         import polars as pl
 
         dims: set[str] = set()
@@ -411,9 +347,6 @@ class PolarsExecutor:
         for d in sorted(dims):
             coordinates = dict(program.dimension(d).coordinates)
             if d in sources:
-                # explicit index: ordinals follow declared/coords order, so
-                # Translate's positional semantics match xarray/linopy exactly
-                # even for non-monotonic or string coordinates
                 table = self._explicit_dim_frame(d, sources[d], sorted(coordinates))
             else:
                 if coordinates:
@@ -429,18 +362,12 @@ class PolarsExecutor:
                         f"dimension '{d}' has no source: no parameter carries it and "
                         f"no explicit index was provided under key '{d}'"
                     )
-                # derived dims carry no declared order — sorted values are the
-                # deterministic fallback (pass an explicit index to control it)
                 stacked = pl.concat([self._parameters[p.name].select(pl.col(d).alias('val')) for p in params])
                 table = stacked.unique().sort('val').with_row_index('ord').with_columns(pl.col('ord').cast(pl.Int64))
             materialised = table.collect()
             self._dimensions[d] = materialised.lazy()
             self._dim_card[d] = materialised.height
 
-        # Coordinate containment, once every dim frame exists: a coordinate's
-        # values must be labels of the dimension it targets. This is the check
-        # that stops a mistyped label from vanishing in the inner join that
-        # places its terms — it built and solved, with the term silently gone.
         for d in sorted(dims):
             for cname, target in sorted(program.dimension(d).coordinates):
                 if target not in self._dim_card:
@@ -452,6 +379,12 @@ class PolarsExecutor:
                 self._check_coordinate_containment(d, cname, target)
 
     def _explicit_dim_frame(self, d: str, source: Any, names: list[str]) -> pl.LazyFrame:
+        """A dimension's ``(val, ord, coordinates…)`` from a caller's index.
+
+        Ordinals follow the source's own order, so ``roll``/``shift`` moves by
+        position exactly as the eager lane does even for string labels. A
+        label's position is the row it first appears at.
+        """
         import polars as pl
 
         if isinstance(source, (str, Path)):
@@ -475,8 +408,6 @@ class PolarsExecutor:
                 f"index for dimension '{d}' is missing declared coordinate column(s) {missing} (has {available})"
             )
         self._check_coordinates_single_valued(d, names, frame)
-        # first occurrence of a label is its position, and polars preserves
-        # row order, so the position is simply the row index
         return (
             frame.select(d, *names)
             .with_row_index(_ROW_POSITION)
@@ -545,11 +476,9 @@ class PolarsExecutor:
     ) -> tuple[pl.DataFrame, int]:
         """The masked coord product of *dims* with a dense *label* from *start*.
 
-        Variables (``var_label``) and constraint rows (``row``) are the same
-        operation over different frames, which is why it is written once. The
-        sort is on the dimensions' declared ordinals, so a label follows
-        declaration order and ``var_label`` can *be* the solver column index
-        with no remapping.
+        Variables and constraint rows are the same operation, so it is written
+        once. Sorting on the declared ordinals is what lets a label *be* the
+        solver's own index with no remapping.
         """
         import polars as pl
 
@@ -568,6 +497,7 @@ class PolarsExecutor:
     # ------------------------------------------------------------------
 
     def _build_variable(self, v: plan.VariableDeclaration) -> pl.DataFrame:
+        """One variable's labelled frame, and its share of ``cols``."""
         import polars as pl
 
         if not v.dims:
@@ -592,13 +522,18 @@ class PolarsExecutor:
         return cols
 
     def _build_constraint(self, c: plan.ConstraintDeclaration) -> tuple[pl.DataFrame, pl.DataFrame | None]:
+        """One constraint as its ``rows`` and its share of the matrix.
+
+        Terms normalise to the left, constants to the right. Each constant
+        fragment is aggregated to its own coordinates and left-joined, so a
+        coordinate it has no row for contributes zero.
+        """
         import polars as pl
 
         if not c.dims:
             raise LanguageError(f"constraint '{c.name}' has no dims")
         lhs = self._q.expression(c.lhs, f"constraint '{c.name}' lhs")
         rhs = self._q.expression(c.rhs, f"constraint '{c.name}' rhs")
-        # normalise: terms on the left (rhs terms negated), consts on the right
         terms = [(p, 1.0) for p in lhs.terms] + [(p, -1.0) for p in rhs.terms]
         consts = [(p, 1.0) for p in rhs.consts] + [(p, -1.0) for p in lhs.consts]
         for p, _ in [*terms, *consts]:
@@ -613,9 +548,6 @@ class PolarsExecutor:
         frame = labelled.lazy()
         self._constraints[c.name] = frame  # kept for the dual read-back
 
-        # right-hand side: each const fragment aggregated to its coordinates,
-        # then left-joined. A coordinate the fragment has no row for
-        # contributes zero — the null-is-absent idiom, not a missing value.
         accumulated = pl.lit(0.0, dtype=pl.Float64)
         carrier = frame
         for i, (p, sign) in enumerate(consts):
@@ -647,17 +579,13 @@ class PolarsExecutor:
                     (sign * pl.col('coeff')).cast(pl.Float64).alias('coeff'),
                 )
             )
-        # the terminal aggregate: where duplicates from Sum and GroupSum —
-        # which project rather than aggregate — finally collapse. Skipped when
-        # no two rows can share a (row, col): one keyed fragment placed against
-        # distinct constraint rows cannot produce a column twice, and this is
-        # an aggregate over every nonzero in the model.
         stacked = pl.concat(pieces)
         if _needs_aggregate([fragment for fragment, _ in terms]):
             stacked = stacked.group_by('row', 'col').agg(pl.col('coeff').sum())
         return rows, stacked.collect(engine='streaming')
 
     def _build_objective(self, o: plan.ObjectiveDeclaration) -> pl.DataFrame | None:
+        """The objective as ``(col, coeff)``, or ``None`` if it has no terms."""
         import polars as pl
 
         comp = self._q.expression(o.expression, 'objective')
@@ -716,8 +644,7 @@ class PolarsExecutor:
     def _solution_frame(self, name: str) -> pl.LazyFrame:
         """The tidy solution of variable *name*: ``(dims…, value)``.
 
-        A label join, never a dense array — which is what makes reading results
-        back cost the same whichever sink asked for them.
+        A label join, never a dense array.
         """
         assert self._program is not None
         assert self._sol is not None, 'no solve has stored a primal'
@@ -732,8 +659,7 @@ class PolarsExecutor:
         return self._solution_frame(name).collect(engine='streaming')
 
     def _dual(self, name: str) -> pl.DataFrame:
-        """The adjoint of :meth:`_solution_frame` — the same join, against the
-        row labels instead of the column ones."""
+        """:meth:`_solution_frame` against row labels instead of column ones."""
         assert self._program is not None
         assert self._duals is not None, 'no solve has stored duals'
         dims = self._program.constraint(name).dims
@@ -747,9 +673,8 @@ class PolarsExecutor:
     def _no_duals_reason(self, termination_condition: str) -> str:
         """Why a solve that *did* leave values still has no duals.
 
-        Integrality is decidable from the program, so the model's own reason is
-        preferred over the solver's: naming the variable is actionable in a way
-        that "HiGHS reported no dual solution" is not.
+        Integrality is decidable from the program, and naming the variable is
+        actionable where "the solver reported none" is not.
         """
         assert self._program is not None
         discrete = sorted(v.name for v in self._program.variables if v.variable_type != 'continuous')
@@ -798,19 +723,14 @@ class PolarsExecutor:
 def _needs_aggregate(terms: Sequence[TermFragment]) -> bool:
     """Whether stacking *terms* can put two rows on one solver column.
 
-    Named for the answer rather than the condition: this is read as "sum the
-    stack or not", and an inverted test here is a wrong model rather than a
-    slow one.
+    Named for the answer, not the condition: an inverted test here is a wrong
+    model rather than a slow one.
 
-    Two ways it can. **Two fragments** may both carry the same variable —
-    ``x + 2 * x`` is one row each and one column — so anything but a single
-    fragment has to be summed. And a single fragment that is not
-    :attr:`~farkas.relational.compiler.TermFragment.keyed` already holds the
-    same ``var_label`` twice on its own.
-
-    Everything else — including the placement join against the constraint
-    frame, whose rows are distinct by construction — preserves distinctness,
-    so the aggregate has nothing to do.
+    Two fragments may both carry the same variable — ``x + 2 * x`` is one row
+    each and one column — and a single fragment that is not
+    :attr:`~farkas.relational.compiler.TermFragment.keyed` already holds a
+    label twice. Everything else preserves distinctness, including the
+    placement join against constraint rows that are distinct by construction.
     """
     return len(terms) != 1 or not terms[0].keyed
 
@@ -818,9 +738,8 @@ def _needs_aggregate(terms: Sequence[TermFragment]) -> bool:
 def _stack(frames: list[pl.DataFrame], columns: tuple[str, ...]) -> pl.DataFrame:
     """Concatenate *frames*, or an empty frame of *columns* when there are none.
 
-    The columns are named rather than inferred because a model may legitimately
-    have nothing to stack — an objective with no variable terms, a constraint
-    with no coefficients — and a sink still has to find what it reads.
+    Named rather than inferred because a model may legitimately have nothing to
+    stack, and a sink still has to find what it reads.
     """
     import polars as pl
 

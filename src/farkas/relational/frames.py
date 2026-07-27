@@ -1,17 +1,9 @@
 """The one place that knows what a caller's table library is.
 
-A frame is the lane's boundary (ARCHITECTURE.md, hard rule 2): sources arrive
-as a :class:`polars.LazyFrame` or a parquet path, and results leave as a
-:class:`polars.DataFrame`. What a caller actually hands over — a polars frame,
-a pyarrow table, a pandas frame — is learned from the Arrow PyCapsule protocol,
-never from an import, which is why supporting one more of them costs nothing
-here and why neither pyarrow nor pandas is a dependency.
-
-Two shapes cannot describe themselves through a capsule, because their
-dimensions live in an *index* rather than in columns: ``pandas.Series`` and
-``xarray.DataArray``. Those are unwrapped first, and only when their library is
-already in ``sys.modules`` — passing one is proof the caller imported it, so
-this module still imports neither.
+What a caller hands over is learned from the Arrow PyCapsule protocol, not from
+an import, so neither pyarrow nor pandas is a dependency. ``pandas.Series`` and
+``xarray.DataArray`` have no capsule that carries their index, so they are
+unwrapped first — and only when their library is already in ``sys.modules``.
 """
 
 from __future__ import annotations
@@ -31,18 +23,17 @@ __all__ = ['as_frame', 'labels_frame']
 def as_frame(obj: object, dims: Sequence[str] = ()) -> pl.LazyFrame | None:
     """Normalise one in-memory source to a tidy lazy frame, or ``None``.
 
-    ``None`` means "not table-shaped" and leaves the error message to the
-    caller, which knows whether it was holding a parameter or an index.
-    *dims* names the columns an index-carrying object's index becomes.
+    ``None`` means "not table-shaped"; the caller knows whether it held a
+    parameter or an index and writes the message. *dims* names the columns an
+    index becomes.
+
+    A bool stays boolean rather than widening to float: the executor reads a
+    mask's truthiness from the column type (#47).
     """
     import sys
 
     import polars as pl
 
-    # a bool is an int, so it is caught first — and kept boolean rather than
-    # widened to a float. A bool parameter is a mask, and the executor reads
-    # its truthiness from the column *type*: as a float it would silently fall
-    # back to the present-and-finite rule instead (#47).
     if isinstance(obj, bool) and not dims:
         return pl.LazyFrame({'value': [obj]}, schema={'value': pl.Boolean})
     if isinstance(obj, (int, float)) and not isinstance(obj, bool) and not dims:
@@ -57,42 +48,37 @@ def as_frame(obj: object, dims: Sequence[str] = ()) -> pl.LazyFrame | None:
         obj = obj.to_series()
     pd = sys.modules.get('pandas')
     if pd is not None and isinstance(obj, pd.Series):
-        # a Series exposes a capsule too, but it describes the values alone —
-        # the index, which holds the dims, has to be promoted to columns first.
-        # Levels the caller named are left alone and bind by name: overwriting
-        # them with *dims* transposes the data silently when two dims share a
-        # label space, and nothing downstream can catch that.
-        if any(n is None for n in obj.index.names):
-            obj = obj.rename_axis(dims)
-        obj = obj.rename('value').reset_index()
+        obj = _series_to_frame(obj, dims)
     if pd is not None and isinstance(obj, pd.DataFrame):
         return _from_pandas(obj)
 
     if hasattr(obj, '__arrow_c_stream__') or hasattr(obj, '__arrow_c_array__'):
         try:
-            # the capsule is the whole contract: polars reads it without this
-            # module knowing which library produced it
             return pl.DataFrame(obj).lazy()  # pyrefly: ignore[bad-argument-type]  — narrowed by the capsule test
         except (TypeError, ValueError, pl.exceptions.PolarsError):
-            return None  # a capsule describing a bare array, not a table
+            return None
     return None
+
+
+def _series_to_frame(series: Any, dims: Sequence[str]) -> Any:
+    """A pandas Series with its index promoted to columns.
+
+    Levels the caller named are left alone and bind by name: renaming them to
+    *dims* transposes the data when two dims share a label space, and nothing
+    downstream can catch that.
+    """
+    if any(n is None for n in series.index.names):
+        series = series.rename_axis(dims)
+    return series.rename('value').reset_index()
 
 
 def _from_pandas(frame: Any) -> pl.LazyFrame:
     """A pandas frame, column by column, without reaching for pyarrow.
 
-    A whole-frame conversion asks polars to read pandas' memory directly, and
-    on anything Arrow-backed — which strings are by default on pandas 3 — that
-    means pyarrow. Going through numpy keeps the bridge to the two libraries
-    already present.
-
-    Object arrays are the case worth handling explicitly: a *partial*
-    coordinate is a string column with gaps, and numpy renders those gaps as
-    float ``nan``, which is not a missing string. Passing the values as a list
-    lets polars read them as nulls, which is what row absence means here. The
-    test is on the *numpy* dtype rather than the pandas one, because which
-    pandas dtypes land as objects has changed across releases and the array is
-    what polars actually sees.
+    A whole-frame conversion needs pyarrow for anything Arrow-backed, which
+    strings are by default on pandas 3. Object arrays go through a list so
+    numpy's float ``nan`` becomes a null rather than a string; the test is on
+    the numpy dtype, since that is what polars sees.
     """
     import polars as pl
 

@@ -1,25 +1,10 @@
 """Logical plan → polars. Lazy: nothing is read, nothing is executed.
 
-`lowering.py` compiles the AST to a plan; this compiles the plan to a polars
-query. Two stages, two names, and this is the second one.
+`lowering.py` compiles the AST to a plan; this compiles the plan to a query, so
+ARCHITECTURE.md's admissibility test is a ``.explain()`` away. An identifier is
+a value here, never syntax.
 
-Nothing here runs anything. A :class:`PolarsCompiler` returns
-:class:`polars.LazyFrame`\\ s — a declarative plan, not a result — which is
-what makes the admissibility test in ARCHITECTURE.md ("read the verdict off
-the plan") something you can perform: build a compiler, hand it a node, and
-read ``.explain()``.
-
-An identifier is a value here, never syntax. Nothing is quoted, nothing is
-escaped, and the engine imposes no spelling rule on a declared name — a
-dimension may be called ``from`` or ``order``.
-
-The unit of output is a :class:`TermFragment`: one additive piece of an affine
-expression, carried as a frame plus the dims it is indexed by. Compiling an
-expression yields a term/const split, never a single frame — because an LP row
-*is* a sum of pieces, and keeping them separate is what lets every shape
-operator rewrite one piece at a time.
-
-Column conventions, fixed here and relied on by the executor:
+Column conventions, relied on by the executor:
 
 ===================  ==========================================
 frame                columns
@@ -46,13 +31,9 @@ if TYPE_CHECKING:
 
     import polars as pl
 
-#: Scratch column for the right-hand side of a fragment multiply. Spaces make
-#: it unrepresentable as a declared name, so it cannot collide with a dimension
-#: or coordinate the model already has.
+#: Scratch columns. The spaces make them unrepresentable as declared names, so
+#: they cannot collide with a dimension or coordinate the model already has.
 _RHS = '__rhs value__'
-
-#: Scratch columns for a Translate: the ordinal a row sits at, and the one it
-#: moves to. Same reasoning.
 _ORD_IN = '__ord in__'
 _ORD_OUT = '__ord out__'
 
@@ -61,8 +42,8 @@ _ORD_OUT = '__ord out__'
 class TermFragment:
     """One additive piece of a compiled affine expression.
 
-    ``frame`` is a full query. Term fragments yield ``(dims…, var_label,
-    coeff)``; const fragments yield ``(dims…, cval)``.
+    Terms yield ``(dims…, var_label, coeff)``, const parts ``(dims…, cval)``.
+    An LP row *is* a sum of pieces, so every shape operator rewrites one.
     """
 
     dims: tuple[str, ...]
@@ -70,34 +51,16 @@ class TermFragment:
     is_term: bool
 
     keyed: bool = True
-    """Whether the fragment holds at most one row per key.
+    """At most one row per ``(dims…, var_label)``.
 
-    The key is ``(dims…, var_label)`` for a term and ``(dims…)`` for a constant
-    part. Nothing about correctness depends on it — the assembly aggregates
-    either way — but a *keyed* single-term expression cannot produce two rows
-    for one ``(row, col)``, and that lets the executor skip an aggregate over
-    every nonzero in the model. Tracked here rather than inferred there,
-    because the only place that knows whether an operator can duplicate a row
-    is the operator.
-
-    ``GroupSum`` and ``Translate`` join a dim table one-to-one and always
-    preserve it. ``Sum`` is the operator that can break it, and
-    :attr:`label_dims` is what decides.
+    Never needed for correctness — the assembly aggregates either way — but it
+    lets the executor skip an aggregate over every nonzero in the model.
     """
 
     label_dims: frozenset[str] = frozenset()
-    """The dims ``var_label`` determines — a variable's own ``foreach``.
+    """The dims ``var_label`` determines: a variable's own ``foreach``.
 
-    The rest of a term's dims got there by **broadcast**, from a parameter the
-    variable was multiplied by, and the distinction is what makes ``Sum``
-    safe or not. Dropping a dim the label determines merges rows that carry
-    *different* labels, so the key survives. Dropping a broadcast dim merges
-    rows carrying the *same* label, and the key does not.
-
-    ``sum(q * price, over=generator)`` with ``q`` indexed by snapshot alone is
-    the case: the fragment reduces to ``('snapshot',)`` — exactly ``q``'s
-    declaration — while still holding one row per generator. A dims-equality
-    test calls that keyed and is wrong.
+    A term's other dims arrived by broadcast. See :meth:`survives_dropping`.
     """
 
     @property
@@ -109,6 +72,17 @@ class TermFragment:
     def carried(self) -> list[str]:
         """The non-dim columns a projection has to keep."""
         return ['var_label', self.value_column] if self.is_term else [self.value_column]
+
+    def survives_dropping(self, dropped: set[str]) -> bool:
+        """Whether the key survives losing *dropped* from the dim tuple.
+
+        Dropping a label dim merges rows with *different* labels, so the key
+        holds; dropping a broadcast dim merges rows with the *same* one, and it
+        does not. ``sum(q * price, over=generator)`` with ``q`` indexed by
+        snapshot alone reduces to ``q``'s own dims while still holding a row
+        per generator.
+        """
+        return self.keyed and dropped <= self.label_dims
 
 
 @dataclass(frozen=True)
@@ -123,17 +97,13 @@ class CompiledExpression:
 class PolarsCompiler:
     """Turn plan nodes into polars queries over the model's tidy frames.
 
-    ``dimension_cardinality`` and ``boolean_parameters`` are read off the data
-    once it is loaded, which is one reason this is not a free function:
-    ``sum`` over a dim the operand lacks scales by that dim's size, and
-    ``defined`` on a boolean parameter tests the value rather than its
-    finiteness.
+    ``dimension_cardinality`` and ``boolean_parameters`` are read off the data:
+    ``sum`` over an absent dim scales by that dim's size, and ``defined`` on a
+    boolean parameter tests the value rather than its finiteness.
 
-    ``parameters`` / ``dimensions`` / ``variables`` are the executor's own
-    dicts, read at compile time rather than copied at construction. A variable
-    frame is created while its declaration is built, so a constraint compiled
-    afterwards has to see a registry that has filled in since — holding the
-    mapping rather than a snapshot of it is what allows that.
+    The frame registries are the executor's own dicts, not copies — a variable
+    frame appears while its declaration is built, and a constraint compiled
+    afterwards has to see it.
     """
 
     program: plan.Program
@@ -148,21 +118,12 @@ class PolarsCompiler:
     # ------------------------------------------------------------------
 
     def frame(self, dims: tuple[str, ...], where: plan.Predicate | None) -> pl.LazyFrame:
-        """The masked coordinate product over *dims*.
-
-        Columns are ``(dims…, <dim>_ord…)``: the labels, and the ordinals the
-        caller orders by so that labels follow declaration order.
-
-        One frame rather than the three pieces a caller would have to compose
-        itself: the mask belongs to the coordinate product, not to whoever
-        happens to use it next.
-        """
+        """The masked coordinate product over *dims*: labels, plus the
+        ordinals a caller sorts by so labels follow declaration order."""
         out = self._coordinate_product(dims)
         if where is None:
             return out
         out, condition = self._predicate(out, where, dims)
-        # a NULL comparison (a missing parameter row) must exclude the row
-        # rather than yield NULL, so the filter stays strictly boolean
         return out.filter(_falsy_if_null(condition))
 
     def _coordinate_product(self, dims: tuple[str, ...]) -> pl.LazyFrame:
@@ -171,10 +132,7 @@ class PolarsCompiler:
 
         out: pl.LazyFrame | None = None
         for d in dims:
-            table = self.dimensions[d].select(
-                pl.col('val').alias(d),
-                pl.col('ord').alias(_ordinal(d)),
-            )
+            table = self.dimensions[d].select(pl.col('val').alias(d), pl.col('ord').alias(_ordinal(d)))
             out = table if out is None else out.join(table, how='cross')
         assert out is not None, 'a declaration with no dims is rejected before it reaches the compiler'
         return out
@@ -189,13 +147,10 @@ class PolarsCompiler:
     ) -> pl.LazyFrame:
         """Left-join *param* onto *frame*, its value column renamed to *alias*.
 
-        Both callers — where-masks and variable bounds — need the same join and
-        the same containment check: a parameter carrying a dim the frame does
-        not have would be reduced over that dim, silently widening a mask or
-        picking an arbitrary bound. They differ only in what the message calls
-        the offending parameter (*subject*) — naming the declaration it came
-        from is most of the value of raising here, so it is the caller's word,
-        not a role prefix pasted on the front.
+        A parameter carrying a dim the frame lacks would be reduced over it,
+        widening a mask or picking an arbitrary bound, so that is refused.
+        *subject* is the caller's word for it, since naming the declaration is
+        most of the value.
         """
         declaration = self.program.parameter(param)
         extra = set(declaration.dims) - set(frame_dims)
@@ -213,7 +168,11 @@ class PolarsCompiler:
     def _predicate(
         self, frame: pl.LazyFrame, pred: plan.Predicate, dims: tuple[str, ...]
     ) -> tuple[pl.LazyFrame, pl.Expr]:
-        """``(frame with the mask's parameters joined, boolean expression)``."""
+        """``(frame with the mask's parameters joined, boolean expression)``.
+
+        Walking joins the parameters, so the condition is built first and the
+        frame read after — one expression would return the pre-walk frame.
+        """
         import polars as pl
 
         joined: set[str] = set()
@@ -262,9 +221,8 @@ class PolarsCompiler:
     def bounds(self, frame: pl.LazyFrame, v: plan.VariableDeclaration) -> pl.LazyFrame:
         """*frame* with ``lb``/``ub`` columns for variable *v*.
 
-        The joins a bound needs and the arithmetic over them are one object,
-        so a bound expression cannot be evaluated against a frame that is
-        missing the parameters it reads.
+        Joins and arithmetic are one object, so a bound cannot be evaluated
+        against a frame missing what it reads.
         """
         import polars as pl
 
@@ -310,42 +268,18 @@ class PolarsCompiler:
                 frame = pl.LazyFrame({'cval': [float(e.value)]}, schema={'cval': pl.Float64})
                 return CompiledExpression((), (TermFragment((), frame, False),))
             if isinstance(e, plan.Parameter):
-                # keyed: a parameter is a function of its dims, and the
-                # executor rejects a source that carries a coordinate twice
-                d = self.program.parameter(e.name).dims
-                frame = self.parameters[e.name].select(*d, pl.col('value').cast(pl.Float64).alias('cval'))
-                return CompiledExpression((), (TermFragment(d, frame, False),))
+                return CompiledExpression((), (self._parameter_fragment(e.name),))
             if isinstance(e, plan.Variable):
-                d = self.program.variable(e.name).dims
-                frame = self.variables[e.name].select(*d, 'var_label', pl.lit(1.0, dtype=pl.Float64).alias('coeff'))
-                return CompiledExpression((TermFragment(d, frame, True, label_dims=frozenset(d)),), ())
+                return CompiledExpression((self._variable_fragment(e.name),), ())
             if isinstance(e, plan.Negate):
                 return _map_fragments(ev(e.operand), _negate)
             if isinstance(e, plan.Add):
                 a, b = ev(e.left), ev(e.right)
                 return CompiledExpression(a.terms + b.terms, a.consts + b.consts)
             if isinstance(e, plan.Multiply):
-                a, b = ev(e.left), ev(e.right)
-                if a.terms and b.terms:
-                    raise LanguageError(f'nonlinear product in {context}: both factors contain variables')
-                if b.terms:  # normalise: terms on the left
-                    a, b = b, a
-                terms = tuple(_join_mul(t, c, is_term=True) for t in a.terms for c in b.consts)
-                consts = tuple(_join_mul(x, c, is_term=False) for x in a.consts for c in b.consts)
-                return CompiledExpression(terms, consts)
+                return self._product(ev(e.left), ev(e.right), context)
             if isinstance(e, plan.Divide):
-                a, b = ev(e.numerator), ev(e.divisor)
-                if b.terms:
-                    raise LanguageError(f'nonlinear quotient in {context}: the divisor contains variables')
-                if len(b.consts) != 1:
-                    raise LanguageError(
-                        f'in {context}: a divisor must be a single Constant/Parameter factor, '
-                        f'not a sum — rewrite as multiplication by a precomputed parameter'
-                    )
-                inv = b.consts[0]
-                terms = tuple(_join_mul(t, inv, is_term=True, divide=True) for t in a.terms)
-                consts = tuple(_join_mul(x, inv, is_term=False, divide=True) for x in a.consts)
-                return CompiledExpression(terms, consts)
+                return self._quotient(ev(e.numerator), ev(e.divisor), context)
             if isinstance(e, plan.Sum):
                 return _map_fragments(ev(e.operand), lambda p: self._sum_fragment(p, e.over, context))
             if isinstance(e, plan.GroupSum):
@@ -356,6 +290,47 @@ class PolarsCompiler:
 
         return ev(expr)
 
+    def _parameter_fragment(self, name: str) -> TermFragment:
+        """A parameter as a constant part, keyed by its declared dims —
+        which the executor enforces by refusing a duplicated coordinate."""
+        import polars as pl
+
+        dims = self.program.parameter(name).dims
+        frame = self.parameters[name].select(*dims, pl.col('value').cast(pl.Float64).alias('cval'))
+        return TermFragment(dims, frame, False)
+
+    def _variable_fragment(self, name: str) -> TermFragment:
+        """A variable as a term with unit coefficients."""
+        import polars as pl
+
+        dims = self.program.variable(name).dims
+        frame = self.variables[name].select(*dims, 'var_label', pl.lit(1.0, dtype=pl.Float64).alias('coeff'))
+        return TermFragment(dims, frame, True, label_dims=frozenset(dims))
+
+    def _product(self, a: CompiledExpression, b: CompiledExpression, context: str) -> CompiledExpression:
+        """``a * b``, with the variable-carrying side normalised to the left."""
+        if a.terms and b.terms:
+            raise LanguageError(f'nonlinear product in {context}: both factors contain variables')
+        if b.terms:
+            a, b = b, a
+        terms = tuple(_join_mul(t, c, is_term=True) for t in a.terms for c in b.consts)
+        consts = tuple(_join_mul(x, c, is_term=False) for x in a.consts for c in b.consts)
+        return CompiledExpression(terms, consts)
+
+    def _quotient(self, a: CompiledExpression, b: CompiledExpression, context: str) -> CompiledExpression:
+        """``a / b``, where *b* must be a single variable-free factor."""
+        if b.terms:
+            raise LanguageError(f'nonlinear quotient in {context}: the divisor contains variables')
+        if len(b.consts) != 1:
+            raise LanguageError(
+                f'in {context}: a divisor must be a single Constant/Parameter factor, '
+                f'not a sum — rewrite as multiplication by a precomputed parameter'
+            )
+        inv = b.consts[0]
+        terms = tuple(_join_mul(t, inv, is_term=True, divide=True) for t in a.terms)
+        consts = tuple(_join_mul(x, inv, is_term=False, divide=True) for x in a.consts)
+        return CompiledExpression(terms, consts)
+
     # ------------------------------------------------------------------
     # shape operators — one dim rewritten per fragment
     # ------------------------------------------------------------------
@@ -363,10 +338,8 @@ class PolarsCompiler:
     def _sum_fragment(self, p: TermFragment, over: tuple[str, ...], context: str) -> TermFragment:
         """Drop the summed dims. **Not an aggregate.**
 
-        Dropping a coordinate column leaves the rows that carried it; the
-        duplicates collapse in the terminal ``sum(coeff)`` grouped by
-        ``(row, col)`` at assembly. Rewriting a fragment's dim tuple on its own
-        is what pointwise locality means in code.
+        The rows that carried them stay, and collapse in the terminal
+        ``sum(coeff)`` at assembly.
         """
         import polars as pl
 
@@ -377,46 +350,37 @@ class PolarsCompiler:
                 f'{missing} is ambiguous under masks — multiply explicitly instead'
             )
         keep = tuple(d for d in p.dims if d not in over)
+        dropped = {d for d in p.dims if d not in keep}
         scale = math.prod(self.dimension_cardinality[d] for d in missing)
         frame = p.frame.select(*keep, *p.carried)
         if scale != 1:
             frame = frame.with_columns(pl.col(p.value_column) * scale)
-        # dropping a dim the label determines merges rows carrying *different*
-        # labels, so the key survives; dropping a broadcast dim merges rows
-        # carrying the same one, and it does not
-        dropped = {d for d in p.dims if d not in keep}
-        keyed = p.keyed and dropped <= p.label_dims
-        return TermFragment(keep, frame, p.is_term, keyed, p.label_dims - dropped)
+        return TermFragment(keep, frame, p.is_term, p.survives_dropping(dropped), p.label_dims - dropped)
 
     def _group_fragment(self, p: TermFragment, g: plan.GroupSum, context: str) -> TermFragment:
         """Relabel dim ``over`` to ``into`` through a declared coordinate.
 
-        No aggregate here either: the fragment's dim tuple changes and
-        duplicate (row, col) pairs collapse at assembly — the same shape as
-        :meth:`_sum_fragment` dropping a dim. The join is against the dim
-        table, whose coordinate column was checked for containment at build
-        time, so it cannot silently drop a term.
+        No aggregate here either. The dim table holds one row per label and its
+        coordinate was checked for containment at build time, so the join
+        neither duplicates nor drops a term.
         """
         import polars as pl
 
         if g.over not in p.dims:
             raise LanguageError(f"in {context}: GroupSum over '{g.over}' but the expression has dims {list(p.dims)}")
         keep = tuple(x for x in p.dims if x != g.over)
-        mapping = self.dimensions[g.over].select(
-            pl.col('val').alias(g.over),
-            pl.col(g.coordinate).alias(g.into),
-        )
-        # one row per label in the dim table, so this cannot duplicate a row.
-        # The coordinate it projects is determined by the label exactly when
-        # the dim it replaces was.
-        labelled = p.label_dims - {g.over} | ({g.into} if g.over in p.label_dims else frozenset())
+        mapping = self.dimensions[g.over].select(pl.col('val').alias(g.over), pl.col(g.coordinate).alias(g.into))
         frame = p.frame.join(mapping, on=g.over, how='inner').select(*keep, g.into, *p.carried)
-        return TermFragment((*keep, g.into), frame, p.is_term, p.keyed, labelled)
+        return TermFragment((*keep, g.into), frame, p.is_term, p.keyed, _relabel(p.label_dims, g.over, g.into))
 
     def _translate_fragment(self, p: TermFragment, s: plan.Translate, context: str) -> TermFragment:
-        """Translation = a pointwise remap of the dim through its ord:
-        a row at ord *o* contributes to the output coord at ord ``(o + by) %
-        card``. No window function involved — bounded-halo locality."""
+        """A pointwise remap of the dim through its ord: a row at *o*
+        contributes at ``(o + by) % card``.
+
+        Both joins are on a dim-table key, so the row count is unchanged and an
+        out-of-range ordinal does not join — the zero acyclic promises. No
+        window function; this is bounded-halo locality.
+        """
         import polars as pl
 
         if s.dimension not in p.dims:
@@ -436,12 +400,9 @@ class PolarsCompiler:
             p.frame.join(incoming, on=s.dimension, how='inner')
             .drop(s.dimension)
             .with_columns(moved.alias(_ORD_OUT))
-            # acyclic: an out-of-range ordinal simply does not join, which is
-            # the zero contribution the language promises
             .join(outgoing, on=_ORD_OUT, how='inner')
             .select(*others, s.dimension, *p.carried)
         )
-        # both joins are on a dim table key, so the row count is unchanged
         return TermFragment(p.dims, frame, p.is_term, p.keyed, p.label_dims)
 
     # ------------------------------------------------------------------
@@ -452,8 +413,7 @@ class PolarsCompiler:
     def constant_scalar(p: TermFragment) -> pl.LazyFrame:
         """The const fragment summed per coordinate: ``(dims…, cval)``.
 
-        Aggregated here and joined by the caller, which is one hash group-by
-        for the whole fragment rather than a lookup repeated per frame row.
+        One hash group-by, rather than a lookup repeated per frame row.
         """
         import polars as pl
 
@@ -467,21 +427,22 @@ def _ordinal(dim: str) -> str:
     return f'__ord {dim}__'
 
 
-def _falsy_if_null(condition: pl.Expr) -> pl.Expr:
-    """``condition``, with null read as false.
+def _relabel(label_dims: frozenset[str], over: str, into: str) -> frozenset[str]:
+    """*label_dims* after ``group_sum`` swaps *over* for *into*: the projected
+    coordinate is label-determined exactly when the dim it replaces was."""
+    if over not in label_dims:
+        return label_dims
+    return label_dims - {over} | {into}
 
-    A missing parameter row makes a comparison null, and null must *exclude*
-    the coordinate rather than propagate — masks are row absence.
-    """
+
+def _falsy_if_null(condition: pl.Expr) -> pl.Expr:
+    """*condition* with null read as false: a missing parameter row must
+    exclude the coordinate rather than propagate. Masks are row absence."""
     return condition.fill_null(value=False)
 
 
 def _compare(column: pl.Expr, op: plan.ComparisonOperator, value: float | str) -> pl.Expr:
-    """One where-comparison.
-
-    The language's ``==`` is polars' ``eq``. There is no branch on the value's
-    type: a string and a float are both literals, never spelled differently.
-    """
+    """One where-comparison. A string and a float are both literals here."""
     import polars as pl
 
     literal = pl.lit(value)
@@ -506,10 +467,9 @@ def _map_fragments(
 ) -> CompiledExpression:
     """Apply *rewrite* to every fragment, keeping the term/const split.
 
-    Sum, GroupSum and Translate all rewrite each fragment on its own, which is
-    what pointwise and bounded-halo locality mean in code (ARCHITECTURE.md,
-    "Read the verdict off the plan"). A node that needed the fragments
-    *together* would be a global operator, rejected at lowering instead.
+    Rewriting one fragment at a time is what pointwise and bounded-halo
+    locality mean; a node needing them together is global, and rejected at
+    lowering.
     """
     return CompiledExpression(
         tuple(rewrite(p) for p in compiled.terms),
@@ -526,10 +486,10 @@ def _negate(p: TermFragment) -> TermFragment:
 def _join_mul(a: TermFragment, c: TermFragment, is_term: bool, divide: bool = False) -> TermFragment:
     """``a * c`` (or ``a / c``) where *c* is a const fragment.
 
-    Joins on shared dims and broadcasts the rest, which is a cross join. The
-    right-hand value is renamed out of the way first: both fragments may carry
-    ``cval``, and letting polars resolve that collision with a suffix would
-    silently multiply a column by itself.
+    Joins on shared dims, broadcasts the rest. The right-hand value is renamed
+    first: both sides may carry ``cval``, and a suffix collision would multiply
+    a column by itself. The dims *c* contributes are broadcast, so the label
+    says nothing about them.
     """
     import polars as pl
 
@@ -543,5 +503,4 @@ def _join_mul(a: TermFragment, c: TermFragment, is_term: bool, divide: bool = Fa
     out = 'coeff' if is_term else 'cval'
     carried = ['var_label', out] if is_term else [out]
     frame = joined.with_columns(combined.alias(out)).select(*out_dims, *carried)
-    # the dims c contributes are broadcast: the label says nothing about them
     return TermFragment(out_dims, frame, is_term, a.keyed and c.keyed, a.label_dims)

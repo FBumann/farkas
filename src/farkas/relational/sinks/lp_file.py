@@ -1,17 +1,15 @@
 """The ``lp_file`` sink: the model as LP text.
 
 Portability, debugging, and the differential oracle. Every section is sunk
-straight to a part file and the parts are concatenated bytewise, so the LP text
-never exists in this process's memory — only the file handle does.
+straight to a part file and the parts concatenated bytewise, so the LP text
+never exists in this process's memory.
 
-Numbers are written through polars' float formatting, which round-trips
-exactly: the text a solver reads back is the same double the engine computed.
+Numbers go through polars' float cast, which round-trips exactly: the text a
+solver reads back is the double the engine computed.
 
-**Every section is written in label order.** A solver does not care — labels
-live in the text — but a reader diffing two LP files does, and so does anyone
-checking that the same model builds the same bytes twice. Sorting a section is
-one pass over data already in memory, which is a small price for a reproducible
-artefact (#109).
+**Every section is written in label order.** A solver does not care, but a
+reader diffing two LP files does, and so does anyone checking that a model
+builds the same bytes twice (#109).
 """
 
 from __future__ import annotations
@@ -49,39 +47,7 @@ def write_lp_file(model: ModelTables, path: str | Path) -> None:
         )
         _sink(objective, parts / 'obj')
 
-        # sorted by label before formatting, not after: ordering millions of
-        # rendered strings costs many times what ordering the two integers
-        # behind them does, for exactly the same output
-        terms = (
-            model.matrix.lazy()
-            .sort('row', 'col')
-            .select('row', (_signed(pl.col('coeff')) + pl.lit(' x') + _digits(pl.col('col'))).alias('term'))
-        )
-        # one text block per row: its name, its terms one per line, then the
-        # sense and right-hand side. A row with no terms still needs a line the
-        # solver can parse, hence the placeholder coefficient.
-        constraints = (
-            model.rows.lazy()
-            .join(terms, on='row', how='left')
-            .group_by('row')
-            .agg(
-                pl.col('sense').first(),
-                pl.col('rhs').first(),
-                pl.col('term').drop_nulls().str.join('\n').alias('body'),
-            )
-            .sort('row')
-            .select(
-                pl.lit('c')
-                + _digits(pl.col('row'))
-                + pl.lit(':\n')
-                + pl.when(pl.col('body').str.len_chars() > 0).then(pl.col('body')).otherwise(pl.lit('+0 x0'))
-                + pl.lit('\n')
-                + pl.col('sense').replace({'==': '='})
-                + pl.lit(' ')
-                + _number(pl.col('rhs'))
-            )
-        )
-        _sink(constraints, parts / 'cons')
+        _sink(_constraint_blocks(model), parts / 'cons')
 
         bounds = (
             model.cols.lazy()
@@ -119,6 +85,53 @@ def write_lp_file(model: ModelTables, path: str | Path) -> None:
                 f.write(f'\n{keyword}\n'.encode())
                 _cat(f, part)
             f.write(b'\nend\n')
+
+
+def _constraint_blocks(model: ModelTables) -> pl.LazyFrame:
+    """One text block per row: its name, its terms one per line, its sense and rhs.
+
+    A row with no terms still needs a line the solver can parse, hence the
+    placeholder coefficient.
+    """
+    import polars as pl
+
+    return (
+        model.rows.lazy()
+        .join(_sorted_terms(model), on='row', how='left')
+        .group_by('row')
+        .agg(
+            pl.col('sense').first(),
+            pl.col('rhs').first(),
+            pl.col('term').drop_nulls().str.join('\n').alias('body'),
+        )
+        .sort('row')
+        .select(
+            pl.lit('c')
+            + _digits(pl.col('row'))
+            + pl.lit(':\n')
+            + pl.when(pl.col('body').str.len_chars() > 0).then(pl.col('body')).otherwise(pl.lit('+0 x0'))
+            + pl.lit('\n')
+            + pl.col('sense').replace({'==': '='})
+            + pl.lit(' ')
+            + _number(pl.col('rhs'))
+        )
+    )
+
+
+def _sorted_terms(model: ModelTables) -> pl.LazyFrame:
+    """``(row, term)`` for every nonzero, in label order.
+
+    Sorted by label before formatting, not after: ordering millions of rendered
+    strings costs many times what ordering the two integers behind them does,
+    for exactly the same output.
+    """
+    import polars as pl
+
+    return (
+        model.matrix.lazy()
+        .sort('row', 'col')
+        .select('row', (_signed(pl.col('coeff')) + pl.lit(' x') + _digits(pl.col('col'))).alias('term'))
+    )
 
 
 def _number(value: pl.Expr) -> pl.Expr:

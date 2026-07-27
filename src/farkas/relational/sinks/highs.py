@@ -1,14 +1,11 @@
 """The ``solver_direct`` sink: COO batches straight into HiGHS.
 
-No float→text→parse round trip — that is the whole reason this exists beside
+No float→text→parse round trip — that is why this exists beside
 :mod:`~farkas.relational.sinks.lp_file`. Columns and rows arrive as numpy
-slices of the model frames, in batches, so no single array ever holds the whole
-model on this side of the API.
+slices of the model frames, in batches.
 
-``highspy`` is imported inside the function rather than at module scope: it is
-an optional dependency, and importing this module must stay free for callers
-that only ever write LP files. The module boundary is the fence; the lazy
-import is what keeps the fence cheap.
+``highspy`` is imported inside the function: it is an optional dependency, and
+importing this module must stay free for callers that only write LP files.
 """
 
 from __future__ import annotations
@@ -59,17 +56,14 @@ def solve_direct(
 ) -> tuple[SolveStatus, float, pl.DataFrame | None, pl.DataFrame | None]:
     """Feed the model to HiGHS and solve it.
 
-    Returns ``(status, objective, primal, dual)``. ``primal`` is a
-    ``(col, value)`` frame and ``dual`` a ``(row, value)`` one, both for the
-    caller to join back to coordinates — the caller owns that mapping, which is
-    what keeps reading results the same join whichever sink was used.
+    Returns ``(status, objective, primal, dual)`` as ``(col, value)`` and
+    ``(row, value)`` frames for the caller to join back to coordinates.
 
-    Either can be ``None``, and for different reasons. No primal means the
-    solve left nothing worth reading; HiGHS hands back a full-length vector of
-    zeros regardless, and returning it would only make it reachable. No **dual**
-    is narrower: a mixed-integer model has no dual solution at all, and neither
-    does a run stopped short of a simplex basis. HiGHS says which, so this
-    returns ``None`` rather than the zeros it would otherwise hand over.
+    Either can be ``None``, for different reasons. No primal means the solve
+    left nothing worth reading. No dual is narrower: a mixed-integer model has
+    none at all, and neither does a run stopped short of a simplex basis. HiGHS
+    hands back full-length vectors of zeros either way, and returning them
+    would only make them reachable.
     """
     import highspy
     import numpy as np
@@ -110,8 +104,6 @@ def solve_direct(
         sense = rows['sense'].to_numpy()
         rlb = np.where(sense == '<=', -inf, rhs)
         rub = np.where(sense == '>=', inf, rhs)
-        # where each row's run of nonzeros begins: the CSR start vector HiGHS
-        # wants, read off a matrix already ordered by row
         starts = np.searchsorted(a['row'].to_numpy(), rows['row'].to_numpy()).astype(np.int32)
         h.addRows(
             len(rhs),
@@ -127,32 +119,39 @@ def solve_direct(
         h.changeObjectiveSense(highspy.ObjSense.kMaximize)
     h.run()
 
-    highs_status = str(h.getModelStatus()).rsplit('.', 1)[-1]
-    status = SolveStatus(
-        termination_condition=_CONDITION_OF_HIGHS_STATUS.get(highs_status, 'unknown'),
-        solver_wording=h.modelStatusToString(h.getModelStatus()),
-        # the solver's own answer to "is there a primal here", which the
-        # termination condition does not give: a run stopped at a time limit
-        # may or may not have found an incumbent
-        has_primal=h.getInfo().primal_solution_status == int(highspy.SolutionStatus.kSolutionStatusFeasible),
-    )
+    status = _status_of(h, highspy)
     if not status.is_readable:
-        # linopy's convention, and an honest one: nan is a sentinel that
-        # propagates through a scenario sweep, where 0.0 reads as an answer
         return status, float('nan'), None, None
 
     objective = h.getInfo().objective_function_value + model.objective_constant
     solution = h.getSolution()
-    # solver output is one array per quantity, positionally indexed by the
-    # solver's own index — which *is* our label, densely assigned. So the join
-    # column is an arange rather than anything read back.
     primal = _labelled('col', model.column_count, solution.col_value)
     dual = _labelled('row', model.row_count, solution.row_dual) if solution.dual_valid else None
     return status, objective, primal, dual
 
 
+def _status_of(h: Any, highspy: Any) -> SolveStatus:
+    """What the solve concluded, on both axes.
+
+    ``has_primal`` is the solver's own answer to "is there anything here",
+    which the termination condition does not give: a run stopped at a time
+    limit may or may not have found an incumbent.
+    """
+    model_status = h.getModelStatus()
+    return SolveStatus(
+        termination_condition=_CONDITION_OF_HIGHS_STATUS.get(str(model_status).rsplit('.', 1)[-1], 'unknown'),
+        solver_wording=h.modelStatusToString(model_status),
+        has_primal=h.getInfo().primal_solution_status == int(highspy.SolutionStatus.kSolutionStatusFeasible),
+    )
+
+
 def _labelled(label: str, count: int, values: Any) -> pl.DataFrame:
-    """``(label, value)`` over the solver's own dense index."""
+    """``(label, value)`` over the solver's own dense index.
+
+    Solver output is one array per quantity, positionally indexed by the
+    solver's index — which *is* our label, densely assigned — so the join
+    column is an ``arange`` rather than anything read back.
+    """
     import numpy as np
     import polars as pl
 
