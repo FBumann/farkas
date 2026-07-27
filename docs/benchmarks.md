@@ -88,15 +88,26 @@ range declarative modelling is actually used in, and the range a rolling horizon
 lives in entirely.
 
 **Above ~1M the build-side memory advantage narrows or inverts.** At 10M
-variables the LP path is 1.11x on `dispatch` and 1.73x on `transport`:
-COO carries a `(row, col, coeff)` triple per nonzero where a dense array carries
-one float. **Read the next section before drawing a conclusion from that** —
-measured to the point a caller actually reaches, we are ahead on all three, and
-build memory on its own is not a number anyone experiences.
+variables the LP path is 1.11x on `dispatch` and 1.73x on `transport`.
+**Read the next section before drawing a conclusion from that** — measured to
+the point a caller actually reaches, we are ahead on all three, and build
+memory on its own is not a number anyone experiences.
 
-`transport` is the case still paying full price on memory, because three
-`group_sum` fragments land on every row and so the terminal aggregate cannot be
-skipped (see `_needs_aggregate`). It is the obvious next thing to look at.
+**What that peak is made of is not yet known, and the obvious answer is
+wrong.** The tempting explanation is COO — a `(row, col, coeff)` triple per
+nonzero where a dense array carries one float. Accounted at the `l` rung on
+`transport`, it is not the story: against a 2.58 GB peak at the end of the
+build, the four model frames are 0.77 GB of which the matrix itself is 0.30,
+the variable label frames are 0.22, and **1.48 GB is unaccounted for**. COO is
+under a tenth of the peak it was being used to explain.
+
+`transport` is the case that pays this, and the standing hypothesis is that
+three `group_sum` fragments land on every row, so the terminal aggregate
+cannot be skipped (see `_needs_aggregate`) and its intermediates are what the
+allocator has not returned. That is consistent with `transport` being the only
+case with this profile, but it is a hypothesis and not a measurement — the
+unaccounted gigabyte is the next thing to isolate, and no number here should
+be quoted as its cause until someone has.
 
 **Labels are a position, not a count.** An unmasked coordinate product needs no
 sort: a row's label is arithmetic on the dim ordinals, so it is computed rather
