@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.0.0-alpha.15](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.14...v0.0.0-alpha.15) (2026-07-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* documentation only — the suggested alias is now `fk`. `import farkas` was and remains the actual import.
+
+### Chores
+
+* the import alias is fk, because the package is farkas ([#154](https://github.com/FBumann/farkas/issues/154)) ([fac76f0](https://github.com/FBumann/farkas/commit/fac76f04597e38675f136edf2d8f0bd5d74c85a7))
+
 ## [0.0.0-alpha.14](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.13...v0.0.0-alpha.14) (2026-07-27)
 
 
