@@ -60,6 +60,7 @@ def _run_farkas(
     case: Case, paths: dict[str, str], lp: Path, phases: Phases, opts: argparse.Namespace
 ) -> dict[str, Any]:
     import farkas as fk
+    from farkas.relational.sinks.highs import build_highs
 
     # The parameter/dimension split is harness bookkeeping — it re-parses the
     # YAML only because the runner, not farkas, decides which parquet file is
@@ -76,7 +77,15 @@ def _run_farkas(
         chunk_rows=opts.chunk_rows,
     )
     phases.mark('build')
-    ex.write_lp(lp)
+    if opts.sink == 'lp':
+        ex.write_lp(lp)
+    else:
+        # The handoff, and nothing after it: `run()` is never called, because
+        # HiGHS's simplex is the same work whoever filled the model and would
+        # swamp the phase this harness exists to measure. `build_highs` is the
+        # seam that stops there — linopy's `to_highspy()` on this side of the
+        # fence (#204).
+        _handle = build_highs(ex._tables(), opts.chunk_rows)
     phases.mark('emit')
 
     # read after the clock stops: counts are the harness's, not the engine's
@@ -105,10 +114,15 @@ def _run_linopy(
     data, coords = case.eager_inputs(paths)
     m = farkas_linopy.build(case.model, data=data, coords=coords)
     phases.mark('build')
-    # progress defaults to `m._xCounter > 10_000`, so every rung above `xs`
-    # would render tqdm bars the farkas arm has no equivalent of — ~7% of the
-    # write at 10M variables, and stderr noise in a harness that parses stdout
-    m.to_file(lp, io_api=opts.io_api, progress=False)
+    if opts.sink == 'lp':
+        # progress defaults to `m._xCounter > 10_000`, so every rung above `xs`
+        # would render tqdm bars the farkas arm has no equivalent of — ~7% of the
+        # write at 10M variables, and stderr noise in a harness that parses stdout
+        m.to_file(lp, io_api=opts.io_api, progress=False)
+    else:
+        # linopy's own seam, and the reason the comparison is exact: both arms
+        # end holding a populated `highspy.Highs` with `run()` never called.
+        _handle = m.to_highspy()
     phases.mark('emit')
     counts = {'columns': int(m.nvars), 'rows': int(m.ncons), 'nonzeros': None}
     return {'phases': phases.times, 'counts': counts, 'workdir_bytes': 0}
@@ -160,6 +174,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument('--memory-limit', default='1GB')
     ap.add_argument('--chunk-rows', type=int, default=2_000_000)
     ap.add_argument('--io-api', default='lp-polars', help="linopy arm's writer")
+    ap.add_argument(
+        '--sink',
+        default='lp',
+        choices=('lp', 'highs'),
+        help='where the model lands: an LP file, or a populated HiGHS model (never solved)',
+    )
     ap.add_argument('--cache', type=Path, default=None)
     opts = ap.parse_args(argv)
 
@@ -176,7 +196,8 @@ def main(argv: list[str] | None = None) -> int:
         'density': shape.density,
         'memory_limit': opts.memory_limit if opts.arm == 'farkas' else None,
         'chunk_rows': opts.chunk_rows if opts.arm == 'farkas' else None,
-        'io_api': opts.io_api if opts.arm == 'linopy' else None,
+        'io_api': opts.io_api if opts.arm == 'linopy' and opts.sink == 'lp' else None,
+        'sink': opts.sink,
     }
 
     if opts.mode == 'solve':
@@ -190,7 +211,8 @@ def main(argv: list[str] | None = None) -> int:
         # the clock starts before the arm's own imports, so a lane that pulls in
         # xarray on first use pays for it visibly instead of inside `build`
         result = ARMS[opts.arm](case, paths, lp, Phases(), opts)
-        record['lp_bytes'] = lp.stat().st_size
+        # the highs sink writes no artifact — that is the whole point of it
+        record['lp_bytes'] = lp.stat().st_size if lp.exists() else None
 
     record.update(result)
     # import is excluded — it is fixed, paid once per process, and at the

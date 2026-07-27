@@ -49,32 +49,20 @@ _CONDITION_OF_HIGHS_STATUS = {
 }
 
 
-def solve_direct(
+def build_highs(
     model: ModelTables,
     batch_rows: int | None = None,
     solver_options: Mapping[str, Any] | None = None,
-) -> tuple[SolveStatus, float, bool]:
-    """Stream the model into HiGHS and solve it.
+) -> Any:
+    """Stream the model into a ``highspy.Highs`` and hand it back, unsolved.
 
-    ``batch_rows`` defaults to the executor's ``chunk_rows`` — the budget that
-    already governs every other batched pass in the engine. It was a separate
-    2e6-vs-1e5 default, which made the sink twenty times finer-grained than
-    the thing it reads from for no stated reason: at 10M columns that is 2.59s
-    against 1.65s, for 4% more peak once HiGHS's own model is resident. The
-    parameter stays so tests can force ragged chunks.
+    The first half of :func:`solve_direct`, split out because the handoff and
+    the solve answer different questions and only one of them is ours. It is
+    linopy's ``Model.to_highspy()`` on this side of the fence, which is also
+    what makes the two comparable: both end holding a populated solver model
+    with ``run()`` never called.
 
-    Returns ``(status, objective, has_duals)``. On a solve that left values
-    worth reading, the primal lands in a ``sol`` table on the connection — and
-    the duals in a ``dual`` table when HiGHS produced valid ones — so reading
-    results back stays a label join like every other read: the caller owns the
-    mapping from solver index to coordinates. On any other outcome there is
-    nothing to store: HiGHS still hands back a full-length vector of zeros, and
-    keeping it would only make it reachable.
-
-    ``has_duals`` is the sink's verdict rather than the caller's guess. A MIP
-    has no dual solution at all, and neither does a run stopped short of a
-    simplex basis — both are ``dual_valid = False``, and in both the table is
-    absent rather than zero-filled.
+    See :func:`solve_direct` for ``batch_rows``.
     """
     import highspy
     import numpy as np
@@ -130,6 +118,40 @@ def solve_direct(
 
     if model.objective_sense == 'max':
         h.changeObjectiveSense(highspy.ObjSense.kMaximize)
+    return h
+
+
+def solve_direct(
+    model: ModelTables,
+    batch_rows: int | None = None,
+    solver_options: Mapping[str, Any] | None = None,
+) -> tuple[SolveStatus, float, bool]:
+    """Stream the model into HiGHS and solve it.
+
+    ``batch_rows`` defaults to the executor's ``chunk_rows`` — the budget that
+    already governs every other batched pass in the engine. It was a separate
+    2e6-vs-1e5 default, which made the sink twenty times finer-grained than
+    the thing it reads from for no stated reason: at 10M columns that is 2.59s
+    against 1.65s, for 4% more peak once HiGHS's own model is resident. The
+    parameter stays so tests can force ragged chunks.
+
+    Returns ``(status, objective, has_duals)``. On a solve that left values
+    worth reading, the primal lands in a ``sol`` table on the connection — and
+    the duals in a ``dual`` table when HiGHS produced valid ones — so reading
+    results back stays a label join like every other read: the caller owns the
+    mapping from solver index to coordinates. On any other outcome there is
+    nothing to store: HiGHS still hands back a full-length vector of zeros, and
+    keeping it would only make it reachable.
+
+    ``has_duals`` is the sink's verdict rather than the caller's guess. A MIP
+    has no dual solution at all, and neither does a run stopped short of a
+    simplex basis — both are ``dual_valid = False``, and in both the table is
+    absent rather than zero-filled.
+    """
+    import highspy
+
+    con = model.connection
+    h = build_highs(model, batch_rows, solver_options)
     h.run()
 
     highs_status = str(h.getModelStatus()).rsplit('.', 1)[-1]
