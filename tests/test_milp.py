@@ -8,9 +8,12 @@ section.
 
 from __future__ import annotations
 
+from typing import get_args
+
 import numpy as np
 import pytest
 
+from farkas.relational import plan
 from tests.differential import differential
 
 COMMITMENT_YAML = """
@@ -92,3 +95,25 @@ def test_solver_direct_ingests_columns_in_order_whatever_the_chunking(commitment
 
         u = chunked.primal('u')['value'].to_numpy()
         assert set(np.round(u)) <= {0.0, 1.0}, 'integrality landed on the wrong columns'
+
+
+def test_cols_vtype_enum_covers_every_declared_variable_type(commitment_inputs):
+    """``cols.vtype`` is an ENUM, and its members are ``plan.VariableType``.
+
+    The storage choice is a performance one — three literals repeated once per
+    column are the widest thing on the row — but the *members* are a contract.
+    An ENUM rejects a value it does not know, so a fourth variable type added
+    to the plan and not to the table would fail at insert with a duckdb error
+    about a cast, a long way from the declaration that caused it. This is the
+    test that fails at the declaration instead.
+    """
+    data, coords = commitment_inputs
+
+    with differential(COMMITMENT_YAML, data, coords) as run:
+        con = run.executor._con
+        column_type = con.execute("SELECT column_type FROM (DESCRIBE cols) WHERE column_name = 'vtype'").fetchone()
+        assert column_type is not None
+        members = con.execute('SELECT unnest(enum_range(NULL::variable_type))').fetchall()
+
+    assert column_type[0] != 'VARCHAR'
+    assert {m[0] for m in members} == set(get_args(plan.VariableType))

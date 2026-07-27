@@ -46,7 +46,7 @@ import tempfile
 import weakref
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, get_args
 
 from farkas.errors import DataError, LanguageError, LinopyYamlError, NoSolutionError
 from farkas.relational import plan, sinks
@@ -288,7 +288,14 @@ class DuckdbExecutor:
         # `defined` on a boolean parameter tests the value, not its finiteness
         self._compiler = SqlCompiler(program, dict(self._dim_card), frozenset(self._bool_params))
 
-        self._con.execute('CREATE TABLE cols (col BIGINT, lb DOUBLE, ub DOUBLE, vtype VARCHAR)')
+        # vtype is one of three literals repeated once per column, which as
+        # VARCHAR is the widest thing on the row. An ENUM stores the tag, and
+        # every `vtype = '...'` comparison in the sinks keeps working unchanged.
+        # The members come off plan.VariableType so a fourth one cannot land
+        # without this table following it.
+        types = ', '.join(f"'{t}'" for t in get_args(plan.VariableType))
+        self._con.execute(f'CREATE TYPE variable_type AS ENUM ({types})')
+        self._con.execute('CREATE TABLE cols (col BIGINT, lb DOUBLE, ub DOUBLE, vtype variable_type)')
         self._con.execute('CREATE TABLE obj (col BIGINT, coeff DOUBLE)')
         self._con.execute('CREATE TABLE rows (row BIGINT, sense VARCHAR, rhs DOUBLE)')
         self._con.execute('CREATE TABLE A (row BIGINT, col BIGINT, coeff DOUBLE)')
