@@ -67,6 +67,9 @@ class SolveStatus:
     termination_condition: str
     #: Exactly what the solver called it, for a message a user can search for.
     solver_wording: str = ''
+    #: Whether the solver reports an actual primal, which the termination
+    #: condition does not tell you — see :attr:`is_readable`.
+    has_primal: bool = True
 
     @property
     def status(self) -> str:
@@ -74,5 +77,28 @@ class SolveStatus:
 
     @property
     def is_ok(self) -> bool:
-        """Whether the solve left values worth reading. Not "was it optimal"."""
+        """linopy's rollup: the run is not an error, an abort or a refusal.
+
+        Kept exactly as linopy defines it, because it is shared vocabulary.
+        It is *not* the question "can I read values" — see
+        :attr:`is_readable`.
+        """
         return self.status == 'ok'
+
+    @property
+    def is_readable(self) -> bool:
+        """Whether there are primal values to read.
+
+        `is_ok` alone is not enough, and this is where we deliberately go
+        beyond linopy. Its `safe_get_solution` gates on `is_ok`, so a MIP
+        stopped at a time limit **before finding any incumbent** is `ok` and
+        its zero-filled `col_value` is read as though it were an answer. That
+        is the bug this package just fixed one level down (#115), so
+        inheriting it would be a poor trade for vocabulary parity.
+
+        `optimal` always has a primal. Every other `ok` condition —
+        `time_limit`, `iteration_limit`, `terminated_by_limit`, `suboptimal`,
+        `imprecise` — means "stopped early", and whether an incumbent exists
+        is a separate fact only the solver knows.
+        """
+        return self.is_ok and self.has_primal

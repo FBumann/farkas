@@ -12,11 +12,13 @@ import is what keeps the fence cheap.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from farkas.relational.status import SolveStatus
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from farkas.relational.sinks.tables import ModelTables
 
 
@@ -47,7 +49,11 @@ _CONDITION_OF_HIGHS_STATUS = {
 }
 
 
-def solve_direct(model: ModelTables, batch_rows: int = 100_000) -> tuple[SolveStatus, float]:
+def solve_direct(
+    model: ModelTables,
+    batch_rows: int = 100_000,
+    solver_options: Mapping[str, Any] | None = None,
+) -> tuple[SolveStatus, float]:
     """Stream the model into HiGHS and solve it. Returns ``(status, objective)``.
 
     On a solve that left values worth reading, the primal lands in a ``sol``
@@ -64,6 +70,8 @@ def solve_direct(model: ModelTables, batch_rows: int = 100_000) -> tuple[SolveSt
     inf = highspy.kHighsInf
     h = highspy.Highs()
     h.setOptionValue('output_flag', False)
+    for option, value in (solver_options or {}).items():
+        h.setOptionValue(option, value)
 
     empty_i = np.empty(0, dtype=np.int32)
     empty_f = np.empty(0, dtype=np.float64)
@@ -112,8 +120,12 @@ def solve_direct(model: ModelTables, batch_rows: int = 100_000) -> tuple[SolveSt
     status = SolveStatus(
         termination_condition=_CONDITION_OF_HIGHS_STATUS.get(highs_status, 'unknown'),
         solver_wording=h.modelStatusToString(h.getModelStatus()),
+        # the solver's own answer to "is there a primal here", which the
+        # termination condition does not give: a run stopped at a time limit
+        # may or may not have found an incumbent
+        has_primal=h.getInfo().primal_solution_status == int(highspy.SolutionStatus.kSolutionStatusFeasible),
     )
-    if not status.is_ok:
+    if not status.is_readable:
         # linopy's convention, and an honest one: nan is a sentinel that
         # propagates through a scenario sweep, where 0.0 reads as an answer
         return status, float('nan')

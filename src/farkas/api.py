@@ -132,9 +132,15 @@ def build(
 def solve(
     model: str | Path | dict[str, Any] | MathSchema,
     sources: Mapping[str, Any],
+    solver_options: Mapping[str, Any] | None = None,
     **build_kwargs: Any,
 ) -> Result:
     """Build and solve in one call.
+
+    ``solver_options`` is forwarded verbatim to the solver — the same shape
+    linopy takes, e.g. ``{'time_limit': 60, 'mip_rel_gap': 0.01}``. Build
+    options (``memory_limit``, ``chunk_rows``, …) stay separate, because they
+    govern *construction* and never reach the solver.
 
     The executor stays attached to the returned :class:`Result` (its label
     tables back ``result.primal(...)``); call ``result.close()`` when done, or use
@@ -142,7 +148,7 @@ def solve(
     """
     ex = build(model, sources, **build_kwargs)
     try:
-        return ex.solve()
+        return ex.solve(solver_options=solver_options)
     except BaseException:
         ex.close()
         raise
