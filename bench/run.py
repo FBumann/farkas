@@ -28,11 +28,14 @@ import subprocess
 import sys
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from bench.cases import CASES
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 RESULTS = Path(__file__).resolve().parent / 'results'
 GATE_RTOL = 1e-9
@@ -84,12 +87,16 @@ def _child(args: list[str], timeout: float) -> dict[str, Any]:
     return json.loads(lines[-1])
 
 
-def gate(case: str, timeout: float) -> dict[str, Any]:
-    """Solve the smallest rung on both arms; objectives must agree."""
+def gate(case: str, timeout: float, arms: Sequence[str] = ('farkas', 'linopy')) -> dict[str, Any]:
+    """Solve the smallest rung on every arm; objectives must agree.
+
+    Gating *the arms being timed* rather than a fixed pair: an arm that is
+    fast because it built a different model is the one result this harness
+    must never publish, and a third arm would otherwise be exempt from the
+    check the first two answer to.
+    """
     size = CASES[case].ladder[0].label
-    results = {
-        arm: _child(['solve', '--case', case, '--size', size, '--arm', arm], timeout) for arm in ('farkas', 'linopy')
-    }
+    results = {arm: _child(['solve', '--case', case, '--size', size, '--arm', arm], timeout) for arm in arms}
     failed = {arm: r['error'] for arm, r in results.items() if 'error' in r}
     if failed:
         return {'record': 'gate', 'case': case, 'size': size, 'passed': False, 'reason': failed, 'detail': results}
@@ -108,42 +115,26 @@ def gate(case: str, timeout: float) -> dict[str, Any]:
 
 
 def timings(case: str, sizes: list[str], arms: list[str], opts: argparse.Namespace) -> list[dict[str, Any]]:
-    """Every (size, arm, budget) combination, each in its own process.
-
-    The farkas arm runs once per ``--memory-limits`` entry: the budget is the
-    knob the whole architecture is built around, so sweeping it is a first-class
-    axis here rather than something to re-run by hand.
-    """
+    """Every (size, arm) combination, each in its own process."""
     out = []
     for size in sizes:
         for arm in arms:
-            budgets = opts.memory_limits if arm == 'farkas' else [None]
-            for budget in budgets:
-                for repeat in range(opts.repeat):
-                    args = ['time', '--case', case, '--size', size, '--arm', arm]
-                    if budget is not None:
-                        args += ['--memory-limit', budget, '--chunk-rows', str(opts.chunk_rows)]
-                    else:
-                        args += ['--io-api', opts.io_api]
-                    record = _child(args, opts.timeout)
-                    # stamped by the parent so a *failed* run is still fully
-                    # identified — which budget OOMed is the whole point
-                    record |= {
-                        'record': 'timing',
-                        'case': case,
-                        'size': size,
-                        'arm': arm,
-                        'repeat': repeat,
-                        'memory_limit': budget,
-                    }
-                    _echo(record)
-                    out.append(record)
+            for repeat in range(opts.repeat):
+                args = ['time', '--case', case, '--size', size, '--arm', arm]
+                if arm == 'linopy':
+                    args += ['--io-api', opts.io_api]
+                record = _child(args, opts.timeout)
+                # stamped by the parent so a *failed* run is still fully
+                # identified — a failure is a result here
+                record |= {'record': 'timing', 'case': case, 'size': size, 'arm': arm, 'repeat': repeat}
+                _echo(record)
+                out.append(record)
     return out
 
 
 def _echo(record: dict[str, Any]) -> None:
-    budget = record.get('memory_limit') or record.get('io_api') or ''
-    head = f'  {record["case"]:<10} {record["size"]:<3} {record["arm"]:<7} {budget:<10}'
+    writer = record.get('io_api') or ''
+    head = f'  {record["case"]:<10} {record["size"]:<3} {record["arm"]:<7} {writer:<10}'
     if 'error' in record:
         print(f'{head} FAILED — {record["error"]}')
         return
@@ -161,8 +152,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument('--arms', nargs='+', default=['farkas', 'linopy'])
     ap.add_argument('--repeat', type=int, default=1)
-    ap.add_argument('--memory-limits', nargs='+', default=['1GB'], help='duckdb budgets to sweep (farkas arm)')
-    ap.add_argument('--chunk-rows', type=int, default=2_000_000)
     ap.add_argument('--io-api', default='lp-polars')
     ap.add_argument('--timeout', type=float, default=3600.0)
     ap.add_argument('--skip-gate', action='store_true', help='time without checking the arms agree')
@@ -176,7 +165,7 @@ def main(argv: list[str] | None = None) -> int:
     if not opts.skip_gate:
         print('\nparity gate')
         for case in opts.cases:
-            result = gate(case, opts.timeout)
+            result = gate(case, opts.timeout, opts.arms)
             records.append(result)
             if not result['passed']:
                 print(f'  {case:<10} FAILED — {result.get("reason", result)}')

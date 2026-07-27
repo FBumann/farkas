@@ -20,7 +20,7 @@ checked. Within one lane the bias is the same on both sides of a diff and
 cancels, leaving a metric that is deterministic and attributable to a call
 stack — which machine-load-sensitive RSS is not.
 
-`isolate=True` runs every pass in a fresh process, which matters twice: duckdb
+`isolate=True` runs every pass in a fresh process, which matters twice: an engine
 would otherwise be measured with a warm buffer pool, and it is what makes the
 whole-process ``rss`` available alongside the memray peak, so the two can be
 watched for divergence.
@@ -63,7 +63,7 @@ def build_and_write(case_name: str, size: str, sources: dict[str, str], coords: 
 
     with (
         tempfile.TemporaryDirectory(prefix='farkas-bench-') as tmp,
-        fk.build(CASES[case_name].model, sources, coords=coords, memory_limit='1GB') as ex,
+        fk.build(CASES[case_name].model, sources, coords=coords) as ex,
     ):
         ex.write_lp(Path(tmp) / 'model.lp')
         return ex._tables().column_count

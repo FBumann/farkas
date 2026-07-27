@@ -8,7 +8,6 @@ claim nobody can re-run is a claim with a shelf life.
 ```bash
 uv run python -m bench.run                                  # the committed ladder
 uv run python -m bench.run --cases dispatch --sizes m l     # one case, two rungs
-uv run python -m bench.run --memory-limits 256MB 1GB 4GB    # sweep the budget
 uv run python -m bench.report bench/results/latest.jsonl    # -> markdown
 ```
 
@@ -16,8 +15,7 @@ uv run python -m bench.report bench/results/latest.jsonl    # -> markdown
 
 **Peak RSS and wall time**, per phase, for the same model built two ways:
 
-- `farkas` — `fk.build(...)` then `ex.write_lp(...)`, at a declared
-  `memory_limit`.
+- `farkas` — `fk.build(...)` then `ex.write_lp(...)`.
 - `linopy` — `farkas.linopy.build(...)` then `Model.to_file(io_api='lp-polars')`.
 
 Both arms read the same parquet files and produce an LP file, so the comparison
@@ -38,8 +36,9 @@ allocator, so `bench/run.py` never imports farkas or linopy — it only spawns
 
 **`ru_maxrss`, not a tracker.** The same kernel counter `/usr/bin/time -l`
 reports, read via `resource.getrusage`. `docs/benchmarks.md` records why the
-alternative is wrong: memray's tracker slows duckdb ~8x and overcounts polars'
-reserved arenas, so it can attribute memory but must never time anything.
+alternative is wrong: memray's tracker slows an allocation-heavy engine
+several-fold and overcounts reserved arenas, so it can attribute memory but must
+never time anything.
 
 **The parity gate runs before any timing.** The smallest rung of each case is
 solved on both arms and the objectives compared to 1e-9 relative; a mismatch
@@ -56,9 +55,9 @@ the other never does. The boundaries are therefore explicit:
 |---|---|---|
 | **before the clock** | splitting parquet paths into parameters vs dimensions (harness bookkeeping — it re-parses the YAML only because the *runner* decides which file is which) | — |
 | `import` | `import farkas` | `import farkas.linopy` → linopy, xarray |
-| `build` | `fk.build(...)` — duckdb reads the parquet itself | `read_parquet` + reshape + `farkas.linopy.build(...)` |
+| `build` | `fk.build(...)` — the engine scans the parquet itself | `read_parquet` + reshape + `farkas.linopy.build(...)` |
 | `emit` | `ex.write_lp(path)` | `Model.to_file(path, io_api='lp-polars')` |
-| `teardown` | `ex.close()` — closes duckdb, deletes the scratch database | — (nothing to release) |
+| `teardown` | `ex.close()` — releases the built model | — (nothing to release) |
 | **after the clock** | row counts, `count(*) FROM A`, scratch-dir size | `nvars` / `ncons` |
 
 Three of those are deliberate calls rather than defaults:
@@ -148,9 +147,9 @@ uv run pytest bench/regressions --benchmark-memory-compare=0001 \
 
 It is [`pytest-benchmem`](https://github.com/fluxopt/pytest-benchmem): a memray
 peak pass on top of pytest-benchmark's timing, with `isolate=True` so every pass
-is a fresh process — duckdb would otherwise be measured with a warm buffer pool,
-and isolation is what makes whole-process `rss` available beside the memray
-peak.
+is a fresh process — a warm allocator would otherwise be measured instead of the
+build, and isolation is what makes whole-process `rss` available beside the
+memray peak.
 
 **Why memray here and not in the published ladder.** Measured on `dispatch/m`:
 

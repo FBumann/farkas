@@ -1,11 +1,10 @@
 """The LP sink renders doubles exactly.
 
-``lp_file`` writes numbers with duckdb's ``::VARCHAR`` cast rather than
-``printf('%.17g')`` because the cast is 30-40% faster and emit is almost
-entirely float-to-text. That trade is only free if the cast is
-shortest-*round-trip* and not merely shortest, so the property is pinned here
-rather than left to the golden file — a golden proves the bytes did not move,
-not that they are correct.
+``lp_file`` writes numbers by casting them to string, because emit is almost
+entirely float-to-text and a cast is far cheaper than a format string. That
+trade is only free if the cast is shortest-*round-trip* and not merely
+shortest, so the property is pinned here rather than left to the golden file —
+a golden proves the bytes did not move, not that they are correct.
 """
 
 from __future__ import annotations
@@ -15,11 +14,11 @@ import struct
 import tempfile
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 import pytest
 
 import farkas as fk
-from farkas.relational.sinks.lp_file import _signed
+from farkas.relational.sinks.lp_file import _number, _signed
 from tests.conftest import DISPATCH_MODEL
 
 #: Doubles that break naive formatters: repeating binary fractions, the
@@ -40,14 +39,10 @@ AWKWARD = [
 ]
 
 
-def _duckdb_text(expr: str, values: list[float]) -> list[str]:
-    """``expr`` (over column ``v``) applied to ``values``, in order."""
-    import duckdb
-
-    con = duckdb.connect()
-    con.execute('CREATE TABLE t (i BIGINT, v DOUBLE)')
-    con.executemany('INSERT INTO t VALUES (?, ?)', list(enumerate(values)))
-    return [r[0] for r in con.execute(f'SELECT {expr} FROM t ORDER BY i').fetchall()]
+def _rendered(render, values: list[float]) -> list[str]:
+    """*render* applied to ``values`` as the sink applies it, in order."""
+    frame = pl.DataFrame({'v': values}, schema={'v': pl.Float64})
+    return frame.select(render(pl.col('v'))).to_series().to_list()
 
 
 def _bits(x: float) -> bytes:
@@ -57,8 +52,8 @@ def _bits(x: float) -> bytes:
 
 @pytest.mark.parametrize('value', AWKWARD, ids=repr)
 def test_plain_cast_round_trips(value: float) -> None:
-    """``v::VARCHAR`` — how bounds and right-hand sides are written."""
-    (text,) = _duckdb_text('v::VARCHAR', [value])
+    """``_number`` — how bounds and right-hand sides are written."""
+    (text,) = _rendered(_number, [value])
     assert _bits(float(text)) == _bits(value)
 
 
@@ -70,7 +65,7 @@ def test_signed_coefficient_round_trips(value: float) -> None:
     round-trip is checked on magnitude there: ``+0.0`` and ``-0.0`` are the
     same coefficient, and only one of them is expressible after a ``+``.
     """
-    (text,) = _duckdb_text(_signed('v'), [value])
+    (text,) = _rendered(_signed, [value])
     assert text[0] in '+-', f'coefficient {text!r} carries no explicit sign'
     assert text[:2] != '+-', f'coefficient {text!r} carries two signs'
     assert float(text) == value  # -0.0 == 0.0, which is the whole point
@@ -83,13 +78,13 @@ def test_negative_zero_coefficient_is_written_once() -> None:
     and it satisfies ``>= 0``, so a naive sign arm emits ``+`` in front of a
     cast that still reads ``-0.0``.
     """
-    (text,) = _duckdb_text(_signed('v'), [-0.0])
+    (text,) = _rendered(_signed, [-0.0])
     assert text == '+0.0'
 
 
 def test_extremes_do_not_become_infinite() -> None:
     """A formatter that drops exponent digits turns ``1e308`` into ``inf``."""
-    for text in _duckdb_text('v::VARCHAR', [1.7976931348623157e308, 5e-324]):
+    for text in _rendered(_number, [1.7976931348623157e308, 5e-324]):
         assert math.isfinite(float(text))
         assert float(text) != 0.0
 
@@ -99,9 +94,9 @@ def test_written_bounds_are_bit_exact() -> None:
     upper = [1 / 3, 1e-17]
     cost = [2 / 3, 1.7976931348623157e308]
     data = {
-        'p_max': pd.Series(upper, index=pd.Index(['wind', 'gas'], name='generator')),
-        'cost': pd.Series(cost, index=pd.Index(['wind', 'gas'], name='generator')),
-        'load': pd.Series([0.0], index=pd.RangeIndex(1, name='snapshot')),
+        'p_max': pl.DataFrame({'generator': ['wind', 'gas'], 'value': upper}),
+        'cost': pl.DataFrame({'generator': ['wind', 'gas'], 'value': cost}),
+        'load': pl.DataFrame({'snapshot': [0], 'value': [0.0]}),
     }
     with tempfile.TemporaryDirectory() as tmp:
         lp = Path(tmp) / 'model.lp'

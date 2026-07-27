@@ -2,7 +2,7 @@
 
 Three-way differential on examples/transport.yaml:
   1. eager farkas_linopy.build + solve (group_sum via linopy groupby)
-  2. lowered Program -> DuckdbExecutor solver_direct, plus the LP file
+  2. lowered Program -> PolarsExecutor solver_direct, plus the LP file
   3. hand-built indicator-matrix linopy model (an independent oracle that
      involves no group_sum at all)
 """
@@ -12,13 +12,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import pytest
 
 import farkas as fk
 from farkas.errors import DataError, LanguageError
 from farkas.lowering import _lower_expr, lower_program
-from farkas.relational import DuckdbExecutor
+from farkas.relational import PolarsExecutor
 from farkas.relational.plan import (
     Add,
     GroupSum,
@@ -28,7 +27,7 @@ from farkas.relational.plan import (
 from farkas.sources import tidy_sources
 from tests.conftest import resolved, schema_of
 from tests.differential import RTOL, differential
-from tests.oracle import farkas_linopy, transport_eager_objective, xr
+from tests.oracle import farkas_linopy, pd, transport_eager_objective, xr
 
 TRANSPORT_YAML = Path('examples/transport.yaml')
 
@@ -118,7 +117,7 @@ def test_grouping_an_expression_that_lacks_the_dim_is_refused():
 
 def _relationally(data, coords):
     schema = schema_of(TRANSPORT_YAML)
-    with DuckdbExecutor(memory_limit='256MB') as ex:
+    with PolarsExecutor() as ex:
         ex.build(lower_program(schema), tidy_sources(schema, data, coords))
 
 
@@ -139,12 +138,33 @@ def test_a_mistyped_coordinate_is_refused_on_both_lanes(transport_data):
 
 def test_a_coordinate_must_be_single_valued(transport_data):
     """Two rows disagreeing about a generator's bus is a data bug, not a
-    silently-picked winner."""
+    silently-picked winner.
+
+    Only the *index* is doubled here. Doubling the generator frame outright
+    duplicates the parameters it also feeds, and the keyed-parameter check
+    below catches that first — which is correct, and would leave this test
+    asserting the wrong message.
+    """
     gens, lines, load = transport_data
     other = 's' if gens['bus'].iloc[0] != 's' else 'n'
-    doubled = pd.concat([gens, gens.head(1).assign(bus=other)])
+    data, coords = _inputs(gens, lines, load)
+    coords['generator'] = pd.concat([coords['generator'], coords['generator'].head(1).assign(bus=other)])
 
     with pytest.raises(DataError, match='more than one value'):
+        _relationally(data, coords)
+
+
+def test_a_parameter_carrying_a_coordinate_twice_is_refused(transport_data):
+    """A parameter is a function of its dims, so two rows for one coordinate
+    has no answer — and the eager lane will not lay such a source out either.
+
+    Refusing it is also what lets the assembly skip its terminal aggregate:
+    every parameter being keyed is the premise that argument rests on.
+    """
+    gens, lines, load = transport_data
+    doubled = pd.concat([gens, gens.head(1)])
+
+    with pytest.raises(DataError, match="parameter 'p_max' has more than one row"):
         _relationally(*_inputs(doubled, lines, load))
 
 
@@ -220,7 +240,7 @@ def test_a_partial_coordinate_places_its_orphans_nowhere(tmp_path):
         assert result.is_ok
         assert result.objective == pytest.approx(3.0)
         # the orphan is still a variable; it just carries no group obligation
-        assert result.primal('x').set_index('item')['value']['i2'] == pytest.approx(0.0)
+        assert result.to_pandas('x').set_index('item')['value']['i2'] == pytest.approx(0.0)
 
     model = farkas_linopy.build(path, data=data, coords=coords)
     model.solve(solver_name='highs', output_flag=False)

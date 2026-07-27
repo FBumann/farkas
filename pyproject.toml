@@ -14,7 +14,7 @@ license-files = ["LICENSE"]
 # the contract (that is MathSchema), but it is still how people search.
 keywords = [
     "optimisation", "optimization", "linear-programming", "mixed-integer",
-    "declarative", "yaml", "duckdb", "highs", "operations-research",
+    "declarative", "yaml", "polars", "highs", "operations-research",
 ]
 classifiers = [
     "Programming Language :: Python :: 3.11",
@@ -25,15 +25,18 @@ classifiers = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "pandas>=2.2",
+    # the relational engine: every frame a model is built from, and the parquet
+    # reader that fills them. Arrow-backed, so a result frame exports the
+    # PyCapsule protocol and any consumer takes it without this package
+    # depending on their library.
+    "polars>=1.30",
+    # the solver_direct sink's own arithmetic: `searchsorted` builds the CSR
+    # row starts HiGHS wants, and the batch coercions are its dtypes. Array
+    # work at the solver boundary, not a dataframe dependency.
     "numpy>=1.26",
     "pyparsing>=3.1",
     "pydantic>=2.0",
     "pyyaml>=6.0",
-    "duckdb>=1.5",
-    # required by the solver_direct sink: duckdb's .to_arrow_reader() streams
-    # COO batches to highspy. Used through duckdb, never imported by name.
-    "pyarrow>=16",
     "highspy>=1.10",
 ]
 
@@ -44,6 +47,11 @@ dependencies = [
 linopy = [
     "linopy>=0.9.0,<0.10",
     "xarray>=2024.2.0",
+    # also what `Result.to_pandas` / `to_dataarray` need. Declared here rather
+    # than as a runtime dependency: pandas is a bridge out of the engine, not
+    # a part of it, and the bare-install CI job proves the engine builds,
+    # solves and reads results back without it.
+    "pandas>=2.2",
 ]
 
 [project.urls]
@@ -75,6 +83,10 @@ dev = [
     "pre-commit==4.6.0",
     "linopy>=0.9.0,<0.10",
     "xarray>=2024.2.0",
+    "pandas>=2.2",
+    # how pandas reads parquet, which the benchmark harness's linopy arm does
+    # as part of the cost it is there to measure
+    "pyarrow>=16",
 ]
 
 [tool.ruff]

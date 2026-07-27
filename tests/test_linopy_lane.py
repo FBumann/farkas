@@ -14,12 +14,11 @@ from __future__ import annotations
 
 import textwrap
 
-import pandas as pd
 import pytest
 
 from farkas.errors import LanguageError
 from farkas.schema import MathSchema
-from tests.oracle import builder, farkas_linopy, linopy, loader, xr
+from tests.oracle import builder, farkas_linopy, linopy, loader, pd, xr
 
 
 @pytest.fixture

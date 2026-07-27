@@ -17,8 +17,9 @@ and PyPSA's `optimization/constraints.py`. Every item scores **expressible**,
 **out of scope by design** (data prep — [SPEC §11](SPEC.md#11-out-of-scope)), or
 **genuinely arbitrary Python** (an escape island, or stays a callback). No
 numbers are published until #27 produces them. Expressiveness is not the axis we
-lead on: scale — declarative math at 10⁸ variables under a fixed memory budget —
-is measured separately ([benchmarks](docs/benchmarks.md)).
+lead on: scale — how much a model costs to build, against how much of its
+coordinate product it actually populates — is measured separately
+([benchmarks](docs/benchmarks.md)).
 
 ## The degree axis
 
@@ -149,13 +150,24 @@ Full design, work breakdown and open questions:
 [#89](https://github.com/FBumann/farkas/issues/89). First spike is SOS2 on
 `lp_file`: no new dependency, no license question, no memory risk.
 
-## Track 5 — in-memory executor
+## Track 5 — the memory axis
 
-The same plan executed without duckdb, so small models skip the engine entirely
-(folding in the CSR deferred-groupby prototype). Listed because it is also the
-worked example for hard rule 4's wording: the invariant is that peak tracks the
-*budget*, not that nothing is ever fully resident — for a model the budget
-comfortably exceeds, holding everything is the point rather than a violation.
+The engine holds the model it builds, so peak tracks the model rather than a
+number the caller sets. That is the right default — it is also what makes the
+lifetime disappear from the API — but it leaves two things open, and they are
+worth stating rather than discovering:
+
+- **A declared ceiling.** There is no way today to say "build this within N
+  gigabytes or fail". The honest version is not a knob bolted onto the engine
+  but partition-wise execution: build the model in slices of the leading
+  foreach dim and sink each slice, which the locality closure (pointwise ∩
+  bounded-halo) already guarantees is safe. Wanted when a model is written
+  once and run on a machine chosen by someone else.
+- **The solver is the larger term anyway.** Measured at roughly an order of
+  magnitude above the build at 10⁷ variables
+  ([benchmarks](docs/benchmarks.md)), so a ceiling on the build is worth
+  having for the write path — `fk.write` to LP or MPS, handed to something
+  else — and worth much less when the same process goes on to solve.
 
 ## Deliberate non-primitives
 

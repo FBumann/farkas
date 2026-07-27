@@ -3,10 +3,9 @@
 **Self-documenting optimisation models — at any scale.**
 
 Write the math in YAML, bind data at runtime, solve. Today that means linear and
-mixed-integer programs. The model itself is never a Python object: it is tidy
-tables in duckdb, built under a hard `memory_limit` and streamed straight into
-the solver, so build peak RAM is set by a budget you choose rather than by the
-size of the model. A 107-million-variable dispatch model builds in ~0.6 GB
+mixed-integer programs. The model itself is never a dense Python object: it is
+tidy frames — masks are absent rows, and a variable's label *is* the solver's
+own column index — assembled relationally and handed to the solver in batches
 ([benchmarks](docs/benchmarks.md)).
 
 And because the math is a closed spec known before any data is touched, every
@@ -21,7 +20,7 @@ whole model repository in CI with nothing bound to it at all.
 flowchart LR
     Y["YAML + data"] --> AST["core AST"]
     AST --> R{"inside the<br/>language?"}
-    R -->|"yes"| S["streaming engine<br/>duckdb · fixed memory_limit"]
+    R -->|"yes"| S["relational engine<br/>polars"]
     S --> OUT["solver (batched) / LP file"]
     R -->|"no"| ERR["load error<br/>naming the construct + rewrite"]
     AST -.->|"opt-in shim: same language,<br/>for models already in memory"| E["farkas.linopy"]
@@ -64,35 +63,38 @@ objectives:
 ```
 
 ```python
-import farkas as fk, pandas as pd
+import farkas as fk, polars as pl
 
+generators = ["wind", "solar", "gas"]
 sources = {
-    "p_max": pd.Series({"wind": 100.0, "solar": 60.0, "gas": 200.0}),
-    "cost":  pd.Series({"wind": 1.0, "solar": 2.0, "gas": 50.0}),
-    "load":  pd.Series([80, 120, 150, 180, 140, 100],
-                       index=pd.RangeIndex(6, name="snapshot")),
+    "p_max": pl.DataFrame({"generator": generators, "value": [100.0, 60.0, 200.0]}),
+    "cost":  pl.DataFrame({"generator": generators, "value": [1.0, 2.0, 50.0]}),
+    "load":  pl.DataFrame({"snapshot": range(6),
+                           "value": [80.0, 120.0, 150.0, 180.0, 140.0, 100.0]}),
 }
 
-# the model lives in duckdb, so the Result owns the executor that backs it
-with fk.solve("dispatch.yaml", sources,
-              coords={"snapshot": pd.RangeIndex(6, name="snapshot")},
-              memory_limit="512MB") as result:
-    print(result.objective)   # 1920.0
-    print(result.primal("p"))
-    print(result.dual("power_balance"))   # the price at each snapshot
+result = fk.solve("dispatch.yaml", sources, coords={"snapshot": range(6)})
+print(result.objective)     # 1920.0
+print(result.primal("p"))   # a tidy frame: (snapshot, generator, value)
+print(result.dual("power_balance"))  # the price at each snapshot
 ```
 
-Sources can also be polars or pyarrow tables, or parquet paths — anything
-exposing the Arrow PyCapsule protocol is accepted without conversion.
+Sources can also be pandas or pyarrow objects, or parquet paths — anything
+exposing the Arrow PyCapsule protocol is accepted, and the recogniser imports
+none of them. Results come back as frames, so nothing has to be released and
+no dataframe library is a dependency: `result.to_pandas("p")`,
+`.to_dataarray("p")` and `.to_parquet(dir)` are the bridges out, each named for
+what it costs.
 
 ## Why
 
 - **Declarative math** — readable without knowing the implementation, and
   self-contained: no Python state changes what a file means. It diffs cleanly in
   review and travels as a research artefact.
-- **Memory as a config knob** — `memory_limit` is an invariant, not a hint. Masks
-  are row absence rather than dense arrays, labels *are* the solver's own row and
-  column indices, and no full-model object is ever resident in Python.
+- **Sparse by construction** — a mask is an absent row, never a NaN in a dense
+  array, so a model pays for the variables it has rather than for its coordinate
+  product. Labels *are* the solver's own row and column indices, with no mapping
+  in between, which is also what makes reading results a join.
 - **Fail early, fail loud** — every expression, `where` string and even *uncalled*
   macro template is parsed and name-checked before a single source is bound.
   Errors name the problem and its rewrite; nothing falls back silently.
@@ -136,15 +138,16 @@ naming its rewrite.
 for how it fits together · [ROADMAP.md](ROADMAP.md) for what is planned and what
 is refused.
 
-To see it rather than read it, `python examples/walkthrough.py` runs one small model through every stage — YAML → schema → core AST → IR → duckdb tables → LP text → solution — printing the artifact each stage produces, plus two models the language refuses and why. Its output is committed as [examples/walkthrough.out](examples/walkthrough.out) if you would rather just read that.
+To see it rather than read it, `python examples/walkthrough.py` runs one small model through every stage — YAML → schema → core AST → logical plan → model frames → LP text → solution — printing the artifact each stage produces, plus two models the language refuses and why. Its output is committed as [examples/walkthrough.out](examples/walkthrough.out) if you would rather just read that.
 
 ```bash
-pip install farkas            # the streaming engine (duckdb, highspy)
-pip install "farkas[linopy]"  # adds linopy + xarray for the shim and oracle
+pip install farkas            # the streaming engine (polars, highspy)
+pip install "farkas[linopy]"  # adds linopy + xarray + pandas: the shim, the
+                              # oracle, and to_pandas / to_dataarray
 ```
 
 Not a solver wrapper, not a domain package, not a data-loading layer — bring
-pandas/xarray objects, Arrow tables, or parquet paths. MIT licensed.
+polars, pandas or xarray objects, Arrow tables, or parquet paths. MIT licensed.
 
 ## Status
 

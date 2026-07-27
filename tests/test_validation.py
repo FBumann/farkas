@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import datetime
 
-import pandas as pd
 import pytest
 
 from farkas.schema import MathSchema
 from farkas.validation import validate_expressions
-from tests.oracle import farkas_linopy, linopy
+from tests.oracle import farkas_linopy, linopy, pd
 
 
 def _schema(**overrides) -> MathSchema:

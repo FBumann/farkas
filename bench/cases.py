@@ -331,7 +331,7 @@ def _ladder(
     per_snapshot: int,
     density: float = 1.0,
 ) -> tuple[Shape, ...]:
-    labels = ('xs', 's', 'm', 'l', 'xl')
+    labels = ('xs', 's', 'm', 'l', 'xl', '2xl')
     return tuple(
         Shape(labels[i], {**sizes, 'snapshot': n}, n * per_snapshot, density)
         for i, n in enumerate(snapshots)
@@ -357,8 +357,16 @@ CASES: dict[str, Case] = {
     'dispatch': Case(
         name='dispatch',
         model=MODELS / 'dispatch.yaml',
-        # 100 generators: 1e4 / 1e5 / 1e6 / 1e7 variables
-        ladder=_ladder({'generator': 100}, (100, 1_000, 10_000, 100_000), per_snapshot=100),
+        # 100 generators: 1e4 / 1e5 / 1e6 / 1e7 / 4e7 variables.
+        # `xl` is not just one more rung: below it every arm fits in RAM, so
+        # the ladder measures throughput and says nothing about the invariant
+        # the architecture exists for. It is the first rung where a budgeted
+        # engine and an unbudgeted one visibly part company.
+        # `2xl` (1.2e8) is the capability rung: docs/benchmarks.md claims a
+        # model whose dense build cannot fit on the machine still streams out
+        # under the budget, and a rung nothing else survives is the only way to
+        # keep testing that claim rather than restating it.
+        ladder=_ladder({'generator': 100}, (100, 1_000, 10_000, 100_000, 400_000, 1_200_000), per_snapshot=100),
         write=_dispatch_data,
         eager_inputs=_dispatch_eager,
     ),

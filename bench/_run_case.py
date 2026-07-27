@@ -68,13 +68,7 @@ def _run_farkas(
     sources, coords = _split_sources(case, paths)
 
     phases.mark('import')
-    ex = fk.build(
-        case.model,
-        sources,
-        coords=coords,
-        memory_limit=opts.memory_limit,
-        chunk_rows=opts.chunk_rows,
-    )
+    ex = fk.build(case.model, sources, coords=coords)
     phases.mark('build')
     ex.write_lp(lp)
     phases.mark('emit')
@@ -84,16 +78,13 @@ def _run_farkas(
     counts = {
         'columns': tables.column_count,
         'rows': tables.row_count,
-        'nonzeros': tables.scalar('SELECT count(*) FROM A'),
+        'nonzeros': tables.matrix.height,
     }
-    # what the RSS number does not show: the engine trades memory for a
-    # scratch database on disk, and someone pays to write and delete it
-    workdir_bytes = sum(f.stat().st_size for f in ex.workdir.rglob('*') if f.is_file())
 
     phases.reset()
     ex.close()
     phases.mark('teardown')
-    return {'phases': phases.times, 'counts': counts, 'workdir_bytes': workdir_bytes}
+    return {'phases': phases.times, 'counts': counts, 'workdir_bytes': 0}
 
 
 def _run_linopy(
@@ -136,9 +127,11 @@ def _objective(case: Case, shape: Shape, paths: dict[str, str], arm: str) -> flo
         import farkas as fk
 
         sources, coords = _split_sources(case, paths)
-        with fk.solve(case.model, sources, coords=coords, memory_limit='2GB') as sol:
-            # linopy's own vocabulary, which #148 adopted: `status` is the
-            # solver's health, `termination_condition` is what it concluded
+        with fk.solve(case.model, sources, coords=coords) as sol:
+            # two axes, not one: `status` is the coarse rollup ('ok') and the
+            # solver's verdict is `termination_condition` ('optimal'). Testing
+            # the wrong one aborted every run with a parity failure that was
+            # really a vocabulary mismatch.
             if sol.termination_condition != 'optimal':
                 raise RuntimeError(f'farkas solve terminated {sol.termination_condition!r}, not optimal')
             return float(sol.objective)
@@ -157,8 +150,6 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument('--case', required=True, choices=sorted(CASES))
     ap.add_argument('--size', required=True)
     ap.add_argument('--arm', required=True, choices=sorted(ARMS))
-    ap.add_argument('--memory-limit', default='1GB')
-    ap.add_argument('--chunk-rows', type=int, default=2_000_000)
     ap.add_argument('--io-api', default='lp-polars', help="linopy arm's writer")
     ap.add_argument('--cache', type=Path, default=None)
     opts = ap.parse_args(argv)
@@ -174,8 +165,6 @@ def main(argv: list[str] | None = None) -> int:
         'dimensions': shape.sizes,
         'nominal_variables': shape.nominal_variables,
         'density': shape.density,
-        'memory_limit': opts.memory_limit if opts.arm == 'farkas' else None,
-        'chunk_rows': opts.chunk_rows if opts.arm == 'farkas' else None,
         'io_api': opts.io_api if opts.arm == 'linopy' else None,
     }
 

@@ -1,11 +1,20 @@
 """Shared fixtures and schema helpers for farkas tests.
 
-Everything here is linopy-free, so it loads on a bare install. On a bare
-install (no [linopy] extra) the eager/oracle modules skip themselves: they
-reach the oracle through ``tests.oracle``, whose ``importorskip`` guard fires
-at collection. There is no list of filenames to keep in sync here — a module
-that needs the extra says so by importing it. The differential harness lives
-in ``tests.differential`` for the same reason: importing it *is* the guard.
+Everything here is linopy-free *and pandas-free at import*, so it loads on a
+bare install. On a bare install (no [linopy] extra) the eager/oracle modules
+skip themselves: they reach the oracle through ``tests.oracle``, whose
+``importorskip`` guard fires at collection. There is no list of filenames to
+keep in sync here — a module that needs the extra says so by importing it. The
+differential harness lives in ``tests.differential`` for the same reason:
+importing it *is* the guard.
+
+pandas follows the same discipline one level down. It is no longer a runtime
+dependency (it ships with the ``[linopy]`` extra, for the oracle and for
+``Result.to_pandas``), so a fixture that hands out pandas objects imports it in
+its own body: requesting the fixture is what asks for the dependency, and the
+bare job never requests it. ``dispatch_inputs`` and ``dispatch_frame_inputs``
+are the same numbers in the two shapes — the oracle lane is pandas-native, the
+engine is frame-native, and the module constants are the single source of both.
 """
 
 from __future__ import annotations
@@ -15,7 +24,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import pandas as pd
 import pytest
 import yaml as pyyaml
 
@@ -142,20 +150,56 @@ def dispatch_yaml() -> Path:
     return EXAMPLES_DIR / 'dispatch.yaml'
 
 
+#: Generators of ``examples/dispatch.yaml``, and the snapshot count. Distinct
+#: costs, so the optimal vertex is unique and primals are comparable across
+#: lanes.
+DISPATCH_GENERATORS = ('wind', 'solar', 'gas')
+DISPATCH_P_MAX = (100.0, 60.0, 200.0)
+DISPATCH_COST = (1.0, 2.0, 50.0)
+DISPATCH_SNAPSHOTS = 48
+
+
+def _dispatch_load() -> np.ndarray:
+    """The load series both shapes below carry — one draw, one seed."""
+    rng = np.random.default_rng(3)
+    return (rng.uniform(0.2, 0.8, DISPATCH_SNAPSHOTS) * sum(DISPATCH_P_MAX)).round(3)
+
+
 @pytest.fixture
 def dispatch_inputs():
-    """Data for ``examples/dispatch.yaml``: distinct costs, so the optimal
-    vertex is unique and primals are comparable across lanes."""
-    rng = np.random.default_rng(3)
-    n_s = 48
-    p_max = pd.Series({'wind': 100.0, 'solar': 60.0, 'gas': 200.0})
-    cost = pd.Series({'wind': 1.0, 'solar': 2.0, 'gas': 50.0})
-    load = pd.Series(
-        (rng.uniform(0.2, 0.8, n_s) * p_max.sum()).round(3),
-        index=pd.RangeIndex(n_s, name='snapshot'),
-    )
-    data = {'p_max': p_max, 'load': load, 'cost': cost}
-    coords = {'snapshot': pd.RangeIndex(n_s, name='snapshot')}
+    """Dispatch data as pandas — the shape the linopy oracle takes.
+
+    Pairs with :func:`dispatch_frame_inputs`: same numbers, and a test picks
+    the shape by which lane it exercises. Importing pandas here rather than at
+    module scope is what keeps this file loadable on a bare install.
+    """
+    import pandas as pd
+
+    data = {
+        'p_max': pd.Series(dict(zip(DISPATCH_GENERATORS, DISPATCH_P_MAX, strict=True))),
+        'cost': pd.Series(dict(zip(DISPATCH_GENERATORS, DISPATCH_COST, strict=True))),
+        'load': pd.Series(_dispatch_load(), index=pd.RangeIndex(DISPATCH_SNAPSHOTS, name='snapshot')),
+    }
+    coords = {'snapshot': pd.RangeIndex(DISPATCH_SNAPSHOTS, name='snapshot')}
+    return data, coords
+
+
+@pytest.fixture
+def dispatch_frame_inputs():
+    """The same data as tidy frames — the shape the engine documents.
+
+    Tests that assert the native API's behaviour use this one, so they stay
+    runnable with no dataframe library beyond the engine's own installed.
+    """
+    import polars as pl
+
+    generators = list(DISPATCH_GENERATORS)
+    data = {
+        'p_max': pl.DataFrame({'generator': generators, 'value': list(DISPATCH_P_MAX)}),
+        'cost': pl.DataFrame({'generator': generators, 'value': list(DISPATCH_COST)}),
+        'load': pl.DataFrame({'snapshot': list(range(DISPATCH_SNAPSHOTS)), 'value': _dispatch_load()}),
+    }
+    coords = {'snapshot': range(DISPATCH_SNAPSHOTS)}
     return data, coords
 
 
@@ -167,6 +211,8 @@ def commitment_inputs():
     itself, and the duals refusal — a mixed-integer model is the case that has
     no dual solution to give.
     """
+    import pandas as pd
+
     rng = np.random.default_rng(5)
     n_s = 24
     p_max = pd.Series({'coal': 120.0, 'gas': 80.0, 'peaker': 60.0})
@@ -188,6 +234,8 @@ def commitment_inputs():
 
 @pytest.fixture
 def transport_data():
+    import pandas as pd
+
     rng = np.random.default_rng(11)
     n_s, n_b, n_g, n_l = 24, 4, 9, 5
     buses = [f'b{i}' for i in range(n_b)]

@@ -94,7 +94,7 @@ def test_walkthrough_claims_hold(output: str) -> None:
         assert f'[{stage}]' in output, f'stage {stage} did not run'
 
     assert 'weighted_sum' in output and "FunctionCallNode(name='sum'" in output  # macro expanded away
-    assert 'var_p' in output and 'not 24' in output  # where is row absence
+    assert 'row absence' in output and 'not 24' in output  # a mask removes rows, not values
     assert 'ok (optimal)' in output
     assert 'degree 2' in output  # the degree-1 ceiling still bites
     assert 'caught by check()' in output  # ...and without data bound, so CI can run it

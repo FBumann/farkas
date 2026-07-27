@@ -11,7 +11,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import pytest
 
 from farkas.errors import LanguageError
@@ -22,6 +21,7 @@ from farkas.relational.plan import (
 )
 from tests.conftest import resolved, schema_of
 from tests.differential import differential
+from tests.oracle import pd
 
 STORAGE_YAML = Path('examples/storage.yaml')
 
@@ -49,7 +49,7 @@ def storage_inputs():
 def _soc_trace(result):
     """(soc, prev-contribution inputs) as plain arrays, sorted by snapshot."""
     return tuple(
-        result.primal(name).set_index('snapshot')['value'].sort_index().to_numpy()
+        result.to_pandas(name).set_index('snapshot')['value'].sort_index().to_numpy()
         for name in ('soc', 'charge', 'discharge')
     )
 

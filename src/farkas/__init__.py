@@ -1,20 +1,18 @@
 """Declarative optimisation: YAML math on a streaming engine.
 
-Models build relationally (duckdb under a hard ``memory_limit``) and stream
-to the solver, so build peak memory tracks that budget rather than the model
-size — see ARCHITECTURE.md. linopy is not imported at runtime; it serves as
-the differential-test oracle and as an opt-in compatibility shim
+Models build relationally on polars and stream to the solver — see
+ARCHITECTURE.md. linopy is not imported at runtime; it serves as the
+differential-test oracle and as an opt-in compatibility shim
 (``from farkas import linopy as farkas_linopy``).
 
 Example::
 
     import farkas as fk
 
-    # Result owns the duckdb executor backing primal/to_* — close it
-    with fk.solve('model.yaml', {'p_max': 'p_max.parquet', 'load': 'load.parquet'}) as result:
-        result.objective
-        result.primal('p')  # tidy DataFrame
-        result.to_dataarray('p')  # labelled, for array post-processing
+    result = fk.solve('model.yaml', {'p_max': 'p_max.parquet', 'load': 'load.parquet'})
+    result.objective
+    result.primal('p')  # tidy polars.DataFrame
+    result.to_dataarray('p')  # labelled, for array post-processing
 """
 
 from importlib.metadata import PackageNotFoundError

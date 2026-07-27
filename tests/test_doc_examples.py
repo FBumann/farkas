@@ -50,7 +50,7 @@ import pytest
 import yaml
 
 import farkas as fk
-from farkas.relational.executor import DuckdbExecutor, Result
+from farkas.relational.executor import PolarsExecutor, Result
 from farkas.schema import MathSchema
 
 try:
@@ -71,7 +71,7 @@ ROOTS: dict[str, Any] = {
     'fk': fk,
     'farkas_linopy': linopy_lane,
     'result': Result,
-    'ex': DuckdbExecutor,
+    'ex': PolarsExecutor,
     'schema': MathSchema,
 }
 
@@ -422,38 +422,6 @@ def test_docstring_example_uses_real_api(example: Example) -> None:
         and n.attr not in _public(ROOTS[n.value.id])
     ]
     assert not bad, f'{example.where} uses names that do not exist: {sorted(set(bad))}'
-
-
-@pytest.mark.parametrize('module', DOCSTRING_MODULES)
-def test_docstring_examples_close_the_solution(module: str) -> None:
-    """``fk.solve`` hands back a live duckdb executor. An example that binds it
-    without a ``with`` teaches a leak — which is exactly what three of these
-    docstrings did."""
-    for code in _docstring_examples(REPO / module):
-        tree = ast.parse(code)
-        managed = {
-            item.optional_vars.id
-            for node in ast.walk(tree)
-            if isinstance(node, ast.With)
-            for item in node.items
-            if isinstance(item.optional_vars, ast.Name)
-        }
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Assign):
-                continue
-            call = node.value
-            if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Attribute):
-                continue
-            if call.func.attr not in {'solve', 'build'} or not isinstance(call.func.value, ast.Name):
-                continue
-            if call.func.value.id != 'fk':
-                continue
-            names = {t.id for t in node.targets if isinstance(t, ast.Name)}
-            assert names & managed, (
-                f'{module}: `{", ".join(sorted(names))} = fk.{call.func.attr}(...)` binds a live '
-                f'executor outside a `with` block — the example leaks it. Use `with ... as`, '
-                f'or show an explicit `.close()`.'
-            )
 
 
 def test_tracked_docs_exist() -> None:

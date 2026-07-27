@@ -1,8 +1,9 @@
 """The ``solver_direct`` sink: COO batches straight into HiGHS.
 
 No float→text→parse round trip — that is the whole reason this exists beside
-:mod:`~farkas.relational.sinks.lp_file`. Columns arrive as arrow batches,
-rows as numpy slices of ``A``, and the full model never lands in one array.
+:mod:`~farkas.relational.sinks.lp_file`. Columns and rows arrive as numpy
+slices of the model frames, in batches, so no single array ever holds the whole
+model on this side of the API.
 
 ``highspy`` is imported inside the function rather than at module scope: it is
 an optional dependency, and importing this module must stay free for callers
@@ -18,6 +19,8 @@ from farkas.relational.status import SolveStatus
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+    import polars as pl
 
     from farkas.relational.sinks.tables import ModelTables
 
@@ -53,26 +56,25 @@ def solve_direct(
     model: ModelTables,
     batch_rows: int = 100_000,
     solver_options: Mapping[str, Any] | None = None,
-) -> tuple[SolveStatus, float, bool]:
-    """Stream the model into HiGHS and solve it.
+) -> tuple[SolveStatus, float, pl.DataFrame | None, pl.DataFrame | None]:
+    """Feed the model to HiGHS and solve it.
 
-    Returns ``(status, objective, has_duals)``. On a solve that left values
-    worth reading, the primal lands in a ``sol`` table on the connection — and
-    the duals in a ``dual`` table when HiGHS produced valid ones — so reading
-    results back stays a label join like every other read: the caller owns the
-    mapping from solver index to coordinates. On any other outcome there is
-    nothing to store: HiGHS still hands back a full-length vector of zeros, and
-    keeping it would only make it reachable.
+    Returns ``(status, objective, primal, dual)``. ``primal`` is a
+    ``(col, value)`` frame and ``dual`` a ``(row, value)`` one, both for the
+    caller to join back to coordinates — the caller owns that mapping, which is
+    what keeps reading results the same join whichever sink was used.
 
-    ``has_duals`` is the sink's verdict rather than the caller's guess. A MIP
-    has no dual solution at all, and neither does a run stopped short of a
-    simplex basis — both are ``dual_valid = False``, and in both the table is
-    absent rather than zero-filled.
+    Either can be ``None``, and for different reasons. No primal means the
+    solve left nothing worth reading; HiGHS hands back a full-length vector of
+    zeros regardless, and returning it would only make it reachable. No **dual**
+    is narrower: a mixed-integer model has no dual solution at all, and neither
+    does a run stopped short of a simplex basis. HiGHS says which, so this
+    returns ``None`` rather than the zeros it would otherwise hand over.
     """
     import highspy
     import numpy as np
+    import polars as pl
 
-    con = model.connection
     inf = highspy.kHighsInf
     h = highspy.Highs()
     h.setOptionValue('output_flag', False)
@@ -81,41 +83,44 @@ def solve_direct(
 
     empty_i = np.empty(0, dtype=np.int32)
     empty_f = np.empty(0, dtype=np.float64)
-    # Columns arrive in bounded ranges, not as one ordered stream. `addCols`
-    # appends, so column k must be the k-th row we hand over — but ordering the
-    # whole table to get that is a *global* sort, and duckdb's sort is the
-    # operator that does not reliably stay inside `memory_limit` (benchmarks.md
-    # operational finding 1). `to_arrow_reader` batches the delivery, not the
-    # sort, so it does not help: the ordering happens before the first batch.
-    # Ranges give the same order with each sort bounded by the chunk, and the
-    # filters prune, since both tables are stored ascending in their label.
-    for lo, hi in model.col_chunks(batch_rows):
-        reader = con.execute(
-            f'SELECT c.col, c.lb, c.ub, c.vtype, COALESCE(o.coeff, 0) AS cost '
-            f'FROM cols c LEFT JOIN obj o USING (col) '
-            f'WHERE c.col >= {lo} AND c.col < {hi} ORDER BY c.col'
-        ).to_arrow_reader(batch_rows)
-        for batch in reader:
-            _add_cols(h, highspy, np, batch, inf, empty_i, empty_f)
+    columns = (
+        model.cols.lazy()
+        .join(model.obj.lazy(), on='col', how='left')
+        .select('col', 'lb', 'ub', 'vtype', pl.col('coeff').fill_null(0.0).alias('cost'))
+        .sort('col')
+        .collect(engine='streaming')
+    )
+    for batch in columns.iter_slices(batch_rows):
+        lb = np.nan_to_num(batch['lb'].to_numpy(), neginf=-inf, posinf=inf)
+        ub = np.nan_to_num(batch['ub'].to_numpy(), neginf=-inf, posinf=inf)
+        cost = batch['cost'].to_numpy()
+        h.addCols(len(cost), cost, lb, ub, 0, empty_i, empty_i, empty_f)
+        noncontinuous = np.flatnonzero(batch['vtype'].to_numpy() != 'continuous')
+        if len(noncontinuous):
+            cols_idx = batch['col'].to_numpy().astype(np.int32)[noncontinuous]
+            integrality = np.full(len(noncontinuous), int(highspy.HighsVarType.kInteger), dtype=np.uint8)
+            h.changeColsIntegrality(len(noncontinuous), cols_idx, integrality)
 
+    ordered_rows = model.rows.sort('row')
+    ordered_matrix = model.matrix.sort('row')
     for lo, hi in model.row_chunks(batch_rows):
-        rows = con.execute(
-            f'SELECT row, sense, rhs FROM rows WHERE row >= {lo} AND row < {hi} ORDER BY row'
-        ).fetchnumpy()
-        a = con.execute(f'SELECT row, col, coeff FROM A WHERE row >= {lo} AND row < {hi} ORDER BY row').fetchnumpy()
-        rhs = np.asarray(rows['rhs'], dtype=np.float64)
-        sense = rows['sense']
+        rows = ordered_rows.filter(pl.col('row').is_between(lo, hi, closed='left'))
+        a = ordered_matrix.filter(pl.col('row').is_between(lo, hi, closed='left'))
+        rhs = rows['rhs'].to_numpy()
+        sense = rows['sense'].to_numpy()
         rlb = np.where(sense == '<=', -inf, rhs)
         rub = np.where(sense == '>=', inf, rhs)
-        starts = np.searchsorted(np.asarray(a['row']), np.asarray(rows['row'])).astype(np.int32)
+        # where each row's run of nonzeros begins: the CSR start vector HiGHS
+        # wants, read off a matrix already ordered by row
+        starts = np.searchsorted(a['row'].to_numpy(), rows['row'].to_numpy()).astype(np.int32)
         h.addRows(
             len(rhs),
             rlb,
             rub,
-            len(a['col']),
+            a.height,
             starts,
-            np.asarray(a['col'], dtype=np.int32),
-            np.asarray(a['coeff'], dtype=np.float64),
+            a['col'].to_numpy().astype(np.int32),
+            a['coeff'].to_numpy(),
         )
 
     if model.objective_sense == 'max':
@@ -134,82 +139,21 @@ def solve_direct(
     if not status.is_readable:
         # linopy's convention, and an honest one: nan is a sentinel that
         # propagates through a scenario sweep, where 0.0 reads as an answer
-        return status, float('nan'), False
+        return status, float('nan'), None, None
 
     objective = h.getInfo().objective_function_value + model.objective_constant
-
     solution = h.getSolution()
-    _store(con, 'sol', 'col', model.column_count, solution.col_value)
-
-    # Same bargain as the primal above, one quantity down: HiGHS says whether a
-    # dual solution exists, so drop the table when it does not rather than
-    # storing the zeros it hands back regardless.
-    con.execute('DROP TABLE IF EXISTS dual')
-    has_duals = bool(solution.dual_valid)
-    if has_duals:
-        _store(con, 'dual', 'row', model.row_count, solution.row_dual)
-
-    return status, objective, has_duals
+    # solver output is one array per quantity, positionally indexed by the
+    # solver's own index — which *is* our label, densely assigned. So the join
+    # column is an arange rather than anything read back.
+    primal = _labelled('col', model.column_count, solution.col_value)
+    dual = _labelled('row', model.row_count, solution.row_dual) if solution.dual_valid else None
+    return status, objective, primal, dual
 
 
-def _store(con: Any, table: str, label: str, count: int, values: Any) -> None:
-    """Materialise *values* as ``(label, value)``, densely labelled ``0..count``.
-
-    Solver output arrives as one array per quantity, positionally indexed by
-    the solver's own index — which *is* our label, densely assigned. So the
-    join column is an ``arange`` rather than anything read back.
-    """
+def _labelled(label: str, count: int, values: Any) -> pl.DataFrame:
+    """``(label, value)`` over the solver's own dense index."""
     import numpy as np
-    import pyarrow as pa
+    import polars as pl
 
-    source = pa.table(
-        {
-            label: pa.array(np.arange(count, dtype=np.int64)),
-            'value': pa.array(np.asarray(values, dtype=np.float64)),
-        }
-    )
-    con.execute(f'DROP TABLE IF EXISTS {table}')
-    con.register(f'{table}_src', source)
-    con.execute(f'CREATE TABLE {table} AS SELECT * FROM {table}_src')
-    con.unregister(f'{table}_src')
-
-
-def _add_cols(
-    h: Any,
-    highspy: Any,
-    np: Any,
-    batch: Any,
-    inf: float,
-    empty_i: Any,
-    empty_f: Any,
-) -> None:
-    """One Arrow batch of ``(col, lb, ub, vtype, cost)`` into HiGHS.
-
-    Arrow goes to numpy directly, never through ``to_pydict``. That call
-    materialises every value as a Python object before numpy ever sees it —
-    five columns times ten million rows is fifty million boxed floats, and it
-    cost more than everything else in this sink combined (16.02 s of an 18.03 s
-    column loop at 10M columns; 0.31 s here). Nothing else about the loop
-    changed to get that back.
-
-    Split out only because the column loop has two levels — a range and the
-    batches inside it — and burying the numpy handling under both made the
-    chunking hard to see. ``highspy`` and ``np`` are passed rather than
-    imported: both are lazy at the call site, and importing them here would put
-    them back at module scope by the back door.
-    """
-
-    def column(name: str) -> Any:
-        # zero_copy_only=False: bounds carry infinities and vtype is a string
-        # column, so neither is guaranteed to be a borrowable buffer.
-        return batch.column(name).to_numpy(zero_copy_only=False)
-
-    lb = np.nan_to_num(column('lb'), neginf=-inf, posinf=inf)
-    ub = np.nan_to_num(column('ub'), neginf=-inf, posinf=inf)
-    cost = np.asarray(column('cost'), dtype=np.float64)
-    h.addCols(len(cost), cost, lb, ub, 0, empty_i, empty_i, empty_f)
-    noncontinuous = np.flatnonzero(column('vtype') != 'continuous')
-    if len(noncontinuous):
-        cols_idx = column('col').astype(np.int32)[noncontinuous]
-        integrality = np.full(len(noncontinuous), int(highspy.HighsVarType.kInteger), dtype=np.uint8)
-        h.changeColsIntegrality(len(noncontinuous), cols_idx, integrality)
+    return pl.DataFrame({label: np.arange(count, dtype=np.int64), 'value': np.asarray(values, dtype=np.float64)})

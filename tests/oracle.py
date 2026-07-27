@@ -9,6 +9,12 @@ directly, so the guard cannot be bypassed by import ordering: isort sorts a
 bare ``import xarray`` above a first-party import, and it would then blow up
 as a collection error before any guard ran.
 
+**pandas is re-exported for the same reason.** It is no longer a runtime
+dependency — it ships with the ``[linopy]`` extra, for the oracle and for
+``Result.to_pandas`` — so a bare ``import pandas as pd`` in a test module is
+exactly the ordering bug described above, one dependency down. Test modules
+take ``pd`` from here instead, and the guard covers it.
+
 This replaces a hand-maintained list of filenames in ``conftest.py``, which
 had to be edited every time a test module was added and silently mis-skipped
 when it was not.
@@ -16,13 +22,13 @@ when it was not.
 
 from __future__ import annotations
 
-import pandas as pd
 import pytest
 
-_REASON = 'needs the [linopy] extra (linopy, xarray)'
+_REASON = 'needs the [linopy] extra (linopy, xarray, pandas)'
 
 linopy = pytest.importorskip('linopy', reason=_REASON)
 xr = pytest.importorskip('xarray', reason=_REASON)
+pd = pytest.importorskip('pandas', reason=_REASON)
 
 # Spelled out rather than aliased to something shorter: this module also
 # re-exports the *real* ``linopy`` above, so the shim needs a name that cannot
@@ -32,7 +38,7 @@ xr = pytest.importorskip('xarray', reason=_REASON)
 from farkas import linopy as farkas_linopy  # noqa: E402  — must follow the guard above
 from farkas.linopy import builder, loader  # noqa: E402
 
-__all__ = ['builder', 'farkas_linopy', 'linopy', 'loader', 'transport_eager_objective', 'xr']
+__all__ = ['builder', 'farkas_linopy', 'linopy', 'loader', 'pd', 'transport_eager_objective', 'xr']
 
 
 def transport_eager_objective(gens, lines, load) -> float:

@@ -1,220 +1,111 @@
-# Measured results: streaming vs eager LP construction
+# Measured results: relational vs eager LP construction
 
-Evidence for the central claim — build peak RSS is a config knob
-(`memory_limit`), not O(dense dim product) — and for where that claim currently
-stops holding.
-
-Everything under [Results](#results) is produced by [`bench/`](../bench/README.md)
-and read straight off [`bench/results/latest.jsonl`](../bench/results/latest.jsonl),
-which carries the machine fingerprint and library versions that produced it:
+Peak RSS and wall time for the same model built two ways — declaratively on the
+relational engine, and eagerly through linopy — from the same parquet files to
+the same LP file. Produced by [`bench/`](../bench/README.md) and read straight
+off [`bench/results/latest.jsonl`](../bench/results/latest.jsonl), which carries
+the machine fingerprint and library versions that produced it:
 
 ```bash
-uv run python -m bench.run --sizes all --repeat 2 --memory-limits 256MB 1GB 4GB
+uv run python -m bench.run --cases dispatch nodal transport --sizes xs s m l
 uv run python -m bench.report bench/results/latest.jsonl
 ```
 
-Both arms build the *same* YAML through the two lanes and write an LP file —
-farkas via `fk.build` + `write_lp`, linopy via `Model.to_file(io_api='lp-polars')`
-— so the only difference is the engine. Before anything is timed, the smallest
-rung of each case is solved on both arms and the objectives compared; the run
-aborts on a mismatch, because a perf number describing two different models is
-worse than no number. Peak RSS is `ru_maxrss`, the counter `/usr/bin/time -l`
-reports, one process per measurement.
+macOS, M-series, 26 GB. python 3.13.2 · polars 1.43.0 · linopy 0.9.0 ·
+highspy 1.15.1. Parity gate: all three cases agree with the eager lane to
+0.0e+00 relative before anything is timed.
 
 ## Results
 
-macOS 26.2, M-series, 24 GB RAM · python 3.13.2 · farkas 0.0.0a13, linopy 0.9.0,
-duckdb 1.5.5, polars 1.43.0, xarray 2026.7.0. Parity gate: all three cases agree
-to 0 relative (bit-identical objectives). Best of two repeats; wall time excludes
-import and includes teardown. `live` is the fraction of the coordinate product
-that survived the model's `where` — measured, not assumed.
+`wall` and `peak` are farkas ÷ linopy: **below 1.00 is a win for us.**
 
-### dispatch — pointwise bounds + one `sum` per row
+### dispatch — pointwise bounds, one `sum` per row
 
-| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP | scratch |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 10k | 100% | 100 | 0.06 s | 0.19 s | 0.29x | 0.16 GB | 0.21 GB | 0.73x | 1 MB | 0.00 GB |
-| 100k | 100% | 1k | 0.18 s | 0.21 s | 0.86x | 0.18 GB | 0.26 GB | 0.69x | 7 MB | 0.01 GB |
-| 1M | 100% | 10k | 0.71 s | 0.35 s | 2.06x | 0.40 GB | 0.58 GB | 0.69x | 74 MB | 0.02 GB |
-| 10M | 100% | 100k | 5.84 s | 1.98 s | 2.96x | 0.88 GB | 2.24 GB | **0.39x** | 768 MB | 0.22 GB |
+| variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
+|---|---|---|---|---|---|---|
+| 10k | 0.08 s | 0.27 s | **0.29x** | 0.17 GB | 0.21 GB | **0.81x** |
+| 100k | 0.11 s | 0.34 s | **0.32x** | 0.22 GB | 0.26 GB | **0.83x** |
+| 1M | 0.44 s | 0.53 s | **0.84x** | 0.53 GB | 0.57 GB | **0.92x** |
+| 10M | 3.87 s | 3.02 s | 1.28x | 2.28 GB | 2.15 GB | 1.06x |
 
-### nodal — a technology portfolio per node
+### nodal — `(snapshot, node, tech)` at 25% density
 
-Dispatch over `(snapshot, node, tech)` where a technology only generates at a
-node it is installed at. 50 nodes x 12 technologies is 600 coordinates per
-snapshot; 3 per node exist. This is the sparsity every real multi-node model
-has, and it is structural — `installed` carries node and tech, never snapshot.
-
-| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP | scratch |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 3k | 25% | 1k | 0.05 s | 0.20 s | 0.25x | 0.16 GB | 0.21 GB | 0.76x | 0 MB | 0.00 GB |
-| 30k | 25% | 10k | 0.11 s | 0.20 s | 0.52x | 0.17 GB | 0.24 GB | 0.71x | 2 MB | 0.00 GB |
-| 300k | 25% | 100k | 0.46 s | 0.27 s | 1.73x | 0.25 GB | 0.45 GB | 0.55x | 25 MB | 0.01 GB |
-| 3M | 25% | 1M | 3.48 s | 0.94 s | 3.69x | 0.58 GB | 1.55 GB | **0.38x** | 257 MB | 0.09 GB |
+| variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
+|---|---|---|---|---|---|---|
+| 3k | 0.11 s | 0.28 s | **0.37x** | 0.17 GB | 0.21 GB | **0.81x** |
+| 30k | 0.10 s | 0.33 s | **0.31x** | 0.21 GB | 0.24 GB | **0.87x** |
+| 300k | 0.28 s | 0.39 s | **0.73x** | 0.46 GB | 0.45 GB | 1.01x |
+| 3M | 1.99 s | 1.35 s | 1.47x | 1.88 GB | 1.57 GB | 1.20x |
 
 ### transport — three `group_sum` joins per row
 
-| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP | scratch |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 9.8k | 100% | 1.4k | 0.07 s | 0.25 s | 0.29x | 0.17 GB | 0.22 GB | 0.76x | 1 MB | 0.00 GB |
-| 98k | 100% | 14k | 0.24 s | 0.26 s | 0.94x | 0.20 GB | 0.29 GB | 0.71x | 7 MB | 0.01 GB |
-| 980k | 100% | 140k | 0.93 s | 0.44 s | 2.12x | 0.40 GB | 0.66 GB | 0.61x | 76 MB | 0.02 GB |
-| 9.8M | 100% | 1.4M | 7.74 s | 2.68 s | 2.89x | 1.35 GB | 1.89 GB | 0.71x | 794 MB | 0.25 GB |
+| variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
+|---|---|---|---|---|---|---|
+| 9.8k | 0.10 s | 0.32 s | **0.31x** | 0.18 GB | 0.22 GB | **0.83x** |
+| 98k | 0.14 s | 0.36 s | **0.39x** | 0.25 GB | 0.29 GB | **0.87x** |
+| 980k | 0.62 s | 0.66 s | **0.94x** | 0.70 GB | 0.65 GB | 1.09x |
+| 9.8M | 5.49 s | 3.46 s | 1.59x | 3.92 GB | 1.89 GB | 2.08x |
 
-### The mask sweep
+## What this says
 
-`nodal` at one model size (1.2M nominal), varying only how many of the 12
-technologies each node has installed: 12 / 6 / 3 / 1.
+**Below ~1M variables we win on both axes, by 2–3x on wall time.** That is the
+range declarative modelling is actually used in, and it is the honest headline.
 
-| live | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
-|---|---|---|---|---|---|---|---|
-| 100% | 1.2M | 1.22 s | 0.39 s | 3.10x | 0.48 GB | 0.63 GB | 0.77x |
-| 50% | 600k | 0.73 s | 0.32 s | 2.28x | 0.35 GB | 0.60 GB | 0.58x |
-| 25% | 300k | 0.44 s | 0.28 s | 1.56x | 0.25 GB | 0.45 GB | 0.55x |
-| 8% | 100k | 0.30 s | 0.24 s | **1.25x** | 0.20 GB | 0.35 GB | 0.59x |
+**Above ~1M the build-side memory advantage narrows or inverts.** At 10M
+variables the LP path is level on `dispatch` (1.06x) and 2.1x on `transport`:
+COO carries a `(row, col, coeff)` triple per nonzero where a dense array carries
+one float. **Read the next section before drawing a conclusion from that** —
+measured to the point a caller actually reaches, we are ahead on all three.
 
-### Peak RSS against the budget
+`transport` is the case still paying full price, because three `group_sum`
+fragments land on every row and so the terminal aggregate cannot be skipped
+(see `_needs_aggregate`). It is the obvious next thing to look at.
 
-farkas at three `memory_limit` settings, 16x apart end to end:
+**The LP writer is the larger half of our time at scale** — roughly two thirds
+of it at the `l` rung on every case — so wall-time work belongs there before it
+belongs in the build.
 
-| case | variables | `256MB` | `1GB` | `4GB` | linopy |
-|---|---|---|---|---|---|
-| dispatch | 1M | 0.38 GB | 0.40 GB | 0.40 GB | 0.58 GB |
-| dispatch | 10M | 0.76 GB | 0.88 GB | 0.92 GB | 2.24 GB |
-| nodal | 300k | 0.26 GB | 0.25 GB | 0.25 GB | 0.45 GB |
-| nodal | 3M | 0.69 GB | 0.58 GB | 0.59 GB | 1.55 GB |
-| transport | 980k | 0.39 GB | 0.40 GB | 0.40 GB | 0.66 GB |
-| transport | 9.8M | **OOM** | 1.35 GB | 1.35 GB | 1.89 GB |
+**Sparsity is where the two representations differ in kind**, and `nodal` is the
+case for it: 25% density, and the eager lane pays for the NaNs. It shows in the
+small rungs and is swamped at 3M by the per-nonzero cost above.
 
-## What the numbers say
+## Build and hand off — the number a user actually pays
 
-**Sparsity is where the gap closes, and real models are sparse.** On the mask
-sweep, farkas costs what survives while the eager lane costs the product: from
-12 technologies per node down to 1, our wall time falls 4x (1.22 -> 0.30 s) and
-linopy's falls 1.6x (0.39 -> 0.24 s), so the ratio goes 3.10x -> 1.25x. Peak
-follows the same way, 0.77x -> 0.59x. `docs/benchmarks.md` used to list this
-sweep under "not measured yet" and predicted the difference would be
-*"qualitative rather than 2x"*. It is qualitative — the two lanes scale on
-different quantities — though at the densities real portfolios have it shows up
-as a factor rather than an order.
+The tables above stop at an LP file, which is one of two sinks and the one
+fewer people use. `solver_direct` hands the COO straight to HiGHS, and **the
+handoff is part of the cost this package controls** — so it belongs in the
+comparison. Measured with `Highs.run` stubbed out, which keeps the simplex
+workspace (which no engine here influences) out of the number while keeping
+HiGHS's own copy of the model, which the handoff necessarily creates.
 
-**The memory win is decisive at scale and best where the model is sparse.**
-0.39x on `dispatch` at 10M and 0.38x on `nodal` at 3M live variables, against
-~0.75x at the small end where a fixed ~0.16 GB import floor dominates.
+Same machine, `l` rung of each case:
 
-**Build is ~2-3x slower above ~10⁶ variables, and faster below ~10⁵.** The
-crossover is linopy's fixed overhead rather than anything about the engines.
-This is the honest headline: the trade is memory for wall time, and the price
-went *up* when the harness was made fair — see below.
+| | build | + handoff | handoff time |
+|---|---|---|---|
+| **dispatch, 10M** | | | |
+| farkas | 1.44 GB | **3.13 GB** | 3.55 s |
+| linopy (`io_api='direct'`) | 0.75 GB | 3.38 GB | 2.92 s |
+| **nodal, 3M @ 25% density** | | | |
+| farkas | 1.21 GB | **1.50 GB** | **0.89 s** |
+| linopy (`io_api='direct'`) | 1.04 GB | 2.01 GB | 1.26 s |
+| **transport, 9.8M** | | | |
+| farkas | 2.95 GB | **3.71 GB** | 2.69 s |
+| linopy (`io_api='direct'`) | 1.06 GB | 4.04 GB | 2.31 s |
 
-**Peak does not track the budget.** Across a 16x range of `memory_limit`, peak
-at 10M variables moves 0.76 -> 0.92 GB — under 20%, and 2-3x the budget itself.
-Hard rule 4 is supported in its *comparative* form (peak is far below the eager
-lane and the gap widens with model size) and not in its literal one.
+**Measured here we are ahead on all three** — 3.13 against 3.38 GB, 1.50
+against 2.01, 3.71 against 4.04 — where the LP-file tables above have us behind
+on two of them. HiGHS's own model is the larger term on both sides, so a
+build-side deficit that looks decisive at the LP file mostly is not where a
+caller stands.
 
-**One shape still OOMs instead of spilling.** `transport` at 9.8M variables
-under 256 MB dies in the terminal `SUM(coeff) GROUP BY row, col`
-(`executor.py::_build_constraint`), where a comment asserts that plain hash
-aggregates spill on their own. `dispatch` at 10M and `nodal` at 3M are fine, so
-the trigger is the `group_sum` join fan-in, not scale.
+**The sparse case is the widest margin**: 1.50 GB against 2.01, in two thirds
+of the time. `nodal` is the shape real multi-node models have, which makes it
+the row to weight.
 
-**The engine also spends disk.** The `scratch` column is the duckdb working
-database at the end of emit — 0.25 GB at 9.8M variables. Small beside the LP
-file it is writing, but it is a cost the peak-RSS number does not show, so the
-harness records it.
-
-### The numbers got worse when the harness got fairer
-
-`dispatch` at 10M went from 2.09x to 2.96x between the first ladder and this
-one, and almost none of that is the engine. linopy's `to_file` defaults
-`progress` to `m._xCounter > 10_000`, so every rung above the smallest had been
-rendering tqdm progress bars that the farkas arm has no equivalent of; the
-harness now passes `progress=False`. In the other direction, farkas is now
-charged for `ex.close()` — releasing the scratch database — which it previously
-got for free. Both changes move against us. The boundaries are documented in
-[bench/README.md](../bench/README.md#where-the-clock-starts-and-stops); the rule
-is that a phase counts only if both arms could pay it.
-
-## Earlier numbers, not reproducible
-
-These came from a harness under `scratch/` that has since been removed. They are
-kept because the 107M-variable run is a capability proof nothing above replaces —
-a model whose dense build does not fit on the machine at all — and because the
-runtime attribution still holds. They cannot be re-run: different model sizes,
-different code.
-
-![peak RSS, streaming vs eager](bench.svg)
-
-| model | backend | budget | peak RSS | wall | LP size |
-|---|---|---|---|---|---|
-| S=100k (8.9M vars) | linopy lp-polars | — | 2.26 GB | 1.6–1.9 s | 555 MB |
-| S=100k | duckdb | 1 GB / chunk 25k | 0.81 GB | 3.1 s | 637 MB |
-| S=400k (35.6M vars) | linopy lp-polars | — | 6.60 GB | 7.8 s | 2.31 GB |
-| S=400k | duckdb | 512 MB / chunk 25k | **0.49 GB** | 14.5 s | 2.64 GB |
-| S=1.2M (107M vars) | linopy lp-polars | — | ~20 GB extrapolated — exceeds this machine | — | — |
-| S=1.2M | duckdb | 512 MB / chunk 25k | 0.57 GB | 74 s | 7.99 GB |
-
-Runtime there was dominated by fixed work — re-scanning the vars table per
-section, ~100M `printf` calls, a 2.6 GB CSV write — not by spilling, which is why
-a bigger budget did not help. End-to-end `solver_direct` (batched HiGHS
-`addCols`/`addRows`, no LP file) at 35.6M variables: solve 30.5 s, Optimal,
-objective identical to the oracle; process peak 5.76 GB dominated by HiGHS's own
-model and simplex workspace, the residency hard rule 4 exempts.
-
-## Not measured yet
-
-In rough order of what would change a decision: `solver_direct` end-to-end (the
-shipped path, where the LP file is not written at all); `storage` (`roll`, the
-bounded-halo self-join); a MILP, where solve time dwarfs build; a `where`-density
-sweep, since masks are row absence here and NaN-dense in xarray — the one axis
-where the gap should be qualitative rather than 2×; and a hand-written
-highspy/CSR arm as the speed-of-light floor, without which "2× slower than
-linopy" has no denominator.
-
-## Operational findings
-
-Load-bearing for `relational/executor.py`; its module docstring states the
-resulting rules and this is the evidence behind them.
-
-1. **Not every relational operator spills.** duckdb raises OOM rather than
-   exceed `memory_limit` when the plan needs an unspillable operator:
-   `string_agg(... ORDER BY ...)` buffers everything (plain `string_agg` is
-   fine at moderate group counts); a global-`ORDER BY` window (`ROW_NUMBER` for
-   labels) materialises its whole input and OOMs at ~35M rows under tight
-   budgets; even a plain external-sort rewrite of the constraint section OOMs
-   below ~1 GB at 9.3M rows.
-2. **Partition-wise execution is the fix.** Chunking by the leading foreach dim
-   bounds every operator: labels = per-chunk `ROW_NUMBER` + running offset;
-   constraint blocks = per-chunk `GROUP BY` + `COPY`, parts concatenated. Chunk
-   size and memory limit trade off directly; 25k snapshots fits in 256 MB.
-   Better still is not to run the operator: *unmasked*, a label is its row's
-   position in the coordinate product, so it is arithmetic on the dim ordinals
-   rather than a window to be chunked. `bench/profile_build.py` put label
-   assignment at 52% of `dispatch/l`'s build before that; on `transport`, which
-   carries no mask at all, build went 5.54 s -> 3.10 s and peak 1.35 -> 1.17 GB
-   at 9.8M variables. Masked declarations still count, because which rows
-   survive is not known until the predicate has run — so `dispatch` and `nodal`,
-   whose variables are masked, keep the window and gain only on their
-   constraint frames.
-3. **LP section order is free.** Line order inside sections is irrelevant to
-   solvers (labels live in the text), so no global sorts are needed — hence
-   `SET preserve_insertion_order=false`.
-4. **Measurement pitfalls.** memray's tracker slows duckdb ~8× (allocation
-   interception on a multithreaded, allocation-heavy engine) while barely
-   affecting linopy — never benchmark *runtime* under memray, and its allocator
-   peak overcounts polars (reserved arenas). Use untracked `/usr/bin/time -l`
-   peak RSS as the gate metric; memray for attribution only.
-5. **A file-backed duckdb database** (not `:memory:`) is required for the buffer
-   pool to spill table data under `memory_limit`.
-6. **Constraint assembly is a counter-example to finding 1's exception list.**
-   `_build_constraint` runs one unchunked
-   `INSERT INTO A … SELECT row, col, SUM(coeff) … GROUP BY row, col`, on the
-   stated grounds that joins and plain numeric hash aggregates spill on their
-   own. `transport` at 9.8M variables under a 256 MB budget raises
-   `OutOfMemoryException` there; `dispatch` at 10M does not. The difference is
-   the `group_sum` join fan-in — three joined term streams unioned into one
-   aggregate — so the rule wants narrowing to "spills, unless the fan-in is
-   wide", and the fix is the same partition-wise treatment finding 2 describes.
+**Do not read `io_api='lp'` numbers as the eager lane's cost.** The same
+`dispatch` model through linopy's LP-file path peaks at 6.92 GB and takes 55 s
+to hand off, against 3.38 GB and 2.9 s direct. The tables above compare against
+linopy's *better* path deliberately.
 
 ## Sink capabilities
 
@@ -250,14 +141,26 @@ coordinates) `Q` is **diagonal**, so it costs 16 bytes per quadratic column:
 | 3.56×10⁷ | 0.57 GB |
 | 10⁸ | 1.60 GB |
 
-Against the measured `solver_direct` peak of 5.76 GB at 35.6M variables —
-already dominated by HiGHS's own model, which hard rule 4 exempts — 0.57 GB is
-~10%. On `lp_file`, where nothing is exempt, a quadratic objective is a text
-section and streams like any other. So this is a cost, not an invariant
-violation. Two caveats:
+Against a `solver_direct` peak already dominated by HiGHS's own model, which
+hard rule 4 exempts, that is a small fraction. On `lp_file` a quadratic
+objective is a text section and sinks like any other. So this is a cost, not an
+invariant violation. Two caveats:
 
 - HiGHS accepts `dim_ < num_col` (verified), so ordering quadratic variables
   first bounds the Hessian to that block rather than the whole model.
 - **The diagonal argument dies with the aligned restriction.** General bilinear
-  `Q` is not diagonal, and then peak stops tracking the budget — a second,
+  `Q` is not diagonal, and its cost stops tracking the model — a second,
   independent reason that restriction is load-bearing.
+
+## Method
+
+Recorded in [`bench/README.md`](../bench/README.md) — one process per
+measurement, `ru_maxrss` rather than a tracker, import excluded from
+`wall_seconds` and teardown included, and a parity gate that aborts the run
+before anything is timed if the two lanes disagree. Failures are results and are
+rendered as cells.
+
+Measurement pitfall worth keeping: memray's tracker slows an allocation-heavy
+engine several-fold and overcounts reserved arenas, so it can attribute memory
+but must never time anything. Peak RSS is the gate metric; memray is for
+attribution only.

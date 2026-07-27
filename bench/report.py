@@ -30,15 +30,15 @@ def load(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[st
 
 
 Row = dict[str, Any]
-Key = tuple[str, str, str, str]
+Key = tuple[str, str, str]
 
 
 def _key(r: Row) -> Key:
-    return (r['case'], r['size'], r['arm'], r.get('memory_limit') or '')
+    return (r['case'], r['size'], r['arm'])
 
 
 def best(timings: list[Row]) -> dict[Key, Row]:
-    """(case, size, arm, budget) -> the fastest repeat."""
+    """(case, size, arm) -> the fastest repeat."""
     out: dict[Key, Row] = {}
     for r in timings:
         if 'error' in r:
@@ -50,7 +50,7 @@ def best(timings: list[Row]) -> dict[Key, Row]:
 
 
 def failures(timings: list[Row]) -> dict[Key, str]:
-    """A run that died is a measurement: an OOM names the budget it needed."""
+    """A run that died is a measurement, and the report renders it as one."""
     return {_key(r): r['error'] for r in timings if 'error' in r}
 
 
@@ -81,23 +81,23 @@ def sizes_of(case: str, rows: dict[Key, Row], *, density: bool = False) -> list[
     """
     seen = {
         s: r['counts']['columns']
-        for (c, s, _, _), r in rows.items()
+        for (c, s, _), r in rows.items()
         if c == case and bool(_DENSITY_RUNG.match(s)) == density
     }
     return sorted(seen, key=lambda s: seen[s])
 
 
-def table(case: str, rows: dict[Key, Row], budget: str) -> str:
+def table(case: str, rows: dict[Key, Row]) -> str:
     lines = [
         f'### {case}',
         '',
-        f'farkas at `memory_limit={budget}`, linopy through its `lp-polars` writer.',
+        'farkas on its relational engine, linopy through its `lp-polars` writer.',
         '',
         '| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP | scratch |',
         '|---|---|---|---|---|---|---|---|---|---|---|',
     ]
     for size in sizes_of(case, rows):
-        arms = {'farkas': rows.get((case, size, 'farkas', budget)), 'linopy': rows.get((case, size, 'linopy', ''))}
+        arms = {'farkas': rows.get((case, size, 'farkas')), 'linopy': rows.get((case, size, 'linopy'))}
         ref = next((r for r in arms.values() if r), None)
         if ref is None:
             continue
@@ -130,28 +130,28 @@ def _live(r: Row) -> str:
     return '—' if frac is None else f'{frac * 100:.0f}%'
 
 
-def density(rows: dict[Key, Row], budget: str) -> str:
+def density(rows: dict[Key, Row]) -> str:
     """One model size, four mask densities — the axis the ladder cannot show.
 
     A mask is row absence relationally and a NaN-padded dense array eagerly, so
     this is the one comparison where the two lanes are not doing the same work
     in different orders — they are doing different amounts of work.
     """
-    cases = [c for c in sorted({c for c, _, _, _ in rows}) if sizes_of(c, rows, density=True)]
+    cases = [c for c in sorted({c for c, _, _ in rows}) if sizes_of(c, rows, density=True)]
     if not cases:
         return ''
     lines = [
         '### The mask sweep',
         '',
-        f'One model size, farkas at `memory_limit={budget}`. For `nodal`, `live` is '
-        'how many of the 12 technologies each node has installed: 12 / 6 / 3 / 1.',
+        'One model size. For `nodal`, `live` is how many of the 12 technologies '
+        'each node has installed: 12 / 6 / 3 / 1.',
         '',
         '| case | live | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |',
         '|---|---|---|---|---|---|---|---|---|',
     ]
     for case in cases:
         for size in reversed(sizes_of(case, rows, density=True)):
-            arms = {'farkas': rows.get((case, size, 'farkas', budget)), 'linopy': rows.get((case, size, 'linopy', ''))}
+            arms = {'farkas': rows.get((case, size, 'farkas')), 'linopy': rows.get((case, size, 'linopy'))}
             ref = next((r for r in arms.values() if r), None)
             if ref is None:
                 continue
@@ -170,44 +170,9 @@ def density(rows: dict[Key, Row], budget: str) -> str:
     return '\n'.join(lines)
 
 
-def knob(rows: dict[Key, Row], failed: dict[Key, str]) -> str:
-    """Peak RSS against the configured budget — the claim, in one table."""
-    budgets = sorted({b for (_, _, arm, b) in [*rows, *failed] if arm == 'farkas' and b}, key=_bytes)
-    if len(budgets) < 2:
-        return ''
-    header = '| case | variables | ' + ' | '.join(f'`{b}`' for b in budgets) + ' | linopy |'
-    lines = ['### peak RSS against the budget', '', header, '|---' * (len(budgets) + 3) + '|']
-    for case in sorted({c for c, _, _, _ in rows}):
-        for size in sizes_of(case, rows):
-            measured = [rows.get((case, size, 'farkas', b)) for b in budgets]
-            if not any(measured):
-                continue
-            eager = rows.get((case, size, 'linopy', ''))
-            ref = next(r for r in measured if r)
-            cells = [
-                case,
-                _si(ref['counts']['columns']),
-                *(
-                    f'{_gb(r["peak_rss_bytes"])} GB'
-                    if r
-                    else ('**OOM**' if (case, size, 'farkas', b) in failed else '—')
-                    for r, b in zip(measured, budgets, strict=True)
-                ),
-                f'{_gb(eager["peak_rss_bytes"])} GB' if eager else '—',
-            ]
-            lines.append('| ' + ' | '.join(cells) + ' |')
-    return '\n'.join(lines)
-
-
-def _bytes(budget: str) -> float:
-    scale = {'KB': 1e3, 'MB': 1e6, 'GB': 1e9, 'TB': 1e12}
-    return float(budget[:-2]) * scale.get(budget[-2:].upper(), 1.0)
-
-
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('results', type=Path, nargs='*', default=[Path('bench/results/latest.jsonl')])
-    ap.add_argument('--budget', default='1GB', help='which farkas budget the headline table reports')
     opts = ap.parse_args(argv)
 
     run: dict[str, Any] = {}
@@ -234,17 +199,13 @@ def main(argv: list[str] | None = None) -> int:
         )
         + '.'
     )
-    for case in sorted({c for c, _, _, _ in rows}):
+    for case in sorted({c for c, _, _ in rows}):
         print()
-        print(table(case, rows, opts.budget))
-    density_table = density(rows, opts.budget)
+        print(table(case, rows))
+    density_table = density(rows)
     if density_table:
         print()
         print(density_table)
-    knob_table = knob(rows, failed)
-    if knob_table:
-        print()
-        print(knob_table)
     for key, error in sorted(failed.items()):
         print(f'\n<!-- {" ".join(k for k in key if k)}: {error} -->')
     return 0

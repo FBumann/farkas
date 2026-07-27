@@ -8,13 +8,13 @@ pass, each of these built a model on one lane and raised on the other.
 
 from __future__ import annotations
 
-import pandas as pd
+import polars as pl
 import pytest
 import yaml as pyyaml
 
 import farkas as fk
 from tests.conftest import DISPATCH_MODEL, override
-from tests.oracle import farkas_linopy  # skips the module without the [linopy] extra
+from tests.oracle import farkas_linopy, pd  # skips the module without the [linopy] extra
 
 
 @pytest.fixture
@@ -85,7 +85,7 @@ def test_both_lanes_build_the_same_model(tmp_path, data, coords, where):
     eager_status = m.solve(solver_name='highs')[1]
 
     with fk.build(path, data, coords=coords) as ex:
-        relational_rows = ex._con.execute('SELECT count(*) FROM var_p').fetchone()[0]
+        relational_rows = ex._variables['p'].select(pl.len()).collect().item()
         relational_status = ex.solve().termination_condition
 
     # a mask that excludes snapshot 0 leaves the balance row unsatisfiable —
