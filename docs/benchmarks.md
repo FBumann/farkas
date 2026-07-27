@@ -13,8 +13,18 @@ against the floor under the LP-file route, and marginal cost per model in a loop
 
 Peak RSS and wall time for the same model built two ways — declaratively on the
 relational engine, and eagerly through linopy — from the same parquet files to
-the same LP file. Produced by [`bench/`](../bench/README.md) and read straight
-off [`bench/results/latest.jsonl`](../bench/results/latest.jsonl), which carries
+the same LP file.
+
+**The eager arm is `farkas.linopy.build`, not hand-written linopy.** It is our
+own YAML→`linopy.Model` shim, so it carries our loader on top of linopy's work
+and the ratios below are therefore kind to us. Measured on `dispatch/m`, the
+same 1M-variable model written by hand against the shim: build 0.31 s against
+0.36 s, with emit identical because it is the same `Model.to_file` on the same
+object. So read roughly 15% off the eager arm's build to get what a linopy user
+would see — enough to move a ratio, not enough to move a conclusion.
+
+Produced by [`bench/`](../bench/README.md) and read straight off
+[`bench/results/latest.jsonl`](../bench/results/latest.jsonl), which carries
 the machine fingerprint and library versions that produced it:
 
 ```bash
