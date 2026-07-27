@@ -42,6 +42,20 @@ highspy 1.15.1. Parity gate: all three cases agree with the eager lane to
 | 300k | 0.28 s | 0.39 s | **0.73x** | 0.46 GB | 0.45 GB | 1.01x |
 | 3M | 1.99 s | 1.35 s | 1.47x | 1.88 GB | 1.57 GB | 1.20x |
 
+### sector — dense snapshots and carriers, sparse portfolio
+
+50 nodes x 12 technologies at 8% installed, crossed with 5 dense carriers. `p`
+is sparse in `(node, tech)`; the balance is dense in time and carrier;
+`sum(p * produces, over=tech)` broadcasts a dense dim onto a sparse frame and
+then reduces the sparse one.
+
+| variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
+|---|---|---|---|---|---|---|
+| 4k | 0.11 s | 0.32 s | **0.34x** | 0.17 GB | 0.21 GB | **0.81x** |
+| 10k | 0.10 s | 0.31 s | **0.32x** | 0.20 GB | 0.24 GB | **0.83x** |
+| 100k | 0.25 s | 0.44 s | **0.57x** | 0.42 GB | 0.53 GB | **0.79x** |
+| 1M | 1.58 s | 1.75 s | **0.90x** | **1.27 GB** | 2.79 GB | **0.46x** |
+
 ### transport — three `group_sum` joins per row
 
 | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
@@ -72,8 +86,10 @@ fragments land on every row and so the terminal aggregate cannot be skipped
 of it at the `l` rung on every case — so wall-time work belongs there before it
 belongs in the build.
 
-**Sparsity does not separate them, which was not the prediction.** See the
-sweep below.
+**Sparsity separates them, but only once the coordinate product is large.**
+The `sector` row above is the clearest result in this file — 2.2x less memory
+at 1M live variables out of a 12M product — and the density sweep below shows
+why it took two cases to find.
 
 ## The density sweep, and a claim it refuses
 
@@ -89,19 +105,22 @@ as density falls.
 | 3/12 | 0.30M | **0.35 s** | 0.41 s | 0.46 GB | 0.45 GB |
 | 1/12 | 0.10M | **0.19 s** | 0.32 s | 0.40 GB | **0.35 GB** |
 
-**It does not happen.** linopy's peak falls with density too — 0.63 to 0.35 GB —
-and at the sparsest rung it ends up *below* ours. Whatever the eager lane does
-with a `where` mask, it is not paying for the full coordinate product, so
-"relationally an absent pair is an absent row, eagerly it is a NaN that still
-costs eight bytes" is not what the memory does.
+**Not here it does not.** linopy's peak falls with density too — 0.63 to
+0.35 GB — and at the sparsest rung it ends up *below* ours.
 
-Wall time is the axis that behaves: our advantage grows as the model thins,
-1.0x to 1.7x, because there is less to build and our fixed cost is lower.
+The reason is the size this sweep is run at, not the prediction. It holds the
+coordinate product fixed at 1.2M, where a dense array over it is ~10 MB and the
+interpreter and libraries dominate everything. `sector` runs the same 8%
+sparsity at a 12M product, and there the effect is unmistakable: 1.27 GB against
+2.79 GB.
 
-Recorded rather than quietly dropped, because the prediction is written into
-`bench/README.md`'s description of the case and it is wrong. The case is still
-worth keeping — it is the shape real multi-node models have — but as a
-throughput measurement, not as evidence about representations.
+So the claim needs both halves — **low density and a product large enough for it
+to cost anything**. This sweep varies one at a size that cannot show it; `sector`
+varies the other. Neither is sufficient alone, which is worth knowing before
+quoting either.
+
+Wall time behaves throughout: our advantage grows as the model thins, 1.0x to
+1.7x, because there is less to build and our fixed cost is lower.
 
 ## Build and hand off — the number a user actually pays
 

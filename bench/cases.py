@@ -260,6 +260,104 @@ def _nodal_eager(paths: dict[str, str]) -> tuple[dict[str, Any], dict[str, Any]]
 
 
 # --------------------------------------------------------------------------
+# sector
+
+
+#: What each technology's output arrives as. One carrier per technology, which
+#: is what makes the tech x carrier map sparser than the portfolio above it.
+CARRIERS = ('electricity', 'heat', 'hydrogen', 'gas', 'transport')
+
+
+def _sector_data(shape: Shape, dest: Path) -> dict[str, str]:
+    rng = _seed(shape)
+    n_snap, n_node = shape.sizes['snapshot'], shape.sizes['node']
+    techs = list(TECHNOLOGIES[: shape.sizes['tech']])
+    carriers = list(CARRIERS[: shape.sizes['carrier']])
+    nodes = [f'n{i:04d}' for i in range(n_node)]
+
+    installed = _portfolios(rng, n_node, len(techs), shape.density)
+    capacity = installed * rng.uniform(200.0, 800.0, (n_node, len(techs)))
+    serves = rng.integers(0, len(carriers), len(techs))
+    efficiency = rng.uniform(0.3, 0.95, len(techs))
+
+    # what a node can actually deliver into a carrier. Demand exists only where
+    # that is nonzero, which is what keeps the model feasible on any draw and
+    # what makes the demand table sparse in (node, carrier) while dense in time
+    reachable = np.zeros((n_node, len(carriers)))
+    for t, c in enumerate(serves):
+        reachable[:, c] += capacity[:, t] * efficiency[t]
+    served = reachable > 0
+    demand = reachable[None, :, :] * 0.6 * (0.8 + 0.4 * rng.random((n_snap, n_node, len(carriers))))
+    live = np.broadcast_to(served, demand.shape).reshape(-1)
+
+    return _dump(
+        {
+            'installed': pd.DataFrame(
+                {
+                    'node': np.repeat(nodes, len(techs))[installed.reshape(-1)],
+                    'tech': np.tile(techs, n_node)[installed.reshape(-1)],
+                    'value': capacity.reshape(-1)[installed.reshape(-1)],
+                }
+            ),
+            'produces': pd.DataFrame({'tech': techs, 'carrier': [carriers[c] for c in serves], 'value': efficiency}),
+            'cost': pd.DataFrame({'tech': techs, 'value': rng.uniform(10.0, 100.0, len(techs))}),
+            'demand': pd.DataFrame(
+                {
+                    'snapshot': np.repeat(np.arange(n_snap), n_node * len(carriers))[live],
+                    'node': np.tile(np.repeat(nodes, len(carriers)), n_snap)[live],
+                    'carrier': np.array(carriers * (n_snap * n_node))[live],
+                    'value': demand.reshape(-1)[live],
+                }
+            ),
+            'node': pd.DataFrame({'node': nodes}),
+            'tech': pd.DataFrame({'tech': techs}),
+            'carrier': pd.DataFrame({'carrier': carriers}),
+            'snapshot': pd.DataFrame({'snapshot': np.arange(n_snap)}),
+        },
+        dest,
+    )
+
+
+def _sector_eager(paths: dict[str, str]) -> tuple[dict[str, Any], dict[str, Any]]:
+    import xarray as xr
+
+    nodes = pd.read_parquet(paths['node'])['node']
+    techs = pd.read_parquet(paths['tech'])['tech']
+    carriers = pd.read_parquet(paths['carrier'])['carrier']
+    demand = pd.read_parquet(paths['demand'])
+    # both sparse tables are reindexed over their full product here: the eager
+    # lane has nowhere else to put an absent pair, and doing it in the open is
+    # what makes the arms comparable
+    installed = (
+        pd.read_parquet(paths['installed'])
+        .set_index(['node', 'tech'])['value']
+        .unstack()
+        .reindex(index=nodes, columns=techs)
+        .fillna(0.0)
+    )
+    produces = (
+        pd.read_parquet(paths['produces'])
+        .set_index(['tech', 'carrier'])['value']
+        .unstack()
+        .reindex(index=techs, columns=carriers)
+        .fillna(0.0)
+    )
+    data = {
+        'installed': installed,
+        'produces': produces,
+        'cost': pd.read_parquet(paths['cost']).set_index('tech')['value'],
+        'demand': xr.DataArray.from_series(demand.set_index(['snapshot', 'node', 'carrier'])['value']),
+    }
+    coords = {
+        'snapshot': pd.Index(sorted(demand['snapshot'].unique()), name='snapshot'),
+        'node': pd.Index(nodes, name='node'),
+        'tech': pd.Index(techs, name='tech'),
+        'carrier': pd.Index(carriers, name='carrier'),
+    }
+    return data, coords
+
+
+# --------------------------------------------------------------------------
 # transport
 
 
@@ -383,6 +481,21 @@ CASES: dict[str, Case] = {
         ),
         write=_nodal_data,
         eager_inputs=_nodal_eager,
+    ),
+    'sector': Case(
+        name='sector',
+        model=MODELS / 'sector.yaml',
+        # 50 nodes x 12 technologies at 8% installed, crossed with 5 dense
+        # carriers. `p` is sparse in (node, tech); `shed` and the balance are
+        # dense in (node, carrier); the objective spans both.
+        ladder=_ladder(
+            {'node': 50, 'tech': 12, 'carrier': 5},
+            (20, 200, 2_000, 20_000),
+            per_snapshot=850,
+            density=0.083,
+        ),
+        write=_sector_data,
+        eager_inputs=_sector_eager,
     ),
     'transport': Case(
         name='transport',

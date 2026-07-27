@@ -100,6 +100,7 @@ verdict off the SQL"), not to cover the language:
 | `dispatch` | pointwise bounds + one `sum` per row | raw throughput, and the case a dense eager broadcast is best at — so our worst ratio |
 | `nodal` | `(snapshot, node, tech)`, `where: installed > 0` | sparsity as it actually occurs — see below |
 | `transport` | three `group_sum` joins per row | the mapping-table path, where the eager lane must materialise a bus x generator product |
+| `sector` | dense snapshots x dense carriers x sparse portfolio | mixed density in one model — the shape a sector-coupled model actually has, and where the sparsity claim is visible |
 
 **`nodal` is the case worth explaining.** It is dispatch over nodes and
 technologies, and a technology only generates at a node where it is installed:
@@ -115,9 +116,10 @@ The sparsity is *structural and time-invariant*, which is not incidental —
 would sweep the same densities while misrepresenting the shape, and the shape is
 what an engine can exploit.
 
-**Measured, the two lanes do not diverge on memory as density falls** — see
+**Measured, this sweep alone does not show it** — at a 1.2M coordinate product
+a dense array over it is ~10 MB and the fixed cost of the process dominates.
+`sector` runs the same sparsity at a 12M product and the effect is plain. See
 [docs/benchmarks.md](../docs/benchmarks.md#the-density-sweep-and-a-claim-it-refuses).
-The sweep is still the right measurement; the prediction behind it was wrong.
 
 `Shape.density` (technologies per node: 12 / 6 / 3 / 1) is swept at one model
 size, because sweeping size and density together leaves no way to tell one
