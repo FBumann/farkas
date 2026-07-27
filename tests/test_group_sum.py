@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import polars as pl
 import pytest
 
 import farkas as fk
@@ -25,7 +26,7 @@ from farkas.relational.plan import (
     Variable,
 )
 from farkas.sources import tidy_sources
-from tests.conftest import resolved, schema_of
+from tests.conftest import override, resolved, schema_of
 from tests.differential import RTOL, differential
 from tests.oracle import farkas_linopy, pd, transport_eager_objective, xr
 
@@ -245,3 +246,75 @@ def test_a_partial_coordinate_places_its_orphans_nowhere(tmp_path):
     model = farkas_linopy.build(path, data=data, coords=coords)
     model.solve(solver_name='highs', output_flag=False)
     assert float(model.objective.value) == pytest.approx(3.0)
+
+
+BROADCAST_GROUP_SUM = {
+    'dimensions': {
+        'snapshot': {'dtype': 'int', 'values': [0, 1]},
+        'generator': {'dtype': 'str', 'coords': ['bus']},
+        'bus': {'dtype': 'str'},
+    },
+    'parameters': {'w': {'dims': ['generator']}, 'limit': {'dims': ['snapshot', 'bus']}},
+    'variables': {'x': {'foreach': ['snapshot'], 'bounds': {'lower': 0, 'upper': 10}}},
+    'constraints': {
+        'cap': {
+            'foreach': ['snapshot', 'bus'],
+            'equations': [{'expression': 'group_sum(x * w, over=generator, by=bus) <= limit'}],
+        }
+    },
+    'objectives': {'o': {'sense': 'maximize', 'equations': [{'expression': 'x'}]}},
+}
+
+#: g1 and g2 share a bus, so grouping merges two rows carrying the *same*
+#: variable — which is the case a broadcast `over` creates and a `foreach` one
+#: cannot.
+BROADCAST_SOURCES = {
+    'w': pl.DataFrame({'generator': ['g1', 'g2', 'g3'], 'value': [1.0, 2.0, 5.0]}),
+    'limit': pl.DataFrame({'snapshot': [0, 0, 1, 1], 'bus': ['b1', 'b2'] * 2, 'value': [9.0, 100.0, 9.0, 100.0]}),
+    'generator': pl.DataFrame({'generator': ['g1', 'g2', 'g3'], 'bus': ['b1', 'b2'] * 1 + ['b1']}),
+    'bus': pl.DataFrame({'bus': ['b1', 'b2']}),
+}
+
+
+def test_group_sum_over_a_broadcast_dim_still_collapses_its_terms():
+    """The variable does not carry the grouped dim, so a group holds it twice.
+
+    `group_sum(x * w, over=generator, by=bus)` with `x` indexed by snapshot
+    alone: `generator` reaches the fragment by broadcast from `w`, so two
+    generators on one bus put the *same* `var_label` on one row. Nothing after
+    this point can tell them apart — a solver handed a row with a column twice
+    is entitled to reject the whole model, and HiGHS does.
+    """
+    sources = dict(
+        BROADCAST_SOURCES,
+        generator=pl.DataFrame({'generator': ['g1', 'g2', 'g3'], 'bus': ['b1', 'b1', 'b2']}),
+    )
+    with fk.build(BROADCAST_GROUP_SUM, sources) as ex:
+        matrix = ex._tables().matrix.sort('row', 'col')
+        assert matrix.height == 4, 'a column appears twice on a row'
+        assert matrix['coeff'].to_list() == [3.0, 5.0, 3.0, 5.0]  # 1.0 + 2.0 merged
+
+        result = ex.solve()
+    assert result.termination_condition == 'optimal'
+    assert result.objective == pytest.approx(6.0)  # 3x <= 9 at b1, two snapshots
+
+
+def test_group_sum_over_a_foreach_dim_needs_no_such_collapse():
+    """The counterpart: when the variable carries the grouped dim, each merged
+    row has its own label and there is nothing to add."""
+    model = override(
+        BROADCAST_GROUP_SUM,
+        **{
+            'variables.x.foreach': ['snapshot', 'generator'],
+            'constraints.cap.equations': [{'expression': 'group_sum(x * w, over=generator, by=bus) <= limit'}],
+        },
+    )
+    sources = dict(
+        BROADCAST_SOURCES,
+        generator=pl.DataFrame({'generator': ['g1', 'g2', 'g3'], 'bus': ['b1', 'b1', 'b2']}),
+    )
+    with fk.build(model, sources) as ex:
+        matrix = ex._tables().matrix.sort('row', 'col')
+        # one entry per (row, generator-on-that-bus), not one per bus
+        assert matrix.height == 6
+        assert ex.solve().termination_condition == 'optimal'

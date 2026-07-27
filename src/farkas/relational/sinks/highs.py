@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from farkas.errors import LinopyYamlError
 from farkas.relational.status import SolveStatus
 
 if TYPE_CHECKING:
@@ -88,7 +89,7 @@ def solve_direct(
         lb = np.nan_to_num(batch['lb'].to_numpy(), neginf=-inf, posinf=inf)
         ub = np.nan_to_num(batch['ub'].to_numpy(), neginf=-inf, posinf=inf)
         cost = batch['cost'].to_numpy()
-        h.addCols(len(cost), cost, lb, ub, 0, empty_i, empty_i, empty_f)
+        _loaded(h, h.addCols(len(cost), cost, lb, ub, 0, empty_i, empty_i, empty_f), 'columns')
         noncontinuous = np.flatnonzero(batch['vtype'].to_numpy() != 'continuous')
         if len(noncontinuous):
             cols_idx = batch['col'].to_numpy().astype(np.int32)[noncontinuous]
@@ -105,14 +106,18 @@ def solve_direct(
         rlb = np.where(sense == '<=', -inf, rhs)
         rub = np.where(sense == '>=', inf, rhs)
         starts = np.searchsorted(a['row'].to_numpy(), rows['row'].to_numpy()).astype(np.int32)
-        h.addRows(
-            len(rhs),
-            rlb,
-            rub,
-            a.height,
-            starts,
-            a['col'].to_numpy().astype(np.int32),
-            a['coeff'].to_numpy(),
+        _loaded(
+            h,
+            h.addRows(
+                len(rhs),
+                rlb,
+                rub,
+                a.height,
+                starts,
+                a['col'].to_numpy().astype(np.int32),
+                a['coeff'].to_numpy(),
+            ),
+            'rows',
         )
 
     if model.objective_sense == 'max':
@@ -128,6 +133,24 @@ def solve_direct(
     primal = _labelled('col', model.column_count, solution.col_value)
     dual = _labelled('row', model.row_count, solution.row_dual) if solution.dual_valid else None
     return status, objective, primal, dual
+
+
+def _loaded(h: Any, status: Any, what: str) -> None:
+    """Raise unless the solver accepted the batch.
+
+    HiGHS reports a rejected batch by return value and carries on with an empty
+    model, so an unchecked call turns a malformed handoff into a confident
+    answer to a different problem — an unconstrained one, if it was the rows
+    that were refused.
+    """
+    import highspy
+
+    if status == highspy.HighsStatus.kError:
+        raise LinopyYamlError(
+            f'the solver refused a batch of {what}: {h.modelStatusToString(h.getModelStatus())!r}. '
+            f'Nothing was loaded, so any answer would describe a different model. '
+            f'This is an engine bug rather than a problem with the model — please report it.'
+        )
 
 
 def _status_of(h: Any, highspy: Any) -> SolveStatus:

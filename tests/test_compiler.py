@@ -282,3 +282,46 @@ def test_a_sum_that_drops_nothing_leaves_a_constant_part_keyed():
     """Summing over a dim the operand lacks scales it; no rows merge."""
     scaled = plan.Sum(plan.Multiply(plan.Variable('p'), plan.Parameter('cost')), ('snapshot',))
     assert compiler().expression(scaled, 'test').terms[0].keyed
+
+
+def test_group_sum_over_a_broadcast_dim_is_not_keyed():
+    """Which dim is grouped decides whether the key survives.
+
+    `generator` is `p`'s own, so grouping it merges rows with distinct labels.
+    Reaching the fragment by broadcast — a parameter carrying a dim the
+    variable does not — merges rows carrying the same one, and nothing
+    downstream can tell those apart.
+    """
+    own = plan.GroupSum(plan.Variable('p'), over='generator', coordinate='bus', into='bus')
+    assert compiler().expression(own, 'test').terms[0].keyed
+
+    broadcast = plan.GroupSum(
+        plan.Multiply(plan.Variable('p'), plan.Parameter('cost')),
+        over='generator',
+        coordinate='bus',
+        into='bus',
+    )
+    assert compiler().expression(broadcast, 'test').terms[0].keyed  # still p's own dim
+
+    lone = plan.Program(
+        parameters=PROGRAM.parameters,
+        variables=(plan.VariableDeclaration('q', ('snapshot',)),),
+        constraints=(),
+        objective=plan.ObjectiveDeclaration('min', plan.Variable('q')),
+        dimensions=PROGRAM.dimensions,
+    )
+    lonely = PolarsCompiler(
+        lone,
+        CARDINALITY,
+        frozenset(),
+        PARAMETERS,
+        DIMENSIONS,
+        {'q': pl.LazyFrame(schema={'snapshot': pl.Int64, 'var_label': pl.Int64})},
+    )
+    node = plan.GroupSum(
+        plan.Multiply(plan.Variable('q'), plan.Parameter('cost')),
+        over='generator',
+        coordinate='bus',
+        into='bus',
+    )
+    assert not lonely.expression(node, 'test').terms[0].keyed

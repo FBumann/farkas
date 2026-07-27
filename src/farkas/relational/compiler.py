@@ -360,9 +360,17 @@ class PolarsCompiler:
     def _group_fragment(self, p: TermFragment, g: plan.GroupSum, context: str) -> TermFragment:
         """Relabel dim ``over`` to ``into`` through a declared coordinate.
 
-        No aggregate here either. The dim table holds one row per label and its
+        No aggregate here either: the dim table holds one row per label and its
         coordinate was checked for containment at build time, so the join
         neither duplicates nor drops a term.
+
+        The *key* is a separate question. Grouping merges labels of ``over``
+        into one ``into``, and whether that merges two rows carrying the same
+        ``var_label`` depends on where ``over`` came from. If the variable
+        carries it, the merged rows have distinct labels and the key survives.
+        If it arrived by broadcast — ``group_sum(x * w, over=generator)`` with
+        ``x`` indexed by snapshot alone — they do not, and the terminal
+        aggregate has to run.
         """
         import polars as pl
 
@@ -371,7 +379,8 @@ class PolarsCompiler:
         keep = tuple(x for x in p.dims if x != g.over)
         mapping = self.dimensions[g.over].select(pl.col('val').alias(g.over), pl.col(g.coordinate).alias(g.into))
         frame = p.frame.join(mapping, on=g.over, how='inner').select(*keep, g.into, *p.carried)
-        return TermFragment((*keep, g.into), frame, p.is_term, p.keyed, _relabel(p.label_dims, g.over, g.into))
+        keyed = p.keyed and g.over in p.label_dims
+        return TermFragment((*keep, g.into), frame, p.is_term, keyed, _relabel(p.label_dims, g.over, g.into))
 
     def _translate_fragment(self, p: TermFragment, s: plan.Translate, context: str) -> TermFragment:
         """A pointwise remap of the dim through its ord: a row at *o*
