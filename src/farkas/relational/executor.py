@@ -626,7 +626,19 @@ class PolarsExecutor:
         return rows, stacked.collect(engine='streaming')
 
     def _build_objective(self, o: plan.ObjectiveDeclaration) -> pl.DataFrame | None:
-        """The objective as ``(col, coeff)``, or ``None`` if it has no terms."""
+        """The objective as ``(col, coeff)``, or ``None`` if it has no terms.
+
+        **This projection drops the dims, so it asks for the stronger key** —
+        ``_needs_aggregate(..., projected=True)``. Where the matrix keeps a
+        fragment's dims in ``row``, here only ``var_label`` survives, and a dim
+        that arrived by broadcast then puts several rows on one column.
+
+        Their sum is the coefficient, and nothing downstream computes it: the
+        hand-off scatters with ``dense[at] = values``, which keeps the *last*
+        write, and the LP writer emits one term per row for a reader to
+        interpret as it likes. So a missed aggregate here is a wrong objective
+        that still solves, not a slow one.
+        """
         import polars as pl
 
         comp = self._q.expression(o.expression, 'objective')
@@ -642,7 +654,7 @@ class PolarsExecutor:
             return None
         pieces = [p.frame.select(pl.col('var_label').alias('col'), pl.col('coeff')) for p in comp.terms]
         stacked = pl.concat(pieces)
-        if _needs_aggregate(comp.terms):
+        if _needs_aggregate(comp.terms, projected=True):
             stacked = stacked.group_by('col').agg(pl.col('coeff').sum())
         return stacked.collect(engine='streaming')
 
@@ -763,7 +775,7 @@ class PolarsExecutor:
         return False
 
 
-def _needs_aggregate(terms: Sequence[TermFragment]) -> bool:
+def _needs_aggregate(terms: Sequence[TermFragment], *, projected: bool = False) -> bool:
     """Whether stacking *terms* can put two rows on one solver column.
 
     Named for the answer, not the condition: an inverted test here is a wrong
@@ -774,12 +786,30 @@ def _needs_aggregate(terms: Sequence[TermFragment]) -> bool:
     :attr:`~farkas.relational.compiler.TermFragment.keyed` already holds a
     label twice.
 
+    *projected* is what the two call sites do not share. The matrix keeps a
+    fragment's dims: a constraint's ``row`` is a function of dims that include
+    them, so ``keyed`` — one row per ``(dims…, var_label)`` — carries straight
+    into ``(row, col)``. The objective keeps only ``var_label``, so it has to
+    ask the stronger question the shape operators already ask when they drop a
+    dim: does the key survive losing *all* of them? It does exactly when
+    ``var_label`` determines every dim the fragment still carries.
+
+    That distinction is the whole bug this argument exists to prevent.
+    ``p * cost`` is keyed on ``(snapshot, generator, var_label)`` and every one
+    of those dims is the variable's own, so a column cannot repeat and the
+    aggregate is dead weight. ``y * w`` — ``y`` over buses, ``w`` over
+    snapshots — is just as keyed, but ``snapshot`` arrived by broadcast, so one
+    column holds a row per snapshot and their *sum* is the coefficient.
+
     Worth 2-4x of build time on the matrix and little on the objective, but the
     argument is the same at both, so it is written once. On the duckdb engine
     the same change measured at nothing — the value is engine-specific even
     though the reasoning is not (#161).
     """
-    return len(terms) != 1 or not terms[0].keyed
+    if len(terms) != 1:
+        return True
+    (term,) = terms
+    return not term.survives_dropping(set(term.dims) if projected else set())
 
 
 def _stack(frames: list[pl.DataFrame], columns: tuple[str, ...]) -> pl.DataFrame:
