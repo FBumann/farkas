@@ -107,6 +107,7 @@ extend-fixable = ["B", "SIM", "RUF", "C4", "UP"]
 
 [tool.ruff.lint.per-file-ignores]
 "examples/**/*.py" = ["T20"]  # the walkthrough's whole output is its point
+"bench/**/*.py" = ["T20"]  # a harness reports by printing; stdout is its interface
 "src/farkas/where_parser.py" = ["N806"]  # grammar tokens (NOT/AND/OR) are named after keywords
 
 [tool.ruff.format]

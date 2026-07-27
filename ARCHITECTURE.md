@@ -3,7 +3,8 @@
 Brief, current, precise. A PR that changes the structure described here updates
 this file in the same PR. The language is [SPEC.md](SPEC.md); plans and refusals
 are [ROADMAP.md](ROADMAP.md); measured results are
-[docs/benchmarks.md](docs/benchmarks.md).
+[docs/benchmarks.md](docs/benchmarks.md), produced by the harness in
+[bench/](bench/README.md) — which is also how a claim here gets falsified.
 
 `python examples/walkthrough.py` executes the pipeline below stage by stage
 and prints what each one produces — the same public calls `fk.solve` makes,

@@ -1,0 +1,52 @@
+# Nodal dispatch: a technology portfolio per node.
+#
+# The sparsity here is not a benchmark device — it is the shape every real
+# multi-node energy model has. Variables are indexed by (snapshot, node, tech),
+# but a technology only generates at a node where it is actually installed:
+# there is no offshore wind in a landlocked node and no hydro without a river.
+# PyPSA spells this by attaching generators to buses, Calliope by declaring
+# techs at nodes; in YAML it is a `where` over the capacity table.
+#
+# So the coordinate product is snapshots x nodes x technologies, and what
+# survives is snapshots x (installed pairs) — typically a quarter of it. That
+# gap is the whole comparison: relationally an absent pair is an absent row,
+# eagerly it is a NaN that still costs eight bytes and a broadcast.
+#
+# The mask reads `installed`, which carries node and tech but *not* snapshot —
+# which is exactly why a real mask is worth measuring rather than a random one:
+# structural sparsity is time-invariant, and an engine can exploit that.
+dimensions:
+  snapshot:
+    dtype: int
+  node:
+    dtype: str
+  tech:
+    dtype: str
+
+parameters:
+  installed:            # capacity of `tech` at `node`; absent pairs are zero
+    dims: [node, tech]
+  cost:
+    dims: [tech]
+  demand:
+    dims: [snapshot, node]
+
+variables:
+  p:
+    foreach: [snapshot, node, tech]
+    where: "installed > 0"
+    bounds:
+      lower: 0
+      upper: installed
+
+constraints:
+  balance:
+    foreach: [snapshot, node]
+    equations:
+      - expression: sum(p, over=tech) == demand
+
+objectives:
+  total_cost:
+    sense: minimize
+    equations:
+      - expression: p * cost
