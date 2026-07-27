@@ -339,3 +339,118 @@ def test_a_quote_in_a_path_does_not_end_the_statement(tmp_path):
 
     fk.write(model, sources, odd / 'model.lp')
     assert (odd / 'model.lp').stat().st_size > 0
+
+
+# ---------------------------------------------------------------------------
+# objective assembly
+# ---------------------------------------------------------------------------
+
+
+def _objective_program(expression):
+    """One masked variable over two dims, and whatever objective is passed."""
+    return Program(
+        parameters=(
+            ParameterDeclaration('p_max', ('generator',)),
+            ParameterDeclaration('cost', ('generator',)),
+            ParameterDeclaration('load', ('snapshot',)),
+        ),
+        variables=(
+            VariableDeclaration(
+                'p',
+                ('snapshot', 'generator'),
+                where=ParameterComparison('p_max', '>', 0),
+                lower=Constant(0.0),
+                upper=Parameter('p_max'),
+            ),
+        ),
+        constraints=(
+            ConstraintDeclaration(
+                'power_balance',
+                ('snapshot',),
+                lhs=Sum(Variable('p'), over=('generator',)),
+                sense='==',
+                rhs=Parameter('load'),
+            ),
+        ),
+        objective=ObjectiveDeclaration('min', expression),
+    )
+
+
+def _objective_coefficients(expression, dispatch_data):
+    """``obj`` as ``{col: coeff}``, plus whether the aggregate was skipped."""
+    gens, load = dispatch_data
+    sources = {
+        'p_max': gens[['generator', 'p_max']].rename(columns={'p_max': 'value'}),
+        'cost': gens[['generator', 'cost']].rename(columns={'cost': 'value'}),
+        'load': load,
+    }
+    program = _objective_program(expression)
+    with DuckdbExecutor(memory_limit='256MB') as ex:
+        ex.build(program, sources)
+        compiled = ex._sql.expression(expression, 'objective')
+        skipped = ex._objective_column_appears_once(expression, compiled)
+        rows = ex._con.execute('SELECT col, coeff FROM obj ORDER BY col').fetchall()
+    return dict(rows), skipped
+
+
+def test_objective_skips_the_aggregate_only_when_a_column_cannot_repeat(dispatch_data):
+    """``p * cost`` needs no ``GROUP BY``; ``p * cost + p * cost`` does.
+
+    The aggregate merges terms landing on the same column. Skipping it when a
+    column genuinely repeats would silently halve those coefficients — an LP
+    that builds, solves, and answers a different question. So the two shapes
+    are asserted together: the fast path must fire on the first *and* must not
+    fire on the second, and the coefficients must come out the same either way.
+    """
+    single = Variable('p') * Parameter('cost')
+    doubled = single + single
+
+    one, skipped_one = _objective_coefficients(single, dispatch_data)
+    two, skipped_two = _objective_coefficients(doubled, dispatch_data)
+
+    assert skipped_one, 'p * cost has one row per column — the aggregate is dead weight'
+    assert not skipped_two, 'the same variable twice must keep the aggregate'
+
+    # the aggregate is what makes the second objective twice the first
+    assert one, 'the objective produced no coefficients at all'
+    assert two == pytest.approx({col: 2.0 * coeff for col, coeff in one.items()})
+
+
+def test_objective_keeps_the_aggregate_when_a_reduction_hides_extra_rows():
+    """A fragment's dims can match the variable's while its rows do not.
+
+    ``sum(q * price, over=generator)`` with ``q`` indexed by snapshot alone
+    reduces to dims ``('snapshot',)`` — exactly ``q``'s declaration — but
+    ``_sum_fragment`` *projects*, it does not aggregate, so the fragment still
+    carries one row per generator. Skipping the ``GROUP BY`` there writes
+    ``|generator|`` rows into ``obj`` for a single column: the LP file would
+    quietly re-sum them, while ``cols LEFT JOIN obj`` in the HiGHS sink would
+    hand the solver more columns than the model has.
+
+    This is the case a dims-equality test alone gets wrong, so it is the case
+    that is pinned.
+    """
+    program = Program(
+        parameters=(
+            ParameterDeclaration('price', ('snapshot', 'generator')),
+            ParameterDeclaration('load', ('snapshot',)),
+        ),
+        variables=(VariableDeclaration('q', ('snapshot',), where=None, lower=Constant(0.0), upper=Constant(10.0)),),
+        constraints=(
+            ConstraintDeclaration('floor', ('snapshot',), lhs=Variable('q'), sense='>=', rhs=Parameter('load')),
+        ),
+        objective=ObjectiveDeclaration('min', Sum(Variable('q') * Parameter('price'), over=('generator',))),
+    )
+    sources = {
+        'price': pd.DataFrame(
+            {'snapshot': np.repeat([0, 1], 3), 'generator': ['g0', 'g1', 'g2'] * 2, 'value': [1.0, 2.0, 3.0] * 2}
+        ),
+        'load': pd.DataFrame({'snapshot': [0, 1], 'value': [5.0, 5.0]}),
+    }
+
+    with DuckdbExecutor(memory_limit='256MB') as ex:
+        ex.build(program, sources)
+        rows = ex._con.execute('SELECT col, coeff FROM obj ORDER BY col').fetchall()
+
+    # one row per column, the three generator prices summed — not three rows
+    assert rows == [(0, 6.0), (1, 6.0)]
