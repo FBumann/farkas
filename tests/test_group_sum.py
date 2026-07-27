@@ -318,3 +318,72 @@ def test_group_sum_over_a_foreach_dim_needs_no_such_collapse():
         # one entry per (row, generator-on-that-bus), not one per bus
         assert matrix.height == 6
         assert ex.solve().termination_condition == 'optimal'
+
+
+# ---------------------------------------------------------------------------
+# the objective's own key — the projection the matrix does not do
+# ---------------------------------------------------------------------------
+
+#: `y` is indexed by bus and `w` by snapshot, so `y * w` holds one row per
+#: (bus, snapshot) and one *column* per bus. The fragment is legitimately
+#: keyed on `(dims…, var_label)`; it is the objective's projection down to
+#: `(col, coeff)` that drops the dims and merges those rows.
+BROADCAST_OBJECTIVE = {
+    'dimensions': {'snapshot': {'dtype': 'int', 'values': [0, 1, 2, 3]}, 'bus': {'dtype': 'str'}},
+    'parameters': {'w': {'dims': ['snapshot']}, 'floor': {'dims': ['bus']}},
+    'variables': {'y': {'foreach': ['bus'], 'bounds': {'lower': 0, 'upper': 100}}},
+    'constraints': {'atleast': {'foreach': ['bus'], 'equations': [{'expression': 'y >= floor'}]}},
+    'objectives': {'c': {'sense': 'minimize', 'equations': [{'expression': 'y * w'}]}},
+}
+
+BROADCAST_OBJECTIVE_SOURCES = {
+    # deliberately unequal, so last-write-wins is not the same number as the sum
+    'w': pl.DataFrame({'snapshot': [0, 1, 2, 3], 'value': [1.0, 10.0, 100.0, 1000.0]}),
+    'floor': pl.DataFrame({'bus': ['b0', 'b1', 'b2'], 'value': [1.0, 2.0, 3.0]}),
+    'bus': pl.DataFrame({'bus': ['b0', 'b1', 'b2']}),
+}
+
+
+def test_an_objective_term_carrying_dims_is_still_summed_per_column():
+    """A coefficient is the *sum* over the dims the objective projects away.
+
+    `keyed` is about `(dims…, var_label)`. The matrix keeps those dims — a
+    constraint row is a function of dims that include the fragment's — so the
+    key carries into `(row, col)`. The objective drops them, and a fragment
+    that still carries one then holds several rows per column.
+
+    Nothing downstream would fix it: the hand-off scatters with
+    `dense[at] = values`, which keeps the last write rather than accumulating,
+    so this reads as a plausible answer to a model nobody wrote.
+    """
+    with fk.build(BROADCAST_OBJECTIVE, BROADCAST_OBJECTIVE_SOURCES) as ex:
+        obj = ex._tables().obj.sort('col')
+        assert obj.height == 3, 'one row per column, not one per (bus, snapshot)'
+        assert obj['coeff'].to_list() == [1111.0] * 3  # sum(w), not w[-1]
+
+
+def test_the_broadcast_objective_agrees_with_the_eager_lane():
+    """The same model end to end, against linopy — 6666.0, not 6000.0."""
+    data = {
+        'w': pd.Series([1.0, 10.0, 100.0, 1000.0], index=pd.Index([0, 1, 2, 3], name='snapshot')),
+        'floor': pd.Series([1.0, 2.0, 3.0], index=pd.Index(['b0', 'b1', 'b2'], name='bus')),
+    }
+    coords = {'bus': pd.Index(['b0', 'b1', 'b2'], name='bus')}
+    with differential(BROADCAST_OBJECTIVE, data, coords, lp=True) as run:
+        assert run.oracle == pytest.approx(6666.0)
+
+
+def test_an_objective_whose_dims_are_all_the_variables_own_still_skips_it():
+    """The counterpart, and the reason the test is `label_dims` not `dims`.
+
+    `p * cost` reaches the objective carrying `(snapshot, generator)` — it is
+    never wrapped in a `sum` — and both are `p`'s own dims, so `var_label`
+    determines them and no column can repeat. Refusing every fragment that
+    merely *has* dims would be sound and would re-enable the aggregate on every
+    model in `bench/`, which is the whole optimisation (#161).
+    """
+    model = override(BROADCAST_OBJECTIVE, **{'objectives.c.equations': [{'expression': 'y * floor'}]})
+    with fk.build(model, BROADCAST_OBJECTIVE_SOURCES) as ex:
+        obj = ex._tables().obj.sort('col')
+        assert obj.height == 3
+        assert obj['coeff'].to_list() == [1.0, 2.0, 3.0]  # floor itself, un-summed
