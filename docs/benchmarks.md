@@ -18,12 +18,12 @@ off [`bench/results/latest.jsonl`](../bench/results/latest.jsonl), which carries
 the machine fingerprint and library versions that produced it:
 
 ```bash
-uv run python -m bench.run --cases dispatch nodal transport --sizes xs s m l
+uv run python -m bench.run --cases dispatch nodal sector transport --sizes xs s m l
 uv run python -m bench.report bench/results/latest.jsonl
 ```
 
 macOS, M-series, 26 GB. python 3.13.2 · polars 1.43.0 · linopy 0.9.0 ·
-highspy 1.15.1. Parity gate: all three cases agree with the eager lane to
+highspy 1.15.1. Parity gate: all four cases agree with the eager lane to
 0.0e+00 relative before anything is timed.
 
 ## Results
@@ -34,19 +34,19 @@ highspy 1.15.1. Parity gate: all three cases agree with the eager lane to
 
 | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
 |---|---|---|---|---|---|---|
-| 10k | 0.08 s | 0.25 s | **0.34x** | 0.17 GB | 0.21 GB | **0.81x** |
-| 100k | 0.10 s | 0.24 s | **0.41x** | 0.22 GB | 0.26 GB | **0.84x** |
-| 1M | 0.36 s | 0.44 s | **0.81x** | 0.53 GB | 0.60 GB | **0.89x** |
-| 10M | 4.24 s | 3.04 s | 1.39x | 3.00 GB | 2.17 GB | 1.38x |
+| 10k | 0.05 s | 0.18 s | **0.29x** | 0.17 GB | 0.21 GB | **0.80x** |
+| 100k | 0.07 s | 0.19 s | **0.36x** | 0.22 GB | 0.26 GB | **0.83x** |
+| 1M | 0.29 s | 0.33 s | **0.87x** | 0.53 GB | 0.59 GB | **0.89x** |
+| 10M | 2.44 s | 1.69 s | 1.44x | 2.46 GB | 2.31 GB | 1.07x |
 
 ### nodal — `(snapshot, node, tech)` at 25% density
 
 | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
 |---|---|---|---|---|---|---|
-| 3k | 0.09 s | 0.28 s | **0.31x** | 0.17 GB | 0.21 GB | **0.81x** |
-| 30k | 0.10 s | 0.29 s | **0.36x** | 0.21 GB | 0.24 GB | **0.89x** |
-| 300k | 0.29 s | 0.43 s | **0.66x** | 0.46 GB | 0.46 GB | 1.00x |
-| 3M | 3.76 s | 1.43 s | 2.63x | 1.89 GB | 1.58 GB | 1.20x |
+| 3k | 0.05 s | 0.18 s | **0.29x** | 0.17 GB | 0.21 GB | **0.81x** |
+| 30k | 0.06 s | 0.19 s | **0.31x** | 0.20 GB | 0.24 GB | **0.86x** |
+| 300k | 0.13 s | 0.24 s | **0.52x** | 0.41 GB | 0.45 GB | **0.90x** |
+| 3M | 0.81 s | 0.78 s | 1.04x | 1.37 GB | 1.58 GB | **0.87x** |
 
 ### sector — dense snapshots and carriers, sparse portfolio
 
@@ -57,19 +57,19 @@ then reduces the sparse one.
 
 | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
 |---|---|---|---|---|---|---|
-| 1k | 0.07 s | 0.25 s | **0.29x** | 0.17 GB | 0.21 GB | **0.80x** |
-| 10k | 0.09 s | 0.28 s | **0.31x** | 0.20 GB | 0.24 GB | **0.85x** |
-| 100k | 0.21 s | 0.38 s | **0.56x** | 0.41 GB | 0.52 GB | **0.78x** |
-| 1M | 1.60 s | 2.51 s | **0.63x** | **1.25 GB** | 2.45 GB | **0.51x** |
+| 1k | 0.05 s | 0.19 s | **0.27x** | 0.17 GB | 0.21 GB | **0.81x** |
+| 10k | 0.06 s | 0.20 s | **0.30x** | 0.20 GB | 0.24 GB | **0.84x** |
+| 100k | 0.11 s | 0.28 s | **0.38x** | 0.39 GB | 0.53 GB | **0.75x** |
+| 1M | 0.63 s | 1.01 s | **0.62x** | **0.98 GB** | 2.97 GB | **0.33x** |
 
 ### transport — three `group_sum` joins per row
 
 | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
 |---|---|---|---|---|---|---|
-| 9.8k | 0.10 s | 0.27 s | **0.37x** | 0.18 GB | 0.22 GB | **0.83x** |
-| 98k | 0.12 s | 0.33 s | **0.37x** | 0.25 GB | 0.28 GB | **0.87x** |
-| 980k | 0.59 s | 0.73 s | **0.80x** | 0.71 GB | 0.65 GB | 1.11x |
-| 9.8M | 6.92 s | 3.72 s | 1.86x | 3.00 GB | 1.93 GB | 1.56x |
+| 9.8k | 0.06 s | 0.20 s | **0.29x** | 0.18 GB | 0.22 GB | **0.82x** |
+| 98k | 0.08 s | 0.22 s | **0.35x** | 0.24 GB | 0.29 GB | **0.83x** |
+| 980k | 0.25 s | 0.37 s | **0.67x** | 0.62 GB | 0.66 GB | **0.94x** |
+| 9.8M | 2.64 s | 2.15 s | 1.23x | 3.38 GB | 1.93 GB | 1.75x |
 
 ## What this says
 
@@ -78,15 +78,15 @@ range declarative modelling is actually used in, and the range a rolling horizon
 lives in entirely.
 
 **Above ~1M the build-side memory advantage narrows or inverts.** At 10M
-variables the LP path is level on `dispatch` (1.06x) and 2.1x on `transport`:
+variables the LP path is level on `dispatch` (1.07x) and 1.75x on `transport`:
 COO carries a `(row, col, coeff)` triple per nonzero where a dense array carries
 one float. **Read the next section before drawing a conclusion from that** —
 measured to the point a caller actually reaches, we are ahead on all three, and
 build memory on its own is not a number anyone experiences.
 
-`transport` is the case still paying full price, because three `group_sum`
-fragments land on every row and so the terminal aggregate cannot be skipped
-(see `_needs_aggregate`). It is the obvious next thing to look at.
+`transport` is the case still paying full price on memory, because three
+`group_sum` fragments land on every row and so the terminal aggregate cannot be
+skipped (see `_needs_aggregate`). It is the obvious next thing to look at.
 
 **Labels are a position, not a count.** An unmasked coordinate product needs no
 sort: a row's label is arithmetic on the dim ordinals, so it is computed rather
@@ -95,14 +95,22 @@ than counted. That path cut `transport`'s build from 2.57 s to 0.87 s and
 this file, and one that has nothing to do with which engine executes it.
 
 **What is left at scale is the LP writer**, which is most of the wall clock at
-the `l` rung on every case. That is where the next work belongs.
+the `l` rung on every case. Emitting one sorted stream of lines rather than
+gathering each row's terms into a string took that down by 25-57% on `sector`,
+`nodal` and `transport`, and put 13% *back* on `dispatch` — the one case with
+few rows and many terms each, where there was little for a group-by to group
+and there is everything for a sort to sort. It also made the bytes
+reproducible, which is what the change was for.
 
 **Ratios, not seconds.** Both arms of a row are measured in the same run under
 the same machine load and the report takes the fastest of three, so the ratio
-columns survive a busy machine in a way the absolute times do not.
+columns survive a busy machine in a way the absolute times do not. This table
+was taken on a quiet one — nothing else above 40% CPU — because a competing
+job moved the *farkas* arm more than the linopy arm and so moved the ratio
+too.
 
 **Sparsity separates them, but only once the coordinate product is large.**
-The `sector` row above is the clearest result in this file — 2.2x less memory
+The `sector` row above is the clearest result in this file — 3x less memory
 at 1M live variables out of a 12M product — and the density sweep below shows
 why it took two cases to find.
 
@@ -126,8 +134,8 @@ as density falls.
 The reason is the size this sweep is run at, not the prediction. It holds the
 coordinate product fixed at 1.2M, where a dense array over it is ~10 MB and the
 interpreter and libraries dominate everything. `sector` runs the same 8%
-sparsity at a 12M product, and there the effect is unmistakable: 1.27 GB against
-2.79 GB.
+sparsity at a 12M product, and there the effect is unmistakable: 0.98 GB against
+2.97 GB.
 
 So the claim needs both halves — **low density and a product large enough for it
 to cost anything**. This sweep varies one at a size that cannot show it; `sector`
@@ -151,28 +159,35 @@ Same machine, `l` rung of each case:
 | | build | + handoff | handoff time |
 |---|---|---|---|
 | **dispatch, 10M** | | | |
-| farkas | 1.44 GB | **3.13 GB** | 3.55 s |
-| linopy (`io_api='direct'`) | 0.75 GB | 3.38 GB | 2.92 s |
+| farkas | 1.42 GB | **3.28 GB** | **0.50 s** |
+| linopy (`io_api='direct'`) | 0.74 GB | 3.38 GB | 1.66 s |
 | **nodal, 3M @ 25% density** | | | |
-| farkas | 1.21 GB | **1.50 GB** | **0.89 s** |
-| linopy (`io_api='direct'`) | 1.04 GB | 2.01 GB | 1.26 s |
+| farkas | 1.19 GB | **1.50 GB** | **0.16 s** |
+| linopy (`io_api='direct'`) | 1.04 GB | 1.97 GB | 0.78 s |
 | **transport, 9.8M** | | | |
-| farkas | 2.95 GB | **3.71 GB** | 2.69 s |
-| linopy (`io_api='direct'`) | 1.06 GB | 4.04 GB | 2.31 s |
+| farkas | 2.84 GB | **3.89 GB** | **0.73 s** |
+| linopy (`io_api='direct'`) | 1.05 GB | 4.00 GB | 1.92 s |
 
-**Measured here we are ahead on all three** — 3.13 against 3.38 GB, 1.50
-against 2.01, 3.71 against 4.04 — where the LP-file tables above have us behind
+**Measured here we are ahead on all three** — 3.28 against 3.38 GB, 1.50
+against 1.97, 3.89 against 4.00 — where the LP-file tables above have us behind
 on two of them. HiGHS's own model is the larger term on both sides, so a
 build-side deficit that looks decisive at the LP file mostly is not where a
-caller stands.
+caller stands. The margins are narrow, though, and narrower than the LP-file
+tables would suggest in the other direction: what this row really says is that
+the two lanes converge once the solver has the model.
 
-**The sparse case is the widest margin**: 1.50 GB against 2.01, in two thirds
-of the time. `nodal` is the shape real multi-node models have, which makes it
-the row to weight.
+**The handoff itself is now the lopsided part**: 0.50 s against 1.66 s, 0.16
+against 0.78, 0.73 against 1.92 — two to five times faster on all three, since
+`col` is dense and so the sink scatters into position rather than joining the
+objective on and sorting by it.
+
+**The sparse case is the widest margin on memory**: 1.50 GB against 1.97, in a
+fifth of the time. `nodal` is the shape real multi-node models have, which
+makes it the row to weight.
 
 **Do not read `io_api='lp'` numbers as the eager lane's cost.** The same
 `dispatch` model through linopy's LP-file path peaks at 6.92 GB and takes 55 s
-to hand off, against 3.38 GB and 2.9 s direct. The tables above compare against
+to hand off, against 3.38 GB and 1.7 s direct. The tables above compare against
 linopy's *better* path deliberately.
 
 ## Sink capabilities
