@@ -59,7 +59,22 @@ def test_dual_respects_the_where_mask(dispatch_yaml, dispatch_inputs):
 
 
 def test_milp_refuses_duals_and_names_the_variable(commitment_inputs):
-    """Integrality is decidable from the program, so the message says which."""
+    """Integrality is decidable from the program, so the message says which.
+
+    **A deliberate divergence from the oracle, not an oversight.** Asked for
+    the duals of this same model, linopy hands back an array of zeros — the
+    ``dual`` entry exists and every value is ``0.0`` — which is a plausible
+    number with no signal attached, the ``bug:silent`` class. (On an
+    *unsolved* model the two lanes agree that it must raise: linopy through
+    its ``has_optimized_model`` gate, we through ``_require_solution`` — see
+    the infeasible test below.)
+
+    Hard rule 3 governs the *language*, and both lanes still accept this
+    model and agree on its objective; what differs is a post-solve read-back
+    that has no defined answer. #78 fixed the direction: a model with any
+    binary or integer variable must raise, naming the reason, not return
+    zeros. Parity here would be parity with the bug.
+    """
     data, coords = commitment_inputs
 
     with differential(COMMITMENT_YAML, data, coords) as run:
