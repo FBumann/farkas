@@ -664,13 +664,15 @@ class PolarsExecutor:
 
     def solve(
         self,
-        batch_rows: int = 100_000,
+        batch_rows: int | None = None,
         solver_options: Mapping[str, Any] | None = None,
     ) -> Result:
         """Sink the built model straight into HiGHS and solve it.
 
         ``solver_options`` is forwarded verbatim to the solver, the way
         linopy's is — ``{'time_limit': 60, 'mip_rel_gap': 0.01}``.
+        ``batch_rows`` is the hand-off budget in elements, and defaults to the
+        sink's own — see :data:`~farkas.relational.sinks.highs.HANDOFF_BUDGET`.
         """
         status, objective, primal, dual = sinks.solve_direct(self._tables(), batch_rows, solver_options)
         self._sol, self._duals = primal, dual

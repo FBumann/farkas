@@ -29,6 +29,24 @@ if TYPE_CHECKING:
     from farkas.relational.sinks.tables import ModelTables
 
 
+#: Elements per hand-off chunk. The engine has one batched pass left — this
+#: one — because labels became positional, so this is the sink's own budget
+#: rather than a copy of a build-side knob. Spent through
+#: :mod:`~farkas.relational.chunking`, which asks a caller to state what one
+#: unit costs: a column is one element, a constraint row is as many as it has
+#: nonzeros.
+#:
+#: Deliberately small, and the opposite of what the same budget settled at on
+#: the duckdb engine. There a wider chunk was worth a third of the hand-off,
+#: because every chunk re-ran an ordered query; here the columns are numpy
+#: slices and the rows a filter over an already-sorted frame, so more chunks
+#: cost almost nothing and only residency scales with the budget. Measured at
+#: `l`: 2e6 against 1e5 is 0.50s against 0.59s on `dispatch` and 0.71 against
+#: 0.75 on `transport`, for 0.6 GB and 0.2 GB more peak. A tenth of a second
+#: on a hand-off that precedes a minute of simplex is not worth half a
+#: gigabyte of the invariant.
+HANDOFF_BUDGET = 100_000
+
 #: HiGHS model status -> termination condition. Copied from linopy's own
 #: ``Highs.CONDITION_MAP``; ``tests/test_solve_status.py`` asserts it still
 #: matches, so a HiGHS release that adds a status shows up as a failure here
@@ -58,7 +76,7 @@ _CONDITION_OF_HIGHS_STATUS = {
 
 def solve_direct(
     model: ModelTables,
-    batch_rows: int = 100_000,
+    batch_rows: int | None = None,
     solver_options: Mapping[str, Any] | None = None,
 ) -> tuple[SolveStatus, float, pl.DataFrame | None, pl.DataFrame | None]:
     """Feed the model to HiGHS and solve it.
@@ -71,11 +89,16 @@ def solve_direct(
     none at all, and neither does a run stopped short of a simplex basis. HiGHS
     hands back full-length vectors of zeros either way, and returning them
     would only make them reachable.
+
+    ``batch_rows`` is the budget in *elements*, spent through
+    :mod:`~farkas.relational.chunking` so a chunk's width is stated rather than
+    assumed. The parameter stays so tests can force ragged chunks.
     """
     import highspy
     import numpy as np
     import polars as pl
 
+    batch = HANDOFF_BUDGET if batch_rows is None else batch_rows
     inf = highspy.kHighsInf
     h = highspy.Highs()
     h.setOptionValue('output_flag', False)
@@ -92,8 +115,7 @@ def solve_direct(
     cost = _by_column(count, model.obj['col'].to_numpy(), model.obj['coeff'].to_numpy(), 0.0)
     np.nan_to_num(lb, copy=False, neginf=-inf, posinf=inf)
     np.nan_to_num(ub, copy=False, neginf=-inf, posinf=inf)
-    for lo in range(0, count, batch_rows):
-        hi = min(lo + batch_rows, count)
+    for lo, hi in model.col_chunks(batch):
         _loaded(h, h.addCols(hi - lo, cost[lo:hi], lb[lo:hi], ub[lo:hi], 0, empty_i, empty_i, empty_f), 'columns')
         noncontinuous = np.flatnonzero(integral[lo:hi]).astype(np.int32) + np.int32(lo)
         if len(noncontinuous):
@@ -102,7 +124,7 @@ def solve_direct(
 
     ordered_rows = model.rows.sort('row')
     ordered_matrix = model.matrix.sort('row')
-    for lo, hi in model.row_chunks(batch_rows):
+    for lo, hi in model.row_chunks_by_nonzeros(batch):
         rows = ordered_rows.filter(pl.col('row').is_between(lo, hi, closed='left')).select(
             'row',
             pl.when(pl.col('sense') == '<=').then(-inf).otherwise(pl.col('rhs')).alias('rlb'),

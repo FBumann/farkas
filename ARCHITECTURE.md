@@ -304,6 +304,7 @@ native schema merge (#30) is what would force the question.
 | `relational/plan.py` | frozen logical-plan dataclasses |
 | `relational/frames.py` | the boundary — caller tables in, via the Arrow PyCapsule protocol |
 | `relational/compiler.py` | plan → lazy frames; pure, reads nothing |
+| `relational/chunking.py` | how a batched pass sizes its chunk: budget ÷ the width of one unit |
 | `relational/status.py` | solve outcome on two axes; linopy's vocabulary, copied not imported |
 | `relational/executor.py` | bind sources, assign labels, assemble the model frames |
 | `relational/sinks/` | how a built model leaves: `lp_file`, `solver_direct` (one module each, [README](src/farkas/relational/sinks/README.md)) |

@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.0.0-alpha.26](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.25...v0.0.0-alpha.26) (2026-07-27)
+
+
+### Documentation
+
+* **bench:** correct the label-optimisation numbers, and say how to get them ([#188](https://github.com/FBumann/farkas/issues/188)) ([bf84fd1](https://github.com/FBumann/farkas/commit/bf84fd1c1eb1ad6388d96b26827f83c4de3712c5))
+
+## [0.0.0-alpha.25](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.24...v0.0.0-alpha.25) (2026-07-27)
+
+
+### Performance
+
+* **sink:** size the hand-off by nonzeros, under one budget and one chunking rule ([#195](https://github.com/FBumann/farkas/issues/195)) ([c31beaf](https://github.com/FBumann/farkas/commit/c31beafdbe95e48a902dd19fa4b27de27b9bc4c0))
+
 ## [0.0.0-alpha.24](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.23...v0.0.0-alpha.24) (2026-07-27)
 
 
