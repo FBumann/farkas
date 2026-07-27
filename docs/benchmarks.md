@@ -160,40 +160,56 @@ Wall time behaves throughout: our advantage grows as the model thins, 1.0x to
 The tables above stop at an LP file, which is one of two sinks and the one
 fewer people use. `solver_direct` hands the COO straight to HiGHS, and **the
 handoff is part of the cost this package controls** — so it belongs in the
-comparison. Measured with `Highs.run` stubbed out, which keeps the simplex
-workspace (which no engine here influences) out of the number while keeping
-HiGHS's own copy of the model, which the handoff necessarily creates.
+comparison.
 
-Same machine, `l` rung of each case:
+`l` rung of each case, one process per arm, best of two:
 
-| | build | + handoff | handoff time |
-|---|---|---|---|
-| **dispatch, 10M** | | | |
-| farkas | 1.42 GB | **3.28 GB** | **0.50 s** |
-| linopy (`io_api='direct'`) | 0.74 GB | 3.38 GB | 1.66 s |
-| **nodal, 3M @ 25% density** | | | |
-| farkas | 1.19 GB | **1.50 GB** | **0.16 s** |
-| linopy (`io_api='direct'`) | 1.04 GB | 1.97 GB | 0.78 s |
-| **transport, 9.8M** | | | |
-| farkas | 2.84 GB | **3.89 GB** | **0.73 s** |
-| linopy (`io_api='direct'`) | 1.05 GB | 4.00 GB | 1.92 s |
+| | build | + handoff | = total | peak |
+|---|---|---|---|---|
+| **dispatch, 10M** | | | | |
+| farkas | 0.45 s | 0.56 s | **1.01 s** | 3.28 GB |
+| linopy (`io_api='direct'`) | 0.26 s | 1.70 s | 1.96 s | 3.39 GB |
+| **nodal, 3M @ 25% density** | | | | |
+| farkas | 0.35 s | 0.17 s | **0.52 s** | 1.50 GB |
+| linopy (`io_api='direct'`) | 0.34 s | 0.78 s | 1.12 s | 1.97 GB |
+| **transport, 9.8M** | | | | |
+| farkas | 0.75 s | 0.76 s | **1.53 s** | 3.55 GB |
+| linopy (`io_api='direct'`) | 0.66 s | 1.98 s | 2.65 s | 3.70 GB |
 
-**Measured here we are ahead on all three** — 3.28 against 3.38 GB, 1.50
-against 1.97, 3.89 against 4.00 — where the LP-file tables above have us behind
-on two of them. HiGHS's own model is the larger term on both sides, so a
-build-side deficit that looks decisive at the LP file mostly is not where a
-caller stands. The margins are narrow, though, and narrower than the LP-file
-tables would suggest in the other direction: what this row really says is that
-the two lanes converge once the solver has the model.
+**What is in the number**
 
-**The handoff itself is now the lopsided part**: 0.50 s against 1.66 s, 0.16
-against 0.78, 0.73 against 1.92 — two to five times faster on all three, since
-`col` is dense and so the sink scatters into position rather than joining the
-objective on and sorting by it.
+| | |
+|---|---|
+| Counted, both arms | reading the parquet · building the model · assembling the matrix · loading it into HiGHS |
+| Not counted, both arms | `import` · the simplex — `Highs.run` is stubbed and returns without solving · reading the solution back |
+| Only one arm pays | *farkas*: routing paths to parameters vs dimensions sits outside the clock; it parses the YAML and reads no data. *linopy*: nothing. |
+| Known tilts, both toward us | the eager arm is `farkas.linopy.build`, ~15% slower to build than hand-written linopy · peak carries each lane's import footprint, ~40 MB heavier for linopy |
 
-**The sparse case is the widest margin on memory**: 1.50 GB against 1.97, in a
-fifth of the time. `nodal` is the shape real multi-node models have, which
-makes it the row to weight.
+**Read the total, not the phases.** linopy's direct path calls `model.matrices`
+at *solve* time, so it assembles and `tocsr()`s the matrix inside its handoff,
+where this lane produced COO during its build. The phase columns are shown so
+that split is visible, not so either can be quoted alone: the handoff column on
+its own flatters us by exactly the work we did earlier, and the build column
+flatters linopy by the same amount.
+
+`import` is out because it is ~0.07 s of polars against ~0.20 s of linopy +
+xarray + pandas — a fixed cost of the lane, not of the model.
+
+**Measured to here we are about 2x faster on all three** — 0.51x, 0.46x, 0.57x
+— where the LP-file tables above have us behind on two of them. The difference
+is what the LP-file route spends on float-to-text, against a writer that has
+had a great deal of tuning; nothing about the engine changes between the two
+tables.
+
+**Peak is the weaker half of this claim.** 3.28 against 3.39 GB and 3.55
+against 3.70 are inside the run-to-run spread — `transport`'s linopy arm read
+3.14 GB on its other repeat, i.e. ahead of us — so the honest reading is
+*level* on those two. Only `nodal`, at 1.50 against 1.97, separates. HiGHS's
+own copy dominates once the model is loaded, and neither lane can shrink it.
+
+**The sparse case is the one to weight**: `nodal` is the shape real multi-node
+models have, and it is the widest margin on both axes — half the time and three
+quarters of the memory.
 
 **Do not read `io_api='lp'` numbers as the eager lane's cost.** The same
 `dispatch` model through linopy's LP-file path peaks at 6.92 GB and takes 55 s
