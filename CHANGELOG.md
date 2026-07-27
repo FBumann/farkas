@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.0-alpha.24](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.23...v0.0.0-alpha.24) (2026-07-27)
+
+
+### Performance
+
+* **sink:** hand Arrow to numpy directly, not through to_pydict ([#193](https://github.com/FBumann/farkas/issues/193)) ([ac64f26](https://github.com/FBumann/farkas/commit/ac64f261239326e48a0c441774beedabb908a46f))
+
 ## [0.0.0-alpha.23](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.22...v0.0.0-alpha.23) (2026-07-27)
 
 
