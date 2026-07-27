@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.0-alpha.17](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.16...v0.0.0-alpha.17) (2026-07-27)
+
+
+### Features
+
+* forward solver_options, and gate reads on an actual incumbent ([#169](https://github.com/FBumann/farkas/issues/169)) ([493a5e6](https://github.com/FBumann/farkas/commit/493a5e6f9d26184e3f1b855d963692343a5bf680))
+
 ## [0.0.0-alpha.16](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.15...v0.0.0-alpha.16) (2026-07-27)
 
 
