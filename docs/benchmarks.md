@@ -44,19 +44,19 @@ highspy 1.15.1. Parity gate: all four cases agree with the eager lane to
 
 | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
 |---|---|---|---|---|---|---|
-| 10k | 0.05 s | 0.18 s | **0.29x** | 0.17 GB | 0.21 GB | **0.80x** |
-| 100k | 0.07 s | 0.19 s | **0.36x** | 0.22 GB | 0.26 GB | **0.83x** |
-| 1M | 0.29 s | 0.33 s | **0.87x** | 0.53 GB | 0.59 GB | **0.89x** |
-| 10M | 2.44 s | 1.69 s | 1.44x | 2.46 GB | 2.31 GB | 1.07x |
+| 10k | 0.05 s | 0.21 s | **0.25x** | 0.17 GB | 0.21 GB | **0.79x** |
+| 100k | 0.06 s | 0.22 s | **0.29x** | 0.21 GB | 0.26 GB | **0.81x** |
+| 1M | 0.20 s | 0.35 s | **0.57x** | 0.48 GB | 0.59 GB | **0.82x** |
+| 10M | 1.62 s | 1.73 s | **0.94x** | 2.42 GB | 2.19 GB | 1.11x |
 
 ### nodal — `(snapshot, node, tech)` at 25% density
 
 | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
 |---|---|---|---|---|---|---|
-| 3k | 0.05 s | 0.18 s | **0.29x** | 0.17 GB | 0.21 GB | **0.81x** |
-| 30k | 0.06 s | 0.19 s | **0.31x** | 0.20 GB | 0.24 GB | **0.86x** |
-| 300k | 0.13 s | 0.24 s | **0.52x** | 0.41 GB | 0.45 GB | **0.90x** |
-| 3M | 0.81 s | 0.78 s | 1.04x | 1.37 GB | 1.58 GB | **0.87x** |
+| 3k | 0.05 s | 0.21 s | **0.24x** | 0.17 GB | 0.21 GB | **0.80x** |
+| 30k | 0.06 s | 0.22 s | **0.27x** | 0.20 GB | 0.24 GB | **0.86x** |
+| 300k | 0.12 s | 0.27 s | **0.43x** | 0.41 GB | 0.46 GB | **0.90x** |
+| 3M | 0.78 s | 0.85 s | **0.92x** | 1.37 GB | 1.56 GB | **0.88x** |
 
 ### sector — dense snapshots and carriers, sparse portfolio
 
@@ -67,19 +67,19 @@ then reduces the sparse one.
 
 | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
 |---|---|---|---|---|---|---|
-| 1k | 0.05 s | 0.19 s | **0.27x** | 0.17 GB | 0.21 GB | **0.81x** |
-| 10k | 0.06 s | 0.20 s | **0.30x** | 0.20 GB | 0.24 GB | **0.84x** |
-| 100k | 0.11 s | 0.28 s | **0.38x** | 0.39 GB | 0.53 GB | **0.75x** |
-| 1M | 0.63 s | 1.01 s | **0.62x** | **0.98 GB** | 2.97 GB | **0.33x** |
+| 1k | 0.05 s | 0.22 s | **0.24x** | 0.17 GB | 0.21 GB | **0.80x** |
+| 10k | 0.06 s | 0.22 s | **0.26x** | 0.20 GB | 0.24 GB | **0.83x** |
+| 100k | 0.10 s | 0.30 s | **0.34x** | 0.39 GB | 0.52 GB | **0.73x** |
+| 1M | 0.55 s | 1.09 s | **0.51x** | **0.97 GB** | 2.96 GB | **0.33x** |
 
 ### transport — three `group_sum` joins per row
 
 | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
 |---|---|---|---|---|---|---|
-| 9.8k | 0.06 s | 0.20 s | **0.29x** | 0.18 GB | 0.22 GB | **0.82x** |
-| 98k | 0.08 s | 0.22 s | **0.35x** | 0.24 GB | 0.29 GB | **0.83x** |
-| 980k | 0.25 s | 0.37 s | **0.67x** | 0.62 GB | 0.66 GB | **0.94x** |
-| 9.8M | 2.64 s | 2.15 s | 1.23x | 3.38 GB | 1.93 GB | 1.75x |
+| 9.8k | 0.06 s | 0.23 s | **0.24x** | 0.18 GB | 0.22 GB | **0.81x** |
+| 98k | 0.07 s | 0.25 s | **0.29x** | 0.24 GB | 0.29 GB | **0.82x** |
+| 980k | 0.23 s | 0.41 s | **0.56x** | 0.62 GB | 0.67 GB | **0.93x** |
+| 9.8M | 2.18 s | 2.09 s | 1.04x | 3.24 GB | 1.87 GB | 1.73x |
 
 ## What this says
 
@@ -88,7 +88,7 @@ range declarative modelling is actually used in, and the range a rolling horizon
 lives in entirely.
 
 **Above ~1M the build-side memory advantage narrows or inverts.** At 10M
-variables the LP path is level on `dispatch` (1.07x) and 1.75x on `transport`:
+variables the LP path is 1.11x on `dispatch` and 1.73x on `transport`:
 COO carries a `(row, col, coeff)` triple per nonzero where a dense array carries
 one float. **Read the next section before drawing a conclusion from that** —
 measured to the point a caller actually reaches, we are ahead on all three, and
@@ -104,13 +104,33 @@ than counted. That path cut `transport`'s build from 2.57 s to 0.87 s and
 `dispatch`'s from 0.97 s to 0.49 s at the `l` rung — the largest single win in
 this file, and one that has nothing to do with which engine executes it.
 
-**What is left at scale is the LP writer**, which is most of the wall clock at
-the `l` rung on every case. Emitting one sorted stream of lines rather than
-gathering each row's terms into a string took that down by 25-57% on `sector`,
-`nodal` and `transport`, and put 13% *back* on `dispatch` — the one case with
-few rows and many terms each, where there was little for a group-by to group
-and there is everything for a sort to sort. It also made the bytes
-reproducible, which is what the change was for.
+**The LP writer is no longer what is left at scale.** It was: emit is most of
+the wall clock at the `l` rung on every case, and the writer used to lose to
+linopy's on three of the four. Two changes closed it, and neither was a better
+relational plan.
+
+The first was that the sink wrote every byte twice — each section to a part
+file, then a pass concatenating the parts. Sections come out in the order the
+LP format wants them, so the parts bought nothing, and at 800 MB the
+concatenation costs more than producing the text did. Sinking each section
+straight into the open file took **30-35% off emit on all four cases** —
+measured as a before/after on one machine, with the old sink re-measured
+afterwards to confirm the machine had not drifted under the pair.
+
+The second was that a line was built by chaining `+`, which allocates a
+full-width string column per operator, where one `concat_str` allocates the
+line once. In the same pass the sign stopped being decided in front of a
+rendered `abs()` — that renders the magnitude in both arms of the `when` to
+discard one, and the cast already carries the `-`.
+
+Emit is now **0.81x, 0.79x, 0.39x and 0.96x** of linopy's writer at the `l`
+rung — ahead on every case, where before it was behind on three. Peak did not
+move: this was wall time, and it leaves the memory rows exactly where they
+were. **`transport`'s 1.73x peak is now the one open number at scale.**
+
+The earlier change in this area, emitting one sorted stream of lines rather
+than gathering each row's terms into a string, is what makes the bytes
+reproducible (#109), which is what it was for.
 
 **Ratios, not seconds.** Both arms of a row are measured in the same run under
 the same machine load and the report takes the fastest of three, so the ratio
@@ -133,19 +153,19 @@ as density falls.
 
 | installed | live vars | wall: farkas | wall: linopy | peak: farkas | peak: linopy |
 |---|---|---|---|---|---|
-| 12/12 | 1.20M | 0.58 s | 0.59 s | 0.68 GB | 0.63 GB |
-| 6/12 | 0.60M | **0.38 s** | 0.45 s | 0.52 GB | 0.60 GB |
-| 3/12 | 0.30M | **0.35 s** | 0.41 s | 0.46 GB | 0.45 GB |
-| 1/12 | 0.10M | **0.19 s** | 0.32 s | 0.40 GB | **0.35 GB** |
+| 12/12 | 1.20M | **0.26 s** | 0.39 s | 0.60 GB | 0.62 GB |
+| 6/12 | 0.60M | **0.16 s** | 0.31 s | 0.46 GB | 0.60 GB |
+| 3/12 | 0.30M | **0.12 s** | 0.27 s | 0.40 GB | 0.45 GB |
+| 1/12 | 0.10M | **0.09 s** | 0.25 s | 0.36 GB | **0.35 GB** |
 
-**Not here it does not.** linopy's peak falls with density too — 0.63 to
+**Not here it does not.** linopy's peak falls with density too — 0.62 to
 0.35 GB — and at the sparsest rung it ends up *below* ours.
 
 The reason is the size this sweep is run at, not the prediction. It holds the
 coordinate product fixed at 1.2M, where a dense array over it is ~10 MB and the
 interpreter and libraries dominate everything. `sector` runs the same 8%
-sparsity at a 12M product, and there the effect is unmistakable: 0.98 GB against
-2.97 GB.
+sparsity at a 12M product, and there the effect is unmistakable: 0.97 GB against
+2.96 GB.
 
 So the claim needs both halves — **low density and a product large enough for it
 to cost anything**. This sweep varies one at a size that cannot show it; `sector`
@@ -196,10 +216,11 @@ flatters linopy by the same amount.
 xarray + pandas — a fixed cost of the lane, not of the model.
 
 **Measured to here we are about 2x faster on all three** — 0.51x, 0.46x, 0.57x
-— where the LP-file tables above have us behind on two of them. The difference
-is what the LP-file route spends on float-to-text, against a writer that has
-had a great deal of tuning; nothing about the engine changes between the two
-tables.
+— against roughly level on the LP-file tables above. Nothing about the engine
+changes between the two tables; the difference is that the LP-file route
+spends most of its clock turning doubles into text and writing them, which is
+work neither lane can avoid and which therefore compresses the ratio toward
+1.00 however fast the build was.
 
 **Peak is the weaker half of this claim.** 3.28 against 3.39 GB and 3.55
 against 3.70 are inside the run-to-run spread — `transport`'s linopy arm read
