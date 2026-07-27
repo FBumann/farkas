@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.0.0-alpha.14](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.13...v0.0.0-alpha.14) (2026-07-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* `Solution` is now `Result`; `status` returns the coarse axis (`ok`) rather than the solver's wording (`Optimal`) — `termination_condition` carries that, and `is_ok` is what most call sites meant. `objective` is `nan` and `primal`/`to_*` raise `NoSolutionError` when the solve produced nothing.
+
+### Features
+
+* a solve result tells you whether it has one ([#148](https://github.com/FBumann/farkas/issues/148)) ([30a91c8](https://github.com/FBumann/farkas/commit/30a91c853913bb7dee9e35323624b26f45ef5a45))
+
 ## [0.0.0-alpha.13](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.12...v0.0.0-alpha.13) (2026-07-26)
 
 
