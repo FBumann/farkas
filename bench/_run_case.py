@@ -137,8 +137,10 @@ def _objective(case: Case, shape: Shape, paths: dict[str, str], arm: str) -> flo
 
         sources, coords = _split_sources(case, paths)
         with fk.solve(case.model, sources, coords=coords, memory_limit='2GB') as sol:
-            if sol.status != 'Optimal':
-                raise RuntimeError(f'farkas solve returned {sol.status}, not Optimal')
+            # linopy's own vocabulary, which #148 adopted: `status` is the
+            # solver's health, `termination_condition` is what it concluded
+            if sol.termination_condition != 'optimal':
+                raise RuntimeError(f'farkas solve terminated {sol.termination_condition!r}, not optimal')
             return float(sol.objective)
 
     from farkas import linopy as farkas_linopy

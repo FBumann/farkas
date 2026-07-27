@@ -134,6 +134,42 @@ numbers), cached under `bench/.cache/`, and feasible by construction.
 Storage (`roll`, the bounded-halo self-join) and a MILP through `solver_direct`
 are the next rungs — see docs/benchmarks.md.
 
+## The other harness: regression benchmarks
+
+`bench/regressions/` asks a different question — *did this change make it
+worse?* — and answers it with a different metric, deliberately.
+
+```bash
+uv sync --group bench
+uv run pytest bench/regressions --benchmark-memory
+uv run pytest bench/regressions --benchmark-memory-compare=0001 \
+    --benchmark-memory-compare-fail=mean:10%
+```
+
+It is [`pytest-benchmem`](https://github.com/fluxopt/pytest-benchmem): a memray
+peak pass on top of pytest-benchmark's timing, with `isolate=True` so every pass
+is a fresh process — duckdb would otherwise be measured with a warm buffer pool,
+and isolation is what makes whole-process `rss` available beside the memray
+peak.
+
+**Why memray here and not in the published ladder.** Measured on `dispatch/m`:
+
+| arm | `ru_maxrss` | memray peak |
+|---|---|---|
+| farkas | 309 MB | 211 MB |
+| linopy | 604 MB | **2967 MB** |
+
+memray counts polars' reserved arenas as allocated and does not count the
+interpreter or mapped libraries at all, so the bias points in *opposite*
+directions in the two lanes: the peak ratio is 0.51x by RSS and 0.07x by memray.
+A published cross-library claim built on that would be false the moment a reader
+ran `/usr/bin/time`. Within one lane the same bias sits on both sides of a diff
+and cancels, leaving a metric that is deterministic and attributable to a call
+stack — which RSS, sensitive to machine load, is not.
+
+So: RSS for the comparison we publish, memray for the regressions we chase.
+`--benchmark-memory-compare-fail` is what turns the second into a gate.
+
 ## Adding a case
 
 Add a YAML file under `bench/models/`, a data generator and a ladder to
