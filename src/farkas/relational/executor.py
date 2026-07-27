@@ -282,7 +282,13 @@ class PolarsExecutor:
                 f"source for parameter '{p.name}' is missing columns {sorted(missing)} "
                 f"(need dims {list(p.dims)} plus 'value')"
             )
-        frame = frame.select(wanted).collect().lazy()
+        # streaming here and nowhere else in this file: this is the one
+        # collect whose result is model-sized, so it is the one the engine
+        # choice moves. `collect()` defaults to the in-memory engine — unlike
+        # `sink_csv`, whose default resolves to streaming — and switching every
+        # collect costs 29% on a small join-heavy model to save the same 0.15 GB
+        # this one saves alone.
+        frame = frame.select(wanted).collect(engine='streaming').lazy()
         self._check_one_row_per_coordinate(p, frame)
         if frame.collect_schema()['value'] == pl.Boolean:
             self._bool_params.add(p.name)

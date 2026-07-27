@@ -36,7 +36,10 @@ def _sink(frame: pl.LazyFrame, f: IO[bytes]) -> None:
     sizes costs more than producing it did. polars writes through the handle's
     own buffer, so a ``f.write()`` between two sinks lands between them.
     """
-    frame.sink_csv(f, include_header=False, quote_style='never')
+    # `maintain_order` is polars' default and is what #109 rests on, so it is
+    # stated rather than inherited: the parameter is documented as unstable,
+    # and a default that flips would make the bytes non-reproducible silently.
+    frame.sink_csv(f, include_header=False, quote_style='never', maintain_order=True)
 
 
 def write_lp_file(model: ModelTables, path: str | Path) -> None:
