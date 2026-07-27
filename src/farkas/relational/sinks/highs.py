@@ -81,22 +81,22 @@ def solve_direct(
 
     empty_i = np.empty(0, dtype=np.int32)
     empty_f = np.empty(0, dtype=np.float64)
-    reader = con.execute(
-        'SELECT c.col, c.lb, c.ub, c.vtype, COALESCE(o.coeff, 0) AS cost '
-        'FROM cols c LEFT JOIN obj o USING (col) ORDER BY c.col'
-    ).to_arrow_reader(batch_rows)
-    for batch in reader:
-        d = batch.to_pydict()
-        lb = np.nan_to_num(np.asarray(d['lb'], dtype=np.float64), neginf=-inf, posinf=inf)
-        ub = np.nan_to_num(np.asarray(d['ub'], dtype=np.float64), neginf=-inf, posinf=inf)
-        cost = np.asarray(d['cost'], dtype=np.float64)
-        h.addCols(len(cost), cost, lb, ub, 0, empty_i, empty_i, empty_f)
-        variable_type = np.asarray(d['vtype'])
-        noncontinuous = np.flatnonzero(variable_type != 'continuous')
-        if len(noncontinuous):
-            cols_idx = np.asarray(d['col'], dtype=np.int32)[noncontinuous]
-            integrality = np.full(len(noncontinuous), int(highspy.HighsVarType.kInteger), dtype=np.uint8)
-            h.changeColsIntegrality(len(noncontinuous), cols_idx, integrality)
+    # Columns arrive in bounded ranges, not as one ordered stream. `addCols`
+    # appends, so column k must be the k-th row we hand over — but ordering the
+    # whole table to get that is a *global* sort, and duckdb's sort is the
+    # operator that does not reliably stay inside `memory_limit` (benchmarks.md
+    # operational finding 1). `to_arrow_reader` batches the delivery, not the
+    # sort, so it does not help: the ordering happens before the first batch.
+    # Ranges give the same order with each sort bounded by the chunk, and the
+    # filters prune, since both tables are stored ascending in their label.
+    for lo, hi in model.col_chunks(batch_rows):
+        reader = con.execute(
+            f'SELECT c.col, c.lb, c.ub, c.vtype, COALESCE(o.coeff, 0) AS cost '
+            f'FROM cols c LEFT JOIN obj o USING (col) '
+            f'WHERE c.col >= {lo} AND c.col < {hi} ORDER BY c.col'
+        ).to_arrow_reader(batch_rows)
+        for batch in reader:
+            _add_cols(h, highspy, np, batch, inf, empty_i, empty_f)
 
     for lo, hi in model.row_chunks(batch_rows):
         rows = con.execute(
@@ -172,3 +172,33 @@ def _store(con: Any, table: str, label: str, count: int, values: Any) -> None:
     con.register(f'{table}_src', source)
     con.execute(f'CREATE TABLE {table} AS SELECT * FROM {table}_src')
     con.unregister(f'{table}_src')
+
+
+def _add_cols(
+    h: Any,
+    highspy: Any,
+    np: Any,
+    batch: Any,
+    inf: float,
+    empty_i: Any,
+    empty_f: Any,
+) -> None:
+    """One Arrow batch of ``(col, lb, ub, vtype, cost)`` into HiGHS.
+
+    Split out only because the column loop now has two levels — a range and
+    the batches inside it — and burying the numpy handling under both made the
+    chunking hard to see. ``highspy`` and ``np`` are passed rather than
+    imported: both are lazy at the call site, and importing them here would put
+    them back at module scope by the back door.
+    """
+    d = batch.to_pydict()
+    lb = np.nan_to_num(np.asarray(d['lb'], dtype=np.float64), neginf=-inf, posinf=inf)
+    ub = np.nan_to_num(np.asarray(d['ub'], dtype=np.float64), neginf=-inf, posinf=inf)
+    cost = np.asarray(d['cost'], dtype=np.float64)
+    h.addCols(len(cost), cost, lb, ub, 0, empty_i, empty_i, empty_f)
+    variable_type = np.asarray(d['vtype'])
+    noncontinuous = np.flatnonzero(variable_type != 'continuous')
+    if len(noncontinuous):
+        cols_idx = np.asarray(d['col'], dtype=np.int32)[noncontinuous]
+        integrality = np.full(len(noncontinuous), int(highspy.HighsVarType.kInteger), dtype=np.uint8)
+        h.changeColsIntegrality(len(noncontinuous), cols_idx, integrality)

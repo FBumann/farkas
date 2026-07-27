@@ -41,8 +41,23 @@ class ModelTables:
 
     def row_chunks(self, per_chunk: int) -> Iterator[tuple[int, int]]:
         """``(lo, hi)`` half-open row ranges covering the constraint matrix."""
-        for lo in range(0, max(self.row_count, 1), per_chunk):
-            hi = min(lo + per_chunk, self.row_count)
-            if hi <= lo:
-                return
-            yield lo, hi
+        yield from _chunks(self.row_count, per_chunk)
+
+    def col_chunks(self, per_chunk: int) -> Iterator[tuple[int, int]]:
+        """``(lo, hi)`` half-open column ranges covering the model's columns.
+
+        The column twin of :meth:`row_chunks`. Both exist so that a sink can
+        bound *every* pass it makes: a query ordered over all columns at once
+        is a global sort, and duckdb's sort is the operator that does not
+        reliably stay inside ``memory_limit``.
+        """
+        yield from _chunks(self.column_count, per_chunk)
+
+
+def _chunks(total: int, per_chunk: int) -> Iterator[tuple[int, int]]:
+    """Half-open ``[lo, hi)`` ranges covering ``[0, total)``, in order."""
+    for lo in range(0, max(total, 1), per_chunk):
+        hi = min(lo + per_chunk, total)
+        if hi <= lo:
+            return
+        yield lo, hi
