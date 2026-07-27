@@ -333,8 +333,35 @@ class DuckdbExecutor:
             )
         collist = ', '.join(cols)
         self._con.execute(f'CREATE TABLE p_{p.name} AS SELECT {collist} FROM {rel}')
+        self._check_one_row_per_coordinate(p)
         if self._value_type(f'p_{p.name}') == 'BOOLEAN':
             self._bool_params.add(p.name)
+
+    def _check_one_row_per_coordinate(self, p: plan.ParameterDeclaration) -> None:
+        """A parameter is a function of its dims: one row per coordinate.
+
+        Two rows for one coordinate has no defined meaning, and the eager lane
+        refuses to lay such a source out at all, so the relational lane
+        resolving it into a sum was a divergence between two lanes that accept
+        the same language. It costs one pass over a source that is orders of
+        magnitude smaller than the model built from it.
+        """
+        if not p.dims:
+            return
+        dims = ', '.join(p.dims)
+        bad = self._con.execute(
+            f'SELECT {dims}, count(*) AS n FROM p_{p.name} GROUP BY {dims} HAVING count(*) > 1 LIMIT 3'
+        ).fetchall()
+        if not bad:
+            return
+        shown = '; '.join(
+            ', '.join(f'{d}={v!r}' for d, v in zip(p.dims, row, strict=False)) + f' ({row[-1]} rows)' for row in bad
+        )
+        raise DataError(
+            f"parameter '{p.name}' has more than one row for a coordinate: {shown}. "
+            f'A parameter is a function of its dims, so which value applies is undefined — '
+            f'aggregate the source to one row per {list(p.dims)} before binding it.'
+        )
 
     def _value_type(self, table: str) -> str:
         rows = self._con.execute(f"SELECT column_type FROM (DESCRIBE {table}) WHERE column_name = 'value'").fetchall()

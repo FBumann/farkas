@@ -139,12 +139,33 @@ def test_a_mistyped_coordinate_is_refused_on_both_lanes(transport_data):
 
 def test_a_coordinate_must_be_single_valued(transport_data):
     """Two rows disagreeing about a generator's bus is a data bug, not a
-    silently-picked winner."""
+    silently-picked winner.
+
+    Only the *index* is doubled here. Doubling the generator frame outright
+    duplicates the parameters it also feeds, and the keyed-parameter check
+    below catches that first — which is correct, and would leave this test
+    asserting the wrong message.
+    """
     gens, lines, load = transport_data
     other = 's' if gens['bus'].iloc[0] != 's' else 'n'
-    doubled = pd.concat([gens, gens.head(1).assign(bus=other)])
+    data, coords = _inputs(gens, lines, load)
+    coords['generator'] = pd.concat([coords['generator'], coords['generator'].head(1).assign(bus=other)])
 
     with pytest.raises(DataError, match='more than one value'):
+        _relationally(data, coords)
+
+
+def test_a_parameter_carrying_a_coordinate_twice_is_refused(transport_data):
+    """A parameter is a function of its dims, so two rows for one coordinate
+    has no answer — and the eager lane will not lay such a source out either.
+
+    The relational lane used to resolve it into a sum, silently, which is a
+    divergence between two lanes that are supposed to accept the same thing.
+    """
+    gens, lines, load = transport_data
+    doubled = pd.concat([gens, gens.head(1)])
+
+    with pytest.raises(DataError, match="parameter 'p_max' has more than one row"):
         _relationally(*_inputs(doubled, lines, load))
 
 
