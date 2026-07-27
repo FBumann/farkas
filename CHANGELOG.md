@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.0-alpha.19](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.18...v0.0.0-alpha.19) (2026-07-27)
+
+
+### Features
+
+* expose duals on the solve path (sol.dual) ([#156](https://github.com/FBumann/farkas/issues/156)) ([284df79](https://github.com/FBumann/farkas/commit/284df7927c6f58064fc691e9b8c2f1b2db2f6a7b))
+
 ## [0.0.0-alpha.18](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.17...v0.0.0-alpha.18) (2026-07-27)
 
 
