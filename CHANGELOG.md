@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.0-alpha.18](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.17...v0.0.0-alpha.18) (2026-07-27)
+
+
+### Features
+
+* **bench:** a performance harness the published numbers come from ([#143](https://github.com/FBumann/farkas/issues/143)) ([144713a](https://github.com/FBumann/farkas/commit/144713a6a2b32dc63efae52ce2853ce266d77191))
+
 ## [0.0.0-alpha.17](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.16...v0.0.0-alpha.17) (2026-07-27)
 
 
