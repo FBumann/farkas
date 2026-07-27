@@ -51,7 +51,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from farkas.errors import DataError, LanguageError, LinopyYamlError, NoSolutionError
 from farkas.relational import plan, sinks
 from farkas.relational.arrow import as_table
-from farkas.relational.compiler import SqlCompiler
+from farkas.relational.compiler import CompiledExpression, SqlCompiler
 from farkas.relational.sql import path_literal
 
 if TYPE_CHECKING:
@@ -605,8 +605,55 @@ class DuckdbExecutor:
             self._obj_const += self._scalar(p.sql) or 0.0
         if comp.terms:
             union = ' UNION ALL '.join(f'SELECT var_label AS col, coeff FROM ({p.sql})' for p in comp.terms)
-            self._con.execute(f'INSERT INTO obj SELECT col, SUM(coeff) FROM ({union}) GROUP BY col')
+            if self._objective_column_appears_once(o.expression, comp):
+                self._con.execute(f'INSERT INTO obj SELECT col, coeff FROM ({union})')
+            else:
+                self._con.execute(f'INSERT INTO obj SELECT col, SUM(coeff) FROM ({union}) GROUP BY col')
         self._obj_sense = o.sense
+
+    def _objective_column_appears_once(self, expression: plan.Expression, comp: CompiledExpression) -> bool:
+        """Can the objective's ``GROUP BY col`` be skipped?
+
+        The aggregate is there because several terms can land on one column and
+        an LP objective is their sum. It is dead weight in the common shape —
+        ``p * cost``, one fragment over one variable — where every group holds
+        exactly one row, and a hash aggregate over ten million singleton groups
+        is not free.
+
+        Safe when there is **one fragment**, the expression contains no
+        reduction, and the fragment's dims are the dims of the variable it
+        reads. Rows are then keyed by ``(variable dims…, var_label)`` and
+        ``var_label`` already determines the coordinates, so no column repeats.
+
+        **The dims check alone is not enough**, which is the whole reason this
+        is a named method with a test rather than an inline condition. A
+        reduction drops a dim from the *tuple* without merging the rows that
+        carried it — ``_sum_fragment`` projects, it does not aggregate. So
+        ``sum(q * price, over=generator)`` where ``q`` is indexed by snapshot
+        alone comes out with dims ``('snapshot',)``, matching ``q``'s
+        declaration exactly, while the fragment still holds one row per
+        generator. Skipping the aggregate there writes ``|generator|`` rows
+        into ``obj`` for one column: the LP file would quietly re-sum them, and
+        ``cols LEFT JOIN obj`` in the HiGHS sink would hand the solver more
+        columns than the model has.
+
+        Refusing every reduction is stronger than necessary — a ``sum`` over a
+        dim the variable *does* carry is safe, and so is ``group_sum`` — but
+        the cheap syntactic test covers ``p * cost``, which is the shape that
+        pays, and a false positive here is a silently wrong objective.
+
+        The unpack is the invariant, not a guard: a term fragment is produced
+        by exactly one ``plan.Variable`` node and carried through the shape
+        operators one fragment at a time, so one fragment means one variable.
+        Written to raise rather than to quietly return ``False``, because a
+        future node that broke it would disable this silently everywhere.
+        """
+        assert self._program is not None
+        if len(comp.terms) != 1 or _contains_reduction(expression):
+            return False
+        (name,) = _variable_names(expression)
+        declared = self._program.variable(name).dims
+        return set(comp.terms[0].dims) == set(declared)
 
     # ------------------------------------------------------------------
     # sinks — see relational/sinks/; the executor only supplies the tables
@@ -709,6 +756,50 @@ class DuckdbExecutor:
     def __exit__(self, *exc: object) -> Literal[False]:
         self.close()
         return False
+
+
+def _contains_reduction(expression: plan.Expression) -> bool:
+    """Whether a ``Sum`` or ``GroupSum`` appears anywhere in *expression*.
+
+    Both drop a dim from a fragment's tuple without merging the rows that
+    carried it, so a fragment's dims stop describing how many rows a
+    ``var_label`` has. See :meth:`DuckdbExecutor._objective_column_appears_once`,
+    the only caller, for why that distinction is load-bearing.
+    """
+    match expression:
+        case plan.Sum() | plan.GroupSum():
+            return True
+        case plan.Constant() | plan.Parameter() | plan.Variable():
+            return False
+        case plan.Negate(operand=x) | plan.Translate(operand=x):
+            return _contains_reduction(x)
+        case plan.Add(left=a, right=b) | plan.Multiply(left=a, right=b):
+            return _contains_reduction(a) or _contains_reduction(b)
+        case plan.Divide(numerator=a, divisor=b):
+            return _contains_reduction(a) or _contains_reduction(b)
+    raise LanguageError(f'unhandled expression {type(expression).__name__}')
+
+
+def _variable_names(expression: plan.Expression) -> frozenset[str]:
+    """Every variable an affine expression reads.
+
+    Spelled out rather than generic so the match is exhaustive: ``Divide``
+    names its operands ``numerator``/``divisor``, not ``left``/``right``, and
+    a walker that assumed otherwise would raise ``AttributeError`` on the
+    first objective containing a division.
+    """
+    match expression:
+        case plan.Variable(name=name):
+            return frozenset({name})
+        case plan.Constant() | plan.Parameter():
+            return frozenset()
+        case plan.Negate(operand=x) | plan.Sum(operand=x) | plan.GroupSum(operand=x) | plan.Translate(operand=x):
+            return _variable_names(x)
+        case plan.Add(left=a, right=b) | plan.Multiply(left=a, right=b):
+            return _variable_names(a) | _variable_names(b)
+        case plan.Divide(numerator=a, divisor=b):
+            return _variable_names(a) | _variable_names(b)
+    raise LanguageError(f'unhandled expression {type(expression).__name__}')
 
 
 def _release(con: Any, workdir: Path | None) -> None:
