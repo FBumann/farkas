@@ -154,3 +154,38 @@ def test_one_model_writes_the_same_bytes_every_time(tmp_path: Path) -> None:
             written.append(hashlib.sha256(lp.read_bytes()).hexdigest())
 
     assert len(set(written)) == 1, 'the same model wrote different bytes'
+
+
+def test_section_keywords_survive_sections_far_larger_than_a_buffer(tmp_path: Path) -> None:
+    """The sink writes the keywords itself and polars writes the sections.
+
+    Two writers on one handle, alternating. They agree only for as long as
+    polars goes through the handle's buffer rather than around it to the file
+    descriptor — and a small model proves nothing, because everything fits in
+    the buffer and the ordering cannot be observed. So each section here is
+    megabytes: if a keyword ever lands somewhere other than between the two
+    sections it separates, it lands in the middle of one of them.
+    """
+    generators = [f'g{i}' for i in range(50)]
+    snapshots = 2000
+    schema = override(DISPATCH_MODEL, **{'dimensions.generator.values': generators})
+    data = {
+        'p_max': pl.DataFrame({'generator': generators, 'value': [100.0 + i for i in range(len(generators))]}),
+        'cost': pl.DataFrame({'generator': generators, 'value': [1.0 + i / 8 for i in range(len(generators))]}),
+        'load': pl.DataFrame({'snapshot': list(range(snapshots)), 'value': [50.0 + t % 7 for t in range(snapshots)]}),
+    }
+
+    lp = tmp_path / 'model.lp'
+    with fk.build(schema, data) as ex:
+        ex.write_lp(lp)
+    lines = lp.read_text().splitlines()
+
+    keywords = ['min', 'obj:', 's.t.', 'bounds', 'end']
+    at = [i for i, line in enumerate(lines) if line in keywords]
+    assert [lines[i] for i in at] == keywords, 'a section keyword is missing, doubled or out of order'
+
+    variables = len(generators) * snapshots
+    objective, bounds = at[1], at[3]
+    assert lp.stat().st_size > 4_000_000, 'sections too small for the buffer boundary to be crossed'
+    assert sum(1 for line in lines[objective + 1 : at[2]] if line.startswith(('+', '-'))) == variables
+    assert sum(1 for line in lines[bounds + 1 : at[4]] if ' <= x' in line) == variables
