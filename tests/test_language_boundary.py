@@ -54,7 +54,7 @@ def test_inside_the_language(patch):
         ),
         # `check()` must catch degree 2 — it is the first clause of the ceiling.
         # The affine guard used to live only in the executor, so it needed data
-        # bound: `ly.check()` accepted this and the model only blew up at build
+        # bound: `fk.check()` accepted this and the model only blew up at build
         # time, which made check() useless as the CI verb for exactly the rule
         # it should enforce first.
         pytest.param(_objective('sum(p * p, over=generator)'), 'degree 2', id='degree-two'),

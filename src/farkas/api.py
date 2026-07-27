@@ -15,10 +15,10 @@ linopy exists only in the optional compatibility/oracle layer
 
 Example::
 
-    import farkas as ly
+    import farkas as fk
 
     # Result holds the executor backing primal/to_* — use a with block
-    with ly.solve(
+    with fk.solve(
         'model.yaml',
         {'p_max': 'p_max.parquet', 'load': 'load.parquet'},
         coords={'snapshot': range(8760)},

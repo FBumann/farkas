@@ -6,7 +6,7 @@ are [ROADMAP.md](ROADMAP.md); measured results are
 [docs/benchmarks.md](docs/benchmarks.md).
 
 `python examples/walkthrough.py` executes the pipeline below stage by stage
-and prints what each one produces — the same public calls `ly.solve` makes,
+and prints what each one produces — the same public calls `fk.solve` makes,
 so the demonstration cannot drift from the code. Its output is committed as
 [examples/walkthrough.out](examples/walkthrough.out) and asserted line for line
 (`tests/test_walkthrough.py`), so reading it is the same as running it — and a
@@ -53,10 +53,10 @@ flowchart TB
 ```
 
 Eligibility is decided by **attempting the lowering** — `lower_program` returns
-a `Program` or raises `ly.LanguageError` — so it cannot drift from what the
+a `Program` or raises `fk.LanguageError` — so it cannot drift from what the
 engine supports. Errors split model from run: everything under `LanguageError`
 is decidable without data, `DataError` is what a source failed to supply, and
-both are `LinopyYamlError` (`errors.py`). `ly.check()` is exactly parse
+both are `LinopyYamlError` (`errors.py`). `fk.check()` is exactly parse
 → expand → validate → lower with no data bound, so a model repository can
 compile-check its math in CI. Expansion precedes validation in **both** lanes,
 because a formulation emits declarations and those are language too — a stray

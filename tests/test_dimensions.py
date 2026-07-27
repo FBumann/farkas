@@ -158,14 +158,14 @@ def test_bound_parameter_dim_outside_foreach_is_rejected():
 
 def test_checking_needs_no_data():
     """The whole point: every rule above is decided from declarations alone,
-    so `ly.check()` catches them in CI with no sources bound."""
-    import farkas as ly
+    so `fk.check()` catches them in CI with no sources bound."""
+    import farkas as fk
 
     raw = override(
         BASE, **{'constraints.stray': {'foreach': ['snapshot'], 'equations': [{'expression': 'p <= p_max'}]}}
     )
     with pytest.raises(DimensionError):
-        ly.check(raw)
+        fk.check(raw)
 
 
 @pytest.mark.parametrize('path', sorted(Path('examples').glob('*.yaml')), ids=lambda p: p.name)
