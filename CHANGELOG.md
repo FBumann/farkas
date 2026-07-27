@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.0-alpha.25](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.24...v0.0.0-alpha.25) (2026-07-27)
+
+
+### Performance
+
+* **sink:** size the hand-off by nonzeros, under one budget and one chunking rule ([#195](https://github.com/FBumann/farkas/issues/195)) ([c31beaf](https://github.com/FBumann/farkas/commit/c31beafdbe95e48a902dd19fa4b27de27b9bc4c0))
+
 ## [0.0.0-alpha.24](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.23...v0.0.0-alpha.24) (2026-07-27)
 
 
