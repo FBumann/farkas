@@ -18,6 +18,7 @@ import farkas as fk
 from farkas.errors import DataError, LanguageError
 from farkas.relational import (
     DuckdbExecutor,
+    chunking,
 )
 from farkas.relational.plan import (
     Constant,
@@ -493,3 +494,67 @@ def test_infinite_bounds_survive_the_arrow_handoff(batch_rows):
         assert unbounded.termination_condition in ('unbounded', 'infeasible_or_unbounded'), (
             f'a finite upper bound reached the solver: {unbounded.termination_condition}'
         )
+
+
+def test_row_chunks_are_bounded_by_nonzeros_not_by_rows():
+    """A chunk of rows is a chunk of *entries*, and only entries are residency.
+
+    Both sinks read ``A`` a range at a time and hold that range while they work
+    it. Sizing the range in rows bounds the wrong quantity: the same 100k-row
+    range is 900k entries in ``transport`` and 10M in ``dispatch``, so what a
+    sink actually holds is set by the model's shape rather than by the budget —
+    which is precisely what hard rule 4 says peak must not be.
+
+    Wide rows are the case that separates the two, so this builds them: 50
+    generators summed into each of 4 snapshots is 50 entries per row.
+    """
+    n_g, n_s = 50, 4
+    gens = pd.DataFrame(
+        {
+            'generator': [f'g{i}' for i in range(n_g)],
+            'p_max': np.full(n_g, 10.0),
+            'cost': np.arange(1.0, n_g + 1.0),
+        }
+    )
+    load = pd.DataFrame({'snapshot': np.arange(n_s), 'value': np.full(n_s, 100.0)})
+
+    with DuckdbExecutor(memory_limit='256MB') as ex:
+        ex.build(dispatch_program(), dispatch_sources(gens, load))
+        tables = ex._tables()
+        assert tables.scalar('SELECT count(*) FROM A') == n_g * n_s
+
+        def widest(ranges):
+            return max(tables.scalar(f'SELECT count(*) FROM A WHERE row >= {lo} AND row < {hi}') for lo, hi in ranges)
+
+        budget = 100
+        bounded = list(tables.row_chunks_by_nonzeros(budget))
+        assert widest(bounded) <= budget
+
+        # the same budget spent as if a row cost one element puts every entry
+        # in one chunk — 2x the budget here, and unbounded in general, because
+        # nothing caps how wide a row gets
+        assert widest(list(chunking.ranges(tables.row_count, budget, 1.0))) == n_g * n_s
+
+
+@pytest.mark.parametrize(
+    ('total', 'budget', 'width'),
+    [(0, 100, 1.0), (1, 100, 1.0), (10, 3, 1.0), (10, 100, 1.0), (10, 3, 7.0), (10, 3, 0.25), (10, 1, 1e9)],
+)
+def test_chunk_ranges_are_contiguous_gapless_and_cover_everything(total, budget, width):
+    """The property the whole hand-off rests on, at every awkward size.
+
+    ``addCols`` and ``addRows`` append: column *k* must be the *k*-th row handed
+    over. That holds only if the ranges are ordered, consecutive and gapless —
+    a dropped range silently shortens the model, an overlapping one relabels
+    it, and neither shows up as an error. The widths here include one below 1
+    and one far above the budget, the two ends where a ``//`` can produce a
+    zero step or a chunk wider than asked for.
+    """
+    got = list(chunking.ranges(total, budget, width))
+
+    assert all(lo < hi for lo, hi in got), 'an empty range means a wasted pass'
+    assert [lo for lo, _ in got] == sorted(lo for lo, _ in got), 'ranges must ascend'
+    assert [i for lo, hi in got for i in range(lo, hi)] == list(range(total)), 'gap, overlap, or short'
+    if total:
+        widest = max(hi - lo for lo, hi in got)
+        assert widest * max(1.0, width) <= max(budget, max(1.0, width)), 'a chunk exceeded the budget'

@@ -64,10 +64,8 @@ def write_lp_file(model: ModelTables, path: str | Path) -> None:
         f'TO {path_literal(parts / "obj")} {_COPY_OPTS}'
     )
 
-    nnz = model.scalar('SELECT count(*) FROM A')
-    avg = max(1, nnz // max(1, model.row_count))
     con_parts = []
-    for i, (lo, hi) in enumerate(model.row_chunks(max(1, model.chunk_rows // avg))):
+    for i, (lo, hi) in enumerate(model.row_chunks_by_nonzeros(model.chunk_rows)):
         part = parts / f'cons.{i}'
         con_parts.append(part)
         con.execute(

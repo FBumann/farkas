@@ -51,7 +51,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from farkas.errors import DataError, LanguageError, LinopyYamlError, NoSolutionError
-from farkas.relational import plan, sinks
+from farkas.relational import chunking, plan, sinks
 from farkas.relational.arrow import as_table
 from farkas.relational.compiler import CompiledExpression, SqlCompiler
 from farkas.relational.sql import path_literal
@@ -497,9 +497,8 @@ class DuckdbExecutor:
         )
 
     def _chunk_starts(self, lead_dim: str, other_card: float) -> list[tuple[int, int]]:
-        card = self._dim_card[lead_dim]
-        per_chunk = max(1, int(self.chunk_rows // max(1.0, other_card)))
-        return [(s, min(s + per_chunk, card)) for s in range(0, card, per_chunk)]
+        """Ranges of the leading dim, one coordinate costing the trailing product."""
+        return list(chunking.ranges(self._dim_card[lead_dim], self.chunk_rows, other_card))
 
     def _label_frame(
         self,
@@ -693,13 +692,15 @@ class DuckdbExecutor:
 
     def solve(
         self,
-        batch_rows: int = 100_000,
+        batch_rows: int | None = None,
         solver_options: Mapping[str, Any] | None = None,
     ) -> Result:
         """Sink the built model straight into HiGHS and solve it.
 
         ``solver_options`` is forwarded verbatim to the solver, the way
         linopy's is — ``{'time_limit': 60, 'mip_rel_gap': 0.01}``.
+        ``batch_rows`` defaults to this executor's ``chunk_rows``, so the
+        budget that governs the build governs the hand-off too.
         """
         status, objective, has_duals = sinks.solve_direct(self._tables(), batch_rows, solver_options)
         return Result(_status=status, _objective=objective, _executor=self, _has_duals=has_duals)

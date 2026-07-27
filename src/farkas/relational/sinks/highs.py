@@ -51,10 +51,17 @@ _CONDITION_OF_HIGHS_STATUS = {
 
 def solve_direct(
     model: ModelTables,
-    batch_rows: int = 100_000,
+    batch_rows: int | None = None,
     solver_options: Mapping[str, Any] | None = None,
 ) -> tuple[SolveStatus, float, bool]:
     """Stream the model into HiGHS and solve it.
+
+    ``batch_rows`` defaults to the executor's ``chunk_rows`` — the budget that
+    already governs every other batched pass in the engine. It was a separate
+    2e6-vs-1e5 default, which made the sink twenty times finer-grained than
+    the thing it reads from for no stated reason: at 10M columns that is 2.59s
+    against 1.65s, for 4% more peak once HiGHS's own model is resident. The
+    parameter stays so tests can force ragged chunks.
 
     Returns ``(status, objective, has_duals)``. On a solve that left values
     worth reading, the primal lands in a ``sol`` table on the connection — and
@@ -72,6 +79,7 @@ def solve_direct(
     import highspy
     import numpy as np
 
+    batch = model.chunk_rows if batch_rows is None else batch_rows
     con = model.connection
     inf = highspy.kHighsInf
     h = highspy.Highs()
@@ -89,16 +97,18 @@ def solve_direct(
     # sort, so it does not help: the ordering happens before the first batch.
     # Ranges give the same order with each sort bounded by the chunk, and the
     # filters prune, since both tables are stored ascending in their label.
-    for lo, hi in model.col_chunks(batch_rows):
+    for lo, hi in model.col_chunks(batch):
         reader = con.execute(
             f'SELECT c.col, c.lb, c.ub, c.vtype, COALESCE(o.coeff, 0) AS cost '
             f'FROM cols c LEFT JOIN obj o USING (col) '
             f'WHERE c.col >= {lo} AND c.col < {hi} ORDER BY c.col'
-        ).to_arrow_reader(batch_rows)
-        for batch in reader:
-            _add_cols(h, highspy, np, batch, inf, empty_i, empty_f)
+        ).to_arrow_reader(batch)
+        for arrow_batch in reader:
+            _add_cols(h, highspy, np, arrow_batch, inf, empty_i, empty_f)
 
-    for lo, hi in model.row_chunks(batch_rows):
+    # by nonzeros, not by rows: this loop's residency is the slice of `A` it
+    # fetches, and a range of rows says nothing about how many entries that is
+    for lo, hi in model.row_chunks_by_nonzeros(batch):
         rows = con.execute(
             f'SELECT row, sense, rhs FROM rows WHERE row >= {lo} AND row < {hi} ORDER BY row'
         ).fetchnumpy()
