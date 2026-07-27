@@ -115,6 +115,10 @@ The sparsity is *structural and time-invariant*, which is not incidental —
 would sweep the same densities while misrepresenting the shape, and the shape is
 what an engine can exploit.
 
+**Measured, the two lanes do not diverge on memory as density falls** — see
+[docs/benchmarks.md](../docs/benchmarks.md#the-density-sweep-and-a-claim-it-refuses).
+The sweep is still the right measurement; the prediction behind it was wrong.
+
 `Shape.density` (technologies per node: 12 / 6 / 3 / 1) is swept at one model
 size, because sweeping size and density together leaves no way to tell one
 effect from the other. Run the full ladder with `--sizes all`.

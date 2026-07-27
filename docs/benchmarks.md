@@ -1,5 +1,10 @@
 # Measured results: relational vs eager LP construction
 
+**Build memory alone is not the claim.** It is a small fraction of what solving
+costs, so shrinking it further changes nothing a caller feels — the tables below
+are the input to two claims that do, and both live further down: end-to-end peak
+against the floor under the LP-file route, and marginal cost per model in a loop.
+
 Peak RSS and wall time for the same model built two ways — declaratively on the
 relational engine, and eagerly through linopy — from the same parquet files to
 the same LP file. Produced by [`bench/`](../bench/README.md) and read straight
@@ -49,13 +54,15 @@ highspy 1.15.1. Parity gate: all three cases agree with the eager lane to
 ## What this says
 
 **Below ~1M variables we win on both axes, by 2–3x on wall time.** That is the
-range declarative modelling is actually used in, and it is the honest headline.
+range declarative modelling is actually used in, and the range a rolling horizon
+lives in entirely.
 
 **Above ~1M the build-side memory advantage narrows or inverts.** At 10M
 variables the LP path is level on `dispatch` (1.06x) and 2.1x on `transport`:
 COO carries a `(row, col, coeff)` triple per nonzero where a dense array carries
 one float. **Read the next section before drawing a conclusion from that** —
-measured to the point a caller actually reaches, we are ahead on all three.
+measured to the point a caller actually reaches, we are ahead on all three, and
+build memory on its own is not a number anyone experiences.
 
 `transport` is the case still paying full price, because three `group_sum`
 fragments land on every row and so the terminal aggregate cannot be skipped
@@ -65,9 +72,36 @@ fragments land on every row and so the terminal aggregate cannot be skipped
 of it at the `l` rung on every case — so wall-time work belongs there before it
 belongs in the build.
 
-**Sparsity is where the two representations differ in kind**, and `nodal` is the
-case for it: 25% density, and the eager lane pays for the NaNs. It shows in the
-small rungs and is swamped at 3M by the per-nonzero cost above.
+**Sparsity does not separate them, which was not the prediction.** See the
+sweep below.
+
+## The density sweep, and a claim it refuses
+
+One model size (50 nodes x 12 technologies x 2000 snapshots = 1.2M coordinates),
+four mask densities. The expectation was that an absent pair costs the
+relational lane nothing and costs the eager lane a NaN, so the gap should widen
+as density falls.
+
+| installed | live vars | wall: farkas | wall: linopy | peak: farkas | peak: linopy |
+|---|---|---|---|---|---|
+| 12/12 | 1.20M | 0.58 s | 0.59 s | 0.68 GB | 0.63 GB |
+| 6/12 | 0.60M | **0.38 s** | 0.45 s | 0.52 GB | 0.60 GB |
+| 3/12 | 0.30M | **0.35 s** | 0.41 s | 0.46 GB | 0.45 GB |
+| 1/12 | 0.10M | **0.19 s** | 0.32 s | 0.40 GB | **0.35 GB** |
+
+**It does not happen.** linopy's peak falls with density too — 0.63 to 0.35 GB —
+and at the sparsest rung it ends up *below* ours. Whatever the eager lane does
+with a `where` mask, it is not paying for the full coordinate product, so
+"relationally an absent pair is an absent row, eagerly it is a NaN that still
+costs eight bytes" is not what the memory does.
+
+Wall time is the axis that behaves: our advantage grows as the model thins,
+1.0x to 1.7x, because there is less to build and our fixed cost is lower.
+
+Recorded rather than quietly dropped, because the prediction is written into
+`bench/README.md`'s description of the case and it is wrong. The case is still
+worth keeping — it is the shape real multi-node models have — but as a
+throughput measurement, not as evidence about representations.
 
 ## Build and hand off — the number a user actually pays
 

@@ -3,10 +3,18 @@
 **Self-documenting optimisation models — at any scale.**
 
 Write the math in YAML, bind data at runtime, solve. Today that means linear and
-mixed-integer programs. The model itself is never a dense Python object: it is
-tidy frames — masks are absent rows, and a variable's label *is* the solver's
-own column index — assembled relationally and handed to the solver in batches
-([benchmarks](docs/benchmarks.md)).
+mixed-integer programs. The model is never a dense Python object: it is tidy
+frames — masks are absent rows, and a variable's label *is* the solver's own
+column index — assembled relationally and handed to the solver in batches.
+
+Two consequences worth the headline, both measured
+([benchmarks](docs/benchmarks.md)):
+
+- **The whole pipeline peaks below what reading the equivalent LP file costs.**
+  Not "we use less memory than a competitor" — less than the floor under the
+  route through a file, because there is no file.
+- **Per-model cost is flat.** Build a hundred rolling-horizon windows and the
+  hundredth costs what the first did; nothing accumulates between them.
 
 And because the math is a closed spec known before any data is touched, every
 name, dimension and expression is checked at load time — `check()` compiles a

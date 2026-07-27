@@ -16,10 +16,14 @@ than by hand (#27): Calliope's base math plus its published custom-math library,
 and PyPSA's `optimization/constraints.py`. Every item scores **expressible**,
 **out of scope by design** (data prep — [SPEC §11](SPEC.md#11-out-of-scope)), or
 **genuinely arbitrary Python** (an escape island, or stays a callback). No
-numbers are published until #27 produces them. Expressiveness is not the axis we
-lead on: scale — how much a model costs to build, against how much of its
-coordinate product it actually populates — is measured separately
-([benchmarks](docs/benchmarks.md)).
+numbers are published until #27 produces them.
+
+Expressiveness is not the axis we lead on. Cost is, and on two claims a reader
+can check rather than take: end-to-end peak against the floor under the
+LP-file route, and marginal cost per model in a loop
+([benchmarks](docs/benchmarks.md)). Build memory *alone* is not one of them —
+it is a small fraction of what solving costs, so shrinking it further changes
+nothing a caller feels.
 
 ## The degree axis
 
