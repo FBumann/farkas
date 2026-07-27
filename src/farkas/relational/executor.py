@@ -13,6 +13,7 @@ disagree about which coordinate gets which index.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -477,20 +478,50 @@ class PolarsExecutor:
         """The masked coord product of *dims* with a dense *label* from *start*.
 
         Variables and constraint rows are the same operation, so it is written
-        once. Sorting on the declared ordinals is what lets a label *be* the
+        once. A label follows declaration order, which is what lets it *be* the
         solver's own index with no remapping.
+
+        The mask chooses the path. **Unmasked**, every coordinate exists, so a
+        row's label is its position in the product — arithmetic on the dim
+        ordinals, with no sort and nothing to count. **Masked**, which rows
+        survive is not known until the predicate has run, so the position has
+        to be counted, and that costs a sort.
+
+        Both return ``(dims…, label)`` in that column order. A mask that
+        removes nothing has to be indistinguishable from no mask, down to the
+        schema.
         """
+        frame = self._q.frame(dims, where)
+        if where is None:
+            rows = math.prod(self._dim_card[d] for d in dims)
+            return self._positional(frame, dims, label, start), start + rows
+
         import polars as pl
 
-        frame = self._q.frame(dims, where)
         materialised = (
             frame.sort([_ordinal(d) for d in dims])
             .select(*dims)
             .with_row_index(label, offset=start)
-            .with_columns(pl.col(label).cast(pl.Int64))
+            .select(*dims, pl.col(label).cast(pl.Int64))
             .collect(engine='streaming')
         )
         return materialised, start + materialised.height
+
+    def _positional(self, frame: pl.LazyFrame, dims: tuple[str, ...], label: str, start: int) -> pl.DataFrame:
+        """Labels as row-major position in the coordinate product.
+
+        The trailing dim has stride 1 and every other is the product of the
+        cardinalities to its right, so the label is a dot product against the
+        ordinals the frame already carries — no ordering imposed, because the
+        answer does not depend on the order rows arrive in.
+        """
+        import polars as pl
+
+        stride, position = 1, pl.lit(start, dtype=pl.Int64)
+        for d in reversed(dims):
+            position = position + pl.col(_ordinal(d)) * stride
+            stride *= self._dim_card[d]
+        return frame.select(*dims, position.alias(label)).collect(engine='streaming')
 
     # ------------------------------------------------------------------
     # declarations

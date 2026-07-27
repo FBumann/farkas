@@ -28,19 +28,19 @@ highspy 1.15.1. Parity gate: all three cases agree with the eager lane to
 
 | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
 |---|---|---|---|---|---|---|
-| 10k | 0.08 s | 0.27 s | **0.29x** | 0.17 GB | 0.21 GB | **0.81x** |
-| 100k | 0.11 s | 0.34 s | **0.32x** | 0.22 GB | 0.26 GB | **0.83x** |
-| 1M | 0.44 s | 0.53 s | **0.84x** | 0.53 GB | 0.57 GB | **0.92x** |
-| 10M | 3.87 s | 3.02 s | 1.28x | 2.28 GB | 2.15 GB | 1.06x |
+| 10k | 0.05 s | 0.18 s | **0.30x** | 0.17 GB | 0.21 GB | **0.81x** |
+| 100k | 0.07 s | 0.20 s | **0.37x** | 0.22 GB | 0.26 GB | **0.85x** |
+| 1M | 0.25 s | 0.35 s | **0.70x** | 0.54 GB | 0.61 GB | **0.88x** |
+| 10M | 2.79 s | 2.09 s | 1.33x | 2.38 GB | 2.15 GB | 1.11x |
 
 ### nodal — `(snapshot, node, tech)` at 25% density
 
 | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
 |---|---|---|---|---|---|---|
-| 3k | 0.11 s | 0.28 s | **0.37x** | 0.17 GB | 0.21 GB | **0.81x** |
-| 30k | 0.10 s | 0.33 s | **0.31x** | 0.21 GB | 0.24 GB | **0.87x** |
-| 300k | 0.28 s | 0.39 s | **0.73x** | 0.46 GB | 0.45 GB | 1.01x |
-| 3M | 1.99 s | 1.35 s | 1.47x | 1.88 GB | 1.57 GB | 1.20x |
+| 3k | 0.06 s | 0.20 s | **0.29x** | 0.17 GB | 0.21 GB | **0.81x** |
+| 30k | 0.07 s | 0.20 s | **0.33x** | 0.21 GB | 0.24 GB | **0.88x** |
+| 300k | 0.18 s | 0.26 s | **0.68x** | 0.46 GB | 0.46 GB | 1.02x |
+| 3M | 1.46 s | 0.93 s | 1.56x | 1.91 GB | 1.58 GB | 1.21x |
 
 ### sector — dense snapshots and carriers, sparse portfolio
 
@@ -51,19 +51,19 @@ then reduces the sparse one.
 
 | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
 |---|---|---|---|---|---|---|
-| 4k | 0.11 s | 0.32 s | **0.34x** | 0.17 GB | 0.21 GB | **0.81x** |
-| 10k | 0.10 s | 0.31 s | **0.32x** | 0.20 GB | 0.24 GB | **0.83x** |
-| 100k | 0.25 s | 0.44 s | **0.57x** | 0.42 GB | 0.53 GB | **0.79x** |
-| 1M | 1.58 s | 1.75 s | **0.90x** | **1.27 GB** | 2.79 GB | **0.46x** |
+| 1k | 0.07 s | 0.21 s | **0.34x** | 0.17 GB | 0.21 GB | **0.81x** |
+| 10k | 0.07 s | 0.23 s | **0.32x** | 0.20 GB | 0.24 GB | **0.83x** |
+| 100k | 0.21 s | 0.34 s | **0.61x** | 0.41 GB | 0.53 GB | **0.78x** |
+| 1M | 1.28 s | 1.28 s | 1.00x | **1.26 GB** | 2.97 GB | **0.42x** |
 
 ### transport — three `group_sum` joins per row
 
 | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
 |---|---|---|---|---|---|---|
-| 9.8k | 0.10 s | 0.32 s | **0.31x** | 0.18 GB | 0.22 GB | **0.83x** |
-| 98k | 0.14 s | 0.36 s | **0.39x** | 0.25 GB | 0.29 GB | **0.87x** |
-| 980k | 0.62 s | 0.66 s | **0.94x** | 0.70 GB | 0.65 GB | 1.09x |
-| 9.8M | 5.49 s | 3.46 s | 1.59x | 3.92 GB | 1.89 GB | 2.08x |
+| 9.8k | 0.07 s | 0.22 s | **0.30x** | 0.18 GB | 0.22 GB | **0.83x** |
+| 98k | 0.10 s | 0.24 s | **0.41x** | 0.25 GB | 0.29 GB | **0.88x** |
+| 980k | 0.35 s | 0.43 s | **0.81x** | 0.70 GB | 0.64 GB | 1.08x |
+| 9.8M | 4.64 s | 2.78 s | 1.67x | 3.66 GB | 1.89 GB | 1.94x |
 
 ## What this says
 
@@ -82,9 +82,15 @@ build memory on its own is not a number anyone experiences.
 fragments land on every row and so the terminal aggregate cannot be skipped
 (see `_needs_aggregate`). It is the obvious next thing to look at.
 
-**The LP writer is the larger half of our time at scale** — roughly two thirds
-of it at the `l` rung on every case — so wall-time work belongs there before it
-belongs in the build.
+**Labels are a position, not a count.** An unmasked coordinate product needs no
+sort: a row's label is arithmetic on the dim ordinals, so it is computed rather
+than counted. That path cut `transport`'s build from 2.57 s to 0.87 s and
+`dispatch`'s from 0.97 s to 0.49 s at the `l` rung — the largest single win in
+this file, and one that has nothing to do with which engine executes it.
+
+**What is left at scale is the LP writer** — 3.6 s of `dispatch`'s 4.1 s
+build-and-write at 10M, and a similar share elsewhere. That is where the next
+wall-time work belongs.
 
 **Sparsity separates them, but only once the coordinate product is large.**
 The `sector` row above is the clearest result in this file — 2.2x less memory

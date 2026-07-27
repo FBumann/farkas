@@ -37,16 +37,16 @@ model: examples/walkthrough.yaml
     where "p_max > 0" is not a mask array — it is row absence:
     p has 18 rows, not 24: retired oil never becomes a column.
     shape: (4, 3)
-    ┌───────────┬──────────┬───────────┐
-    │ var_label ┆ snapshot ┆ generator │
-    │ ---       ┆ ---      ┆ ---       │
-    │ i64       ┆ i64      ┆ str       │
-    ╞═══════════╪══════════╪═══════════╡
-    │ 0         ┆ 0        ┆ wind      │
-    │ 1         ┆ 0        ┆ solar     │
-    │ 2         ┆ 0        ┆ gas       │
-    │ 3         ┆ 1        ┆ wind      │
-    └───────────┴──────────┴───────────┘
+    ┌──────────┬───────────┬───────────┐
+    │ snapshot ┆ generator ┆ var_label │
+    │ ---      ┆ ---       ┆ ---       │
+    │ i64      ┆ str       ┆ i64       │
+    ╞══════════╪═══════════╪═══════════╡
+    │ 0        ┆ wind      ┆ 0         │
+    │ 0        ┆ solar     ┆ 1         │
+    │ 0        ┆ gas       ┆ 2         │
+    │ 1        ┆ wind      ┆ 3         │
+    └──────────┴───────────┴───────────┘
 
 [5] sink: stream the frames to an LP file  (relational/sinks/lp_file.py)
     min
