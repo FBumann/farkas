@@ -615,9 +615,18 @@ class PolarsExecutor:
                 )
             )
         stacked = pl.concat(pieces)
-        if _needs_aggregate([fragment for fragment, _ in terms]):
-            stacked = stacked.group_by('row', 'col').agg(pl.col('coeff').sum())
-        return rows, stacked.collect(engine='streaming')
+        if not _needs_aggregate([fragment for fragment, _ in terms]):
+            return rows, stacked.collect(engine='streaming')
+
+        # The aggregate is reachable, but "reachable" is all the fragments can
+        # say. Sorting first turns the question into one pass over adjacent
+        # pairs, and a hash table sized by the number of groups — which is
+        # nearly the number of rows, since a repeated cell is the exception —
+        # is only built when there is something to collapse.
+        matrix = stacked.sort('row', 'col').collect(engine='streaming')
+        if _has_repeated_entry(matrix):
+            matrix = matrix.group_by('row', 'col').agg(pl.col('coeff').sum()).sort('row', 'col')
+        return rows, matrix
 
     def _build_objective(self, o: plan.ObjectiveDeclaration) -> pl.DataFrame | None:
         """The objective as ``(col, coeff)``, or ``None`` if it has no terms."""
@@ -774,6 +783,26 @@ def _needs_aggregate(terms: Sequence[TermFragment]) -> bool:
     though the reasoning is not (#161).
     """
     return len(terms) != 1 or not terms[0].keyed
+
+
+def _has_repeated_entry(matrix: pl.DataFrame) -> bool:
+    """Whether a matrix sorted by ``(row, col)`` holds one cell twice.
+
+    :func:`_needs_aggregate` answers whether a stack *can* repeat a cell, which
+    is all a static reading of the fragments can say. This answers whether it
+    *did*, which is one pass over a sorted frame and lets the aggregate be
+    skipped in the case the static answer is conservative about.
+
+    That case is not rare. `transport` stacks three fragments, so the static
+    answer is yes on every row, and at the `l` rung the aggregate collapses
+    exactly nothing out of 12.6M entries.
+    """
+    import polars as pl
+
+    if matrix.height < 2:
+        return False
+    repeated = (pl.col('row') == pl.col('row').shift(1)) & (pl.col('col') == pl.col('col').shift(1))
+    return bool(matrix.select(repeated.any()).item())
 
 
 def _stack(frames: list[pl.DataFrame], columns: tuple[str, ...]) -> pl.DataFrame:
