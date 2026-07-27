@@ -105,7 +105,15 @@ static checks and CI's bare-install job proves the dependency claims.*
    CSR. Two residencies are exempt because neither scales with the budget's
    purpose: the solver's own model when solving in-process, and a model small
    enough that the budget exceeds it (the planned in-memory executor holds
-   everything by design — ROADMAP Track 5). A new feature is judged against the
+   everything by design — ROADMAP Track 5). A **solution vector** is the third:
+   `solve()` receives the primal from the solver as one dense array of length
+   `n_cols` and hands it to duckdb, outside `memory_limit`. That is deliberate
+   and it is not the model — it is `O(n_cols)` where the model is `O(nnz)`, it
+   exists once rather than at every operator, and the solver already holds an
+   identical copy, so we are never the dominant term. Roughly 1.6 GB at 10⁸
+   variables, on a machine that just solved a 10⁸-variable model.
+   `Result.to_parquet` streams and never materialises it, for anyone who
+   cannot afford even that. A new feature is judged against the
    invariant, not the mechanism: the question is whether peak still tracks the
    budget, not whether some array was briefly contiguous.
 5. **Backend-visible YAML files are self-contained.** No Python-side state
