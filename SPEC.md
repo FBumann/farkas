@@ -368,6 +368,7 @@ with fk.solve("model.yaml", sources, memory_limit="512MB",
     result.is_ok        # linopy's rollup: not an error, abort or refusal
     result.has_primal   # narrower: are there values to read
     result.primal("p")            # tidy DataFrame (dims…, value) — the native shape
+    result.dual("power_balance")  # shadow prices, the same shape and the same join
     result.to_dataarray("p")      # the same, labelled: .sel / resample / plot
     result.to_dataset()           # every variable by default; names for a subset
     result.to_parquet(directory)  # streamed to disk, never through this process
@@ -407,8 +408,16 @@ stops early: a MIP that hits `time_limit` before finding any feasible point is
 `ok` with nothing to read. Reading anyway raises `NoSolutionError`, and
 `objective` is `nan`. `to_dataset` costs what it says — each variable arrives
 dense over its own dims, so a model built for the memory budget this engine
-exists for should name a subset or use `to_parquet`. Duals are not exposed yet
-(the solve path reads `col_value` only) — ROADMAP Track 2b. `.lp` is the only
+exists for should name a subset or use `to_parquet`. `dual` is the same label
+join against the constraint's row table, and **raises rather than returning
+zeros** in either of the two ways it can come up empty: no values at all is
+`NoSolutionError`, the gate `primal` passes through too, while a solve that
+*did* leave values but no duals — any integer or binary variable makes them
+undefined — raises `LinopyYamlError`, because the primals are still readable
+and only this quantity is missing. Duals exist only on the `solver_direct`
+path — a model written to LP and solved elsewhere never passes back through
+here. Reduced costs and slacks ride the same join and are not exposed yet
+([#78](https://github.com/FBumann/farkas/issues/78)). `.lp` is the only
 sink `write` supports today; `.mps` raises `NotImplementedError`.
 
 **Linopy shim** (`farkas.linopy`, `[linopy]` extra) — two *pure producers*,

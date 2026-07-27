@@ -309,3 +309,9 @@ class Program:
             if v.name == name:
                 return v
         raise KeyError(f"unknown variable '{name}'")
+
+    def constraint(self, name: str) -> ConstraintDeclaration:
+        for c in self.constraints:
+            if c.name == name:
+                return c
+        raise KeyError(f"unknown constraint '{name}'")
