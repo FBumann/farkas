@@ -559,9 +559,9 @@ class PolarsExecutor:
         fragment is aggregated to its own coordinates and left-joined, so a
         coordinate it has no row for contributes zero.
 
-        The terminal aggregate always runs: it is where duplicates from ``Sum``
-        and ``GroupSum`` — which project rather than aggregate — collapse.
-        Skipping it where nothing can collapse is #161.
+        The terminal aggregate is where duplicates from ``Sum`` and
+        ``GroupSum`` — which project rather than aggregate — collapse, and it
+        is skipped where nothing can (:func:`_needs_aggregate`).
         """
         import polars as pl
 
@@ -614,8 +614,10 @@ class PolarsExecutor:
                     (sign * pl.col('coeff')).cast(pl.Float64).alias('coeff'),
                 )
             )
-        matrix = pl.concat(pieces).group_by('row', 'col').agg(pl.col('coeff').sum())
-        return rows, matrix.collect(engine='streaming')
+        stacked = pl.concat(pieces)
+        if _needs_aggregate([fragment for fragment, _ in terms]):
+            stacked = stacked.group_by('row', 'col').agg(pl.col('coeff').sum())
+        return rows, stacked.collect(engine='streaming')
 
     def _build_objective(self, o: plan.ObjectiveDeclaration) -> pl.DataFrame | None:
         """The objective as ``(col, coeff)``, or ``None`` if it has no terms."""
@@ -764,9 +766,10 @@ def _needs_aggregate(terms: Sequence[TermFragment]) -> bool:
     :attr:`~farkas.relational.compiler.TermFragment.keyed` already holds a
     label twice.
 
-    Used for the objective only. The same reasoning extends to the constraint
-    matrix, where it is worth far more, but that is #161's to land on its own
-    evidence rather than an engine swap's to carry.
+    Worth 2-4x of build time on the matrix and little on the objective, but the
+    argument is the same at both, so it is written once. On the duckdb engine
+    the same change measured at nothing — the value is engine-specific even
+    though the reasoning is not (#161).
     """
     return len(terms) != 1 or not terms[0].keyed
 

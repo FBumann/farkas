@@ -34,19 +34,19 @@ highspy 1.15.1. Parity gate: all three cases agree with the eager lane to
 
 | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
 |---|---|---|---|---|---|---|
-| 10k | 0.09 s | 0.30 s | **0.30x** | 0.17 GB | 0.21 GB | **0.82x** |
-| 100k | 0.15 s | 0.31 s | **0.47x** | 0.23 GB | 0.26 GB | **0.86x** |
-| 1M | 0.44 s | 0.53 s | **0.83x** | 0.55 GB | 0.58 GB | **0.95x** |
-| 10M | 4.64 s | 3.25 s | 1.43x | 2.78 GB | 2.26 GB | 1.23x |
+| 10k | 0.08 s | 0.25 s | **0.34x** | 0.17 GB | 0.21 GB | **0.81x** |
+| 100k | 0.10 s | 0.24 s | **0.41x** | 0.22 GB | 0.26 GB | **0.84x** |
+| 1M | 0.36 s | 0.44 s | **0.81x** | 0.53 GB | 0.60 GB | **0.89x** |
+| 10M | 4.24 s | 3.04 s | 1.39x | 3.00 GB | 2.17 GB | 1.38x |
 
 ### nodal — `(snapshot, node, tech)` at 25% density
 
 | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
 |---|---|---|---|---|---|---|
-| 3k | 0.09 s | 0.31 s | **0.30x** | 0.17 GB | 0.21 GB | **0.81x** |
-| 30k | 0.10 s | 0.32 s | **0.33x** | 0.21 GB | 0.24 GB | **0.90x** |
-| 300k | 0.32 s | 0.41 s | **0.79x** | 0.46 GB | 0.46 GB | 1.00x |
-| 3M | 2.44 s | 1.50 s | 1.63x | 1.93 GB | 1.54 GB | 1.25x |
+| 3k | 0.09 s | 0.28 s | **0.31x** | 0.17 GB | 0.21 GB | **0.81x** |
+| 30k | 0.10 s | 0.29 s | **0.36x** | 0.21 GB | 0.24 GB | **0.89x** |
+| 300k | 0.29 s | 0.43 s | **0.66x** | 0.46 GB | 0.46 GB | 1.00x |
+| 3M | 3.76 s | 1.43 s | 2.63x | 1.89 GB | 1.58 GB | 1.20x |
 
 ### sector — dense snapshots and carriers, sparse portfolio
 
@@ -57,19 +57,19 @@ then reduces the sparse one.
 
 | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
 |---|---|---|---|---|---|---|
-| 1k | 0.09 s | 0.32 s | **0.28x** | 0.17 GB | 0.21 GB | **0.81x** |
-| 10k | 0.10 s | 0.33 s | **0.31x** | 0.20 GB | 0.24 GB | **0.85x** |
-| 100k | 0.18 s | 0.33 s | **0.56x** | 0.41 GB | 0.53 GB | **0.79x** |
-| 1M | 1.47 s | 1.39 s | 1.05x | **1.24 GB** | 2.97 GB | **0.42x** |
+| 1k | 0.07 s | 0.25 s | **0.29x** | 0.17 GB | 0.21 GB | **0.80x** |
+| 10k | 0.09 s | 0.28 s | **0.31x** | 0.20 GB | 0.24 GB | **0.85x** |
+| 100k | 0.21 s | 0.38 s | **0.56x** | 0.41 GB | 0.52 GB | **0.78x** |
+| 1M | 1.60 s | 2.51 s | **0.63x** | **1.25 GB** | 2.45 GB | **0.51x** |
 
 ### transport — three `group_sum` joins per row
 
 | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
 |---|---|---|---|---|---|---|
-| 9.8k | 0.10 s | 0.32 s | **0.31x** | 0.18 GB | 0.22 GB | **0.83x** |
-| 98k | 0.14 s | 0.36 s | **0.40x** | 0.25 GB | 0.28 GB | **0.87x** |
-| 980k | 0.54 s | 0.64 s | **0.85x** | 0.70 GB | 0.65 GB | 1.09x |
-| 9.8M | 6.71 s | 3.71 s | 1.81x | 2.87 GB | 1.93 GB | 1.48x |
+| 9.8k | 0.10 s | 0.27 s | **0.37x** | 0.18 GB | 0.22 GB | **0.83x** |
+| 98k | 0.12 s | 0.33 s | **0.37x** | 0.25 GB | 0.28 GB | **0.87x** |
+| 980k | 0.59 s | 0.73 s | **0.80x** | 0.71 GB | 0.65 GB | 1.11x |
+| 9.8M | 6.92 s | 3.72 s | 1.86x | 3.00 GB | 1.93 GB | 1.56x |
 
 ## What this says
 
@@ -94,12 +94,12 @@ than counted. That path cut `transport`'s build from 2.57 s to 0.87 s and
 `dispatch`'s from 0.97 s to 0.49 s at the `l` rung — the largest single win in
 this file, and one that has nothing to do with which engine executes it.
 
-**What is left at scale is the LP writer and the terminal aggregate.** The
-writer is the larger share; the aggregate over every nonzero is the other, and
-it is a no-op for most constraints — [#161](https://github.com/FBumann/farkas/issues/161)
-measures skipping it at ~30% of build peak and roughly 3x build time. It is not
-done here deliberately: eliding it is a correctness-critical change that has
-earned its own review rather than an engine swap's coat-tails.
+**What is left at scale is the LP writer**, which is most of the wall clock at
+the `l` rung on every case. That is where the next work belongs.
+
+**Ratios, not seconds.** Both arms of a row are measured in the same run under
+the same machine load and the report takes the fastest of three, so the ratio
+columns survive a busy machine in a way the absolute times do not.
 
 **Sparsity separates them, but only once the coordinate product is large.**
 The `sector` row above is the clearest result in this file — 2.2x less memory
