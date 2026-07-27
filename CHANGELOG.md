@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.0-alpha.16](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.15...v0.0.0-alpha.16) (2026-07-27)
+
+
+### Documentation
+
+* the memory invariant says what it actually guarantees ([#150](https://github.com/FBumann/farkas/issues/150)) ([8ffe339](https://github.com/FBumann/farkas/commit/8ffe33929c29ba28e87ccbd60b4f1005a89a6132))
+
 ## [0.0.0-alpha.15](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.14...v0.0.0-alpha.15) (2026-07-27)
 
 
