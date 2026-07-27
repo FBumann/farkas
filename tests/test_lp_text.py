@@ -49,6 +49,16 @@ def _rendered(render, values: list[float]) -> list[str]:
     return frame.select(render(pl.col('v'))).to_series().to_list()
 
 
+def _signed_text(value: pl.Expr) -> pl.Expr:
+    """The sign and magnitude ``_signed`` hands to ``concat_str``, as one string.
+
+    The sink never glues them itself — it passes both into the ``concat_str``
+    that builds the whole term — so the property under test is what that
+    concatenation produces.
+    """
+    return pl.concat_str(*_signed(value))
+
+
 def _bits(x: float) -> bytes:
     """The bit pattern, so ``-0.0`` and ``0.0`` compare unequal."""
     return struct.pack('<d', x)
@@ -69,20 +79,20 @@ def test_signed_coefficient_round_trips(value: float) -> None:
     round-trip is checked on magnitude there: ``+0.0`` and ``-0.0`` are the
     same coefficient, and only one of them is expressible after a ``+``.
     """
-    (text,) = _rendered(_signed, [value])
+    (text,) = _rendered(_signed_text, [value])
     assert text[0] in '+-', f'coefficient {text!r} carries no explicit sign'
     assert text[:2] != '+-', f'coefficient {text!r} carries two signs'
     assert float(text) == value  # -0.0 == 0.0, which is the whole point
 
 
 def test_negative_zero_coefficient_is_written_once() -> None:
-    """The trap ``+ 0.0`` in :func:`_signed` exists to close.
+    """The trap the spelled-out zero in :func:`_signed` exists to close.
 
     ``-0.0`` is reachable — any negative coefficient times a zero parameter —
     and it satisfies ``>= 0``, so a naive sign arm emits ``+`` in front of a
     cast that still reads ``-0.0``.
     """
-    (text,) = _rendered(_signed, [-0.0])
+    (text,) = _rendered(_signed_text, [-0.0])
     assert text == '+0.0'
 
 

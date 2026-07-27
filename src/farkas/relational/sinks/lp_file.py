@@ -1,8 +1,8 @@
 """The ``lp_file`` sink: the model as LP text.
 
 Portability, debugging, and the differential oracle. Every section is sunk
-straight to a part file and the parts concatenated bytewise, so the LP text
-never exists in this process's memory.
+straight into the open file, so the LP text never exists in this process's
+memory — and no byte is written twice.
 
 Numbers go through polars' float cast, which round-trips exactly: the text a
 solver reads back is the double the engine computed.
@@ -14,10 +14,8 @@ builds the same bytes twice (#109).
 
 from __future__ import annotations
 
-import shutil
-import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import IO, TYPE_CHECKING
 
 if TYPE_CHECKING:
     import polars as pl
@@ -25,13 +23,20 @@ if TYPE_CHECKING:
     from farkas.relational.sinks.tables import ModelTables
 
 
-def _sink(frame: pl.LazyFrame, part: Path) -> None:
-    """Write a one-column frame to *part*, one raw line per row.
+def _sink(frame: pl.LazyFrame, f: IO[bytes]) -> None:
+    """Append a one-column frame to *f*, one raw line per row.
 
-    A CSV writer with the CSV switched off: no header, no quoting, so the
-    bytes on disk are exactly the strings the frame holds.
+    A CSV writer with the CSV switched off: no header, no quoting, so the bytes
+    on disk are exactly the strings the frame holds.
+
+    The frame goes into the file the caller is already holding rather than into
+    a part file to be concatenated afterwards. Sections are produced in the
+    order the LP format wants them, so there is nothing to reorder — and a
+    concatenation pass would read and rewrite the whole file, which at these
+    sizes costs more than producing it did. polars writes through the handle's
+    own buffer, so a ``f.write()`` between two sinks lands between them.
     """
-    frame.sink_csv(part, include_header=False, quote_style='never')
+    frame.sink_csv(f, include_header=False, quote_style='never')
 
 
 def write_lp_file(model: ModelTables, path: str | Path) -> None:
@@ -39,52 +44,41 @@ def write_lp_file(model: ModelTables, path: str | Path) -> None:
     import polars as pl
 
     path = Path(path)
-    with tempfile.TemporaryDirectory(prefix='farkas-lp-') as tmp:
-        parts = Path(tmp)
-
-        objective = (
-            model.obj.lazy().sort('col').select(_signed(pl.col('coeff')) + pl.lit(' x') + _digits(pl.col('col')))
-        )
-        _sink(objective, parts / 'obj')
-
-        _sink(_constraint_blocks(model), parts / 'cons')
-
-        bounds = (
-            model.cols.lazy()
-            .sort('col')
-            .select(
-                _bound(pl.col('lb'), '-infinity')
-                + pl.lit(' <= x')
-                + _digits(pl.col('col'))
-                + pl.lit(' <= ')
-                + _bound(pl.col('ub'), '+infinity')
+    objective = model.obj.lazy().sort('col').select(_term(pl.col('coeff'), pl.col('col')))
+    bounds = (
+        model.cols.lazy()
+        .sort('col')
+        .select(
+            pl.concat_str(
+                _bound(pl.col('lb'), '-infinity').alias('lb'),
+                pl.lit(' <= x').alias('open'),
+                _digits(pl.col('col')),
+                pl.lit(' <= ').alias('close'),
+                _bound(pl.col('ub'), '+infinity').alias('ub'),
             )
         )
-        _sink(bounds, parts / 'bounds')
+    )
 
-        integrality = []
+    with open(path, 'wb') as f:
+        f.write((b'min' if model.objective_sense == 'min' else b'max') + b'\n\nobj:\n')
+        if model.objective_constant:
+            f.write(f'{model.objective_constant:+.17g}\n'.encode())
+        _sink(objective, f)
+
+        f.write(b'\ns.t.\n\n')
+        _sink(_constraint_blocks(model), f)
+
+        f.write(b'\nbounds\n')
+        _sink(bounds, f)
+
         for variable_type, keyword in (('binary', 'binary'), ('integer', 'general')):
             chosen = model.cols.lazy().filter(pl.col('vtype') == variable_type).sort('col')
             if chosen.select(pl.len()).collect().item() == 0:
                 continue
-            part = parts / keyword
-            integrality.append((keyword, part))
-            _sink(chosen.select(pl.lit('x') + _digits(pl.col('col'))), part)
+            f.write(f'\n{keyword}\n'.encode())
+            _sink(chosen.select(pl.concat_str(pl.lit('x'), _digits(pl.col('col')))), f)
 
-        sense = b'min' if model.objective_sense == 'min' else b'max'
-        with open(path, 'wb') as f:
-            f.write(sense + b'\n\nobj:\n')
-            if model.objective_constant:
-                f.write(f'{model.objective_constant:+.17g}\n'.encode())
-            _cat(f, parts / 'obj')
-            f.write(b'\ns.t.\n\n')
-            _cat(f, parts / 'cons')
-            f.write(b'\nbounds\n')
-            _cat(f, parts / 'bounds')
-            for keyword, part in integrality:
-                f.write(f'\n{keyword}\n'.encode())
-                _cat(f, part)
-            f.write(b'\nend\n')
+        f.write(b'\nend\n')
 
 
 #: Sort keys placing a row's header before its terms and its sense after them.
@@ -111,7 +105,7 @@ def _constraint_blocks(model: ModelTables) -> pl.LazyFrame:
     header = rows.select(
         'row',
         pl.lit(_HEADER, dtype=pl.Int64).alias('ord'),
-        (pl.lit('c') + _digits(pl.col('row')) + pl.lit(':')).alias('line'),
+        pl.concat_str(pl.lit('c').alias('c'), _digits(pl.col('row')), pl.lit(':').alias('colon')).alias('line'),
     )
     placeholder = rows.join(model.matrix.lazy().select('row').unique(), on='row', how='anti').select(
         'row',
@@ -124,15 +118,27 @@ def _constraint_blocks(model: ModelTables) -> pl.LazyFrame:
         .select(
             'row',
             pl.col('col').cast(pl.Int64).alias('ord'),
-            (_signed(pl.col('coeff')) + pl.lit(' x') + _digits(pl.col('col'))).alias('line'),
+            _term(pl.col('coeff'), pl.col('col')).alias('line'),
         )
     )
     footer = rows.select(
         'row',
         pl.lit(_FOOTER, dtype=pl.Int64).alias('ord'),
-        (pl.col('sense').replace({'==': '='}) + pl.lit(' ') + _number(pl.col('rhs'))).alias('line'),
+        pl.concat_str(pl.col('sense').replace({'==': '='}), pl.lit(' '), _number(pl.col('rhs'))).alias('line'),
     )
     return pl.concat([header, placeholder, terms, footer]).sort('row', 'ord').select('line')
+
+
+def _term(coeff: pl.Expr, col: pl.Expr) -> pl.Expr:
+    """One ``+1.5 x7`` term.
+
+    Built by a single ``concat_str`` rather than by chaining ``+``. Every ``+``
+    is its own pass allocating its own full-width string column, and a term has
+    four pieces; this way the line is allocated once.
+    """
+    import polars as pl
+
+    return pl.concat_str(*_signed(coeff), pl.lit(' x'), _digits(col))
 
 
 def _number(value: pl.Expr) -> pl.Expr:
@@ -142,19 +148,26 @@ def _number(value: pl.Expr) -> pl.Expr:
     return value.cast(pl.String)
 
 
-def _signed(value: pl.Expr) -> pl.Expr:
+def _signed(value: pl.Expr) -> tuple[pl.Expr, pl.Expr]:
     """A coefficient, sign always explicit — the LP format needs the ``+``.
 
-    The sign is decided and *then* the magnitude is rendered, rather than a
-    ``+`` being prefixed to whatever the cast produced. ``-0.0`` is why: it
-    satisfies ``>= 0``, so prefixing gives ``+-0.0``, which no LP parser
-    accepts. It is reachable from any negative coefficient times a zero
-    parameter, so it is a real file, not a curiosity.
+    Two pieces for ``concat_str`` rather than one finished string, because the
+    cast already carries the ``-``: only a non-negative value needs a sign
+    glued on, and the sign column is one character wide however large the
+    model. Deciding the sign and then rendering ``abs()`` would render the
+    magnitude in both arms of the ``when``, at full width, to discard one.
+
+    ``-0.0`` is why zero is spelled out rather than cast: it is ``>= 0``, so it
+    takes the ``+`` arm while the cast still renders ``-0.0``, giving
+    ``+-0.0``, which no LP parser accepts. It is reachable from any negative
+    coefficient times a zero parameter, so it is a real file, not a curiosity.
     """
     import polars as pl
 
-    magnitude = _number(value.abs())
-    return pl.when(value < 0).then(pl.lit('-') + magnitude).otherwise(pl.lit('+') + magnitude)
+    return (
+        pl.when(value >= 0).then(pl.lit('+')).otherwise(pl.lit('')).alias('sign'),
+        pl.when(value == 0).then(pl.lit('0.0')).otherwise(_number(value)).alias('magnitude'),
+    )
 
 
 def _bound(value: pl.Expr, infinite: str) -> pl.Expr:
@@ -169,8 +182,3 @@ def _digits(value: pl.Expr) -> pl.Expr:
     import polars as pl
 
     return value.cast(pl.Int64).cast(pl.String)
-
-
-def _cat(f: Any, part: Path) -> None:
-    with open(part, 'rb') as src:
-        shutil.copyfileobj(src, f)
