@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.0-alpha.23](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.22...v0.0.0-alpha.23) (2026-07-27)
+
+
+### Performance
+
+* skip the objective's GROUP BY where a column cannot repeat ([#179](https://github.com/FBumann/farkas/issues/179)) ([787b1ce](https://github.com/FBumann/farkas/commit/787b1ce238861acef53049a4ac0135671d850f1a))
+
 ## [0.0.0-alpha.22](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.21...v0.0.0-alpha.22) (2026-07-27)
 
 
