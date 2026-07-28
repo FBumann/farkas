@@ -115,6 +115,7 @@ dev = [
     # as part of the cost it is there to measure. Not needed by the engine —
     # the bare-install job runs the suite without it.
     "pyarrow>=16",
+    "typst>=0.15.0",
 ]
 
 [tool.ruff]

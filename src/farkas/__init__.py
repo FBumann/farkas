@@ -27,8 +27,8 @@ from farkas.errors import (
     PiecewiseExpansionError,
     SchemaError,
 )
-from farkas.latex import SymbolTable, to_latex
 from farkas.schema import MathSchema
+from farkas.typeset import SymbolTable, to_latex, to_typst
 
 __all__ = [
     'DataError',
@@ -44,6 +44,7 @@ __all__ = [
     'load_schema',
     'solve',
     'to_latex',
+    'to_typst',
     'write',
 ]
 

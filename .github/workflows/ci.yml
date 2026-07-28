@@ -78,6 +78,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             texlive-latex-base texlive-fonts-recommended
       - name: Every model renders to LaTeX that compiles
+        # (the Typst half of this claim is `test_typst_output_compiles`)
         run: |
           mkdir -p "$RUNNER_TEMP/tex"
           for model in examples/*.yaml examples/ports/*.yaml; do
