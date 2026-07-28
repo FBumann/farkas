@@ -374,6 +374,39 @@ def _objective_of(program, sources):
         return dict(zip(obj['col'].to_list(), obj['coeff'].to_list(), strict=True)), obj.height
 
 
+def test_the_matrix_aggregate_runs_on_what_repeats_and_not_on_what_might():
+    """Both branches of the collapse, on models that differ only in overlap.
+
+    `_needs_aggregate` reads the fragments and can only say whether a cell
+    *can* repeat. Two fragments over disjoint variables satisfy it and repeat
+    nothing; two over the same variable repeat every cell. The first must come
+    out untouched and the second must be summed — the point being that the
+    same static answer covers both, so the frame itself has to decide.
+    """
+    base = {
+        'dimensions': {'i': {'dtype': 'int', 'values': [0, 1]}},
+        'parameters': {'rhs': {'dims': ['i']}},
+        'variables': {
+            'x': {'foreach': ['i'], 'bounds': {'lower': 0}},
+            'y': {'foreach': ['i'], 'bounds': {'lower': 0}},
+        },
+        'objectives': {'o': {'sense': 'minimize', 'equations': [{'expression': 'sum(x, over=i) + sum(y, over=i)'}]}},
+    }
+    sources = {'rhs': pl.DataFrame({'i': [0, 1], 'value': [4.0, 6.0]})}
+
+    disjoint = dict(base, constraints={'c': {'foreach': ['i'], 'equations': [{'expression': 'x + y >= rhs'}]}})
+    with fk.build(disjoint, sources) as ex:
+        matrix = ex._tables().matrix
+        assert matrix.height == 4, 'two variables per row, nothing to collapse'
+        assert matrix['coeff'].to_list() == [1.0, 1.0, 1.0, 1.0]
+
+    overlapping = dict(base, constraints={'c': {'foreach': ['i'], 'equations': [{'expression': 'x + 3 * x >= rhs'}]}})
+    with fk.build(overlapping, sources) as ex:
+        matrix = ex._tables().matrix
+        assert matrix.height == 2, 'one cell per row after the collapse'
+        assert matrix['coeff'].to_list() == [4.0, 4.0]
+
+
 def test_the_objective_skips_the_aggregate_only_when_a_column_cannot_repeat():
     """`p * cost` needs no aggregate; `p * cost + p * cost` does."""
     base = {

@@ -28,7 +28,7 @@ Produced by [`bench/`](../bench/README.md) and read straight off
 the machine fingerprint and library versions that produced it:
 
 ```bash
-uv run python -m bench.run --cases dispatch nodal sector transport --sizes xs s m l
+uv run python -m bench.run --sizes xs s m l d100 d50 d25 d08
 uv run python -m bench.report bench/results/latest.jsonl
 ```
 
@@ -44,19 +44,19 @@ highspy 1.15.1. Parity gate: all four cases agree with the eager lane to
 
 | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
 |---|---|---|---|---|---|---|
-| 10k | 0.05 s | 0.21 s | **0.25x** | 0.17 GB | 0.21 GB | **0.79x** |
+| 10k | 0.05 s | 0.20 s | **0.26x** | 0.17 GB | 0.21 GB | **0.79x** |
 | 100k | 0.06 s | 0.22 s | **0.29x** | 0.21 GB | 0.26 GB | **0.81x** |
-| 1M | 0.20 s | 0.35 s | **0.57x** | 0.48 GB | 0.59 GB | **0.82x** |
-| 10M | 1.62 s | 1.73 s | **0.94x** | 2.42 GB | 2.19 GB | 1.11x |
+| 1M | 0.18 s | 0.35 s | **0.52x** | 0.49 GB | 0.59 GB | **0.84x** |
+| 10M | 1.42 s | 1.61 s | **0.89x** | 2.39 GB | 2.17 GB | 1.10x |
 
 ### nodal — `(snapshot, node, tech)` at 25% density
 
 | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
 |---|---|---|---|---|---|---|
-| 3k | 0.05 s | 0.21 s | **0.24x** | 0.17 GB | 0.21 GB | **0.80x** |
-| 30k | 0.06 s | 0.22 s | **0.27x** | 0.20 GB | 0.24 GB | **0.86x** |
-| 300k | 0.12 s | 0.27 s | **0.43x** | 0.41 GB | 0.46 GB | **0.90x** |
-| 3M | 0.78 s | 0.85 s | **0.92x** | 1.37 GB | 1.56 GB | **0.88x** |
+| 3k | 0.05 s | 0.22 s | **0.23x** | 0.17 GB | 0.21 GB | **0.80x** |
+| 30k | 0.06 s | 0.22 s | **0.27x** | 0.21 GB | 0.24 GB | **0.87x** |
+| 300k | 0.14 s | 0.29 s | **0.48x** | 0.40 GB | 0.46 GB | **0.88x** |
+| 3M | 0.77 s | 0.82 s | **0.94x** | 1.37 GB | 1.55 GB | **0.88x** |
 
 ### sector — dense snapshots and carriers, sparse portfolio
 
@@ -68,18 +68,18 @@ then reduces the sparse one.
 | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
 |---|---|---|---|---|---|---|
 | 1k | 0.05 s | 0.22 s | **0.24x** | 0.17 GB | 0.21 GB | **0.80x** |
-| 10k | 0.06 s | 0.22 s | **0.26x** | 0.20 GB | 0.24 GB | **0.83x** |
-| 100k | 0.10 s | 0.30 s | **0.34x** | 0.39 GB | 0.52 GB | **0.73x** |
-| 1M | 0.55 s | 1.09 s | **0.51x** | **0.97 GB** | 2.96 GB | **0.33x** |
+| 10k | 0.06 s | 0.23 s | **0.26x** | 0.20 GB | 0.24 GB | **0.82x** |
+| 100k | 0.11 s | 0.30 s | **0.37x** | 0.39 GB | 0.53 GB | **0.74x** |
+| 1M | 0.55 s | 1.10 s | **0.50x** | **1.01 GB** | 2.96 GB | **0.34x** |
 
 ### transport — three `group_sum` joins per row
 
 | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
 |---|---|---|---|---|---|---|
-| 9.8k | 0.06 s | 0.23 s | **0.24x** | 0.18 GB | 0.22 GB | **0.81x** |
-| 98k | 0.07 s | 0.25 s | **0.29x** | 0.24 GB | 0.29 GB | **0.82x** |
-| 980k | 0.23 s | 0.41 s | **0.56x** | 0.62 GB | 0.67 GB | **0.93x** |
-| 9.8M | 2.18 s | 2.09 s | 1.04x | 3.24 GB | 1.87 GB | 1.73x |
+| 9.8k | 0.06 s | 0.23 s | **0.25x** | 0.18 GB | 0.22 GB | **0.80x** |
+| 98k | 0.08 s | 0.25 s | **0.31x** | 0.23 GB | 0.29 GB | **0.80x** |
+| 980k | 0.22 s | 0.40 s | **0.56x** | 0.56 GB | 0.65 GB | **0.87x** |
+| 9.8M | 2.02 s | 1.99 s | 1.01x | 2.93 GB | 1.95 GB | 1.51x |
 
 ## What this says
 
@@ -88,15 +88,34 @@ range declarative modelling is actually used in, and the range a rolling horizon
 lives in entirely.
 
 **Above ~1M the build-side memory advantage narrows or inverts.** At 10M
-variables the LP path is 1.11x on `dispatch` and 1.73x on `transport`:
-COO carries a `(row, col, coeff)` triple per nonzero where a dense array carries
-one float. **Read the next section before drawing a conclusion from that** —
-measured to the point a caller actually reaches, we are ahead on all three, and
-build memory on its own is not a number anyone experiences.
+variables the LP path is 1.10x on `dispatch` and 1.51x on `transport`.
+**Read the next section before drawing a conclusion from that** — measured to
+the point a caller actually reaches, we are ahead on all three, and build
+memory on its own is not a number anyone experiences.
 
-`transport` is the case still paying full price on memory, because three
-`group_sum` fragments land on every row and so the terminal aggregate cannot be
-skipped (see `_needs_aggregate`). It is the obvious next thing to look at.
+**The obvious explanation for that peak was wrong.** COO — a
+`(row, col, coeff)` triple per nonzero where a dense array carries one float —
+is under a tenth of it: accounted at the `l` rung on `transport`, the matrix
+frame is 0.30 GB of a peak measured in gigabytes. A memory timeline through
+the build put the peak in one call, `_build_constraint`, which arrived
+carrying +1.27 GB of it.
+
+**A third of that was an aggregate collapsing nothing.** `_needs_aggregate`
+reads the term fragments, so it can only answer whether a cell *can* repeat;
+`transport` stacks three, so the answer is yes on every row. At the `l` rung it
+took 12.6M entries in and returned 12.6M — building a hash table with one group
+per row to collapse zero duplicates. Sorting first and reading the answer off
+adjacent pairs costs less than the aggregate did (0.44 s against 0.57 s) and
+builds the table only when there is something to collapse. That is what moved
+this row from 1.73x to 1.51x, and it halved the *transient* — peak above what
+the build leaves resident — from 0.70-0.86 GB to 0.34-0.35 GB.
+
+**What is left is resident, not transient, and still unexplained.** After the
+change, `transport` holds ~1.86 GB at the end of the build against 0.77 GB of
+model frames and 0.22 GB of variable label frames, so roughly 0.76 GB is
+neither. The label frames are droppable on a write-only path and worth about
+0.1x of the ratio; the rest has no candidate yet. **No number here should be
+quoted as its cause** — that is the mistake this paragraph replaced.
 
 **Labels are a position, not a count.** An unmasked coordinate product needs no
 sort: a row's label is arithmetic on the dim ordinals, so it is computed rather
@@ -123,10 +142,13 @@ line once. In the same pass the sign stopped being decided in front of a
 rendered `abs()` — that renders the magnitude in both arms of the `when` to
 discard one, and the cast already carries the `-`.
 
-Emit is now **0.81x, 0.79x, 0.39x and 0.96x** of linopy's writer at the `l`
-rung — ahead on every case, where before it was behind on three. Peak did not
-move: this was wall time, and it leaves the memory rows exactly where they
-were. **`transport`'s 1.73x peak is now the one open number at scale.**
+Emit is now **0.74x, 0.84x, 0.37x and 0.96x** of linopy's writer at the `l`
+rung — ahead on every case, where before it was behind on three. Neither change
+touches memory: they are wall time, and the peak rows moved for a different
+reason (the aggregate, above). **`transport`'s 1.51x peak is the one open
+number at scale**, and the build column is the other — 1.54x on `dispatch`,
+where an unmasked rectangular product is what a dense eager broadcast does
+best.
 
 The earlier change in this area, emitting one sorted stream of lines rather
 than gathering each row's terms into a string, is what makes the bytes
@@ -153,18 +175,18 @@ as density falls.
 
 | installed | live vars | wall: farkas | wall: linopy | peak: farkas | peak: linopy |
 |---|---|---|---|---|---|
-| 12/12 | 1.20M | **0.26 s** | 0.39 s | 0.60 GB | 0.62 GB |
-| 6/12 | 0.60M | **0.16 s** | 0.31 s | 0.46 GB | 0.60 GB |
-| 3/12 | 0.30M | **0.12 s** | 0.27 s | 0.40 GB | 0.45 GB |
-| 1/12 | 0.10M | **0.09 s** | 0.25 s | 0.36 GB | **0.35 GB** |
+| 12/12 | 1.20M | **0.25 s** | 0.38 s | 0.62 GB | 0.65 GB |
+| 6/12 | 0.60M | **0.16 s** | 0.30 s | 0.46 GB | 0.59 GB |
+| 3/12 | 0.30M | **0.12 s** | 0.30 s | 0.40 GB | 0.45 GB |
+| 1/12 | 0.10M | **0.10 s** | 0.26 s | 0.36 GB | **0.35 GB** |
 
-**Not here it does not.** linopy's peak falls with density too — 0.62 to
+**Not here it does not.** linopy's peak falls with density too — 0.65 to
 0.35 GB — and at the sparsest rung it ends up *below* ours.
 
 The reason is the size this sweep is run at, not the prediction. It holds the
 coordinate product fixed at 1.2M, where a dense array over it is ~10 MB and the
 interpreter and libraries dominate everything. `sector` runs the same 8%
-sparsity at a 12M product, and there the effect is unmistakable: 0.97 GB against
+sparsity at a 12M product, and there the effect is unmistakable: 1.01 GB against
 2.96 GB.
 
 So the claim needs both halves — **low density and a product large enough for it
@@ -182,7 +204,14 @@ fewer people use. `solver_direct` hands the COO straight to HiGHS, and **the
 handoff is part of the cost this package controls** — so it belongs in the
 comparison.
 
-`l` rung of each case, one process per arm, best of two:
+`l` rung of each case, one process per arm, best of two.
+
+**The peak column predates the terminal-aggregate change and is stale-high on
+`transport`** — that build no longer pays the hash table, so 3.55 GB is an
+upper bound rather than the current figure. It is left rather than adjusted
+because no script in `bench/` produces this table; it was taken by hand, and a
+number edited without a re-run is worse than one openly out of date. The wall
+columns are unaffected.
 
 | | build | + handoff | = total | peak |
 |---|---|---|---|---|

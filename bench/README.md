@@ -6,10 +6,17 @@ set of published numbers came from a `scratch/` script that was deleted, and a
 claim nobody can re-run is a claim with a shelf life.
 
 ```bash
-uv run python -m bench.run                                  # the committed ladder
+# every rung docs/benchmarks.md publishes — one invocation, because the run
+# REPLACES the results file rather than adding to it
+uv run python -m bench.run --sizes xs s m l d100 d50 d25 d08
 uv run python -m bench.run --cases dispatch --sizes m l     # one case, two rungs
 uv run python -m bench.report bench/results/latest.jsonl    # -> markdown
 ```
+
+The bare `bench.run` is **not** the committed ladder: it defaults to `xs s m`,
+so it stops below the rung every interesting claim lives at. Narrowing the run
+and then committing the file leaves the published tables with no provenance,
+and nothing about the file looks wrong afterwards.
 
 ## What it measures
 

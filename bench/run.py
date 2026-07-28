@@ -13,9 +13,21 @@ describes two different models is worse than no number, and the differential
 test suite proves parity for the *language*, not for the data this harness
 happens to generate.
 
-Results append to a JSONL file whose first line is the machine fingerprint —
-which is what stops the last harness's failure mode, numbers outliving any
-record of what produced them.
+Results go to a JSONL file whose first line is the machine fingerprint — which
+is what stops the last harness's failure mode, numbers outliving any record of
+what produced them.
+
+**The run replaces that file, it does not add to it.** So a `--cases` or
+`--sizes` narrower than the tables you are about to publish will leave those
+tables with no provenance, silently — which is a worse failure than the one the
+fingerprint prevents, because the file still looks complete. Publishing means
+one invocation covering every rung the tables show:
+
+    uv run python -m bench.run --sizes xs s m l d100 d50 d25 d08
+
+Replacing rather than appending is deliberate: accumulated records from two
+different working trees are indistinguishable once written, and the report
+would mix them into one row.
 """
 
 from __future__ import annotations
