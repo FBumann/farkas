@@ -50,6 +50,57 @@
       }
     }
   },
+  "pypsa_kvl": {
+    "objective": 17000.0,
+    "rtol": 1e-09,
+    "provenance": "pypsa 1.2.4 (its own linopy 0.9.0), via examples/ports/references/pypsa_kvl.py",
+    "duals": {
+      "nodal_balance": {
+        "snapshot": [
+          0,
+          0,
+          0,
+          1,
+          1,
+          1,
+          2,
+          2,
+          2,
+          3,
+          3,
+          3
+        ],
+        "bus": [
+          "north",
+          "mid",
+          "south",
+          "north",
+          "mid",
+          "south",
+          "north",
+          "mid",
+          "south",
+          "north",
+          "mid",
+          "south"
+        ],
+        "value": [
+          50.0,
+          50.0,
+          50.0,
+          50.0,
+          50.0,
+          50.0,
+          50.0,
+          50.0,
+          50.0,
+          50.0,
+          50.0,
+          50.0
+        ]
+      }
+    }
+  },
   "pypsa_ramp": {
     "objective": 18200.0,
     "rtol": 1e-09,

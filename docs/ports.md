@@ -18,6 +18,7 @@ suite green. This is the net for that class, and the evidence behind
 | [PyPSA LOPF rung 2](models/pypsa_ramp.md) | PyPSA 1.2.4, its own linopy 0.9.0 | 18200.0 |
 | [PyPSA LOPF rung 3](models/pypsa_storage.md) | PyPSA 1.2.4, its own linopy 0.9.0 | 15253.178322993519 |
 | [PyPSA LOPF rung 4](models/pypsa_cyclic_storage.md) | PyPSA 1.2.4, its own linopy 0.9.0 | 17228.77962151063 |
+| [PyPSA LOPF rung 5](models/pypsa_kvl.md) | PyPSA 1.2.4, its own linopy 0.9.0 | 17000.0 |
 | [PyPSA unit commitment](models/pypsa_unit_commitment.md) | PyPSA 1.2.4, its own linopy 0.9.0 | 24900.0 |
 
 Adding one is four files and five rules:
@@ -30,7 +31,8 @@ cost, ramp limits, storage cycling and KVL at once, and a mismatch then
 implicates five features instead of one. So each network is a ladder, one
 feature per rung, each switched off in PyPSA and reproduced here:
 **1 transport model** ✔ · **2 ramp limits** ✔ · **3 storage with state of
-charge** ✔ · **4 cyclic boundary condition** ✔ · 5 KVL. [Unit
+charge** ✔ · **4 cyclic boundary condition** ✔ · **5 KVL** ✔ — the ladder is
+complete. [Unit
 commitment](models/pypsa_unit_commitment.md) sits beside the ladder rather than
 on it — one bus, no network, because the feature under test is integrality.
 
@@ -41,6 +43,15 @@ Rung 2 needed the instance widened before it meant anything. Rung 1's links run
 saturated, which fixes every generator's output exactly, so a ramp limit on that
 network can only make it infeasible — never change the answer. A rung that
 cannot bind is not evidence that it works.
+
+**The ladder finished without a new primitive.** Rung 5 is Kirchhoff's voltage
+law, and it needed nothing added to the language: a cycle basis is a sparse
+`(cycle, line)` incidence *parameter*, and the constraint is one
+`sum(f * cycle_incidence, over=line) == 0`. A line can belong to several
+cycles, so the incidence cannot be a declared coordinate — that is the shape
+finding, and it is the same "topology is data" claim the corpus started with.
+Computing the basis is a graph algorithm and stays in data preparation, where
+the ceiling puts it.
 
 **Rung 4 made the model smaller**, which is the ladder paying off in the
 direction nobody plans for. Closing the horizon deletes rung 3's boundary

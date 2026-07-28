@@ -1,0 +1,25 @@
+{
+  "snapshot": {"snapshot": [0, 1, 2, 3]},
+  "bus": {"bus": ["north", "mid", "south"]},
+  "generator": {"generator": ["wind", "gas", "oil"], "bus": ["north", "mid", "south"]},
+  "line": {"line": ["north_mid", "mid_south", "south_north"], "from": ["north", "mid", "south"], "to": ["mid", "south", "north"]},
+  "cycle": {"cycle": ["c0"]},
+
+  "p_nom": {"generator": ["wind", "gas", "oil"], "value": [100.0, 150.0, 80.0]},
+  "marginal_cost": {"generator": ["wind", "gas", "oil"], "value": [0.0, 50.0, 80.0]},
+  "reactance": {"line": ["north_mid", "mid_south", "south_north"], "value": [0.1, 0.2, 0.3]},
+  "s_nom": {"line": ["north_mid", "mid_south", "south_north"], "value": [200.0, 200.0, 200.0]},
+  "neg_s_nom": {"line": ["north_mid", "mid_south", "south_north"], "value": [-200.0, -200.0, -200.0]},
+
+  "cycle_incidence": {
+    "cycle": ["c0", "c0", "c0"],
+    "line": ["north_mid", "mid_south", "south_north"],
+    "value": [0.1, 0.2, 0.3]
+  },
+
+  "load": {
+    "snapshot": [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3],
+    "bus": ["north", "north", "north", "north", "mid", "mid", "mid", "mid", "south", "south", "south", "south"],
+    "value": [20.0, 30.0, 25.0, 15.0, 90.0, 120.0, 110.0, 80.0, 60.0, 70.0, 65.0, 55.0]
+  }
+}

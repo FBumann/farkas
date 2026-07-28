@@ -16,6 +16,7 @@ readable?** · **does it get the right answer?**
 | [PyPSA LOPF rung 2](pypsa_ramp.md) ✔ | rung 1 plus generator ramp limits |
 | [PyPSA LOPF rung 3](pypsa_storage.md) ✔ | rung 2 plus storage carrying energy in time |
 | [PyPSA LOPF rung 4](pypsa_cyclic_storage.md) ✔ | rung 3 with the horizon closed on itself |
+| [PyPSA LOPF rung 5](pypsa_kvl.md) ✔ | passive AC lines under Kirchhoff's voltage law |
 | [PyPSA unit commitment](pypsa_unit_commitment.md) ✔ | which units are *on* — the corpus's MILP |
 
 ## Does it get the right answer?
@@ -33,6 +34,7 @@ modeller did not intend, which passes every farkas-against-farkas test green.
 | [PyPSA LOPF rung 2](pypsa_ramp.md) | PyPSA 1.2.4, running its own linopy | 18200.0 |
 | [PyPSA LOPF rung 3](pypsa_storage.md) | PyPSA 1.2.4, running its own linopy | 15253.178322993519 |
 | [PyPSA LOPF rung 4](pypsa_cyclic_storage.md) | PyPSA 1.2.4, running its own linopy | 17228.77962151063 |
+| [PyPSA LOPF rung 5](pypsa_kvl.md) | PyPSA 1.2.4, running its own linopy | 17000.0 |
 | [PyPSA unit commitment](pypsa_unit_commitment.md) | PyPSA 1.2.4, running its own linopy | 24900.0 |
 
 **The objective is not the only thing checked.** Every port that has a dual
@@ -66,6 +68,7 @@ drift from what the engine builds. Regenerate with
 | [transport](transport.md) | · | · | **✓** | · | · | **✓** | · | · |
 | [walkthrough](walkthrough.md) | · | **✓** | · | · | **✓** | **✓** | · | · |
 | [pypsa_cyclic_storage](pypsa_cyclic_storage.md) | **✔** 17228.8 | · | **✓** | **✓** | **✓** | **✓** | · | · |
+| [pypsa_kvl](pypsa_kvl.md) | **✔** 17000 | **✓** | **✓** | · | · | **✓** | · | · |
 | [pypsa_ramp](pypsa_ramp.md) | **✔** 18200 | · | **✓** | **✓** | **✓** | **✓** | · | · |
 | [pypsa_storage](pypsa_storage.md) | **✔** 15253.2 | · | **✓** | **✓** | **✓** | **✓** | · | · |
 | [pypsa_transport](pypsa_transport.md) | **✔** 22000 | · | **✓** | · | · | **✓** | · | · |
