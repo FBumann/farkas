@@ -1,13 +1,13 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["pypsa==1.2.4", "linopy==0.9.0", "pandas==3.0.5", "xarray==2026.7.0", "highspy==1.15.1"]
+# dependencies = ["pypsa==1.2.4", "linopy==0.9.0", "pandas>=2.2", "xarray==2026.7.0", "highspy==1.15.1"]
 # # linopy is pinned because PyPSA builds its model *through* it: the
 # # formulation, and so the number, is theirs jointly. pandas is pinned because
-# # the recorded duals are reshaped with it, and `stack()` dropped NA rows by
-# # default before 3.0 — an unpinned rerun could silently record a shorter
-# # price vector than it solved for. xarray is linopy's data model, so
-# # alignment and broadcasting decide which coefficient lands in which row.
+# # xarray is linopy's data model, so alignment and broadcasting decide which
+# # coefficient lands in which row. pandas is only a floor: it reshapes the
+# # recorded duals and nothing else, and `nodal_prices` spells that reshape
+# # out rather than leaning on `stack()`, whose NA handling changed in 3.0.
 # ///
 """Reference for ``pypsa_transport``: PyPSA's own LOPF. See docs/ports.md.
 
@@ -77,9 +77,12 @@ def nodal_prices(n: pypsa.Network) -> dict[str, list]:
     just the objective. A sign convention that disagreed would be invisible to
     a scalar comparison and wrong in every reported price.
     """
-    mp = n.buses_t.marginal_price.stack().reset_index()
-    mp.columns = ['snapshot', 'bus', 'value']
-    return {c: mp[c].tolist() for c in mp.columns}
+    mp = n.buses_t.marginal_price
+    return {
+        'snapshot': [s for s in mp.index for _ in mp.columns],
+        'bus': [b for _ in mp.index for b in mp.columns],
+        'value': [float(v) for row in mp.to_numpy() for v in row],
+    }
 
 
 def main() -> float:

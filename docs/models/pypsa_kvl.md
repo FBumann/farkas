@@ -163,9 +163,12 @@ def build(data: dict[str, dict[str, list]]) -> pypsa.Network:
 
 def nodal_prices(n: pypsa.Network) -> dict[str, list]:
     """PyPSA's marginal price per (snapshot, bus), tidy."""
-    mp = n.buses_t.marginal_price.stack().reset_index()
-    mp.columns = ['snapshot', 'bus', 'value']
-    return {c: mp[c].tolist() for c in mp.columns}
+    mp = n.buses_t.marginal_price
+    return {
+        'snapshot': [s for s in mp.index for _ in mp.columns],
+        'bus': [b for _ in mp.index for b in mp.columns],
+        'value': [float(v) for row in mp.to_numpy() for v in row],
+    }
 
 
 def cycle_basis(n: pypsa.Network) -> str:
