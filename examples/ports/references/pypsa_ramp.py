@@ -8,6 +8,8 @@
 # # coefficient lands in which row. pandas is only a floor: it reshapes the
 # # recorded duals and nothing else, and `nodal_prices` spells that reshape
 # # out rather than leaning on `stack()`, whose NA handling changed in 3.0.
+# # Checked: this script emits byte-identical output on pandas 2.3.3 and
+# # 3.0.5, so the floor is a measured claim rather than an assumption.
 # ///
 """Reference for ``pypsa_ramp``: PyPSA's own LOPF. See docs/ports.md.
 
