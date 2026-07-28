@@ -137,14 +137,21 @@ class Result:
         )
 
     def primal(self, name: str) -> pl.DataFrame:
-        """The tidy solution of *name* — ``(dims…, value)``."""
+        """The tidy solution of *name* — ``(dims…, value)``.
+
+        Rows come back in **label order**: row-major over the variable's
+        coordinate product, the same order the LP sink writes and the one
+        ``var_label`` already encodes. So two reads agree, two runs of one
+        model agree, and a solution file can be diffed.
+        """
         self._require_solution(f"the primal of '{name}'")
         return self._executor._primal(name, self._primal_values)
 
     def dual(self, name: str) -> pl.DataFrame:
         """Shadow prices of constraint *name*: ``(dims…, value)``.
 
-        :meth:`primal`'s join against the row frame rather than a column one.
+        :meth:`primal`'s join against the row frame rather than a column one,
+        in that method's order.
 
         The two empty cases are different failures and both raise rather than
         return zeros: no values at all is
@@ -200,7 +207,9 @@ class Result:
     def to_parquet(self, directory: str | Path) -> dict[str, Path]:
         """One parquet file per variable, ``(dims…, value)``. Returns name → path.
 
-        Sunk straight to disk, never copied into a second representation.
+        Sunk straight to disk, never copied into a second representation, in
+        :meth:`primal`'s order — so the same model and data write the same
+        bytes.
         """
         self._require_solution('the solution')
         return self._executor._solution_to_parquet(Path(directory), self._primal_values)
@@ -848,6 +857,13 @@ class PolarsExecutor:
         A label join, never a dense array. *values* is the solver's column
         vector, held by the :class:`Result` that asks — the labels are the
         build's and shared, the values are one solve's and are not.
+
+        **Ordered by label**, which is the order the coordinates already have:
+        a label *is* row-major position in the coordinate product, so sorting
+        on it hands the caller back the model's own order rather than the
+        order a hash join happened to finish in. Stated rather than inherited,
+        because neither input is guaranteed sorted — a mask decides which rows
+        of the product survive, not how they arrive.
         """
         assert self._program is not None
         assert values is not None, 'no solve has stored a primal'
@@ -855,6 +871,7 @@ class PolarsExecutor:
         return (
             self._variables[name]
             .join(values.lazy(), left_on='var_label', right_on='col', how='inner')
+            .sort('var_label')
             .select(*dims, 'value')
         )
 
@@ -862,12 +879,17 @@ class PolarsExecutor:
         return self._solution_frame(name, values).collect(engine='streaming')
 
     def _dual(self, name: str, values: pl.DataFrame) -> pl.DataFrame:
-        """:meth:`_solution_frame` against row labels instead of column ones."""
+        """:meth:`_solution_frame` against row labels instead of column ones.
+
+        Ordered the same way, for the same reason — a constraint row's label
+        is its position in that constraint's coordinate product.
+        """
         assert self._program is not None
         dims = self._program.constraint(name).dims
         return (
             self._constraints[name]
             .join(values.lazy(), on='row', how='inner')
+            .sort('row')
             .select(*dims, 'value')
             .collect(engine='streaming')
         )
