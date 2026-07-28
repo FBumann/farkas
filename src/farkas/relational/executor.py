@@ -310,9 +310,24 @@ class PolarsExecutor:
         It also earns the assembly's skipped aggregate
         (:attr:`~farkas.relational.compiler.TermFragment.keyed`), for one pass
         over a source orders of magnitude smaller than the matrix.
+
+        A parameter with no dims has exactly one coordinate — the empty one —
+        so the same rule reads as "exactly one row", and it is the case where
+        breaking it is least visible: a dimensionless parameter is broadcast by
+        joining on nothing, which is correct for one row and a silent row
+        multiplication for two. In a bound that means duplicate columns for one
+        variable, in a where-mask duplicate mask rows, and `keyed` above is
+        claiming the opposite of what the source holds (#166).
         """
 
         if not p.dims:
+            rows = frame.select(pl.len()).collect().item()
+            if rows != 1:
+                raise DataError(
+                    f"parameter '{p.name}' is declared with no dims, which means one value "
+                    f'broadcast everywhere — but its source has {rows} rows. '
+                    f'Declare the dims it is indexed by, or reduce the source to a single row.'
+                )
             return
         duplicated = frame.group_by(p.dims).agg(pl.len().alias('n')).filter(pl.col('n') > 1).head(3).collect()
         if duplicated.height == 0:
