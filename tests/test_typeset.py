@@ -23,6 +23,7 @@ import farkas as fk
 from farkas.typeset import FORMATS, SymbolTable, to_latex, to_markdown, to_typst, typeset
 from farkas.typeset.format import OPERATOR_NAMES
 from farkas.typeset.symbols import _derive_name_symbol
+from tools import constructs
 
 if TYPE_CHECKING:
     from farkas.typeset.format import Format
@@ -49,7 +50,14 @@ DISPATCH = {
 
 
 def _examples() -> list[Path]:
-    return sorted(Path('examples').glob('*.yaml'))
+    """Every model the repo ships — the same list the gallery is built from.
+
+    Not ``Path('examples').glob('*.yaml')``: that is not recursive, so it
+    covers the five examples and none of the eleven ports. #282 fixed exactly
+    that bug in two other test globs, and a port is precisely where an unusual
+    construct — and so an unusual rendering — shows up.
+    """
+    return [path for _, path in constructs.models()]
 
 
 # ---------------------------------------------------------------------------
@@ -488,6 +496,18 @@ def test_the_table_loads_from_a_file_and_the_committed_one_applies():
     assert r'\lambda_{' in tex
     assert r'k \in \mathcal{K}' in tex
     assert 'breakpoints of the cost curve' in tex
+
+
+@pytest.mark.parametrize('table', sorted(Path('examples/symbols').glob('*.yaml')), ids=lambda p: p.stem)
+@EVERY_FORMAT
+def test_every_committed_symbol_table_still_fits_its_model(table: Path, fmt: Format):
+    """A sidecar is matched to its model by filename, and nothing else ties
+    them together — so renaming a parameter would leave the table naming
+    something that no longer exists. `checked_against` makes that an error, and
+    this is what runs it for every committed pair."""
+    model = Path('examples') / f'{table.stem}.yaml'
+    assert model.exists(), f'{table} has no model beside it at {model}'
+    assert typeset(model, fmt, symbols=table).strip()
 
 
 def test_a_model_renders_identically_with_an_empty_table():

@@ -410,7 +410,7 @@ native schema merge (#30) is what would force the question.
 | `validation.py` | load-time: parse, expand, resolve, check everything |
 | `piecewise.py` | `piecewise:` → λ-formulation declarations + curvature guard |
 | `api.py` | native entry point: `check` / `solve` / `write`, linopy-free |
-| `typeset/` | **spike** — resolved AST → LaTeX / Typst. A reader, not a lane: no model, no data, no plan ([README](../src/farkas/typeset/README.md)) |
+| `typeset/` | **spike** — resolved AST → LaTeX / Typst. A reader, not a lane: no model, no data, no plan ([README](https://github.com/FBumann/farkas/blob/main/src/farkas/typeset/README.md)) |
 | `sources.py` | bind runtime data (parquet paths / in-memory tables) to a validated schema |
 | `lowering.py` | core AST → logical plan (defines the relational subset) |
 | `helpers.py` | the closed set of built-in operators: their *names* and *call shapes* — no registry |

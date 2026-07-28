@@ -23,9 +23,10 @@ names:
   # renderer cannot know these are convex-combination weights — it sees a
   # variable named `cost_curve_lam` — but a reader expects a lambda.
   cost_curve_lam: "\\lambda"
-  op_cost: "c^{\\mathrm{op}}"
-  bp_x: "\\hat{p}"
-  bp_y: "\\hat{c}"
+  op_cost: "\\mathrm{cost}"
+  # `x` and `y`, as docs/models/piecewise.md already writes them.
+  bp_x: "x"
+  bp_y: "y"
 
 descriptions:
   snapshot: dispatch periods

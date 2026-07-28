@@ -1,0 +1,35 @@
+# The notation docs/models/storage.md already uses, written down.
+#
+#   python -m farkas markdown examples/storage.yaml \
+#       --symbols examples/symbols/storage.yaml
+#
+# That page writes $\mathrm{soc}_s = \mathrm{soc}_{s-1} + \eta\,\mathrm{charge}_s
+# - \mathrm{discharge}_s$ by hand. The generated math says the same thing, with
+# one difference worth keeping: the wraparound is *visible*. The page has to
+# explain "with $s-1$ wrapping at the horizon" in prose underneath, because
+# $s-1$ cannot say it; $s \ominus 1$ can, and the legend defines it.
+
+dimensions:
+  snapshot: {index: s, set: "\\mathcal{S}"}
+  generator: {index: g, set: "\\mathcal{G}"}
+
+names:
+  cost: "c"
+  load: "\\ell"
+  p_max: "\\bar p"
+  # Upright, as the gallery sets them: these are quantities named by a word,
+  # not products of single-letter symbols.
+  soc: "\\mathrm{soc}"
+  charge: "\\mathrm{charge}"
+  discharge: "\\mathrm{discharge}"
+
+descriptions:
+  snapshot: dispatch periods, cyclic at the horizon
+  generator: generating units
+  p: output of generator $g$ in snapshot $s$
+  cost: marginal cost
+  load: demand to be met
+  p_max: installed capacity
+  soc: state of charge carried into the next snapshot
+  charge: energy into the store
+  discharge: energy out of the store
