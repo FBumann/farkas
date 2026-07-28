@@ -249,10 +249,23 @@ request can ever be met:
 | **Design-bounded** | our choice of where work belongs | data prep, domain helpers, Python declaring structure | movable any time; we don't want to |
 
 Impossible **in the symbolic plan**: conditionals, iteration, any data-dependent
-structure inside expressions. What is protected here is *static* boundedness —
-the plan must know every component's extent before data is touched — which is a
-different property from how much a build costs, though the two meet at the
-escape hatch. That is why an `escape:` island (#38) is admissible where a
+structure inside expressions. What is protected is that the plan's **shape** is
+fixed before any data is read — which declarations exist and which dims each
+spans. *Cardinality* is always data's to supply: `foreach: [snapshot]` does not
+know how many snapshots there are either.
+
+That distinction decides more than it looks. A dimension whose members are
+*computed* in data prep is completely ordinary — a cycle basis for
+[KVL](models/pypsa_kvl.md), the subsets of a subtour-elimination
+family — because a graph algorithm run before the build is design-bounded, the
+row above. The line is **temporal, not computational**: it does not matter how
+clever the Python is or whether its output size depends on the data, only
+whether it can run before the model is built. What is outside is work that
+needs the solver's *answer* to decide the next row — lazy cut generation, a
+solve loop — because there is no "before" for it to happen in.
+
+This is a different property from how much a build costs, though the two meet at
+the escape hatch. That is why an `escape:` island (#38) is admissible where a
 registered Python helper was not: its extent is fixed by the preceding `where`
 mask, it is terminal, and it is named in the file. Its **label budget is what keeps it
 accountable** — an island's cost is bounded by what it may emit, declared and
