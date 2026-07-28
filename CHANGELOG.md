@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.5](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.4...v0.0.1-alpha.5) (2026-07-28)
+
+
+### Documentation
+
+* move the three root docs, add a guide, make the index a path ([#260](https://github.com/FBumann/farkas/issues/260)) ([bfbfbec](https://github.com/FBumann/farkas/commit/bfbfbecb7a1291f1bca6dd110b621722806f25fb))
+
 ## [0.0.1-alpha.4](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.3...v0.0.1-alpha.4) (2026-07-28)
 
 
