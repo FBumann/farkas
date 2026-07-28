@@ -14,6 +14,8 @@ readable?** · **does it get the right answer?**
 | [Dantzig transport](transport_dantzig.md) ✔ | GAMS model library #1 |
 | [PyPSA LOPF rung 1](pypsa_transport.md) ✔ | PyPSA's own transport model |
 | [PyPSA LOPF rung 2](pypsa_ramp.md) ✔ | rung 1 plus generator ramp limits |
+| [PyPSA LOPF rung 3](pypsa_storage.md) ✔ | rung 2 plus storage carrying energy in time |
+| [PyPSA LOPF rung 4](pypsa_cyclic_storage.md) ✔ | rung 3 with the horizon closed on itself |
 | [PyPSA unit commitment](pypsa_unit_commitment.md) ✔ | which units are *on* — the corpus's MILP |
 
 ## Does it get the right answer?
@@ -29,6 +31,8 @@ modeller did not intend, which passes every farkas-against-farkas test green.
 | [Dantzig transport](transport_dantzig.md) | published with GAMS model library #1 | 153.675 |
 | [PyPSA LOPF rung 1](pypsa_transport.md) | PyPSA 1.2.4, running its own linopy | 22000.0 |
 | [PyPSA LOPF rung 2](pypsa_ramp.md) | PyPSA 1.2.4, running its own linopy | 18200.0 |
+| [PyPSA LOPF rung 3](pypsa_storage.md) | PyPSA 1.2.4, running its own linopy | 15253.178322993519 |
+| [PyPSA LOPF rung 4](pypsa_cyclic_storage.md) | PyPSA 1.2.4, running its own linopy | 17228.77962151063 |
 | [PyPSA unit commitment](pypsa_unit_commitment.md) | PyPSA 1.2.4, running its own linopy | 24900.0 |
 
 How a port is put together, the ladder it climbs, and the ledger of what a port
@@ -48,7 +52,9 @@ drift from what the engine builds. Regenerate with
 | [storage](storage.md) | · | **✓** | · | **✓** | · | **✓** | · | · |
 | [transport](transport.md) | · | · | **✓** | · | · | **✓** | · | · |
 | [walkthrough](walkthrough.md) | · | **✓** | · | · | **✓** | **✓** | · | · |
+| [pypsa_cyclic_storage](pypsa_cyclic_storage.md) | **✔** 17228.8 | · | **✓** | **✓** | **✓** | **✓** | · | · |
 | [pypsa_ramp](pypsa_ramp.md) | **✔** 18200 | · | **✓** | **✓** | **✓** | **✓** | · | · |
+| [pypsa_storage](pypsa_storage.md) | **✔** 15253.2 | · | **✓** | **✓** | **✓** | **✓** | · | · |
 | [pypsa_transport](pypsa_transport.md) | **✔** 22000 | · | **✓** | · | · | **✓** | · | · |
 | [pypsa_unit_commitment](pypsa_unit_commitment.md) | **✔** 24900 | **✓** | · | **✓** | **✓** | **✓** | · | **✓** |
 | [transport_dantzig](transport_dantzig.md) | **✔** 153.675 | **✓** | · | · | · | **✓** | · | · |

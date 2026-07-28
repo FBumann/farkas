@@ -16,6 +16,8 @@ suite green. This is the net for that class, and the evidence behind
 | [Dantzig transport](models/transport_dantzig.md) | published, GAMS model library #1 | 153.675 |
 | [PyPSA LOPF rung 1](models/pypsa_transport.md) | PyPSA 1.2.4, its own linopy 0.9.0 | 22000.0 |
 | [PyPSA LOPF rung 2](models/pypsa_ramp.md) | PyPSA 1.2.4, its own linopy 0.9.0 | 18200.0 |
+| [PyPSA LOPF rung 3](models/pypsa_storage.md) | PyPSA 1.2.4, its own linopy 0.9.0 | 15253.178322993519 |
+| [PyPSA LOPF rung 4](models/pypsa_cyclic_storage.md) | PyPSA 1.2.4, its own linopy 0.9.0 | 17228.77962151063 |
 | [PyPSA unit commitment](models/pypsa_unit_commitment.md) | PyPSA 1.2.4, its own linopy 0.9.0 | 24900.0 |
 
 Adding one is four files and five rules:
@@ -27,8 +29,8 @@ Reproducing a full PyPSA objective means reproducing marginal *and* capital
 cost, ramp limits, storage cycling and KVL at once, and a mismatch then
 implicates five features instead of one. So each network is a ladder, one
 feature per rung, each switched off in PyPSA and reproduced here:
-**1 transport model** ✔ · **2 ramp limits** ✔ · 3 storage with state of charge ·
-4 cyclic boundary condition · 5 KVL. [Unit
+**1 transport model** ✔ · **2 ramp limits** ✔ · **3 storage with state of
+charge** ✔ · **4 cyclic boundary condition** ✔ · 5 KVL. [Unit
 commitment](models/pypsa_unit_commitment.md) sits beside the ladder rather than
 on it — one bus, no network, because the feature under test is integrality.
 
@@ -39,6 +41,13 @@ Rung 2 needed the instance widened before it meant anything. Rung 1's links run
 saturated, which fixes every generator's output exactly, so a ramp limit on that
 network can only make it infeasible — never change the answer. A rung that
 cannot bind is not evidence that it works.
+
+**Rung 4 made the model smaller**, which is the ladder paying off in the
+direction nobody plans for. Closing the horizon deletes rung 3's boundary
+equation outright: `roll` is cyclic already, so the wrap onto the last snapshot
+is what it does unguarded, and the *acyclic* case is the one needing an extra
+clause. Two rungs written a day apart, differing by one deleted `where`, is a
+sharper statement about the language than either alone.
 
 ## Ledger — what a port could not say
 
