@@ -1,0 +1,69 @@
+# Dantzig's transportation problem with economies of scale — GAMS model
+# library `trnspwl`. Shipping cost grows as sqrt(x) rather than linearly, so a
+# big consignment is cheaper per unit. Optimum 8.786852757777865, from linopy's
+# own piecewise formulation. See docs/ports.md.
+
+dimensions:
+  plant:
+    values: [seattle, san-diego]
+  market:
+    values: [new-york, chicago, topeka]
+  bp:
+    dtype: int          # breakpoints of the discretised sqrt curve
+
+parameters:
+  capacity:
+    dims: [plant]
+  demand:
+    dims: [market]
+  distance:
+    dims: [plant, market]
+  freight:
+    dims: []
+  # The curve is the same on every route, so it carries `bp` alone and
+  # broadcasts across (plant, market).
+  bp_x:
+    dims: [bp]
+  bp_y:
+    dims: [bp]
+
+variables:
+  shipment:
+    foreach: [plant, market]
+    bounds:
+      lower: 0
+  # What the objective is charged on: sqrt(shipment), read off the curve
+  # rather than computed. `sqrt` is not sayable in the language and does not
+  # need to be — the discretisation is the model GAMS publishes.
+  scaled:
+    foreach: [plant, market]
+    bounds:
+      lower: 0
+
+piecewise:
+  economies_of_scale:
+    over: bp
+    links:
+      - [shipment, bp_x]
+      - [scaled, bp_y]
+    # Deliberately *not* `convex: true`. sqrt is concave and this is a
+    # minimisation, so the convex-hull relaxation would let the solver ride the
+    # chord underneath the true curve and buy transport cheaper than the model
+    # allows. Segment binaries are what make the answer right — and what make
+    # this port a MILP.
+
+constraints:
+  within_capacity:
+    foreach: [plant]
+    equations:
+      - expression: sum(shipment, over=market) <= capacity
+  meet_demand:
+    foreach: [market]
+    equations:
+      - expression: sum(shipment, over=plant) >= demand
+
+objectives:
+  total_cost:
+    sense: minimize
+    equations:
+      - expression: scaled * distance * freight / 1000

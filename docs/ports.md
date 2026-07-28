@@ -20,6 +20,7 @@ suite green. This is the net for that class, and the evidence behind
 | [PyPSA LOPF rung 4](models/pypsa_cyclic_storage.md) | PyPSA 1.2.4, its own linopy 0.9.0 | 17228.77962151063 |
 | [PyPSA LOPF rung 5](models/pypsa_kvl.md) | PyPSA 1.2.4, its own linopy 0.9.0 | 17000.0 |
 | [PyPSA unit commitment](models/pypsa_unit_commitment.md) | PyPSA 1.2.4, its own linopy 0.9.0 | 24900.0 |
+| [Dantzig, economies of scale](models/transport_pwl.md) | linopy 0.9.0's own piecewise formulation | 8.786852757777865 |
 
 Adding one is four files and five rules:
 [CONTRIBUTING.md](../CONTRIBUTING.md#adding-a-ported-model).
@@ -81,7 +82,7 @@ is refused by design rather than unimplemented. The two halves of that answer
 are worth keeping apart: one is a macro nobody has written, the other is the
 ceiling doing its job.
 
-Two rows from four ports — a rate worth watching once the corpus has hit the
+Two rows from eight ports — a rate worth watching once the corpus has hit the
 ceiling a few more times.
 
 ---

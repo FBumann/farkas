@@ -1,0 +1,20 @@
+{
+  "plant": {"plant": ["seattle", "san-diego"]},
+  "market": {"market": ["new-york", "chicago", "topeka"]},
+  "bp": {"bp": [0, 1, 2, 3, 4, 5, 6, 7]},
+
+  "capacity": {"plant": ["seattle", "san-diego"], "value": [350, 600]},
+  "demand": {"market": ["new-york", "chicago", "topeka"], "value": [325, 300, 275]},
+  "distance": {
+    "plant": ["seattle", "seattle", "seattle", "san-diego", "san-diego", "san-diego"],
+    "market": ["new-york", "chicago", "topeka", "new-york", "chicago", "topeka"],
+    "value": [2.5, 1.7, 1.8, 2.5, 1.8, 1.4]
+  },
+  "freight": 90.0,
+
+  "bp_x": {"bp": [0, 1, 2, 3, 4, 5, 6, 7], "value": [0.0, 50.0, 120.0, 190.0, 260.0, 330.0, 400.0, 600.0]},
+  "bp_y": {
+    "bp": [0, 1, 2, 3, 4, 5, 6, 7],
+    "value": [0.0, 7.0710678118654755, 10.954451150103322, 13.784048752090222, 16.1245154965971, 18.16590212458495, 20.0, 24.49489742783178]
+  }
+}
