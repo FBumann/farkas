@@ -158,7 +158,9 @@ def main() -> None:
         result = ex.solve()
         print(f'    status     {result.status} ({result.termination_condition})')
         print(f'    objective  {result.objective:,.1f}')
-        print(_indent(result.primal('p').head(6)))
+        # sort explicitly: primal() is a label join, and a join has no
+        # inherent row order — leaving it unsorted pins storage layout
+        print(_indent(result.primal('p').sort_values(['snapshot', 'generator'], ignore_index=True).head(6)))
 
     # ------------------------------------------------------------------
     banner(7, 'and what the language refuses', 'validation.py, lowering.py')
