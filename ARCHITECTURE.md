@@ -4,7 +4,8 @@ Brief, current, precise. A PR that changes the structure described here updates
 this file in the same PR. The language is [SPEC.md](SPEC.md); plans and refusals
 are [ROADMAP.md](ROADMAP.md); measured results are
 [docs/benchmarks.md](docs/benchmarks.md), produced by the harness in
-[bench/](bench/README.md) — which is also how a claim here gets falsified.
+[bench/](bench/README.md) — which is also how a claim here gets falsified. The
+ceiling below is falsified the same way, by [docs/ports.md](docs/ports.md).
 
 `python examples/walkthrough.py` executes the pipeline below stage by stage
 and prints what each one produces — the same public calls `fk.solve` makes,
@@ -160,6 +161,14 @@ presumes the terminal `sum(coeff)` over `(row, col)` stays the only aggregate a
 *term* passes through.
 A primitive is finished when `lowering.py` accepts it and the differential test
 against the linopy oracle passes.
+
+**The ceiling is a claim, so it needs evidence.** In
+[docs/ports.md](docs/ports.md), math a ported model needed and this language
+could not state becomes a ledger row with its triage verdict — what
+[ROADMAP.md](ROADMAP.md) should be argued from. Those ports also cover a class
+no other test reaches: both lanes consume the same resolved AST by rule 1, so a
+*shared misreading* passes the differential suite green, and only an outside
+optimum catches it.
 
 What is *outside* the closure splits three ways, and the split decides whether a
 request can ever be met:

@@ -1,0 +1,43 @@
+# Dantzig's transportation problem (GAMS model library #1). Optimum 153.675,
+# published with the model. See docs/ports.md.
+
+dimensions:
+  plant:
+    values: [seattle, san-diego]
+  market:
+    values: [new-york, chicago, topeka]
+
+parameters:
+  capacity:
+    dims: [plant]
+  demand:
+    dims: [market]
+  distance:
+    dims: [plant, market]
+  freight:
+    dims: []
+
+variables:
+  shipment:
+    foreach: [plant, market]
+    bounds:
+      lower: 0
+
+constraints:
+  within_capacity:
+    foreach: [plant]
+    equations:
+      - expression: sum(shipment, over=market) <= capacity
+  meet_demand:
+    foreach: [market]
+    equations:
+      - expression: sum(shipment, over=plant) >= demand
+
+objectives:
+  total_cost:
+    sense: minimize
+    equations:
+      # c(i,j) = f * d(i,j) / 1000 in the source, kept as arithmetic here
+      # rather than precomputed, so the file states the model and not a
+      # derived table.
+      - expression: shipment * distance * freight / 1000
