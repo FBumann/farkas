@@ -257,34 +257,48 @@ def timings(case: str, sizes: list[str], arms: list[str], opts: argparse.Namespa
                     # whatever ladder it happened to ship with.
                     root = FOREIGN_ARMS.get(arm)
                     spawn_as = 'farkas' if root else arm
-                    args = [
-                        'time',
-                        '--case',
-                        case,
-                        '--size',
-                        size,
-                        '--arm',
-                        spawn_as,
-                        '--sink',
-                        sink,
-                        '--cache',
-                        str(CACHE),
-                    ]
-                    if arm == 'linopy' and sink == 'lp':
-                        args += ['--io-api', opts.io_api]
-                    record = _child(args, opts.timeout, interpreter=root)
-                    # stamped by the parent so a *failed* run is still fully
-                    # identified — a failure is a result here
-                    record |= {
-                        'record': 'timing',
-                        'case': case,
-                        'size': size,
-                        'arm': arm,
-                        'sink': sink,
-                        'repeat': repeat,
-                    }
-                    _echo(record)
-                    out.append(record)
+                    # An engine that takes a budget is really several arms:
+                    # unbounded is *the engine*, comparable with a lane that has
+                    # no such knob; a size is the engine plus a promise, which is
+                    # what that architecture was for. Both, or the number means
+                    # whichever one the reader assumed.
+                    budgets = opts.duckdb_limits if arm == 'duckdb' else ['none']
+                    for budget in budgets:
+                        args = [
+                            'time',
+                            '--case',
+                            case,
+                            '--size',
+                            size,
+                            '--arm',
+                            spawn_as,
+                            '--sink',
+                            sink,
+                            '--cache',
+                            str(CACHE),
+                        ]
+                        if arm == 'duckdb':
+                            # `-1` is duckdb's own unlimited, passed explicitly:
+                            # omitting the flag falls through to that checkout's
+                            # 1GB *default*, so the "unbounded" arm would
+                            # silently be another budgeted one. Only this arm
+                            # takes the option at all.
+                            args += ['--memory-limit', '-1' if budget == 'none' else budget]
+                        if arm == 'linopy' and sink == 'lp':
+                            args += ['--io-api', opts.io_api]
+                        record = _child(args, opts.timeout, interpreter=root)
+                        # stamped by the parent so a *failed* run is still fully
+                        # identified — a failure is a result here
+                        record |= {
+                            'record': 'timing',
+                            'case': case,
+                            'size': size,
+                            'arm': arm if budget == 'none' else f'{arm}@{budget}',
+                            'sink': sink,
+                            'repeat': repeat,
+                        }
+                        _echo(record)
+                        out.append(record)
     return out
 
 
@@ -307,6 +321,15 @@ def main(argv: list[str] | None = None) -> int:
         '--sizes', nargs='+', default=['xs', 's', 'm'], help="rung labels, or 'all' for every rung a case has"
     )
     ap.add_argument('--arms', nargs='+', default=['farkas', 'linopy'])
+    ap.add_argument(
+        '--duckdb-limits',
+        nargs='+',
+        default=['none', '1GB'],
+        help="budgets to run the duckdb arm at. `none` passes duckdb's own unlimited "
+        "(-1), which is the only setting comparable with a lane that has no such knob; "
+        'a size runs it as its architecture intends, spilling to stay under. Both are '
+        "reported, because a single number would be whichever one the reader assumed.",
+    )
     ap.add_argument(
         '--duckdb-root',
         type=Path,

@@ -69,7 +69,11 @@ def _run_farkas(
     sources, coords = _split_sources(case, paths)
 
     phases.mark('import')
-    ex = fk.build(case.model, sources, coords=coords)
+    # `memory_limit` is a duckdb-engine option and this branch's `fk.build` has
+    # no such parameter, so it is forwarded only when asked for — which is only
+    # ever when this runner is driving a foreign checkout's engine.
+    budget = {'memory_limit': opts.memory_limit} if opts.memory_limit else {}
+    ex = fk.build(case.model, sources, coords=coords, **budget)
     phases.mark('build')
     if opts.sink == 'lp':
         ex.write_lp(lp)
@@ -223,6 +227,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument('--arm', required=True, choices=sorted(ARMS))
     ap.add_argument('--io-api', default='lp-polars', help="linopy arm's writer")
     ap.add_argument(
+        '--memory-limit',
+        default=None,
+        help='budget for an engine that takes one (duckdb). Unset means the engine '
+        'is unbounded, which is the only setting comparable with a lane that has '
+        'no such knob.',
+    )
+    ap.add_argument(
         '--sink',
         default='lp',
         choices=('lp', 'highs'),
@@ -244,6 +255,7 @@ def main(argv: list[str] | None = None) -> int:
         'density': shape.density,
         'io_api': opts.io_api if opts.arm == 'linopy' and opts.sink == 'lp' else None,
         'sink': opts.sink,
+        'memory_limit': opts.memory_limit,
     }
 
     if opts.mode == 'loop':
