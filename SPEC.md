@@ -104,9 +104,15 @@ storage_balance:
 
 **`objectives`** — `sense` ∈ {`minimize`, `maximize`}, default `minimize`. An
 objective is a scalar by definition, so **every dim the expression carries is
-summed**; writing the sums out says nothing extra. Only `equations[0]` is used.
-Declaring more than one objective is a load error — combine them into one
-expression, or keep one per file.
+summed**; writing the sums out says nothing extra. Each *term* is summed over
+the dims **that term** carries, and is not repeated because another term
+carries a dim it does not: in `x * a + y * b` with `x, a` on `i` and `y, b` on
+`j`, the objective has `|i| + |j|` summands, never `|i| · |j|`.
+
+`equations:` takes exactly one entry — unlike a constraint's, where the list
+means several constraints under one name. More than one entry is a load error
+naming the rewrite (`a + b` in one expression), as is declaring more than one
+objective.
 
 ## 3. `expressions` and `macros`
 
@@ -448,7 +454,7 @@ not a silent override. There is no `register()` decorator and no helper registry
 | time-series processing (resample, cluster, interpolate, align), file IO, units | data prep; pass a parameter |
 | solver breadth | HiGHS via `solver_direct`, Gurobi planned on the same path, LP files for everything else ([#28](https://github.com/FBumann/farkas/issues/28)) |
 | SOS and indicator constraints | `piecewise:` (§4) covers SOS2's usual purpose; the streaming lane's default solver has no SOS or indicator concept at all, so this is a *sink capability* question rather than a language one — [#23](https://github.com/FBumann/farkas/issues/23), ROADMAP Track 4 |
-| multi-objective | one objective; the last defined wins |
+| multi-objective | one objective — declaring a second is a load error (§2); weight them into one expression |
 | schema migrations | — |
 | arbitrary array ops (`merge`, `reindex`, `apply_ufunc`) | data prep, or a declared `escape:` island — the closed AST is what makes streaming possible |
 

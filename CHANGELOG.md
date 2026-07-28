@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.0.0-alpha.29](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.28...v0.0.0-alpha.29) (2026-07-28)
+
+
+### Performance
+
+* compute variable labels arithmetically when the mask factors ([#178](https://github.com/FBumann/farkas/issues/178)) ([5d4745f](https://github.com/FBumann/farkas/commit/5d4745ff81179cf5f65afba4ffdc97b46829803f))
+
+## [0.0.0-alpha.28](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.27...v0.0.0-alpha.28) (2026-07-28)
+
+
+### Bug Fixes
+
+* three ways an objective or a scalar parameter answered quietly ([#223](https://github.com/FBumann/farkas/issues/223)) ([ee08d5d](https://github.com/FBumann/farkas/commit/ee08d5d39dde4682b795d62f623d606d8996979a))
+
+## [0.0.0-alpha.27](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.26...v0.0.0-alpha.27) (2026-07-28)
+
+
+### Bug Fixes
+
+* refuse a parameter source that carries a coordinate twice ([#201](https://github.com/FBumann/farkas/issues/201)) ([fffee97](https://github.com/FBumann/farkas/commit/fffee9773f259a9b75cf5014f50a02f40c02a3cb))
+
 ## [0.0.0-alpha.26](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.25...v0.0.0-alpha.26) (2026-07-27)
 
 

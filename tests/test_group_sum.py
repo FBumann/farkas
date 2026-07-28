@@ -159,6 +159,8 @@ def test_a_parameter_carrying_a_coordinate_twice_is_refused(transport_data):
     """A parameter is a function of its dims, so two rows for one coordinate
     has no answer — and the eager lane will not lay such a source out either.
 
+    The relational lane used to resolve it into a sum, silently, which is a
+    divergence between two lanes that are supposed to accept the same thing.
     Refusing it is also what lets the assembly skip its terminal aggregate:
     every parameter being keyed is the premise that argument rests on.
     """
