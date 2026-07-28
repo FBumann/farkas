@@ -14,9 +14,9 @@
   <h1>polars, duckdb, linopy — how each one scales</h1>
   <p class="lede">
     Build a model and hand it to HiGHS, with <code>run()</code> never called. Every
-    point is one process, best of two, on an idle machine. The parity gate passed on
+    point is one process, best of three, on an idle machine. The parity gate passed on
     all six models: the three engines agree on the objective to <code>0.0e+00</code>
-    relative.
+    relative (<code>fleet</code> to 4.6e-16).
   </p>
 </header>
 
@@ -33,20 +33,21 @@
     <figure><figcaption>Peak RSS ÷ linopy</figcaption><div id="band-peak" class="plot"></div></figure>
   </div>
   <p class="note">
-    <b>On time the answer is robust.</b> The polars band sits below linopy at every
-    rung of every model bar one, and below duckdb's band outright through <code>xs</code>,
-    <code>s</code> and <code>m</code>. Only at <code>l</code> do the two touch — 1.26
-    against 1.21 — and the same model, <code>profiled</code>, is the extreme of both,
-    so that is one model's worst case meeting another's, not the ordering changing.
-    duckdb crosses above linopy from <code>m</code> upward.
+    <b>On time the answer is robust.</b> The two bands do not overlap at any rung:
+    polars' worst model is faster than duckdb's best one at <code>xs</code>
+    (0.15 against 0.21), <code>s</code> (0.18 / 0.32), <code>m</code> (0.50 / 0.72)
+    and <code>l</code> (1.09 / 1.12). Whichever of the six you picked, the ordering
+    would be the same. polars is also below linopy everywhere except
+    <code>profiled/l</code>; duckdb crosses above linopy from <code>m</code> up.
   </p>
   <p class="note">
-    <b>On memory it is not.</b> Measured against linopy the two bands overlap at every
-    rung, so neither engine is decisively lighter <i>by that reference</i>. Compare the
-    engines to each other and it resolves: at <code>l</code>, duckdb is lighter on all
-    six models, by 1.28x (<code>transport</code>) to 1.63x (<code>fleet</code>). That
-    is the gap the choice actually costs — and the wide polars band is the reason it
-    needs saying as a range rather than a number.
+    <b>On memory it is not.</b> Against linopy the two bands overlap at every rung, so
+    by that reference neither engine is decisively lighter. It only resolves engine to
+    engine: at <code>l</code>, duckdb is lighter on all six models, by 1.29x
+    (<code>profiled</code>, <code>transport</code>) to 1.49x (<code>dispatch</code>).
+    That is the gap the choice actually costs, and it is a range rather than a number
+    because the polars band is genuinely wide — <code>sector</code> is 0.32x of
+    linopy's peak and <code>dispatch</code> 0.95x, on the same rung.
   </p>
 </section>
 
@@ -83,11 +84,13 @@
   <div id="facets" class="grid3"></div>
   <p class="note">
     The detail the band flattens. <code>profiled</code> is the one model where linopy
-    finishes ahead at the top rung — 2.88 s against 3.63 s — and it is why the polars
-    wall band reaches up to 1.26 at <code>l</code> instead of staying under 1. It has
-    the most distinct variables and the most per-variable arithmetic of the six.
-    <code>sector</code> is the opposite end: sparse, and the one model where the peak
-    gap against linopy is threefold.
+    finishes ahead at the top rung — 2.61 s against 2.84 s — and it is why the polars
+    wall band reaches 1.09 at <code>l</code> instead of staying under 1. It has the
+    most distinct variables and the most per-variable arithmetic of the six, which is
+    the shape a dense array suits best and a frame least; it is also the noisiest case
+    here, reading 2.33 s to 2.84 s across repeats at ~4 GB resident. <code>sector</code>
+    is the opposite end: sparse, and the one model where the peak gap against linopy is
+    threefold.
   </p>
 </section>
 
@@ -194,7 +197,7 @@
 </style>
 
 <script>
-const DATA = {"scaling": {"vars": [10000, 100000, 1000000, 10000000, 40000000, 120000000], "wall": {"polars": [0.015, 0.027, 0.128, 1.123, 5.989, 35.358], "linopy": [0.21, 0.218, 0.34, 1.538, 8.805, 106.226], "duckdb": [0.051, 0.136, 0.424, 2.872, 22.967, 74.569], "duckdb@1GB": [0.052, 0.137, 0.404, 2.833, 20.405, 80.846]}, "peak": {"polars": [0.17, 0.212, 0.468, 2.04, 5.978, 8.301], "linopy": [0.214, 0.261, 0.564, 2.134, 7.922, 7.775], "duckdb": [0.156, 0.181, 0.296, 0.76, 2.0, 5.278], "duckdb@1GB": [0.156, 0.179, 0.314, 0.739, 1.383, 2.112]}}, "cases": {"dispatch": {"vars": [10000, 100000, 1000000, 10000000], "wall": {"polars": [0.017, 0.023, 0.086, 0.849], "linopy": [0.212, 0.223, 0.373, 2.304], "duckdb": [0.052, 0.108, 0.411, 2.84]}, "peak": {"polars": [0.168, 0.208, 0.521, 3.128], "linopy": [0.201, 0.229, 0.495, 3.306], "duckdb": [0.162, 0.192, 0.461, 2.115]}}, "fleet": {"vars": [12000, 120000, 1200000, 12000000], "wall": {"polars": [0.044, 0.058, 0.174, 2.996], "linopy": [0.293, 0.316, 0.572, 4.527], "duckdb": [0.091, 0.182, 0.94, 7.649]}, "peak": {"polars": [0.174, 0.231, 0.65, 4.314], "linopy": [0.203, 0.246, 0.703, 5.361], "duckdb": [0.173, 0.222, 0.639, 2.649]}}, "nodal": {"vars": [3000, 30000, 300000, 3000000], "wall": {"polars": [0.029, 0.032, 0.084, 0.66], "linopy": [0.349, 0.354, 0.502, 1.852], "duckdb": [0.094, 0.142, 0.432, 2.826]}, "peak": {"polars": [0.167, 0.186, 0.335, 1.428], "linopy": [0.203, 0.213, 0.352, 1.708], "duckdb": [0.164, 0.178, 0.272, 0.998]}}, "profiled": {"vars": [12000, 120000, 1200000, 12000000], "wall": {"polars": [0.028, 0.055, 0.292, 3.631], "linopy": [0.317, 0.375, 0.555, 2.881], "duckdb": [0.093, 0.333, 1.131, 7.474]}, "peak": {"polars": [0.174, 0.263, 0.834, 4.137], "linopy": [0.205, 0.247, 0.643, 4.733], "duckdb": [0.167, 0.212, 0.583, 3.183]}}, "sector": {"vars": [1000, 10000, 100000, 1000000], "wall": {"polars": [0.02, 0.023, 0.05, 0.406], "linopy": [0.249, 0.23, 0.321, 1.368], "duckdb": [0.061, 0.077, 0.244, 1.653]}, "peak": {"polars": [0.168, 0.19, 0.341, 0.944], "linopy": [0.203, 0.22, 0.493, 2.978], "duckdb": [0.163, 0.171, 0.221, 0.671]}}, "transport": {"vars": [9800, 98000, 980000, 9800000], "wall": {"polars": [0.027, 0.035, 0.149, 1.558], "linopy": [0.264, 0.255, 0.444, 2.908], "duckdb": [0.07, 0.125, 0.583, 4.496]}, "peak": {"polars": [0.174, 0.222, 0.596, 3.083], "linopy": [0.204, 0.234, 0.565, 3.954], "duckdb": [0.17, 0.21, 0.554, 2.414]}}}, "caseNames": ["dispatch", "fleet", "nodal", "profiled", "sector", "transport"], "rungs": ["xs", "s", "m", "l"]};
+const DATA = {"scaling": {"vars": [10000, 100000, 1000000, 10000000, 40000000, 120000000], "wall": {"polars": [0.015, 0.027, 0.128, 1.123, 5.989, 35.358], "linopy": [0.21, 0.218, 0.34, 1.538, 8.805, 106.226], "duckdb": [0.051, 0.136, 0.424, 2.872, 22.967, 74.569], "duckdb@1GB": [0.052, 0.137, 0.404, 2.833, 20.405, 80.846]}, "peak": {"polars": [0.17, 0.212, 0.468, 2.04, 5.978, 8.301], "linopy": [0.214, 0.261, 0.564, 2.134, 7.922, 7.775], "duckdb": [0.156, 0.181, 0.296, 0.76, 2.0, 5.278], "duckdb@1GB": [0.156, 0.179, 0.314, 0.739, 1.383, 2.112]}}, "cases": {"dispatch": {"vars": [10000, 100000, 1000000, 10000000], "wall": {"polars": [0.017, 0.022, 0.084, 0.687], "linopy": [0.207, 0.219, 0.374, 1.93], "duckdb": [0.053, 0.105, 0.405, 2.771]}, "peak": {"polars": [0.168, 0.208, 0.52, 3.127], "linopy": [0.201, 0.229, 0.495, 3.304], "duckdb": [0.161, 0.192, 0.458, 2.101]}}, "fleet": {"vars": [12000, 120000, 1200000, 12000000], "wall": {"polars": [0.044, 0.057, 0.177, 1.481], "linopy": [0.288, 0.322, 0.578, 3.404], "duckdb": [0.09, 0.182, 0.946, 5.857]}, "peak": {"polars": [0.174, 0.231, 0.653, 3.764], "linopy": [0.203, 0.246, 0.703, 4.871], "duckdb": [0.172, 0.221, 0.633, 2.656]}}, "nodal": {"vars": [3000, 30000, 300000, 3000000], "wall": {"polars": [0.017, 0.02, 0.048, 0.491], "linopy": [0.213, 0.232, 0.298, 1.339], "duckdb": [0.052, 0.078, 0.28, 2.577]}, "peak": {"polars": [0.167, 0.186, 0.333, 1.42], "linopy": [0.202, 0.213, 0.352, 1.709], "duckdb": [0.162, 0.175, 0.276, 0.964]}}, "profiled": {"vars": [12000, 120000, 1200000, 12000000], "wall": {"polars": [0.022, 0.044, 0.228, 2.843], "linopy": [0.286, 0.281, 0.459, 2.613], "duckdb": [0.061, 0.191, 1.028, 8.095]}, "peak": {"polars": [0.174, 0.261, 0.836, 4.114], "linopy": [0.205, 0.247, 0.642, 4.73], "duckdb": [0.165, 0.213, 0.584, 3.189]}}, "sector": {"vars": [1000, 10000, 100000, 1000000], "wall": {"polars": [0.02, 0.025, 0.049, 0.38], "linopy": [0.225, 0.232, 0.333, 1.248], "duckdb": [0.054, 0.074, 0.241, 1.399]}, "peak": {"polars": [0.168, 0.19, 0.342, 0.946], "linopy": [0.203, 0.22, 0.493, 2.978], "duckdb": [0.162, 0.169, 0.218, 0.675]}}, "transport": {"vars": [9800, 98000, 980000, 9800000], "wall": {"polars": [0.024, 0.035, 0.142, 1.552], "linopy": [0.243, 0.26, 0.469, 2.61], "duckdb": [0.067, 0.132, 0.585, 4.093]}, "peak": {"polars": [0.174, 0.221, 0.596, 3.089], "linopy": [0.204, 0.234, 0.565, 3.952], "duckdb": [0.171, 0.205, 0.528, 2.394]}}}, "caseNames": ["dispatch", "fleet", "nodal", "profiled", "sector", "transport"], "rungs": ["xs", "s", "m", "l"]};
 
 /* Three categorical slots, validated all-pairs in both modes (worst CVD dE 9.2
    light / 9.4 dark, worst normal-vision 24.0 / 20.9). duckdb's two budget
