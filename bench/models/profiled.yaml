@@ -1,0 +1,54 @@
+# Dispatch with a profile per variable.
+#
+# Every other case in the ladder builds its coordinate product from parameters
+# far smaller than the model they explode into — a demand per (snapshot, node),
+# a capacity per (node, tech) — so the input parquet is 2-15% of the coordinate
+# product and reading it is 2-9% of the build. This case is the one shape where
+# that stops being true: `availability` spans the *whole* variable product, so
+# the data is the same order as the model it describes.
+#
+# That is ordinary in energy modelling — a wind or inflow profile is per node,
+# per technology, per hour — and it is the shape the eager lane handles best: a
+# parameter already dense over the variable product is the array xarray wants,
+# needing neither broadcast nor alignment, while we join a full-size frame
+# against a full-size coordinate product. `nodal` is the mirror image, winning
+# precisely because the eager lane must materialise coordinates that do not
+# exist. The ladder wants both.
+#
+# No `where`: density is `nodal`'s and `sector`'s axis, and sweeping two at once
+# would leave no way to attribute an effect. What this case varies is the size
+# of the *input* relative to the model, and nothing else.
+dimensions:
+  snapshot:
+    dtype: int
+  node:
+    dtype: str
+  tech:
+    dtype: str
+
+parameters:
+  availability:         # per (snapshot, node, tech) — dense over the variable product
+    dims: [snapshot, node, tech]
+  cost:
+    dims: [tech]
+  demand:
+    dims: [snapshot, node]
+
+variables:
+  p:
+    foreach: [snapshot, node, tech]
+    bounds:
+      lower: 0
+      upper: availability
+
+constraints:
+  balance:
+    foreach: [snapshot, node]
+    equations:
+      - expression: sum(p, over=tech) == demand
+
+objectives:
+  total_cost:
+    sense: minimize
+    equations:
+      - expression: p * cost

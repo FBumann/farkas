@@ -8,26 +8,43 @@ claim nobody can re-run is a claim with a shelf life.
 ```bash
 uv run python -m bench.run                                  # the committed ladder
 uv run python -m bench.run --cases dispatch --sizes m l     # one case, two rungs
+uv run python -m bench.run --sinks highs                    # skip the LP file
 uv run python -m bench.run --memory-limits 256MB 1GB 4GB    # sweep the budget
 uv run python -m bench.report bench/results/latest.jsonl    # -> markdown
 ```
 
 ## What it measures
 
-**Peak RSS and wall time**, per phase, for the same model built two ways:
+**Peak RSS and wall time**, per phase, for the same model built two ways and
+sent two places. Two arms x two sinks:
 
-- `farkas` — `fk.build(...)` then `ex.write_lp(...)`, at a declared
-  `memory_limit`.
-- `linopy` — `farkas.linopy.build(...)` then `Model.to_file(io_api='lp-polars')`.
+| | `lp` | `highs` |
+|---|---|---|
+| `farkas` | `fk.build(...)` then `ex.write_lp(...)` | `fk.build(...)` then the COO batches into `highspy` |
+| `linopy` | `farkas.linopy.build(...)` then `Model.to_file(io_api='lp-polars')` | `farkas.linopy.build(...)` then `Model.to_highspy()` |
 
-Both arms read the same parquet files and produce an LP file, so the comparison
-is one language, one output format, two engines. The linopy arm is the right
-comparison and the only one worth making first: it accepts *exactly* the same
-YAML (ARCHITECTURE.md hard rule 3), which is what makes it the oracle rather
-than a rival dialect.
+The farkas arm runs at a declared `memory_limit` throughout. Both arms read the
+same parquet files and end at the same place, so each column is one language,
+one destination, two engines. The linopy arm is the right comparison and the
+only one worth making first: it accepts *exactly* the same YAML
+(ARCHITECTURE.md hard rule 3), which is what makes it the oracle rather than a
+rival dialect.
 
-Not measured, deliberately: solve time (that is HiGHS, identical either way, and
-it would swamp the build), and anything about expressiveness.
+**The `highs` sink stops at the handoff — `run()` is never called.** That is the
+whole discipline of it. HiGHS's simplex is the same work whoever filled the
+model, so including it would swamp the phase this harness exists to measure and
+publish a number about HiGHS under our name. Both arms end holding a populated
+`highspy.Highs` and neither runs it, which is the only reason the two are
+comparable at all: linopy's `to_highspy()` is the same seam on that side of the
+fence.
+
+`highs` is the sink most users actually reach for, and it is not simply the lp
+sink minus a file: at `profiled/m` the peak ratio is 0.60x through the LP writer
+and 0.94x through the handoff, because HiGHS's own dense model is resident in
+both arms and swamps the difference between them. Measuring only the LP path
+would have reported the wrong number for the common case.
+
+Not measured, deliberately: solve time, and anything about expressiveness.
 
 ## Why it is built this way
 
@@ -57,7 +74,8 @@ the other never does. The boundaries are therefore explicit:
 | **before the clock** | splitting parquet paths into parameters vs dimensions (harness bookkeeping — it re-parses the YAML only because the *runner* decides which file is which) | — |
 | `import` | `import farkas` | `import farkas.linopy` → linopy, xarray |
 | `build` | `fk.build(...)` — duckdb reads the parquet itself | `read_parquet` + reshape + `farkas.linopy.build(...)` |
-| `emit` | `ex.write_lp(path)` | `Model.to_file(path, io_api='lp-polars')` |
+| `emit` (`lp`) | `ex.write_lp(path)` | `Model.to_file(path, io_api='lp-polars')` |
+| `emit` (`highs`) | COO batches into a `highspy.Highs` | `Model.to_highspy()` |
 | `teardown` | `ex.close()` — closes duckdb, deletes the scratch database | — (nothing to release) |
 | **after the clock** | row counts, `count(*) FROM A`, scratch-dir size | `nvars` / `ncons` |
 
@@ -91,6 +109,15 @@ falsifies hard rule 4 for that shape.
 
 **Repeats collapse by minimum.** Noise only ever adds.
 
+**A rung the `highs` sink cannot reach is written down, not dropped.**
+`Case.highs_max_variables` caps it, and the cap is a property of the *solver*
+rather than of either engine — HiGHS's model is dense however it was filled, so
+both arms pay it. The skip lands in the JSONL as a `skipped` record and the
+report renders it as a footnote under the table, because a rung nobody ran and a
+rung with no row look identical otherwise, and that is how a coverage hole gets
+published as a result. The lp sink has no such ceiling, which is why the cap is
+per sink instead of a rung the whole ladder stops at.
+
 **Comparing two versions of the same arm? Alternate them.** Repeats inside one
 invocation collapse noise *within* a few seconds; they do nothing about drift
 across a session, and this machine has drifted 2x on wall time between the
@@ -110,6 +137,7 @@ verdict off the SQL"), not to cover the language:
 | `dispatch` | pointwise bounds + one `sum` per row | raw throughput, and the case a dense eager broadcast is best at — so our worst ratio |
 | `nodal` | `(snapshot, node, tech)`, `where: installed > 0` | sparsity as it actually occurs — see below |
 | `transport` | three `group_sum` joins per row | the mapping-table path, where the eager lane must materialise a bus x generator product |
+| `profiled` | `(snapshot, node, tech)`, `availability` dense over that product | the only case where the input is the same order as the model — see below |
 
 **`nodal` is the case worth explaining.** It is dispatch over nodes and
 technologies, and a technology only generates at a node where it is installed:
@@ -128,6 +156,22 @@ what an engine can exploit.
 `Shape.density` (technologies per node: 12 / 6 / 3 / 1) is swept at one model
 size, because sweeping size and density together leaves no way to tell one
 effect from the other. Run the full ladder with `--sizes all`.
+
+**`profiled` is where the input is the same size as the model.** In every other
+case the parameters are far smaller than the coordinate product they explode
+into — 2-15% of it — so reading them is 2-9% of the build and the read path is
+noise. `profiled` is `nodal`'s cardinalities with the mask removed and
+`availability` dense over `(snapshot, node, tech)`: at the `l` rung, a 12M-row
+table against a 12M coordinate product. That makes the read path, the join, and
+the in-memory-vs-parquet question measurable rather than lost in the margin.
+
+It is also the shape the eager lane handles best: a parameter already dense over
+the variable product is the array xarray wants, with no broadcast and no
+alignment to do, while we join a full-size frame against a full-size coordinate
+product. `nodal` is the mirror image, and our clearest win, because there the
+eager lane must materialise coordinates that do not exist. Carrying both is what
+keeps the ladder from only containing shapes that suit one engine — a wind
+profile per node per technology per hour is ordinary in energy modelling.
 
 **The report measures what survived rather than trusting the declaration.**
 `dispatch` declares `where: p_max > 0` against a p_max that is always positive,

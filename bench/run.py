@@ -108,42 +108,68 @@ def gate(case: str, timeout: float) -> dict[str, Any]:
 
 
 def timings(case: str, sizes: list[str], arms: list[str], opts: argparse.Namespace) -> list[dict[str, Any]]:
-    """Every (size, arm, budget) combination, each in its own process.
+    """Every (size, sink, arm, budget) combination, each in its own process.
 
     The farkas arm runs once per ``--memory-limits`` entry: the budget is the
     knob the whole architecture is built around, so sweeping it is a first-class
     axis here rather than something to re-run by hand.
+
+    A rung the ``highs`` sink is capped out of is written to the JSONL as a
+    ``skipped`` record rather than left absent, so the report renders a footnoted
+    gap. A missing row and a row nobody ran look identical otherwise, and that is
+    how a coverage hole gets published as a result.
     """
     out = []
     for size in sizes:
-        for arm in arms:
-            budgets = opts.memory_limits if arm == 'farkas' else [None]
-            for budget in budgets:
-                for repeat in range(opts.repeat):
-                    args = ['time', '--case', case, '--size', size, '--arm', arm]
-                    if budget is not None:
-                        args += ['--memory-limit', budget, '--chunk-rows', str(opts.chunk_rows)]
-                    else:
-                        args += ['--io-api', opts.io_api]
-                    record = _child(args, opts.timeout)
-                    # stamped by the parent so a *failed* run is still fully
-                    # identified — which budget OOMed is the whole point
-                    record |= {
-                        'record': 'timing',
-                        'case': case,
-                        'size': size,
-                        'arm': arm,
-                        'repeat': repeat,
-                        'memory_limit': budget,
-                    }
-                    _echo(record)
-                    out.append(record)
+        shape = CASES[case].shape(size)
+        run_sinks, capped = CASES[case].sinks_for(shape, opts.sinks)
+        for sink in capped:
+            record = {
+                'record': 'timing',
+                'case': case,
+                'size': size,
+                'sink': sink,
+                'skipped': f'{shape.nominal_variables:,} variables exceeds the {sink} cap '
+                f'({CASES[case].highs_max_variables:,}) — the solver would hold this densely',
+            }
+            _echo(record)
+            out.append(record)
+        for sink in run_sinks:
+            for arm in arms:
+                budgets = opts.memory_limits if arm == 'farkas' else [None]
+                for budget in budgets:
+                    for repeat in range(opts.repeat):
+                        args = ['time', '--case', case, '--size', size, '--arm', arm, '--sink', sink]
+                        if budget is not None:
+                            args += ['--memory-limit', budget, '--chunk-rows', str(opts.chunk_rows)]
+                        elif sink == 'lp':
+                            args += ['--io-api', opts.io_api]
+                        record = _child(args, opts.timeout)
+                        # stamped by the parent so a *failed* run is still fully
+                        # identified — which budget OOMed is the whole point
+                        record |= {
+                            'record': 'timing',
+                            'case': case,
+                            'size': size,
+                            'sink': sink,
+                            'arm': arm,
+                            'repeat': repeat,
+                            'memory_limit': budget,
+                        }
+                        _echo(record)
+                        out.append(record)
     return out
 
 
 def _echo(record: dict[str, Any]) -> None:
     budget = record.get('memory_limit') or record.get('io_api') or ''
-    head = f'  {record["case"]:<10} {record["size"]:<3} {record["arm"]:<7} {budget:<10}'
+    head = (
+        f'  {record["case"]:<10} {record["size"]:<3} {record.get("sink", ""):<5} '
+        f'{record.get("arm", ""):<7} {budget:<10}'
+    )
+    if 'skipped' in record:
+        print(f'{head} skipped — {record["skipped"]}')
+        return
     if 'error' in record:
         print(f'{head} FAILED — {record["error"]}')
         return
@@ -160,6 +186,13 @@ def main(argv: list[str] | None = None) -> int:
         '--sizes', nargs='+', default=['xs', 's', 'm'], help="rung labels, or 'all' for every rung a case has"
     )
     ap.add_argument('--arms', nargs='+', default=['farkas', 'linopy'])
+    ap.add_argument(
+        '--sinks',
+        nargs='+',
+        default=['lp', 'highs'],
+        choices=['lp', 'highs'],
+        help='where the model lands. `highs` is the handoff only — `run()` is never called',
+    )
     ap.add_argument('--repeat', type=int, default=1)
     ap.add_argument('--memory-limits', nargs='+', default=['1GB'], help='duckdb budgets to sweep (farkas arm)')
     ap.add_argument('--chunk-rows', type=int, default=2_000_000)
