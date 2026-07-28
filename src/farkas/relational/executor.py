@@ -16,7 +16,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, get_args
 
 from farkas.errors import DataError, LanguageError, LinopyYamlError, NoSolutionError
 from farkas.relational import plan, sinks
@@ -39,12 +39,37 @@ _ROWS = ('row', 'sense', 'rhs')
 _MATRIX = ('row', 'col', 'coeff')
 
 #: Which of those columns is a label, a number, or a word — the whole dtype
-#: vocabulary the four frames use between them.
+#: vocabulary the four frames use between them. Named rather than constructed,
+#: because polars is imported lazily; :func:`_dtype` resolves them. ``vtype``
+#: is absent on purpose — it is the one column whose dtype is not a plain
+#: attribute of ``pl``.
 _DTYPES = {
     'col': 'Int64', 'row': 'Int64',
     'lb': 'Float64', 'ub': 'Float64', 'rhs': 'Float64', 'coeff': 'Float64',
-    'vtype': 'String', 'sense': 'String',
+    'sense': 'String',
 }  # fmt: skip
+
+
+def _dtype(name: str) -> Any:
+    """The dtype of one frame column.
+
+    ``vtype`` is an ``Enum`` over the variable types the plan declares, rather
+    than a string. It holds one word per column and the same handful of words
+    for the whole model, so a string column stores that word once per row: at
+    9.8M columns it is 0.098 GB of the ``cols`` frame's 0.333, against 0.010
+    as an Enum.
+
+    It also makes the vocabulary explicit. An Enum rejects a value outside it,
+    so a fourth variable type added to :data:`~farkas.relational.plan.VariableType`
+    and not reaching here fails where the column is built, rather than in
+    whichever sink first compares against a name it does not know.
+    """
+    import polars as pl
+
+    if name == 'vtype':
+        return pl.Enum(get_args(plan.VariableType))
+    return getattr(pl, _DTYPES[name])
+
 
 #: Scratch column carrying a source row's position while first-occurrence
 #: order is computed. The spaces make it unrepresentable as a declared name, so
@@ -625,7 +650,7 @@ class PolarsExecutor:
             pl.col('var_label').alias('col'),
             pl.col('lb').cast(pl.Float64),
             pl.col('ub').cast(pl.Float64),
-            pl.lit(v.variable_type, dtype=pl.String).alias('vtype'),
+            pl.lit(v.variable_type, dtype=_dtype('vtype')).alias('vtype'),
         ).collect(engine='streaming')
 
         bad = cols.filter(pl.col('lb').is_null() | pl.col('ub').is_null()).height
@@ -974,4 +999,4 @@ def _stack(frames: list[pl.DataFrame], columns: tuple[str, ...]) -> pl.DataFrame
 
     if frames:
         return pl.concat(frames)
-    return pl.DataFrame(schema={name: getattr(pl, _DTYPES[name]) for name in columns})
+    return pl.DataFrame(schema={name: _dtype(name) for name in columns})
