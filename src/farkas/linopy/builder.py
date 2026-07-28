@@ -305,7 +305,7 @@ def _eval_ast(
         return node.value
 
     if isinstance(node, VariableNode):
-        return semantics.present(ctx.model.variables[node.name])
+        return ctx.model.variables[node.name]
 
     if isinstance(node, ParameterNode):
         return semantics.coefficient(ctx.dataset[node.name])

@@ -313,7 +313,12 @@ class PolarsCompiler:
 
         dims = self.program.variable(name).dims
         frame = self.variables[name].select(*dims, 'var_label', pl.lit(1.0, dtype=pl.Float64).alias('coeff'))
-        presence = self.variables[name].select(*dims)
+        # An *unmasked* variable exists at every coordinate of its foreach, so
+        # its presence could only ever restrict nothing. Leaving it None is not
+        # an optimisation detail: a presence frame is data, and carrying one
+        # costs `_label_frame` both of its arithmetic paths. Whether it is
+        # needed is decided here, off the declaration, before any data is read.
+        presence = self.variables[name].select(*dims) if self.program.variable(name).where is not None else None
         return TermFragment(dims, frame, True, label_dims=frozenset(dims), presence=presence)
 
     def _product(self, a: CompiledExpression, b: CompiledExpression, context: str) -> CompiledExpression:
@@ -414,14 +419,46 @@ class PolarsCompiler:
         moved = pl.col(_ORD_IN) + s.by
         if s.wrap:
             moved = (moved % card + card) % card
-        frame = (
-            p.frame.join(incoming, on=s.dimension, how='inner')
-            .drop(s.dimension)
-            .with_columns(moved.alias(_ORD_OUT))
-            .join(outgoing, on=_ORD_OUT, how='inner')
-            .select(*others, s.dimension, *p.carried)
+
+        def remap(source: pl.LazyFrame, carried: list[str]) -> pl.LazyFrame:
+            return (
+                source.join(incoming, on=s.dimension, how='inner')
+                .drop(s.dimension)
+                .with_columns(moved.alias(_ORD_OUT))
+                .join(outgoing, on=_ORD_OUT, how='inner')
+                .select(*others, s.dimension, *carried)
+            )
+
+        frame = remap(p.frame, p.carried)
+        presence = None
+        if p.presence is not None:
+            # Presence is a coordinate set, so it travels through the same map.
+            presence = remap(p.presence, [])
+            if not s.wrap:
+                presence = pl.concat([presence, self._vacated(p, s, card, others)], how='vertical_relaxed').unique()
+        return TermFragment(p.dims, frame, p.is_term, p.keyed, p.label_dims, presence)
+
+    def _vacated(self, p: TermFragment, s: plan.Translate, card: int, others: list[str]) -> pl.LazyFrame:
+        """The edge positions ``shift`` leaves with nothing to move in.
+
+        They are *not* absent. SPEC §7 fixes what they contribute — "vacated
+        positions contribute **zero**" — which is a declared rule of the
+        language, so they stay present and the row survives. That is the same
+        answer the eager lane gives them (``semantics.vacated``), and it is why
+        the two lanes agree about an acyclic recurrence's first step.
+
+        Only the ``shift`` edge qualifies. A coordinate the variable's own mask
+        removed is genuinely absent, and remapping already dropped it above.
+        """
+        table = self.dimensions[s.dimension]
+        edge = table.filter(((pl.col('ord') - s.by) < 0) | ((pl.col('ord') - s.by) >= card)).select(
+            pl.col('val').alias(s.dimension)
         )
-        return TermFragment(p.dims, frame, p.is_term, p.keyed, p.label_dims)
+        if not others:
+            return edge
+        # One vacated row per other-dim combination the variable actually has:
+        # a coordinate it never covers gains nothing from an edge it never sees.
+        return p.presence.select(*others).unique().join(edge, how='cross') if p.presence is not None else edge
 
     # ------------------------------------------------------------------
     # assembly helpers used by the executor

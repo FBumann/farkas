@@ -247,6 +247,25 @@ A boolean mask; true means "this coordinate exists". Semantics are **row
 absence**, not zero-fill: a masked-out variable is not created, a masked-out
 constraint row is not built.
 
+**Absence spreads.** A term whose variable does not exist at a coordinate does
+not contribute zero there — it makes the whole row absent, so `x + y >= 10` is
+*no constraint* where `y` is masked, not `x >= 10`. Zero-filling instead is how
+`x - rel_max * size <= 0` silently becomes `x <= 0` on an unsized component: a
+feasible model, a plausible answer, no error. To keep the row and treat the
+missing term as zero, say so — write the two cases as separate equations with
+complementary `where` clauses.
+
+Two things deliberately do **not** spread. A **reduction** skips what is absent
+rather than propagating it, so `sum(x, over=d)` is defined when only some of `d`
+exists and the sum of nothing is zero — without that, one masked component would
+delete a system-wide accounting row. And a **parameter** covering only some
+coordinates is sparse *encoding*, not absence: its missing rows mean a zero
+coefficient (§8), which is why a coefficient table may hold live entries only.
+Absence is a property of variables.
+
+This matches linopy's v1 arithmetic convention, which both lanes are built
+against; `farkas.linopy.semantics` is where the eager lane answers it.
+
 ```text
 where_expr ::= atom | "NOT" where_expr | where_expr ("AND"|"OR") where_expr
             |  "(" where_expr ")"

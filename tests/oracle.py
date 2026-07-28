@@ -30,6 +30,26 @@ linopy = pytest.importorskip('linopy', reason=_REASON)
 xr = pytest.importorskip('xarray', reason=_REASON)
 pd = pytest.importorskip('pandas', reason=_REASON)
 
+# **The oracle is v1, and only v1.** A differential test is an oracle only if
+# the thing it compares against is the convention we implement. Legacy is the
+# one linopy is retiring: it fills every absent slot with 0, so it agrees with a
+# lane that keeps a constraint row whose variable is masked, and disagrees with
+# one that drops it. Measuring against legacy would pin this package to the
+# behaviour v1 classifies as a bug (PyPSA/linopy#712).
+#
+# So this raises rather than skipping. A skip here would be the worst outcome
+# available — the suite would go green having quietly stopped checking the lanes
+# against each other on precisely the cases the convention changed.
+if 'semantics' not in getattr(linopy.options, '_defaults', {}):
+    raise RuntimeError(
+        f'linopy {linopy.__version__} has no options["semantics"], so it cannot speak the v1 '
+        f'arithmetic convention this package is written against. The oracle would silently '
+        f'measure against the legacy convention instead. Install the pin in pyproject.toml '
+        f'([tool.uv.sources]: PyPSA/linopy@feat/arithmetic-convention) — `uv sync`.'
+    )
+
+linopy.options['semantics'] = 'v1'
+
 # Spelled out rather than aliased to something shorter: this module also
 # re-exports the *real* ``linopy`` above, so the shim needs a name that cannot
 # be confused with it. ``farkas_linopy`` names the module it actually is, which

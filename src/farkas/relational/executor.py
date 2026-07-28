@@ -497,6 +497,7 @@ class PolarsExecutor:
         where: plan.Predicate | None,
         label: str,
         start: int,
+        restrictions: Sequence[tuple[tuple[str, ...], pl.LazyFrame]] = (),
     ) -> tuple[pl.DataFrame, int]:
         """The masked coord product of *dims* with a dense *label* from *start*.
 
@@ -514,19 +515,30 @@ class PolarsExecutor:
         Both return ``(dims…, label)`` in that column order. A mask that
         removes nothing has to be indistinguishable from no mask, down to the
         schema.
-        """
-        if where is None:
-            frame = self._q.frame(dims, None)
-            rows = math.prod(self._dim_card[d] for d in dims)
-            return self._positional(frame, dims, label, start), start + rows
 
-        free = _free_prefix(dims, _predicate_dims(where, self._param_dims()))
-        if free:
-            return self._factored(dims, free, where, label, start)
+        *restrictions* are variable-presence frames a constraint row must be
+        contained in: absence propagates into a comparison and drops the row
+        (v1 ``convention.rst`` §6, §12). They are semi-joins, so they can only
+        remove rows — but which rows is not known until data is read, and that
+        is what costs the two fast paths, so the caller passes them only when a
+        variable in the equation is actually masked (:func:`_absence_restrictions`).
+        """
+        if not restrictions:
+            if where is None:
+                frame = self._q.frame(dims, None)
+                rows = math.prod(self._dim_card[d] for d in dims)
+                return self._positional(frame, dims, label, start), start + rows
+
+            free = _free_prefix(dims, _predicate_dims(where, self._param_dims()))
+            if free:
+                return self._factored(dims, free, where, label, start)
+
+        restricted = self._q.frame(dims, where)
+        for on, presence in restrictions:
+            restricted = restricted.join(presence.unique(), on=list(on), how='semi')
 
         materialised = (
-            self._q.frame(dims, where)
-            .sort([_ordinal(d) for d in dims])
+            restricted.sort([_ordinal(d) for d in dims])
             .select(*dims)
             .with_row_index(label, offset=start)
             .select(*dims, pl.col(label).cast(pl.Int64))
@@ -674,7 +686,8 @@ class PolarsExecutor:
                     f'foreach {list(c.dims)} — missing a Sum/GroupSum?'
                 )
 
-        labelled, self._n_rows = self._label_frame(c.dims, c.where, 'row', self._n_rows)
+        restrictions = _absence_restrictions([p for p, _ in terms])
+        labelled, self._n_rows = self._label_frame(c.dims, c.where, 'row', self._n_rows, restrictions)
         frame = labelled.lazy()
         self._constraints[c.name] = frame  # kept for the dual read-back
 
@@ -1000,3 +1013,30 @@ def _stack(frames: list[pl.DataFrame], columns: tuple[str, ...]) -> pl.DataFrame
     if frames:
         return pl.concat(frames)
     return pl.DataFrame(schema={name: _DTYPES[name] for name in columns})
+
+
+def _absence_restrictions(terms: Sequence[TermFragment]) -> list[tuple[tuple[str, ...], pl.LazyFrame]]:
+    """The presence frames a constraint's rows have to be contained in.
+
+    Absence propagates into a comparison and drops the row there (v1
+    ``convention.rst`` §6 and §12): ``x + y >= 10`` is not ``x >= 10`` where
+    ``y`` is masked, it is no constraint at all. A term whose variable is absent
+    therefore restricts the row set rather than merely contributing nothing.
+
+    Only *variable* absence counts. A sparse parameter is a compressed dense
+    array whose missing rows mean a zero coefficient (SPEC §8), which is why the
+    fragment carries :attr:`~farkas.relational.compiler.TermFragment.presence`
+    separately from its frame, and why this reads that rather than the frame.
+
+    **A fragment with nothing to restrict is skipped**, and that is load-bearing
+    rather than tidy: a restriction is data — which rows survive is unknown until
+    the presence frames are read — so it costs ``_label_frame`` both of its
+    arithmetic paths. An unmasked variable's presence is its whole coordinate
+    product and would remove nothing, so it never gets to impose that cost.
+    """
+    out: list[tuple[tuple[str, ...], pl.LazyFrame]] = []
+    for p in terms:
+        if p.presence is None or not p.dims:
+            continue
+        out.append((p.dims, p.presence))
+    return out
