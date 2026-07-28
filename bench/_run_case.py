@@ -123,6 +123,51 @@ def _run_linopy(
 ARMS = {'farkas': _run_farkas, 'linopy': _run_linopy}
 
 
+def _builder(case: Case, paths: dict[str, str], arm: str):
+    """Just the build, callable repeatedly — no sink, no teardown timing."""
+    if arm == 'farkas':
+        import farkas as fk
+
+        sources, coords = _split_sources(case, paths)
+
+        def build() -> None:
+            fk.build(case.model, sources, coords=coords).close()
+    else:
+        from farkas import linopy as farkas_linopy
+
+        def build() -> None:
+            data, coords = case.eager_inputs(paths)
+            farkas_linopy.build(case.model, data=data, coords=coords)
+
+    return build
+
+
+def _run_loop(case: Case, paths: dict[str, str], opts: argparse.Namespace) -> dict[str, Any]:
+    """The same model built repeatedly in one process.
+
+    Two questions, two numbers. **First** is what a caller pays who builds one
+    model and solves it — a fresh interpreter, and whatever lazy work each lane
+    does on its first call lands here. **Steady** is what a rolling horizon
+    pays for every model after the first. They differ by more than an order of
+    magnitude on the eager lane, so a single figure would misreport one of the
+    two use cases whichever it was.
+
+    Deliberately build-only: a sink is measured by `time`, and repeating one
+    would conflate warm-up in the writer with warm-up in the engine.
+    """
+    build = _builder(case, paths, opts.arm)
+    times = []
+    for _ in range(opts.builds):
+        start = time.perf_counter()
+        build()
+        times.append(time.perf_counter() - start)
+    return {
+        'first_build_seconds': times[0],
+        'steady_build_seconds': min(times[1:]) if len(times) > 1 else None,
+        'build_seconds': times,
+    }
+
+
 def _split_sources(case: Case, paths: dict[str, str]) -> tuple[dict[str, str], dict[str, str]]:
     """Parameters from dimension index tables, by what the model declares."""
     import yaml as pyyaml
@@ -161,7 +206,14 @@ def _objective(case: Case, shape: Shape, paths: dict[str, str], arm: str) -> flo
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('mode', choices=('time', 'solve'))
+    ap.add_argument('mode', choices=('time', 'solve', 'loop'))
+    ap.add_argument(
+        '--builds',
+        type=int,
+        default=5,
+        help='loop mode: how many times to build the model in one process. The '
+        'first is reported separately from the minimum of the rest.',
+    )
     ap.add_argument('--case', required=True, choices=sorted(CASES))
     ap.add_argument('--size', required=True)
     ap.add_argument('--arm', required=True, choices=sorted(ARMS))
@@ -189,6 +241,12 @@ def main(argv: list[str] | None = None) -> int:
         'io_api': opts.io_api if opts.arm == 'linopy' and opts.sink == 'lp' else None,
         'sink': opts.sink,
     }
+
+    if opts.mode == 'loop':
+        record |= _run_loop(case, paths, opts)
+        record['peak_rss_bytes'] = peak_rss_bytes()
+        print(json.dumps(record))
+        return 0
 
     if opts.mode == 'solve':
         record['objective'] = _objective(case, shape, paths, opts.arm)
