@@ -21,6 +21,10 @@ A PR that adds, renames, or retires a construct updates `SPEC.md`. Rationale bel
 
 ## Common Commands
 
+Setup, the test loop, what each CI gate means, how to add a port and how to
+refresh the benchmarks are in [CONTRIBUTING.md](CONTRIBUTING.md). The essentials:
+
+
 ```bash
 # Install (uv-managed venv; [linopy] extra = linopy/xarray for the shim + oracle)
 uv sync  # dev group (tools + oracle deps) is default

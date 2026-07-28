@@ -16,28 +16,8 @@ suite green. This is the net for that class, and the evidence behind
 | [Dantzig transport](#dantzigs-transportation-problem) | published, GAMS model library #1 | 153.675 |
 | [PyPSA LOPF rung 1](#pypsa-lopf--rung-1) | PyPSA 1.2.4, its own linopy 0.9.0 | 22000.0 |
 
-## How a port is put together
-
-`<name>.yaml` is the model, `data/<name>.json` the instance,
-`references/<name>.py` a reference implementation importing no farkas, and
-`references.json` the recorded objective with its provenance.
-
-Reference scripts are **never run by CI** — pinning PyPSA into this project
-would hand their release cadence a veto over the suite. They carry their deps
-inline ([PEP 723](https://peps.python.org/pep-0723/)), pinned to what produced
-the recorded number, so the corpus itself needs no oracle and no extra
-dependency and runs on the bare-install job:
-
-```
-uv run --script examples/ports/references/pypsa_transport.py
-```
-
-A port whose optimum is *published* needs no script at all.
-
-The instance is **data both sides read** — a reference optimum against a
-different instance means nothing. What stays independent is the formulation.
-`rtol` is per port, since a published optimum is rounded and a solved one is
-not.
+Adding one is four files and five rules:
+[CONTRIBUTING.md](../CONTRIBUTING.md#adding-a-ported-model).
 
 ## The ladder
 
