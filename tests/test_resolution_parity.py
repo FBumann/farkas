@@ -43,6 +43,11 @@ def _write(tmp_path, **patch):
     [
         ('typo_name > 0', "'typo_name' not found", 'eager built 0 live variables; relational raised'),
         ('p_max > cost', 'compares two parameters', "eager compared parameters; relational compared to 'cost'"),
+        (
+            'generator == snapshot',
+            'compares against dimension',
+            "both read the RHS as the string 'snapshot' and built the block empty",
+        ),
         ('nonexistent', "'nonexistent' not found", 'eager masked everything out; relational raised'),
         (
             'snapshot',

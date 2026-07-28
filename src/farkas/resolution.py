@@ -388,6 +388,16 @@ def _resolve_where(
                 f'variable {value!r}. A where mask is built before variables exist.'
             )
             return node
+        if isinstance(value, str) and ns.kind(value) == 'dimension':
+            errors.append(
+                f"{context}: '{node.name} {node.op} {value}' compares against dimension "
+                f'{value!r}, which the RHS reads as the literal coordinate {value!r} — so '
+                f"the predicate tests one dimension against another dimension's *name* "
+                f'and masks everything out. Comparing two dimensions to each other is not '
+                f'in the language; if {value!r} is a coordinate rather than the dimension, '
+                f'rename one of the two.'
+            )
+            return node
 
         match ns.kind(node.name):
             case 'parameter':

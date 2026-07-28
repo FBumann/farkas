@@ -87,6 +87,15 @@ def test_parameter_vs_parameter_where_comparison_is_an_error():
         validate_expressions(schema)
 
 
+def test_dimension_vs_dimension_where_comparison_is_an_error():
+    """Was: silently empty. The RHS read as the string 'snapshot', so the mask
+    compared generator coordinates against another dimension's *name*, matched
+    nothing, and the block built with zero rows on both lanes."""
+    schema = _schema(**{'variables.p.where': 'generator == snapshot'})
+    with pytest.raises(ValueError, match='compares against dimension'):
+        validate_expressions(schema)
+
+
 def test_where_cannot_reference_a_variable():
     schema = _schema(**{'variables.p.where': 'p > 0'})
     with pytest.raises(ValueError, match='built before variables exist'):
