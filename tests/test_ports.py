@@ -9,13 +9,13 @@ Each expected objective was published with the model or produced by somebody
 else's code; ``examples/ports/references/`` holds the scripts, run out of band,
 and ``references.json`` records what they said. So the corpus needs no oracle
 and no extra dependency: it is linopy-free and pandas-free, and runs on the
-bare-install job. See docs/ports.md.
+bare-install job. See docs/ports.md; the gallery page for each port is
+asserted against its model file by ``test_models_gallery.py``.
 """
 
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +25,6 @@ import pytest
 import farkas as fk
 
 PORTS = Path(__file__).resolve().parent.parent / 'examples' / 'ports'
-PAGE = PORTS.parent.parent / 'docs' / 'ports.md'
 REFERENCES: dict[str, dict[str, Any]] = json.loads((PORTS / 'references.json').read_text())
 
 
@@ -57,12 +56,3 @@ def test_port_is_inside_the_language(port: dict[str, Any]) -> None:
     from a semantics one: this breaks when lowering stops accepting the model,
     the test above when it lowers and misses the number."""
     fk.check(port['model'])
-
-
-def test_the_page_shows_the_model_that_runs(port: dict[str, Any]) -> None:
-    """A YAML fence on the page equals the model file, byte for byte — the page
-    is what a reader sees and the file is what CI runs. Copying rather than
-    including is the trade ``linopy/semantics.py`` already makes: a copy is
-    fine when a test asserts it, and rots when nothing does."""
-    fences = re.findall(r'^```yaml\n(.*?)^```', PAGE.read_text(), re.MULTILINE | re.DOTALL)
-    assert port['model'].read_text() in fences, f'{PAGE} has drifted from {port["model"]}'

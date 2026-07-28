@@ -105,7 +105,9 @@ A port is a model somebody else already solved, said again in this language and
 checked against **an optimum that did not come from us**. It is the only test
 class that can catch a *shared misreading* — both lanes agreeing on a meaning
 the modeller did not intend — because every other test compares farkas against
-farkas. The corpus and its ladder are in [docs/ports.md](docs/ports.md).
+farkas. The corpus and its ladder are in [docs/ports.md](docs/ports.md); each port's
+page in [the gallery](docs/models/index.md) shows the model and a side-by-side
+against its reference.
 
 Four files per port:
 
@@ -114,6 +116,7 @@ examples/ports/<name>.yaml              the model
 examples/ports/data/<name>.json         the instance
 examples/ports/references/<name>.py     a reference implementation, importing no farkas
 examples/ports/references.json          the recorded objective and where it came from
+docs/models/<name>.md                   the gallery page — maths, model, side-by-side
 ```
 
 - **A published optimum needs no script.** `transport_dantzig` has none: the
