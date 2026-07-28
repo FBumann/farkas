@@ -6,7 +6,6 @@ the file reads as. None of them needs data to be caught.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -14,6 +13,7 @@ import pytest
 from farkas.dimensions import DimensionError, check_schema, dims_of
 from farkas.resolution import Namespace, expression_of
 from tests.conftest import override, schema_of
+from tools import constructs
 
 if TYPE_CHECKING:
     from farkas.schema import MathSchema
@@ -185,6 +185,9 @@ def test_checking_needs_no_data():
         fk.check(raw)
 
 
-@pytest.mark.parametrize('path', sorted(Path('examples').glob('*.yaml')), ids=lambda p: p.name)
+@pytest.mark.parametrize('path', [p for _, p in constructs.models()], ids=lambda p: p.name)
 def test_shipped_examples_typecheck(path):
+    """Every model in the repo, ports included — ``constructs.models()`` is the
+    one list the gallery is built from, and a glob of ``examples/*.yaml`` is not
+    recursive."""
     check_schema(schema_of(path))
