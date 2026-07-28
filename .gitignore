@@ -31,6 +31,9 @@ scratch/relational_spike/bench_out/
 scratch/relational_spike/*.lp
 .DS_Store
 
+# the built site (`mkdocs build`); Read the Docs builds it from source
+site/
+
 # rendered presentation output (sources docs/*.md + docs/*.svg are tracked)
 docs/*.html
 docs/*.pdf

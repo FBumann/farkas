@@ -4,6 +4,13 @@
 that runs. Then [the models](models/index.md) to browse, and
 [SPEC](SPEC.md) when you need the exact rule.
 
+Every file here is also published as a site, built by
+[mkdocs-material](https://squidfunk.github.io/mkdocs-material/) from these same
+sources — this page is the view GitHub gives you when you browse the folder,
+and [index.md](index.md) is the site's front door. See *the docs* in
+[CONTRIBUTING.md](../CONTRIBUTING.md#the-docs) for the link conventions that
+make one set of files serve both.
+
 | | |
 |---|---|
 | [**Writing a model**](guide.md) | the guide: dimensions, absence, topology, `roll`, the dim algebra — and what the language will *not* do |

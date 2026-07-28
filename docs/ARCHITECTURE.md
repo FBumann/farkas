@@ -4,13 +4,13 @@ Brief, current, precise. A PR that changes the structure described here updates
 this file in the same PR. The language is [docs/SPEC.md](SPEC.md); plans and refusals
 are [docs/ROADMAP.md](ROADMAP.md); measured results are
 [docs/benchmarks.md](benchmarks.md), produced by the harness in
-[bench/](../bench/README.md) — which is also how a claim here gets falsified. The
+[bench/](https://github.com/FBumann/farkas/blob/main/bench/README.md) — which is also how a claim here gets falsified. The
 ceiling below is falsified the same way, by [docs/ports.md](ports.md).
 
 `python examples/walkthrough.py` executes the pipeline below stage by stage
 and prints what each one produces — the same public calls `fk.solve` makes,
 so the demonstration cannot drift from the code. Its output is committed as
-[examples/walkthrough.out](../examples/walkthrough.out) and asserted line for line
+[examples/walkthrough.out](https://github.com/FBumann/farkas/blob/main/examples/walkthrough.out) and asserted line for line
 (`tests/test_walkthrough.py`), so reading it is the same as running it — and a
 stage that starts telling a different story shows up as a diff in that file.
 
@@ -411,7 +411,7 @@ native schema merge (#30) is what would force the question.
 | `relational/chunking.py` | how a batched pass sizes its chunk: budget ÷ the width of one unit |
 | `relational/status.py` | solve outcome on two axes; linopy's vocabulary, copied not imported |
 | `relational/executor.py` | bind sources, assign labels, assemble the model frames |
-| `relational/sinks/` | how a built model leaves: `lp_file`, `solver_direct` (one module each, [README](../src/farkas/relational/sinks/README.md)) |
+| `relational/sinks/` | how a built model leaves: `lp_file`, `solver_direct` (one module each, [README](https://github.com/FBumann/farkas/blob/main/src/farkas/relational/sinks/README.md)) |
 | `linopy/__init__.py` | opt-in shim: `build` / `extend` on a `linopy.Model` |
 | `linopy/loader.py` | data coercion to `xr.Dataset`, master coords |
 | `linopy/builder.py` | eager backend: core AST → `linopy.Model` |

@@ -43,6 +43,16 @@ jobs:
       - run: uv run --no-sync pyrefly check --output-format=github
       - run: uv run --no-sync pytest -q
 
+      # The site, built strictly: `strict: true` in mkdocs.yml turns every
+      # warning into a failure, so this gate catches a dead cross-link, a model
+      # page added without a nav entry, and an anchor that stopped resolving.
+      # A step, not a job of its own — see the note at the top of this file;
+      # the docs group is small and adds a few seconds to a job we already pay
+      # a whole minute for. It comes after the suite and before the bare
+      # install, which wipes .venv.
+      - run: uv sync --group docs
+      - run: uv run --no-sync mkdocs build --strict
+
       # Re-install the same checkout into the shipped shape, at the declared
       # floors. Two claims in one install:
       #   1. the relational product runs with no linopy, xarray, pandas or

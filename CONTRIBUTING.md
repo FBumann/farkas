@@ -42,6 +42,7 @@ Everything below is the first one, in the order it runs.
 | `ruff format --check .` | formatting drifted. Run `ruff format .`. |
 | `pyrefly check` | a type is wrong. **Fix the type, don't widen it** — if the finding is genuinely wrong, `# pyrefly: ignore[rule-name]` on the one line with a reason, never the rule off globally. |
 | `pytest -q` | the suite. Includes the differential lanes and the ported models. |
+| `mkdocs build --strict` | the site. A dead cross-link, an anchor that no longer resolves, or a page under `docs/` with no `nav:` entry — see *the docs* below. |
 | **bare install, at the floors** | the engine reached for something it does not declare. |
 
 **The bare-install job is the one worth understanding.** It reinstalls with
@@ -55,6 +56,42 @@ this job, and only this job.
 
 Raise a floor when the code relies on that version's behaviour. Do not raise
 one to chase a newer interpreter.
+
+## The docs
+
+`docs/` is both the site and what you read on GitHub. Write for the repo —
+relative links, no site-only syntax — and the build handles the difference.
+
+```bash
+uv sync --group docs
+uv run mkdocs serve      # http://127.0.0.1:8000, live-reloading
+uv run mkdocs build --strict   # what CI runs
+```
+
+Three rules, each enforced, so none has to be remembered:
+
+- **Every page under `docs/` needs a `nav:` entry** in `mkdocs.yml`. Adding a
+  model page without one fails the build rather than shipping an unreachable
+  page. `docs/README.md` is the deliberate exception — it is the folder view
+  GitHub renders, and `exclude_docs` keeps it out of the site, where
+  `docs/index.md` is the home page.
+- **Inside `docs/`, link relatively.** `../SPEC.md`, `models/index.md`. mkdocs
+  resolves and validates these; a dead one fails the build.
+- **Outside `docs/`, write the full GitHub URL** —
+  `https://github.com/FBumann/farkas/blob/main/bench/README.md`, not
+  `../bench/README.md`. The site has no file above `docs/` to resolve to, and
+  mkdocs does *not* flag the relative form: it ships as a silent 404. This is
+  the same convention the model pages already use to link at their `.yaml`.
+
+`tests/test_docs_site.py` enforces the last two in both directions — no
+relative link may escape `docs/`, and every blob URL must name a file that
+exists. Neither is checkable by mkdocs, which is why they are tests.
+
+Headings are slugged the way GitHub slugs them, so `#track-4--sink-capabilities`
+means the same thing in both places.
+
+Read the Docs builds and publishes from `main` (`.readthedocs.yaml`); nothing
+needs deploying by hand.
 
 ## Branches, commits, PRs
 
