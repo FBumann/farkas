@@ -17,9 +17,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import IO, TYPE_CHECKING
 
-if TYPE_CHECKING:
-    import polars as pl
+import polars as pl
 
+if TYPE_CHECKING:
     from farkas.relational.sinks.tables import ModelTables
 
 
@@ -44,7 +44,6 @@ def _sink(frame: pl.LazyFrame, f: IO[bytes]) -> None:
 
 def write_lp_file(model: ModelTables, path: str | Path) -> None:
     """Write the model as LP text."""
-    import polars as pl
 
     path = Path(path)
     objective = model.obj.lazy().sort('col').select(_term(pl.col('coeff'), pl.col('col')))
@@ -102,8 +101,6 @@ def _constraint_blocks(model: ModelTables) -> pl.LazyFrame:
     A row with no terms still needs a line a solver can parse, and the anti-join
     is what a group-by gave for free.
     """
-    import polars as pl
-
     rows = model.rows.lazy()
     header = rows.select(
         'row',
@@ -139,14 +136,11 @@ def _term(coeff: pl.Expr, col: pl.Expr) -> pl.Expr:
     is its own pass allocating its own full-width string column, and a term has
     four pieces; this way the line is allocated once.
     """
-    import polars as pl
-
     return pl.concat_str(*_signed(coeff), pl.lit(' x'), _digits(col))
 
 
 def _number(value: pl.Expr) -> pl.Expr:
     """A float as LP text."""
-    import polars as pl
 
     return value.cast(pl.String)
 
@@ -165,8 +159,6 @@ def _signed(value: pl.Expr) -> tuple[pl.Expr, pl.Expr]:
     ``+-0.0``, which no LP parser accepts. It is reachable from any negative
     coefficient times a zero parameter, so it is a real file, not a curiosity.
     """
-    import polars as pl
-
     return (
         pl.when(value >= 0).then(pl.lit('+')).otherwise(pl.lit('')).alias('sign'),
         pl.when(value == 0).then(pl.lit('0.0')).otherwise(_number(value)).alias('magnitude'),
@@ -175,13 +167,11 @@ def _signed(value: pl.Expr) -> tuple[pl.Expr, pl.Expr]:
 
 def _bound(value: pl.Expr, infinite: str) -> pl.Expr:
     """A bound, with the LP format's own spelling for an unbounded one."""
-    import polars as pl
 
     return pl.when(value.is_infinite()).then(pl.lit(infinite)).otherwise(_number(value))
 
 
 def _digits(value: pl.Expr) -> pl.Expr:
     """An index as text — never in scientific notation, whatever its size."""
-    import polars as pl
 
     return value.cast(pl.Int64).cast(pl.String)

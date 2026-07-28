@@ -18,13 +18,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import polars as pl
+
 from farkas.errors import LinopyYamlError
 from farkas.relational.status import SolveStatus
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
-
-    import polars as pl
 
     from farkas.relational.sinks.tables import ModelTables
 
@@ -96,7 +96,6 @@ def solve_direct(
     """
     import highspy
     import numpy as np
-    import polars as pl
 
     batch = HANDOFF_BUDGET if batch_rows is None else batch_rows
     inf = highspy.kHighsInf
@@ -224,6 +223,5 @@ def _labelled(label: str, count: int, values: Any) -> pl.DataFrame:
     column is an ``arange`` rather than anything read back.
     """
     import numpy as np
-    import polars as pl
 
     return pl.DataFrame({label: np.arange(count, dtype=np.int64), 'value': np.asarray(values, dtype=np.float64)})
