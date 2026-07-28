@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.0-alpha.29](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.28...v0.0.0-alpha.29) (2026-07-28)
+
+
+### Performance
+
+* compute variable labels arithmetically when the mask factors ([#178](https://github.com/FBumann/farkas/issues/178)) ([5d4745f](https://github.com/FBumann/farkas/commit/5d4745ff81179cf5f65afba4ffdc97b46829803f))
+
 ## [0.0.0-alpha.28](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.27...v0.0.0-alpha.28) (2026-07-28)
 
 
