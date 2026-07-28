@@ -103,11 +103,31 @@ def build(data: dict) -> linopy.Model:
     return m
 
 
+def shadow_prices(m: linopy.Model, name: str, dim: str) -> dict[str, list]:
+    """The dual of constraint *name*, tidy.
+
+    Both of this model's constraints are *inequalities*, which is where sign
+    conventions diverge most between implementations — a capacity's shadow
+    price and a demand's carry opposite signs, and getting one backwards still
+    produces a plausible-looking table. Recorded so the port is checked on
+    them rather than only on the objective.
+    """
+    dual = m.constraints[name].dual
+    return {dim: [str(v) for v in dual.indexes[dim]], 'value': [float(v) for v in dual.values]}
+
+
 def main() -> float:
     m = build(json.loads(DATA.read_text()))
-    m.solve(solver_name='highs')
+    status, condition = m.solve(solver_name='highs')
+    # The other references assert this; without it a failed solve prints an
+    # objective of whatever linopy left behind and a dual table read off a
+    # solution that does not exist — recorded as fact in references.json.
+    assert status == 'ok', f'{status}: {condition}'
     print(f'linopy {linopy.__version__}')
     print(f'objective {float(m.objective.value)!r}')
+    print(
+        f'duals {json.dumps({"within_capacity": shadow_prices(m, "within_capacity", "plant"), "meet_demand": shadow_prices(m, "meet_demand", "market")})}'
+    )
     return float(m.objective.value)
 
 

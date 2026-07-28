@@ -1,10 +1,15 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["pypsa==1.2.4", "linopy==0.9.0", "highspy==1.15.1"]
+# dependencies = ["pypsa==1.2.4", "linopy==0.9.0", "pandas>=2.2", "xarray==2026.7.0", "highspy==1.15.1"]
 # # linopy is pinned because PyPSA builds its model *through* it: the
-# # formulation, and so the number, is theirs jointly. Unpinned, a rerun
-# # could resolve a different linopy and no longer be the run recorded.
+# # formulation, and so the number, is theirs jointly. pandas is pinned because
+# # xarray is linopy's data model, so alignment and broadcasting decide which
+# # coefficient lands in which row. pandas is only a floor: it reshapes the
+# # recorded duals and nothing else, and `nodal_prices` spells that reshape
+# # out rather than leaning on `stack()`, whose NA handling changed in 3.0.
+# # Checked: this script emits byte-identical output on pandas 2.3.3 and
+# # 3.0.5, so the floor is a measured claim rather than an assumption.
 # ///
 """Reference for ``pypsa_transport``: PyPSA's own LOPF. See docs/ports.md.
 
@@ -66,11 +71,28 @@ def build(data: dict[str, dict[str, list]]) -> pypsa.Network:
     return n
 
 
+def nodal_prices(n: pypsa.Network) -> dict[str, list]:
+    """PyPSA's marginal price per (snapshot, bus), tidy — the dual of the nodal
+    balance, and the output this community reads most often after the cost.
+
+    Recorded in references.json so the port is checked on a whole *vector*, not
+    just the objective. A sign convention that disagreed would be invisible to
+    a scalar comparison and wrong in every reported price.
+    """
+    mp = n.buses_t.marginal_price
+    return {
+        'snapshot': [s for s in mp.index for _ in mp.columns],
+        'bus': [b for _ in mp.index for b in mp.columns],
+        'value': [float(v) for row in mp.to_numpy() for v in row],
+    }
+
+
 def main() -> float:
     n = build(json.loads(DATA.read_text()))
     n.optimize(solver_name='highs')
     print(f'pypsa {pypsa.__version__}')
     print(f'objective {float(n.objective)!r}')
+    print(f'duals {json.dumps({"nodal_balance": nodal_prices(n)})}')
     return float(n.objective)
 
 

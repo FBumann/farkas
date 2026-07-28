@@ -2,22 +2,257 @@
   "pypsa_cyclic_storage": {
     "objective": 17228.77962151063,
     "rtol": 1e-09,
-    "provenance": "pypsa 1.2.4 (its own linopy 0.9.0), via examples/ports/references/pypsa_cyclic_storage.py"
+    "provenance": "pypsa 1.2.4 (its own linopy 0.9.0), via examples/ports/references/pypsa_cyclic_storage.py",
+    "duals": {
+      "nodal_balance": {
+        "snapshot": [
+          0,
+          0,
+          0,
+          1,
+          1,
+          1,
+          2,
+          2,
+          2,
+          3,
+          3,
+          3
+        ],
+        "bus": [
+          "north",
+          "mid",
+          "south",
+          "north",
+          "mid",
+          "south",
+          "north",
+          "mid",
+          "south",
+          "north",
+          "mid",
+          "south"
+        ],
+        "value": [
+          44.503024585160105,
+          44.503024585160105,
+          44.503024585160105,
+          55.496975414839895,
+          55.496975414839895,
+          55.496975414839895,
+          55.94200566069149,
+          55.94200566069149,
+          55.94200566069149,
+          44.05799433930851,
+          44.05799433930851,
+          44.05799433930851
+        ]
+      }
+    }
+  },
+  "pypsa_kvl": {
+    "objective": 17000.0,
+    "rtol": 1e-09,
+    "provenance": "pypsa 1.2.4 (its own linopy 0.9.0), via examples/ports/references/pypsa_kvl.py",
+    "duals": {
+      "nodal_balance": {
+        "snapshot": [
+          0,
+          0,
+          0,
+          1,
+          1,
+          1,
+          2,
+          2,
+          2,
+          3,
+          3,
+          3
+        ],
+        "bus": [
+          "north",
+          "mid",
+          "south",
+          "north",
+          "mid",
+          "south",
+          "north",
+          "mid",
+          "south",
+          "north",
+          "mid",
+          "south"
+        ],
+        "value": [
+          50.0,
+          50.0,
+          50.0,
+          50.0,
+          50.0,
+          50.0,
+          50.0,
+          50.0,
+          50.0,
+          50.0,
+          50.0,
+          50.0
+        ]
+      }
+    }
   },
   "pypsa_ramp": {
     "objective": 18200.0,
     "rtol": 1e-09,
-    "provenance": "pypsa 1.2.4 (its own linopy 0.9.0), via examples/ports/references/pypsa_ramp.py"
+    "provenance": "pypsa 1.2.4 (its own linopy 0.9.0), via examples/ports/references/pypsa_ramp.py",
+    "duals": {
+      "nodal_balance": {
+        "snapshot": [
+          0,
+          0,
+          0,
+          1,
+          1,
+          1,
+          2,
+          2,
+          2,
+          3,
+          3,
+          3
+        ],
+        "bus": [
+          "north",
+          "mid",
+          "south",
+          "north",
+          "mid",
+          "south",
+          "north",
+          "mid",
+          "south",
+          "north",
+          "mid",
+          "south"
+        ],
+        "value": [
+          20.0,
+          20.0,
+          20.0,
+          80.0,
+          80.0,
+          80.0,
+          80.0,
+          80.0,
+          80.0,
+          20.0,
+          20.0,
+          20.0
+        ]
+      }
+    }
   },
   "pypsa_storage": {
     "objective": 15253.178322993519,
     "rtol": 1e-09,
-    "provenance": "pypsa 1.2.4 (its own linopy 0.9.0), via examples/ports/references/pypsa_storage.py"
+    "provenance": "pypsa 1.2.4 (its own linopy 0.9.0), via examples/ports/references/pypsa_storage.py",
+    "duals": {
+      "nodal_balance": {
+        "snapshot": [
+          0,
+          0,
+          0,
+          1,
+          1,
+          1,
+          2,
+          2,
+          2,
+          3,
+          3,
+          3
+        ],
+        "bus": [
+          "north",
+          "mid",
+          "south",
+          "north",
+          "mid",
+          "south",
+          "north",
+          "mid",
+          "south",
+          "north",
+          "mid",
+          "south"
+        ],
+        "value": [
+          44.503024585160105,
+          44.503024585160105,
+          44.503024585160105,
+          55.496975414839895,
+          55.496975414839895,
+          55.496975414839895,
+          56.05755092408071,
+          56.05755092408071,
+          56.05755092408071,
+          43.94244907591929,
+          43.94244907591929,
+          43.94244907591929
+        ]
+      }
+    }
   },
   "pypsa_transport": {
     "objective": 22000.0,
     "rtol": 1e-09,
-    "provenance": "pypsa 1.2.4 (its own linopy 0.9.0), via examples/ports/references/pypsa_transport.py"
+    "provenance": "pypsa 1.2.4 (its own linopy 0.9.0), via examples/ports/references/pypsa_transport.py",
+    "duals": {
+      "nodal_balance": {
+        "snapshot": [
+          0,
+          0,
+          0,
+          1,
+          1,
+          1,
+          2,
+          2,
+          2,
+          3,
+          3,
+          3
+        ],
+        "bus": [
+          "north",
+          "mid",
+          "south",
+          "north",
+          "mid",
+          "south",
+          "north",
+          "mid",
+          "south",
+          "north",
+          "mid",
+          "south"
+        ],
+        "value": [
+          -0.0,
+          50.0,
+          80.0,
+          -0.0,
+          50.0,
+          80.0,
+          -0.0,
+          50.0,
+          80.0,
+          -0.0,
+          50.0,
+          80.0
+        ]
+      }
+    }
   },
   "pypsa_unit_commitment": {
     "objective": 24900.0,
@@ -28,6 +263,30 @@
     "objective": 153.675,
     "rtol": 1e-09,
     "provenance": "published with GAMS model library #1 (trnsport), after Dantzig, Linear Programming and Extensions (1963) ch. 3.3",
-    "corroborated_by": "examples/ports/references/transport_dantzig.py — the same LP hand-written in linopy 0.9.0, which reaches 153.675 independently. Secondary: the published figure is what verifies the port."
+    "corroborated_by": "examples/ports/references/transport_dantzig.py — the same LP hand-written in linopy 0.9.0, which reaches 153.675 independently. Secondary: the published figure is what verifies the port.",
+    "duals": {
+      "within_capacity": {
+        "plant": [
+          "seattle",
+          "san-diego"
+        ],
+        "value": [
+          -0.0,
+          -0.0
+        ]
+      },
+      "meet_demand": {
+        "market": [
+          "new-york",
+          "chicago",
+          "topeka"
+        ],
+        "value": [
+          0.225,
+          0.153,
+          0.12599999999999997
+        ]
+      }
+    }
   }
 }
