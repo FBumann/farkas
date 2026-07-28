@@ -18,6 +18,10 @@ readable?** · **does it get the right answer?**
 | [PyPSA LOPF rung 4](pypsa_cyclic_storage.md) ✔ | rung 3 with the horizon closed on itself |
 | [PyPSA LOPF rung 5](pypsa_kvl.md) ✔ | passive AC lines under Kirchhoff's voltage law |
 | [PyPSA unit commitment](pypsa_unit_commitment.md) ✔ | which units are *on* — the corpus's MILP |
+| [Dantzig, economies of scale](transport_pwl.md) ✔ | GAMS `trnspwl` — piecewise `sqrt` shipping cost |
+| [Stigler's diet](stigler_diet.md) ✔ | the cheapest year of food — where LP started |
+| [Facility location](facility_location.md) ✔ | OR-Library `cap71` — which warehouses to open |
+| [Travelling salesman](tsp_mtz.md) ✔ | TSPLIB `gr17`, MTZ — yes, it fits |
 
 ## Does it get the right answer?
 
@@ -36,6 +40,10 @@ modeller did not intend, which passes every farkas-against-farkas test green.
 | [PyPSA LOPF rung 4](pypsa_cyclic_storage.md) | PyPSA 1.2.4, running its own linopy | 17228.77962151063 |
 | [PyPSA LOPF rung 5](pypsa_kvl.md) | PyPSA 1.2.4, running its own linopy | 17000.0 |
 | [PyPSA unit commitment](pypsa_unit_commitment.md) | PyPSA 1.2.4, running its own linopy | 24900.0 |
+| [Dantzig, economies of scale](transport_pwl.md) | linopy 0.9.0's own piecewise formulation | 8.786852757777865 |
+| [Stigler's diet](stigler_diet.md) | linopy 0.9.0; corroborated by Laderman (1947), $39.69/yr | 0.10866227820675685 |
+| [Facility location](facility_location.md) | **published** by OR-Library (`cap71`) | 932615.750 |
+| [Travelling salesman](tsp_mtz.md) | **published** by TSPLIB (`gr17`) | 2085 |
 
 **The objective is not the only thing checked.** Every port that has a dual
 solution also records the reference's **shadow prices** and is asserted against
@@ -67,21 +75,28 @@ drift from what the engine builds. Regenerate with
 | [storage](storage.md) | · | **✓** | · | **✓** | · | **✓** | · | · |
 | [transport](transport.md) | · | · | **✓** | · | · | **✓** | · | · |
 | [walkthrough](walkthrough.md) | · | **✓** | · | · | **✓** | **✓** | · | · |
+| [facility_location](facility_location.md) | **✔** 932616 | **✓** | · | · | · | **✓** | · | **✓** |
 | [pypsa_cyclic_storage](pypsa_cyclic_storage.md) | **✔** 17228.8 | · | **✓** | **✓** | **✓** | **✓** | · | · |
 | [pypsa_kvl](pypsa_kvl.md) | **✔** 17000 | **✓** | **✓** | · | · | **✓** | · | · |
 | [pypsa_ramp](pypsa_ramp.md) | **✔** 18200 | · | **✓** | **✓** | **✓** | **✓** | · | · |
 | [pypsa_storage](pypsa_storage.md) | **✔** 15253.2 | · | **✓** | **✓** | **✓** | **✓** | · | · |
 | [pypsa_transport](pypsa_transport.md) | **✔** 22000 | · | **✓** | · | · | **✓** | · | · |
 | [pypsa_unit_commitment](pypsa_unit_commitment.md) | **✔** 24900 | **✓** | · | **✓** | **✓** | **✓** | · | **✓** |
+| [stigler_diet](stigler_diet.md) | **✔** 0.108662 | **✓** | · | · | · | **✓** | · | · |
 | [transport_dantzig](transport_dantzig.md) | **✔** 153.675 | **✓** | · | · | · | **✓** | · | · |
+| [transport_pwl](transport_pwl.md) | **✔** 8.78685 | **✓** | · | **✓** | · | **✓** | **✓** | **✓** |
+| [tsp_mtz](tsp_mtz.md) | **✔** 2085 | **✓** | **✓** | · | **✓** | **✓** | · | **✓** |
 <!-- constructs:end -->
 
-**One hole left, and it is the point of showing the table.** `piecewise` is the
-only construct with no externally verified model behind it. `roll / shift` was
-closed by [ramp limits](pypsa_ramp.md) and integrality by
-[unit commitment](pypsa_unit_commitment.md); both were named here as gaps
-before they were filled, which is what the column is for.
+**No holes left.** Every construct in the table now has at least one model
+behind it whose optimum came from somebody else. The column was worth keeping
+precisely because it named each gap out loud before it was filled: `roll /
+shift` went first ([ramp limits](pypsa_ramp.md)), then integrality
+([unit commitment](pypsa_unit_commitment.md)), and `piecewise` last
+([economies of scale](transport_pwl.md)).
 
-Every column is a construct that works and is tested. What the table shows is
-which ones have been checked against **somebody else's** answer — and for
-`piecewise`, the honest answer is still *not yet*.
+That is a floor, not a ceiling. A tick means *one* verified model exercises the
+construct — not that every shape of it is covered, and not that the constructs
+are exercised in combination. The table's job from here is to stay honest as
+the language grows, which is why it is generated from the resolved plan rather
+than maintained by hand.

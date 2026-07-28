@@ -20,6 +20,10 @@ suite green. This is the net for that class, and the evidence behind
 | [PyPSA LOPF rung 4](models/pypsa_cyclic_storage.md) | PyPSA 1.2.4, its own linopy 0.9.0 | 17228.77962151063 |
 | [PyPSA LOPF rung 5](models/pypsa_kvl.md) | PyPSA 1.2.4, its own linopy 0.9.0 | 17000.0 |
 | [PyPSA unit commitment](models/pypsa_unit_commitment.md) | PyPSA 1.2.4, its own linopy 0.9.0 | 24900.0 |
+| [Dantzig, economies of scale](models/transport_pwl.md) | linopy 0.9.0's own piecewise formulation | 8.786852757777865 |
+| [Stigler's diet](models/stigler_diet.md) | linopy 0.9.0; corroborated by Laderman (1947) | 0.10866227820675685 |
+| [Facility location](models/facility_location.md) | **published** by OR-Library (`cap71`) | 932615.750 |
+| [Travelling salesman, MTZ](models/tsp_mtz.md) | **published** by TSPLIB (`gr17`) | 2085 |
 
 Adding one is four files and five rules:
 [CONTRIBUTING.md](../CONTRIBUTING.md#adding-a-ported-model).
@@ -69,6 +73,7 @@ Feeds [docs/ROADMAP.md](ROADMAP.md), with the verdict
 |---|---|---|---|
 | PyPSA rung 1 | a bound of `-rating` — PyPSA's `p_min_pu = -1` | shipping `neg_rating` as data | **primitive**: bounds as expressions, [#31](https://github.com/FBumann/farkas/issues/31). A second model asking for it |
 | PyPSA unit commitment | `min_up_time` — a unit that starts must stay up for *T* snapshots | left at 0, so the constraint is not written | **split verdict**, below |
+| Travelling salesman | subtour cuts **generated lazily** inside branch-and-cut, which is how every serious TSP code works | [MTZ](models/tsp_mtz.md), O(n²) and static | **refused, and correctly**: a solve loop is an algorithm, not a model |
 
 `min_up_time` is the more interesting row, because the answer depends on
 something the language cares about. The constraint is
@@ -81,8 +86,26 @@ is refused by design rather than unimplemented. The two halves of that answer
 are worth keeping apart: one is a macro nobody has written, the other is the
 ceiling doing its job.
 
-Two rows from four ports — a rate worth watching once the corpus has hit the
+Three rows from eleven ports — a rate worth watching once the corpus has hit the
 ceiling a few more times.
+
+**The TSP row is the one to read**, and it is narrower than it first looked.
+Writing DFJ's subtour rows out in full *is* sayable — the subsets go in as data
+exactly the way [KVL's cycle basis](models/pypsa_kvl.md) does, and an 8-city
+instance with all 246 subsets solves to a correct tour. There are 2ⁿ of them, so
+it stops being practical around twenty cities, but that is a data-size wall
+rather than a ceiling.
+
+What is genuinely outside is *lazy* generation: solve, find the violated
+subsets, add rows, re-solve. That is an algorithm, and this language describes
+models. Since lazy generation is what every serious TSP code actually does,
+"farkas can express TSP" and "farkas is a good way to solve a large TSP" are
+different sentences and only the first is true.
+
+An earlier draft of this ledger said DFJ was refused for having a
+data-dependent row count. That was wrong — the cycle basis has one too — and
+the corpus is where it got caught.
+
 
 ---
 

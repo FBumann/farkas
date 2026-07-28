@@ -1,0 +1,51 @@
+# Uncapacitated facility location, OR-Library instance `cap71`: 16 possible
+# warehouses, 50 customers. Open a set of warehouses and assign every customer
+# to one, trading fixed opening costs against the cost of serving from further
+# away. Optimum 932615.750, published by OR-Library. See docs/ports.md.
+
+dimensions:
+  warehouse:
+    dtype: str
+  customer:
+    dtype: str
+
+parameters:
+  fixed_cost:
+    dims: [warehouse]
+  # what it costs to serve all of this customer's demand from this warehouse
+  serve_cost:
+    dims: [warehouse, customer]
+
+variables:
+  # is this warehouse open? The only integrality in the model — `serve` comes
+  # out integral on its own, which is the point of writing the linking
+  # constraint per (warehouse, customer) rather than aggregated.
+  is_open:
+    foreach: [warehouse]
+    binary: true
+  serve:
+    foreach: [warehouse, customer]
+    bounds:
+      lower: 0
+      upper: 1
+
+constraints:
+  every_customer_served:
+    foreach: [customer]
+    equations:
+      - expression: sum(serve, over=warehouse) == 1
+
+  # A closed warehouse serves nobody. Written per pair — the "strong"
+  # formulation — because summing it over customers instead would give a valid
+  # but much weaker relaxation, and the LP bound is what makes this instance
+  # solve at all.
+  only_from_open_warehouses:
+    foreach: [warehouse, customer]
+    equations:
+      - expression: serve - is_open <= 0
+
+objectives:
+  total_cost:
+    sense: minimize
+    equations:
+      - expression: is_open * fixed_cost + serve * serve_cost

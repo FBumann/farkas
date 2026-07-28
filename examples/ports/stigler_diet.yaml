@@ -1,0 +1,41 @@
+# Stigler's diet problem (1945): the cheapest set of foods meeting a year's
+# nutritional minimums. Laderman solved it in 1947 on desk calculators as the
+# first serious test of the simplex method — nine clerks, about 120 man-days,
+# for an annual cost of $39.69. See docs/ports.md.
+#
+# Stigler's table is normalised per dollar spent, so a variable is *money on a
+# food per day* rather than a quantity, and the objective is simply the total.
+
+dimensions:
+  food:
+    dtype: str
+  nutrient:
+    dtype: str
+
+parameters:
+  # How much of each nutrient a dollar of each food buys. Sparse on purpose:
+  # a food supplying none of a nutrient has no row, which is how this language
+  # spells absence everywhere. 570 of the 693 cells are non-zero.
+  nutrient_per_dollar:
+    dims: [food, nutrient]
+  daily_minimum:
+    dims: [nutrient]
+
+variables:
+  # dollars per day spent on this food
+  spend:
+    foreach: [food]
+    bounds:
+      lower: 0
+
+constraints:
+  meet_requirement:
+    foreach: [nutrient]
+    equations:
+      - expression: sum(spend * nutrient_per_dollar, over=food) >= daily_minimum
+
+objectives:
+  total_cost:
+    sense: minimize
+    equations:
+      - expression: spend
