@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>farkas — engine scaling</title>
+<title>farkas — how the engine scales</title>
 <style>*{box-sizing:border-box}body{margin:0}</style>
 </head>
 <body>
@@ -11,43 +11,42 @@
 <div class="viz-root">
 
 <header>
-  <h1>polars, duckdb, linopy — how each one scales</h1>
+  <h1>farkas against linopy — how the engine scales</h1>
   <p class="lede">
     Build a model and hand it to HiGHS, with <code>run()</code> never called. Every
     point is one process, best of three, on an idle machine. The parity gate passed on
-    all six models: the three engines agree on the objective to <code>0.0e+00</code>
-    relative (<code>fleet</code> to 4.6e-16).
+    all six models: the two lanes agree on the objective to <code>0.0e+00</code>
+    relative (<code>fleet</code> to 4.6e-16), so nothing here is fast because it built
+    a different model.
   </p>
 </header>
 
 <section>
-  <h2>Is the ordering robust to model shape?</h2>
+  <h2>Does the advantage hold whatever the model looks like?</h2>
   <p class="note">
-    Each engine against <b>linopy on the same model and rung</b>, so linopy is the flat
-    1.0 line. The line is the median across the six benchmark models; the band is the
-    full min–max envelope. Below 1.0 is faster (left) or lighter (right). <b>Where the
-    bands do not overlap, the ordering does not depend on which model you picked.</b>
+    Against <b>linopy on the same model and rung</b>, so linopy is the flat 1.0 line.
+    The line is the median across the six benchmark models; the band is the full
+    min–max envelope. Below 1.0 is faster (left) or lighter (right). <b>A band clear
+    of 1.0 is a result that does not depend on which model you picked.</b>
   </p>
   <div class="grid2">
     <figure><figcaption>Wall time ÷ linopy</figcaption><div id="band-wall" class="plot"></div></figure>
     <figure><figcaption>Peak RSS ÷ linopy</figcaption><div id="band-peak" class="plot"></div></figure>
   </div>
   <p class="note">
-    <b>On time the answer is robust.</b> The two bands do not overlap at any rung:
-    polars' worst model is faster than duckdb's best one at <code>xs</code>
-    (0.15 against 0.21), <code>s</code> (0.18 / 0.32), <code>m</code> (0.50 / 0.72)
-    and <code>l</code> (1.09 / 1.12). Whichever of the six you picked, the ordering
-    would be the same. polars is also below linopy everywhere except
-    <code>profiled/l</code>; duckdb crosses above linopy from <code>m</code> up.
+    <b>On time the band clears 1.0 at every rung but one.</b> The worst model at
+    <code>xs</code> is 0.15x and the median 0.08x; by <code>l</code> the band has
+    widened to 0.30–1.09x, and its top edge is <code>profiled</code> — the one case
+    where linopy finishes ahead. The advantage is largest where the model is small,
+    which is the shape a rolling horizon rebuilds.
   </p>
   <p class="note">
-    <b>On memory it is not.</b> Against linopy the two bands overlap at every rung, so
-    by that reference neither engine is decisively lighter. It only resolves engine to
-    engine: at <code>l</code>, duckdb is lighter on all six models, by 1.29x
-    (<code>profiled</code>, <code>transport</code>) to 1.49x (<code>dispatch</code>).
-    That is the gap the choice actually costs, and it is a range rather than a number
-    because the polars band is genuinely wide — <code>sector</code> is 0.32x of
-    linopy's peak and <code>dispatch</code> 0.95x, on the same rung.
+    <b>On memory the band straddles 1.0 and the spread is the story.</b> At
+    <code>l</code>, <code>sector</code> is 0.32x of linopy's peak and
+    <code>dispatch</code> 0.95x — a threefold difference between two models at the
+    same rung. Sparsity is what separates them: a coordinate that does not exist is
+    an absent row here and a NaN in a dense array there, so the gap tracks how much
+    of the product a model actually uses rather than how large it is.
   </p>
 </section>
 
@@ -55,21 +54,21 @@
   <h2>Past the ladder — <code>dispatch</code> out to 120M variables</h2>
   <p class="note">
     Log–log, so a straight line is a power law and its slope is the exponent. The 40M
-    and 120M rungs are past anything the ladder covers. duckdb is drawn twice, at its
-    1 GB default and unbounded — <b>the two lie on top of each other on time</b>, which
-    answers whether the budget was costing it speed.
+    and 120M rungs are past anything the ladder covers — a 9.97 GB LP file on a 26 GB
+    machine.
   </p>
   <div class="grid2">
     <figure><figcaption>Wall time (s)</figcaption><div id="scale-wall" class="plot"></div></figure>
     <figure><figcaption>Peak RSS (GB)</figcaption><div id="scale-peak" class="plot"></div></figure>
   </div>
   <p class="note">
-    At 120M variables polars builds and loads in <b>35 s against linopy's 106 s and
-    duckdb's 75 s</b>, and the gap widens with size rather than closing: linopy's curve
-    steepens above 10M, duckdb's above 40M, polars' does not. The right panel is where
-    duckdb earns its keep — at 120M it holds <b>2.1 GB</b> against polars' 8.3 GB, and
-    that 2.1 GB is a number you <i>set</i> rather than one you measure. Unbounded, the
-    same run takes 5.3 GB: the budget is doing real work, and it is not costing time.
+    <b>Nothing falls over, and the gap widens rather than closes</b> — at 120M this
+    lane builds and loads in 35 s against linopy's 106, where at 10M it was 1.1 against
+    1.5. linopy's curve steepens above 10M and this one does not. Peak is the axis
+    where there is no advantage left to find: 8.3 GB against 7.8, because past a
+    certain size both lanes are holding the same model and the representation stops
+    mattering. <i>The 2xl rung is noisy between runs — 8–10 GB of peak on a 26 GB
+    machine is where other things start to matter. Read the ordering, not the seconds.</i>
   </p>
 </section>
 
@@ -89,8 +88,7 @@
     most distinct variables and the most per-variable arithmetic of the six, which is
     the shape a dense array suits best and a frame least; it is also the noisiest case
     here, reading 2.33 s to 2.84 s across repeats at ~4 GB resident. <code>sector</code>
-    is the opposite end: sparse, and the one model where the peak gap against linopy is
-    threefold.
+    is the opposite end: sparse, and the one model where the peak gap is threefold.
   </p>
 </section>
 
@@ -104,16 +102,18 @@
     <button class="ctl2" data-rung="0">xs</button>
   </div>
   <div class="scroller"><table id="numbers"></table></div>
-  <p class="note">Bold is the best of the three on that model and metric.</p>
+  <p class="note">Bold is the better of the two on that model and metric.</p>
 </section>
 
 <footer>
   <p class="note">
-    Harness <code>bench/run.py</code>; the six models live in <code>bench/models/</code>.
-    The duckdb arm is the <code>v0.0.0-alpha.26</code> checkout, run under its own
-    interpreter but driven by this same harness, so the two engines are measured by one
-    stopwatch. Full method, the LP-file sink, and the marginal-cost pass are in
-    <code>docs/benchmarks.md</code>.
+    Harness <code>bench/run.py</code>; the six models live in <code>bench/models/</code>;
+    the numbers on this page come from <code>bench/results/</code> via
+    <code>bench.plot</code>, which rewrites one line of it. Full method, the LP-file
+    sink and the marginal-cost pass are in <code>docs/benchmarks.md</code>. The
+    three-engine comparison this page used to carry — against the duckdb engine that
+    preceded this one — is in <a href="https://github.com/FBumann/farkas/pull/189">#189</a>
+    and in git.
   </p>
 </footer>
 
@@ -197,12 +197,12 @@
 </style>
 
 <script>
-const DATA = {"scaling": {"vars": [10000, 100000, 1000000, 10000000, 40000000, 120000000], "wall": {"polars": [0.015, 0.027, 0.128, 1.123, 5.989, 35.358], "linopy": [0.21, 0.218, 0.34, 1.538, 8.805, 106.226], "duckdb": [0.051, 0.136, 0.424, 2.872, 22.967, 74.569], "duckdb@1GB": [0.052, 0.137, 0.404, 2.833, 20.405, 80.846]}, "peak": {"polars": [0.17, 0.212, 0.468, 2.04, 5.978, 8.301], "linopy": [0.214, 0.261, 0.564, 2.134, 7.922, 7.775], "duckdb": [0.156, 0.181, 0.296, 0.76, 2.0, 5.278], "duckdb@1GB": [0.156, 0.179, 0.314, 0.739, 1.383, 2.112]}}, "cases": {"dispatch": {"vars": [10000, 100000, 1000000, 10000000], "wall": {"polars": [0.017, 0.022, 0.084, 0.687], "linopy": [0.207, 0.219, 0.374, 1.93], "duckdb": [0.053, 0.105, 0.405, 2.771]}, "peak": {"polars": [0.168, 0.208, 0.52, 3.127], "linopy": [0.201, 0.229, 0.495, 3.304], "duckdb": [0.161, 0.192, 0.458, 2.101]}}, "fleet": {"vars": [12000, 120000, 1200000, 12000000], "wall": {"polars": [0.044, 0.057, 0.177, 1.481], "linopy": [0.288, 0.322, 0.578, 3.404], "duckdb": [0.09, 0.182, 0.946, 5.857]}, "peak": {"polars": [0.174, 0.231, 0.653, 3.764], "linopy": [0.203, 0.246, 0.703, 4.871], "duckdb": [0.172, 0.221, 0.633, 2.656]}}, "nodal": {"vars": [3000, 30000, 300000, 3000000], "wall": {"polars": [0.017, 0.02, 0.048, 0.491], "linopy": [0.213, 0.232, 0.298, 1.339], "duckdb": [0.052, 0.078, 0.28, 2.577]}, "peak": {"polars": [0.167, 0.186, 0.333, 1.42], "linopy": [0.202, 0.213, 0.352, 1.709], "duckdb": [0.162, 0.175, 0.276, 0.964]}}, "profiled": {"vars": [12000, 120000, 1200000, 12000000], "wall": {"polars": [0.022, 0.044, 0.228, 2.843], "linopy": [0.286, 0.281, 0.459, 2.613], "duckdb": [0.061, 0.191, 1.028, 8.095]}, "peak": {"polars": [0.174, 0.261, 0.836, 4.114], "linopy": [0.205, 0.247, 0.642, 4.73], "duckdb": [0.165, 0.213, 0.584, 3.189]}}, "sector": {"vars": [1000, 10000, 100000, 1000000], "wall": {"polars": [0.02, 0.025, 0.049, 0.38], "linopy": [0.225, 0.232, 0.333, 1.248], "duckdb": [0.054, 0.074, 0.241, 1.399]}, "peak": {"polars": [0.168, 0.19, 0.342, 0.946], "linopy": [0.203, 0.22, 0.493, 2.978], "duckdb": [0.162, 0.169, 0.218, 0.675]}}, "transport": {"vars": [9800, 98000, 980000, 9800000], "wall": {"polars": [0.024, 0.035, 0.142, 1.552], "linopy": [0.243, 0.26, 0.469, 2.61], "duckdb": [0.067, 0.132, 0.585, 4.093]}, "peak": {"polars": [0.174, 0.221, 0.596, 3.089], "linopy": [0.204, 0.234, 0.565, 3.952], "duckdb": [0.171, 0.205, 0.528, 2.394]}}}, "caseNames": ["dispatch", "fleet", "nodal", "profiled", "sector", "transport"], "rungs": ["xs", "s", "m", "l"]};
+const DATA = {"scaling": {"vars": [10000, 100000, 1000000, 10000000, 40000000, 120000000], "wall": {"polars": [0.015, 0.027, 0.128, 1.123, 5.989, 35.358], "linopy": [0.21, 0.218, 0.34, 1.538, 8.805, 106.226]}, "peak": {"polars": [0.17, 0.212, 0.468, 2.04, 5.978, 8.301], "linopy": [0.214, 0.261, 0.564, 2.134, 7.922, 7.775]}}, "cases": {"dispatch": {"vars": [10000, 100000, 1000000, 10000000], "wall": {"polars": [0.017, 0.022, 0.084, 0.687], "linopy": [0.207, 0.219, 0.374, 1.93]}, "peak": {"polars": [0.168, 0.208, 0.52, 3.127], "linopy": [0.201, 0.229, 0.495, 3.304]}}, "fleet": {"vars": [12000, 120000, 1200000, 12000000], "wall": {"polars": [0.044, 0.057, 0.177, 1.481], "linopy": [0.288, 0.322, 0.578, 3.404]}, "peak": {"polars": [0.174, 0.231, 0.653, 3.764], "linopy": [0.203, 0.246, 0.703, 4.871]}}, "nodal": {"vars": [3000, 30000, 300000, 3000000], "wall": {"polars": [0.017, 0.02, 0.048, 0.491], "linopy": [0.213, 0.232, 0.298, 1.339]}, "peak": {"polars": [0.167, 0.186, 0.333, 1.42], "linopy": [0.202, 0.213, 0.352, 1.709]}}, "profiled": {"vars": [12000, 120000, 1200000, 12000000], "wall": {"polars": [0.022, 0.044, 0.228, 2.843], "linopy": [0.286, 0.281, 0.459, 2.613]}, "peak": {"polars": [0.174, 0.261, 0.836, 4.114], "linopy": [0.205, 0.247, 0.642, 4.73]}}, "sector": {"vars": [1000, 10000, 100000, 1000000], "wall": {"polars": [0.02, 0.025, 0.049, 0.38], "linopy": [0.225, 0.232, 0.333, 1.248]}, "peak": {"polars": [0.168, 0.19, 0.342, 0.946], "linopy": [0.203, 0.22, 0.493, 2.978]}}, "transport": {"vars": [9800, 98000, 980000, 9800000], "wall": {"polars": [0.024, 0.035, 0.142, 1.552], "linopy": [0.243, 0.26, 0.469, 2.61]}, "peak": {"polars": [0.174, 0.221, 0.596, 3.089], "linopy": [0.204, 0.234, 0.565, 3.952]}}}, "caseNames": ["dispatch", "fleet", "nodal", "profiled", "sector", "transport"], "rungs": ["xs", "s", "m", "l"]};
 
-/* Three categorical slots, validated all-pairs in both modes (worst CVD dE 9.2
-   light / 9.4 dark, worst normal-vision 24.0 / 20.9). duckdb's two budget
-   settings share slot 3 and separate by dash, so a fourth hue is never needed. */
-const COLOR = { polars: 'var(--s1)', linopy: 'var(--s2)', duckdb: 'var(--s3)', 'duckdb@1GB': 'var(--s3)' };
+/* Two categorical slots, validated all-pairs in both modes (worst CVD dE 24.7
+   light / 26.8 dark, worst normal-vision 33.6 / 31.8, both clear of the surface
+   contrast floor). */
+const COLOR = { polars: 'var(--s1)', linopy: 'var(--s2)' };
 const NS = 'http://www.w3.org/2000/svg';
 const el = (n, a = {}) => { const e = document.createElementNS(NS, n);
   for (const k in a) e.setAttribute(k, a[k]); return e; };
@@ -353,7 +353,7 @@ function legend(host, entries) {
   host.parentNode.insertBefore(d, host);
 }
 
-const ENGINES = ['polars', 'duckdb'];
+const ENGINES = ['polars'];
 const med = a => { const s = a.slice().sort((x, y) => x - y);
   return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2; };
 
@@ -369,17 +369,16 @@ function bandChart(host, metric) {
       raw[eng].push(r);
       mid.push([i, med(r)]); env.push([i, Math.min(...r), Math.max(...r)]);
     });
-    series.push({ name: eng, pts: mid }); bands.push({ name: eng, pts: env });
+    series.push({ name: eng, label: 'farkas', pts: mid }); bands.push({ name: eng, pts: env });
   }
   series.push({ name: 'linopy', label: 'linopy', pts: DATA.rungs.map((_, i) => [i, 1]) });
-  legend(host, [{ name: 'polars', label: 'polars' }, { name: 'duckdb', label: 'duckdb' },
-    { name: 'linopy', label: 'linopy = 1.0' }]);
+  legend(host, [{ name: 'polars', label: 'farkas' }, { name: 'linopy', label: 'linopy = 1.0' }]);
   chart(host, {
     series, bands, logY: true, xTicks: DATA.rungs, xLabel: 'ladder rung',
     fmtY: v => (v < 1 ? v.toFixed(v < 0.1 ? 2 : 1) : v.toFixed(0)) + 'x',
     fmtTip: v => v.toFixed(2) + 'x',
     tipTitle: i => `rung ${DATA.rungs[i]} — median of 6, band = min–max`,
-    aria: `${metric} relative to linopy across six models, min to max band per engine`,
+    aria: `${metric} relative to linopy across six models, min to max band`,
   });
 }
 
@@ -387,11 +386,9 @@ function scaleChart(host, metric) {
   const V = DATA.scaling.vars;
   const mk = (n, label, dash, dy) => ({ name: n, label, dash, dy,
     pts: V.map((v, i) => [v, DATA.scaling[metric][n][i]]) });
-  legend(host, [{ name: 'polars', label: 'polars' }, { name: 'linopy', label: 'linopy' },
-    { name: 'duckdb', label: 'duckdb @ 1 GB' }, { name: 'duckdb@1GB', label: 'duckdb unbounded', dash: true }]);
+  legend(host, [{ name: 'polars', label: 'farkas' }, { name: 'linopy', label: 'linopy' }]);
   chart(host, {
-    series: [mk('polars', 'polars'), mk('linopy', 'linopy'),
-      mk('duckdb', 'duckdb @ 1 GB'), mk('duckdb@1GB', 'duckdb unbounded', true)],
+    series: [mk('polars', 'farkas'), mk('linopy', 'linopy')],
     logX: true, logY: true, xLabel: 'variables', directLabels: false,
     fmtY: metric === 'wall'
       ? (v => v < 1 ? (v * 1000).toFixed(0) + ' ms' : v.toFixed(0) + ' s')
@@ -414,7 +411,7 @@ function facets(metric) {
     fig.appendChild(p); host.appendChild(fig);
     const d = DATA.cases[c];
     chart(p, {
-      series: ['polars', 'linopy', 'duckdb'].map(n => ({ name: n,
+      series: ['polars', 'linopy'].map(n => ({ name: n,
         pts: d.vars.map((v, i) => [v, d[metric][n][i]]) })),
       logX: true, logY: true, xLabel: 'variables',
       W: 330, H: 235, font: 12, directLabels: false,
@@ -423,15 +420,15 @@ function facets(metric) {
         : (v => v + ' GB'),
       fmtTip: metric === 'wall' ? fmtS : fmtG,
       tipTitle: i => `${c} — ${fmtX(d.vars[i])} variables`,
-      aria: `${c}: ${metric} against model size, three engines`,
+      aria: `${c}: ${metric} against model size`,
     });
   }
 }
 
 function numbers(rung) {
-  const cols = ['polars', 'linopy', 'duckdb'];
-  let html = '<thead><tr><th></th><th></th><th colspan="3">wall time</th>' +
-    '<th colspan="3">peak RSS</th></tr><tr><th>model</th><th>variables</th>' +
+  const cols = ['polars', 'linopy'];
+  let html = '<thead><tr><th></th><th></th><th colspan="2">wall time</th>' +
+    '<th colspan="2">peak RSS</th></tr><tr><th>model</th><th>variables</th>' +
     cols.concat(cols).map(h => `<th>${h}</th>`).join('') + '</tr></thead><tbody>';
   for (const c of DATA.caseNames) {
     const d = DATA.cases[c];
@@ -445,8 +442,7 @@ function numbers(rung) {
 }
 
 document.getElementById('facet-legend').innerHTML = legendHTML(
-  [{ name: 'polars', label: 'polars' }, { name: 'linopy', label: 'linopy' },
-   { name: 'duckdb', label: 'duckdb' }]);
+  [{ name: 'polars', label: 'farkas' }, { name: 'linopy', label: 'linopy' }]);
 
 bandChart(document.getElementById('band-wall'), 'wall');
 bandChart(document.getElementById('band-peak'), 'peak');

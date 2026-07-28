@@ -18,24 +18,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-ARMS = ('farkas', 'linopy', 'duckdb')
+ARMS = ('farkas', 'linopy')
 
-
-#: A budgeted arm is `duckdb@1GB`, and how many of them a run has is the run's
-#: choice (`--duckdb-limits`), so the columns are read off the results rather
-#: than listed here. `duckdb` alone is the unbounded engine; a run that measured
-#: both gets both columns, because collapsing them would publish a `duckdb`
-#: number that is neither setting.
-def arms_in(rows: dict[Key, Row]) -> tuple[str, ...]:
-    budgeted = sorted({a for _, _, _, a in rows if '@' in a})
-    return (*ARMS, *budgeted)
-
-
-#: The ratio columns are against linopy, which is the arm both engines are
-#: being judged against. `duckdb` is the engine this branch replaces, so its
-#: column is the one that says whether the replacement was worth making — but
-#: it is only present when the run was given a checkout to produce it from,
-#: and a case that checkout does not carry has no row rather than a lost one.
+#: The ratio columns are farkas ÷ linopy: the eager lane is what this one is
+#: judged against, and the only arm still measured.
 _RATIO_AGAINST = 'linopy'
 
 
@@ -121,7 +107,7 @@ _SEAM = {
 
 
 def table(case: str, rows: dict[Key, Row], sink: str = 'lp') -> str:
-    cols = arms_in(rows)
+    cols = ARMS
     head = (
         ['variables', 'live', 'rows']
         + [f'wall: {a}' for a in cols]
@@ -196,12 +182,10 @@ def marginal(loop_rows: list[Row]) -> str:
         'Build only, repeated in one process. **first** is what a caller pays who '
         'builds one model and solves it; **steady** is what every model after the '
         'first costs in a rolling horizon. Every lane does lazy first-call work '
-        'that a loop never pays again — ~180 ms of it on the eager lane, ~21 ms '
-        'on duckdb, ~4 ms here.',
+        'that a loop never pays again — ~180 ms of it on the eager lane, ~4 ms here.',
         '',
-        '| case | vars | farkas: first | farkas: steady | linopy: first | linopy: steady '
-        '| duckdb: first | duckdb: steady | steady vs linopy |',
-        '|---|---|---|---|---|---|---|---|---|',
+        '| case | vars | farkas: first | farkas: steady | linopy: first | linopy: steady | steady vs linopy |',
+        '|---|---|---|---|---|---|',
     ]
     seen = sorted(
         {(c, s) for c, s, _ in best},
@@ -209,7 +193,6 @@ def marginal(loop_rows: list[Row]) -> str:
     )
     for case, size in seen:
         ours, eager = best.get((case, size, 'farkas')), best.get((case, size, 'linopy'))
-        duck = best.get((case, size, 'duckdb'))
         if not ours or not eager:
             continue
         lines.append(
@@ -222,8 +205,6 @@ def marginal(loop_rows: list[Row]) -> str:
                     f'**{ours["steady_build_seconds"] * 1000:.1f} ms**',
                     f'{eager["first_build_seconds"] * 1000:.1f} ms',
                     f'{eager["steady_build_seconds"] * 1000:.1f} ms',
-                    f'{duck["first_build_seconds"] * 1000:.1f} ms' if duck else '—',
-                    f'{duck["steady_build_seconds"] * 1000:.1f} ms' if duck else '—',
                     _ratio(ours['steady_build_seconds'], eager['steady_build_seconds']),
                 ]
             )
@@ -242,7 +223,7 @@ def density(rows: dict[Key, Row]) -> str:
     cases = [c for c in sorted({c for c, _, _, _ in rows}) if sizes_of(c, rows, 'lp', density=True)]
     if not cases:
         return ''
-    cols = arms_in(rows)
+    cols = ARMS
     head = (
         ['case', 'live', 'variables']
         + [f'wall: {a}' for a in cols]

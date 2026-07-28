@@ -9,12 +9,9 @@ claim nobody can re-run is a claim with a shelf life.
 # every rung docs/benchmarks.md publishes. The size ladder and the mask sweep
 # go to separate files: a run REPLACES its results file rather than adding to
 # it, and the report takes as many files as you give it
-uv run python -m bench.run --sizes xs s m l \
-    --arms farkas linopy duckdb --duckdb-limits none 1GB \
-    --duckdb-root ../farkas-main --repeat 3
-uv run python -m bench.run --sizes d100 d50 d25 d08 --skip-gate \
-    --arms farkas linopy duckdb --duckdb-limits none 1GB \
-    --duckdb-root ../farkas-main --repeat 3 --out bench/results/density.jsonl
+uv run python -m bench.run --sizes xs s m l --repeat 3
+uv run python -m bench.run --sizes d100 d50 d25 d08 --skip-gate --repeat 3 \
+    --out bench/results/density.jsonl
 
 uv run python -m bench.report bench/results/latest.jsonl \
     bench/results/density.jsonl                             # -> markdown
@@ -72,30 +69,6 @@ than a rival dialect.
 Not measured, deliberately: solve time (that is HiGHS, identical either way, and
 it would swamp the build), and anything about expressiveness.
 
-## The third arm
-
-`duckdb` is the engine this branch replaces, and the comparison that says
-whether replacing it was worth doing. It cannot be imported here — it is not on
-this branch — so the arm **runs a different checkout's own code**: that
-checkout's interpreter, its `bench/_run_case.py`, its engine. Nothing about
-duckdb is reimplemented on this side; `--duckdb-root` is a path and the rest is
-`subprocess`.
-
-It is an arm rather than a second ladder run for one reason: **interleaving**.
-Two runs are two machine states, and this harness has already been caught out
-by that twice — a baseline block still warming up, and a run contaminated by a
-concurrent job. Interleaved, every arm of a row sees the same load. It also
-buys two things a spliced pair cannot:
-
-- **One parquet cache**, passed to both checkouts with `--cache`, so all three
-  arms build byte-identical models rather than two datasets that ought to
-  match.
-- **A parity gate across all three.** duckdb, polars and linopy must agree on
-  the objective before anything is timed.
-
-A case the foreign checkout does not carry — `sector` postdates it — is
-announced and skipped, never rendered as a row that arm lost.
-
 ## Why it is built this way
 
 **One process per measurement.** Peak RSS is a property of a process. A second
@@ -151,12 +124,12 @@ materialisation to `to_polars()` inside `to_file` — its `build` allocates dens
 arrays and little else. Compare totals, and read the phases as attribution
 within an arm.
 
-**Peak RSS is the whole cost, now that there is no scratch on disk.** The
-duckdb engine traded RAM for a workdir, so a peak-RSS win could hide a
-multi-gigabyte temp file and the harness recorded `workdir_bytes` to stop it.
-Neither arm writes anything but the LP file today, so that field is gone rather
-than left reading zero — a column that is always 0 is read as "measured and
-fine", which is the same failure in the other direction. Restore it in
+**Peak RSS is the whole cost, because nothing spills to disk.** An engine that
+traded RAM for a workdir could show a peak-RSS win while holding a
+multi-gigabyte temp file, and the harness once recorded `workdir_bytes` to stop
+that. Neither arm writes anything but the LP file now, so that field is gone
+rather than left reading zero — a column that is always 0 reads as "measured
+and fine", which is the same failure in the other direction. Restore it in
 `_run_case.py` if a sink ever spills again.
 
 **Failures are results.** A run that dies is written to the JSONL with the
