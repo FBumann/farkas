@@ -95,8 +95,13 @@ def test_the_guide_teaches_lines_that_exist() -> None:
     no tutorial. Only expressions and `where` clauses are checked: the
     dimension blocks are deliberately written in the compact form to be read,
     not to be pasted.
+
+    The corpus is ``constructs.models()`` — the same list the gallery and the
+    matrix are built from — rather than a glob of ``examples/*.yaml``, which
+    silently excluded the two ports one directory down. A guide line taken
+    from a port would have failed here for not existing.
     """
-    models = [p.read_text().split('\n') for p in (GUIDE.parent.parent / 'examples').glob('*.yaml')]
+    models = [path.read_text().split('\n') for _, path in constructs.models()]
     for line in (m.group(0).strip() for m in _TAUGHT.finditer(GUIDE.read_text())):
         assert any(line == other.strip() for model in models for other in model), (
             f'docs/guide.md teaches a line no example model contains:\n  {line}'

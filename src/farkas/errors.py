@@ -22,7 +22,7 @@ One gap, on purpose: ``schema.py``'s field validators keep raising plain
 would not survive the trip.
 
 Deliberately dependency-free: the relational engine imports this module and
-nothing else from the package (ARCHITECTURE.md, hard rule 2).
+nothing else from the package (docs/ARCHITECTURE.md, hard rule 2).
 """
 
 from __future__ import annotations

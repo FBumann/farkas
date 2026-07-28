@@ -6,7 +6,7 @@ These tests import linopy and compare, so a divergence — ours drifting, or a
 linopy release moving — fails here instead of being discovered by a user who
 knows one vocabulary and is handed another.
 
-The engine itself never imports linopy (ARCHITECTURE.md, hard rule 2). Tests
+The engine itself never imports linopy (docs/ARCHITECTURE.md, hard rule 2). Tests
 may, and this is the same oracle arrangement the differential tests use for
 the math.
 """

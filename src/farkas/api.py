@@ -5,7 +5,7 @@ models, and the logical plan is internal (a stable plan-construction API may
 come later). This module's job is exactly three verbs: ``build`` (YAML +
 sources → live executor), ``solve``, and ``write``.
 
-This is the product path (ARCHITECTURE.md). The language is validated at load
+This is the product path (docs/ARCHITECTURE.md). The language is validated at load
 time, lowered to the plan — anything outside the streaming subset raises
 :class:`~farkas.errors.LanguageError` naming the construct — and executed
 relationally.
@@ -160,7 +160,7 @@ def write(
             ex.write_lp(out)
         return out
     if suffix == '.mps':
-        msg = 'the mps sink is planned but not implemented yet (ARCHITECTURE.md, sinks)'
+        msg = 'the mps sink is planned but not implemented yet (docs/ARCHITECTURE.md, sinks)'
         raise NotImplementedError(msg)
     msg = f"unsupported output format '{suffix}' — supported: .lp (planned: .mps)"
     raise ValueError(msg)

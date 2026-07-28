@@ -16,7 +16,7 @@ parameters:
   cost: {dims: [generator]}
 
 # Tier 2 — free composition. Neither block survives past expansion.py, so no
-# backend ever sees them (ARCHITECTURE.md, hard rule 1).
+# backend ever sees them (docs/ARCHITECTURE.md, hard rule 1).
 expressions:
   total_supply: sum(p, over=generator)
 

@@ -14,7 +14,7 @@ module exists for two narrow jobs:
 
 Two functions, and they are **pure producers**: YAML goes in, a model comes
 out, and nothing is retained. No accessor, no session, no state on the model.
-A file's meaning never depends on what was loaded before it (ARCHITECTURE.md,
+A file's meaning never depends on what was loaded before it (docs/ARCHITECTURE.md,
 hard rule 5), so every file declares the parameters it uses and the caller
 supplies their data per call::
 

@@ -63,7 +63,7 @@ Both arms read the same parquet files and end at the same seam — an LP file on
 disk, or a populated `highspy.Highs` — so the comparison is one language, one
 destination, two engines. The linopy arm is the right
 comparison and the only one worth making first: it accepts *exactly* the same
-YAML (ARCHITECTURE.md hard rule 3), which is what makes it the oracle rather
+YAML (docs/ARCHITECTURE.md hard rule 3), which is what makes it the oracle rather
 than a rival dialect.
 
 Not measured, deliberately: solve time (that is HiGHS, identical either way, and
@@ -150,7 +150,7 @@ wall time and is usually the honest half of a before/after claim.
 
 ## The cases
 
-Chosen so each stresses a *different* SQL shape (ARCHITECTURE.md, "read the
+Chosen so each stresses a *different* SQL shape (docs/ARCHITECTURE.md, "read the
 verdict off the SQL"), not to cover the language:
 
 | case | shape | why |
