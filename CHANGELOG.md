@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.0-alpha.32](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.31...v0.0.0-alpha.32) (2026-07-28)
+
+
+### Features
+
+* **compat:** answer linopy's v1 convention where the position knows the answer ([#236](https://github.com/FBumann/farkas/issues/236)) ([facee3f](https://github.com/FBumann/farkas/commit/facee3f250096724de20ffd6e0aa215dd8eb6534)), closes [#8](https://github.com/FBumann/farkas/issues/8)
+
 ## [0.0.0-alpha.31](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.30...v0.0.0-alpha.31) (2026-07-28)
 
 
