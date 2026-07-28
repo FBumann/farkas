@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.0.1-alpha.1](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.33...v0.0.1-alpha.1) (2026-07-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* rebuild the relational engine on polars ([#189](https://github.com/FBumann/farkas/issues/189))
+
+### Features
+
+* rebuild the relational engine on polars ([#189](https://github.com/FBumann/farkas/issues/189)) ([c11a0dd](https://github.com/FBumann/farkas/commit/c11a0dd3e8ed58bf8c1a8ea9b79961733e381eb1))
+
+
+### Chores
+
+* re-cut as 0.0.1-alpha.1, and refresh the chart page from the results ([#250](https://github.com/FBumann/farkas/issues/250)) ([f62d434](https://github.com/FBumann/farkas/commit/f62d43446f21267a1655283ae3467fdae420ad51))
+
 ## [0.0.0-alpha.33](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.32...v0.0.0-alpha.33) (2026-07-28)
 
 
