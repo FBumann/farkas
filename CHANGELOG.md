@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.10](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.9...v0.0.1-alpha.10) (2026-07-28)
+
+
+### Documentation
+
+* publish the site with mkdocs-material ([#283](https://github.com/FBumann/farkas/issues/283)) ([1ec55ac](https://github.com/FBumann/farkas/commit/1ec55ac5af2467ba0cfec58cafc7d84b6cddc467))
+
 ## [0.0.1-alpha.9](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.8...v0.0.1-alpha.9) (2026-07-28)
 
 
