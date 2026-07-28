@@ -1,0 +1,182 @@
+# PyPSA unit commitment
+
+Which generators are *on*, not just how much they produce — a binary per generator per snapshot, with start-up and shut-down charges.
+
+> **✔ Verified against pypsa 1.2.4 (its own linopy 0.9.0)** — objective **24900**, matched to `rtol=1e-09`.
+
+**The corpus's MILP entry.** Every other verified model is a pure continuous
+LP; this one carries integrality, which is what the gallery's construct matrix
+had no verified example of. One bus and no network, deliberately: a model that
+fails to match should implicate one feature, and here that feature is
+commitment.
+
+`min_up_time` and `min_down_time` are left at 0. They need a rolling window sum
+over a horizon, which is a different question from whether the language can say
+commitment at all — see [the ledger](../ports.md#ledger--what-a-port-could-not-say).
+
+## The model
+
+```yaml
+# PyPSA unit commitment: binary status per generator per snapshot, with
+# start-up and shut-down charges. Optimum 24900.0, from PyPSA itself.
+# See docs/ports.md.
+
+dimensions:
+  snapshot:
+    dtype: int
+  generator:
+    dtype: str
+
+parameters:
+  p_nom:
+    dims: [generator]
+  marginal_cost:
+    dims: [generator]
+  p_min_pu:
+    dims: [generator]
+  start_up_cost:
+    dims: [generator]
+  shut_down_cost:
+    dims: [generator]
+  load:
+    dims: [snapshot]
+
+variables:
+  p:
+    foreach: [snapshot, generator]
+    bounds:
+      lower: 0
+  # All three are binary in PyPSA. start_up and shut_down are implied by the
+  # transitions below, but PyPSA declares them integral rather than leaving it
+  # to the status variables, and the port matches that.
+  status:
+    foreach: [snapshot, generator]
+    binary: true
+  start_up:
+    foreach: [snapshot, generator]
+    binary: true
+  shut_down:
+    foreach: [snapshot, generator]
+    binary: true
+
+constraints:
+  power_balance:
+    foreach: [snapshot]
+    equations:
+      - expression: sum(p, over=generator) == load
+
+  # A committed unit runs between p_min_pu * p_nom and p_nom; an uncommitted
+  # one is pinned to zero from both sides. `p_nom * status` is a parameter
+  # against a variable, so the product stays degree 1.
+  commitment:
+    foreach: [snapshot, generator]
+    equations:
+      - expression: p - p_nom * status <= 0
+      - expression: p - p_min_pu * p_nom * status >= 0
+
+  # start_up must be 1 on a snapshot where status rises, shut_down where it
+  # falls. The first snapshot has no predecessor, and PyPSA's default is that
+  # the unit was already up before the horizon — so the start-up row is
+  # slackened to -1 there (never binding) while the shut-down row still
+  # charges a unit that begins the horizon off. That asymmetry is PyPSA's, and
+  # it is worth 50 on this instance.
+  transition:
+    foreach: [snapshot, generator]
+    equations:
+      - expression: start_up - status >= -1
+        where: "snapshot == 0"
+      - expression: start_up - status + roll(status, snapshot=1) >= 0
+        where: "snapshot > 0"
+      - expression: shut_down + status >= 1
+        where: "snapshot == 0"
+      - expression: shut_down + status - roll(status, snapshot=1) >= 0
+        where: "snapshot > 0"
+
+objectives:
+  total_cost:
+    sense: minimize
+    equations:
+      - expression: p * marginal_cost + start_up * start_up_cost + shut_down * shut_down_cost
+```
+
+**The first snapshot is not like the others.** PyPSA's default is that a unit
+was already up before the horizon began, so the start-up row is slackened to
+`>= -1` there and never binds, while the shut-down row still charges a unit
+that begins the horizon *off*. `peak` does, so the instance pays a shut-down it
+never visibly performs. That asymmetry is PyPSA's, it is worth 50 here, and
+reproducing it is most of what makes this a fidelity test rather than a
+plausible-looking rewrite.
+
+Two `where` clauses on one constraint block is how the language says "this row
+differs at the boundary" — the same shape [storage](storage.md) uses for its
+initial state of charge.
+
+## What it costs
+
+| | |
+|---|---|
+| energy | `30 × 520 + 90 × 100` = 24600 |
+| start-ups | `peak` at snapshot 1 = 200 |
+| shut-downs | `peak` at snapshot 0 (begins off) and at 3 = 100 |
+| **total** | **24900** |
+
+`base` runs throughout; `peak` covers the two peak snapshots. farkas and PyPSA
+agree on the schedule as well as the cost.
+
+## Side by side
+
+```python
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pandas as pd
+import pypsa
+
+DATA = Path(__file__).resolve().parent.parent / 'data' / 'pypsa_unit_commitment.json'
+
+
+def build(data: dict[str, dict[str, list]]) -> pypsa.Network:
+    """The port's tables as a PyPSA network, column for column."""
+    n = pypsa.Network()
+    n.set_snapshots(data['snapshot']['snapshot'])
+    n.add('Bus', 'bus')
+
+    n.add(
+        'Generator',
+        data['generator']['generator'],
+        bus='bus',
+        committable=True,
+        p_nom=data['p_nom']['value'],
+        marginal_cost=data['marginal_cost']['value'],
+        p_min_pu=data['p_min_pu']['value'],
+        start_up_cost=data['start_up_cost']['value'],
+        shut_down_cost=data['shut_down_cost']['value'],
+    )
+
+    load = pd.Series(data['load']['value'], index=data['load']['snapshot'])
+    n.add('Load', 'load', bus='bus', p_set=load)
+    return n
+
+
+def main() -> float:
+    n = build(json.loads(DATA.read_text()))
+    status, condition = n.optimize(solver_name='highs')
+    assert status == 'ok', f'{status}: {condition}'
+    print(f'pypsa {pypsa.__version__}')
+    print(f'objective {float(n.objective)!r}')
+    print(n.generators_t.p)
+    print(n.generators_t.status)
+    return float(n.objective)
+
+
+if __name__ == '__main__':
+    main()
+```
+
+## What it exercises
+
+`binary` variables and the integrality path through to HiGHS, `roll` across a
+boundary condition, and a three-term objective mixing an energy cost with two
+transition charges.
