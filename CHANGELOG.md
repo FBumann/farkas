@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.0-alpha.31](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.30...v0.0.0-alpha.31) (2026-07-28)
+
+
+### Documentation
+
+* alpha.30 credited a perf fix it does not contain ([#230](https://github.com/FBumann/farkas/issues/230)) ([5afb004](https://github.com/FBumann/farkas/commit/5afb004cfb5ede08b0a203bde47f19ec54607476))
+
 ## [0.0.0-alpha.30](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.29...v0.0.0-alpha.30) (2026-07-28)
 
 
