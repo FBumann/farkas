@@ -37,7 +37,7 @@ from farkas.relational.plan import (
 )
 from farkas.schema import MathSchema
 from tests.conftest import solve_lp_file
-from tests.differential import RTOL
+from tests.differential import RTOL, differential
 from tests.oracle import linopy, pd, transport_eager_objective, xr
 
 # ---------------------------------------------------------------------------
@@ -668,3 +668,126 @@ def test_chunk_ranges_are_contiguous_gapless_and_cover_everything(total, budget,
     if total:
         widest = max(hi - lo for lo, hi in got)
         assert widest * max(1.0, width) <= max(budget, max(1.0, width)), 'a chunk exceeded the budget'
+
+
+SPARSE_COEFFICIENT_MODEL = {
+    'dimensions': {'t': {'dtype': 'int', 'values': [0, 1, 2]}},
+    'parameters': {'c': {'dims': ['t']}, 'w': {'dims': ['t']}},
+    'variables': {'x': {'foreach': ['t'], 'bounds': {'lower': 0, 'upper': 10}}},
+    'constraints': {'cap': {'foreach': ['t'], 'equations': [{'expression': 'w * x <= c'}]}},
+    'objectives': {'o': {'sense': 'maximize', 'equations': [{'expression': 'sum(x, over=t)'}]}},
+}
+
+
+def test_a_parameter_covering_a_subset_of_its_dims_means_zero_on_both_lanes():
+    """A tidy parameter table is a compressed dense array, not a record of absence.
+
+    Supplying rows only where a coefficient is nonzero is the language's own
+    sparsity idiom (SPEC §8, "sparse data gives sparse variables"), and the
+    relational lane has always read an uncovered coordinate as zero — the
+    constant fragments are left-joined and filled. The eager lane got the same
+    answer only by accident of legacy linopy's implicit NaN fill; under the v1
+    convention a NaN in a user constant is refused outright (§5), because from
+    inside linopy a deliberate absence and a data error look identical.
+
+    The disambiguation is positional and only this side knows it, so it is made
+    at the use site: zero in a coefficient, still-NaN in ``bounds:`` (where it
+    raises, since unbounded is not bounded-at-zero) and in a ``where`` (where it
+    reads false, which is what §6's bare name means).
+
+    Both lanes are asserted here rather than the fill alone: the point is not
+    that we fill, it is that the two agree about what a missing row meant.
+    """
+    data = {
+        # no row at t=0 for either: the coefficient and the bound are both sparse
+        'w': pd.Series({1: 1.0, 2: 1.0}),
+        'c': pd.Series({1: 4.0, 2: 5.0}),
+    }
+    with differential(SPARSE_COEFFICIENT_MODEL, data, lp=True) as run:
+        # t=0 carries `0 * x <= 0` — a row that exists and constrains nothing,
+        # which is what a zero coefficient and a zero right-hand side mean.
+        assert run.result.objective == pytest.approx(10.0 + 4.0 + 5.0, rel=RTOL)
+
+
+ABSENT_VARIABLE_MODEL = {
+    'dimensions': {'f': {'values': ['a', 'b']}},
+    'parameters': {'gate': {'dims': ['f'], 'dtype': 'bool'}, 'relmax': {'dims': ['f']}, 'cost': {'dims': ['f']}},
+    'variables': {
+        'x': {'foreach': ['f'], 'bounds': {'lower': 0, 'upper': 100}},
+        'size': {'foreach': ['f'], 'where': 'gate', 'bounds': {'lower': 0, 'upper': 50}},
+    },
+    'constraints': {'envelope': {'foreach': ['f'], 'equations': [{'expression': 'x - relmax * size <= 0'}]}},
+    'objectives': {'total': {'sense': 'maximize', 'equations': [{'expression': 'sum(x * cost, over=f)'}]}},
+}
+
+
+def test_a_term_whose_variable_is_absent_drops_the_row_on_both_lanes():
+    """Absence propagates into the comparison; it does not zero the term.
+
+    ``x - relmax * size <= 0`` where ``size`` is masked out used to build
+    ``x <= 0`` — a row that silently pinned the flow to zero. Plausible answer,
+    no error, which is goal 1 of linopy's v1 convention ("no silent wrong
+    answers") and the whole of PyPSA/linopy#712. Under §6 the slot is absent and
+    §12 drops the row instead, so ``x`` is left free at ``f=b`` and bounded only
+    by its own declaration.
+
+    The oracle is the point: the eager lane gets this from linopy's own v1
+    semantics, the relational lane from carrying variable presence apart from
+    the term stream. Two independent implementations, one answer.
+    """
+    data = {
+        'gate': pd.Series({'a': True}),
+        'relmax': pd.Series({'a': 0.5, 'b': 0.5}),
+        'cost': pd.Series({'a': 1.0, 'b': 1.0}),
+    }
+    with differential(ABSENT_VARIABLE_MODEL, data, lp=True) as run:
+        # one call, then zip: `primal` is a label join and does not promise row order,
+        # so reading it twice and pairing the columns can mismatch them.
+        solved = run.result.primal('x')
+        x = dict(zip(solved['f'], solved['value'], strict=True))
+        assert x['a'] == pytest.approx(25.0, rel=RTOL), 'sized: x <= 0.5 * size, size <= 50'
+        assert x['b'] == pytest.approx(100.0, rel=RTOL), 'unsized: the row is gone, so only the bound holds'
+
+
+DEFINED_MODEL = {
+    'dimensions': {'f': {'values': ['a', 'b']}},
+    'parameters': {'gate': {'dims': ['f'], 'dtype': 'bool'}, 'relmax': {'dims': ['f']}, 'cost': {'dims': ['f']}},
+    'variables': {
+        'x': {'foreach': ['f'], 'bounds': {'lower': 0, 'upper': 100}},
+        'size': {'foreach': ['f'], 'where': 'gate', 'bounds': {'lower': 0, 'upper': 50}},
+    },
+    'constraints': {
+        'envelope': {
+            'foreach': ['f'],
+            'equations': [
+                {'expression': 'x - relmax * size <= 0', 'where': 'size'},
+                {'expression': 'x <= 0', 'where': 'NOT size'},
+            ],
+        }
+    },
+    'objectives': {'total': {'sense': 'maximize', 'equations': [{'expression': 'sum(x * cost, over=f)'}]}},
+}
+
+
+def test_a_bare_variable_name_in_a_where_asks_whether_it_exists():
+    """The escape hatch for a language where absence drops the row.
+
+    Since a term whose variable is absent takes the row with it, a model that
+    wanted the *other* reading — keep the row, treat the term as zero — needs a
+    way to say which coordinates those are. A bare parameter name in a ``where``
+    already asks "does this have a value here"; a bare variable name asks "does
+    this exist here", and the two complementary clauses spell out both cases.
+
+    Without it the only way to write this is a parameter mirroring the
+    variable's own mask, which is two sources for one fact and drifts.
+    """
+    data = {
+        'gate': pd.Series({'a': True}),
+        'relmax': pd.Series({'a': 0.5, 'b': 0.5}),
+        'cost': pd.Series({'a': 1.0, 'b': 1.0}),
+    }
+    with differential(DEFINED_MODEL, data, lp=True) as run:
+        solved = run.result.primal('x')
+        x = dict(zip(solved['f'], solved['value'], strict=True))
+        assert x['a'] == pytest.approx(25.0, rel=RTOL), 'sized: the envelope binds'
+        assert x['b'] == pytest.approx(0.0, abs=1e-9), 'unsized: the complementary clause pins it'

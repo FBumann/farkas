@@ -54,6 +54,18 @@ class ParameterDefinedNode:
 
 
 @dataclass
+class VariableDefinedNode:
+    """True at the coordinates where the named variable exists.
+
+    The variable counterpart of :class:`ParameterDefinedNode`, and spelled the
+    same way — a bare name. A parameter's bare name asks whether it has a value
+    here; a variable's asks whether it exists here.
+    """
+
+    name: str
+
+
+@dataclass
 class ParameterComparisonNode:
     """Compare a parameter against a literal, element-wise."""
 
@@ -97,6 +109,7 @@ WhereNode = (
     | UnresolvedNameNode
     | UnresolvedComparisonNode
     | ParameterDefinedNode
+    | VariableDefinedNode
     | ParameterComparisonNode
     | DimensionComparisonNode
     | NotNode

@@ -50,8 +50,14 @@ dependencies = [
 # The relational engine never imports them, and `dev` installs this extra by
 # name rather than repeating it — one place for the pins, so what CI tests the
 # lane against is what a user of the extra gets.
+#
+# The lower bound is 0.8, not 0.9, because the v1 arithmetic convention this
+# lane requires is not in a release yet: PyPSA/linopy#717 branches from 0.8.x
+# and reports a 0.8 dev version. `[tool.uv.sources]` below is what actually
+# resolves it for development and CI. When v1 ships, this becomes an ordinary
+# floor on the release that carries it and the source pin goes away.
 linopy = [
-    "linopy>=0.9.0,<0.10",
+    "linopy>=0.8.0.post1.dev0",
     "xarray>=2024.2.0",
     # also what `Result.to_pandas` / `to_dataarray` need. Declared here rather
     # than as a runtime dependency: pandas is a bridge out of the engine, not
@@ -191,3 +197,12 @@ unresolvable-dunder-all = true
 untyped-import = true
 unused-ignore = true
 variance-mismatch = true
+
+# The v1 arithmetic convention is not released. farkas's eager lane is written
+# against it — absence propagates and drops a constraint row rather than being
+# filled with zero — so the oracle is only an oracle on a linopy that speaks it.
+# Pinned by branch rather than by rev deliberately: this is tracking active
+# upstream work, and a stale rev would quietly measure us against a spec that
+# has since moved. Removed once v1 ships.
+[tool.uv.sources]
+linopy = { git = "https://github.com/PyPSA/linopy", branch = "feat/arithmetic-convention" }

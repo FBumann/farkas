@@ -46,6 +46,7 @@ from farkas.where_parser import (
     ParameterDefinedNode,
     UnresolvedComparisonNode,
     UnresolvedNameNode,
+    VariableDefinedNode,
     WhereNode,
     parse_where,
 )
@@ -137,12 +138,12 @@ def expression_of(text: str, schema: MathSchema, ns: Namespace, context: str) ->
     return resolved
 
 
-def where_of(text: str | None, ns: Namespace, context: str) -> WhereNode | None:
+def where_of(text: str | None, ns: Namespace, context: str, self_variable: str | None = None) -> WhereNode | None:
     """Parse and resolve a where string; ``None`` stays ``None``."""
     if text is None:
         return None
     errors: list[str] = []
-    resolved = resolve_where(parse_where(text), ns, context, errors)
+    resolved = resolve_where(parse_where(text), ns, context, errors, self_variable)
     if errors:
         raise LanguageError('\n'.join(errors))
     return resolved
@@ -322,6 +323,7 @@ def resolve_where(
     ns: Namespace,
     context: str,
     errors: list[str],
+    self_variable: str | None = None,
 ) -> WhereNode | None:
     """Rewrite a parsed where AST into typed predicates.
 
@@ -331,15 +333,17 @@ def resolve_where(
     eager lane, which silently produced an empty model.
     """
     before = len(errors)
-    resolved = _resolve_where(node, ns, context, errors)
+    resolved = _resolve_where(node, ns, context, errors, self_variable)
     return None if len(errors) > before else resolved
 
 
-def _resolve_where(node: WhereNode, ns: Namespace, context: str, errors: list[str]) -> WhereNode:
+def _resolve_where(
+    node: WhereNode, ns: Namespace, context: str, errors: list[str], self_variable: str | None = None
+) -> WhereNode:
     if isinstance(node, BooleanLiteralNode):
         return node
 
-    if isinstance(node, (ParameterComparisonNode, DimensionComparisonNode, ParameterDefinedNode)):
+    if isinstance(node, (ParameterComparisonNode, DimensionComparisonNode, ParameterDefinedNode, VariableDefinedNode)):
         return node  # already resolved
 
     if isinstance(node, UnresolvedNameNode):
@@ -354,12 +358,14 @@ def _resolve_where(node: WhereNode, ns: Namespace, context: str, errors: list[st
                 )
                 return node
             case 'variable':
-                errors.append(
-                    f"{context}: where references variable '{node.name}'. A where "
-                    f'mask is built before variables exist — it may test parameters '
-                    f'and dimension coordinates only.'
-                )
-                return node
+                if node.name == self_variable:
+                    errors.append(
+                        f"{context}: variable '{node.name}' asks whether it exists in its own "
+                        f'where, which nothing can answer — the mask is what decides where it '
+                        f'exists. Test a parameter, or another variable declared before it.'
+                    )
+                    return node
+                return VariableDefinedNode(node.name)
             case _:
                 errors.append(ns._unknown(node.name, context, allow_dims=True))
                 return node
@@ -400,16 +406,16 @@ def _resolve_where(node: WhereNode, ns: Namespace, context: str, errors: list[st
                 return node
 
     if isinstance(node, NotNode):
-        return NotNode(_resolve_where(node.operand, ns, context, errors))
+        return NotNode(_resolve_where(node.operand, ns, context, errors, self_variable))
     if isinstance(node, AndNode):
         return AndNode(
-            _resolve_where(node.left, ns, context, errors),
-            _resolve_where(node.right, ns, context, errors),
+            _resolve_where(node.left, ns, context, errors, self_variable),
+            _resolve_where(node.right, ns, context, errors, self_variable),
         )
     if isinstance(node, OrNode):
         return OrNode(
-            _resolve_where(node.left, ns, context, errors),
-            _resolve_where(node.right, ns, context, errors),
+            _resolve_where(node.left, ns, context, errors, self_variable),
+            _resolve_where(node.right, ns, context, errors, self_variable),
         )
 
     assert_never(node)
