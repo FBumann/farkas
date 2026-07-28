@@ -117,8 +117,8 @@ flowchart TB
     classDef plan fill:#fdf4e8,stroke:#b7791f,stroke-width:1.5px,stroke-dasharray:5 4,color:#111
     classDef waist fill:#e9edfa,stroke:#4a5fc1,stroke-width:3px,color:#111
     classDef fam fill:#fcfcfb,stroke:#c9c5be,color:#111
-    class Y,R1,R2,R3,C1,C2,A1 built
-    class C3,S1,S2,S3,A2,A3 plan
+    class Y,R1,R2,R3,C1,C2,A1,S1 built
+    class C3,S2,S3,A2,A3 plan
     class AST waist
     class RUN,CHECK,SHOW,ANS fam
 ```
@@ -126,7 +126,11 @@ flowchart TB
 **Solid is what ships today; dashed is what the shape makes cheap.** None of the
 dashed boxes is a rewrite — each reads the same AST the engine reads, so a
 renderer is a tree walk, a check is a pass with no data bound, and a new output
-format is one function in `relational/sinks/`. Two properties carry it: **data
+format is one function in `relational/sinks/`. `latex.py` is that claim cashed:
+a **spike** that typesets any model the lanes can build, in one walk of the
+resolved AST, holding no opinion the lanes do not already hold — including a
+`piecewise:` block, which prints as the λ-formulation it expands to rather than
+as the sugar it was written as. Two properties carry it: **data
 enters at exactly one place**, which is why checking a model costs seconds and
 needs nothing but the file; and the waist is **closed**, which is what the
 ceiling in [Two tiers](#two-tiers-and-the-ceiling) protects — a new consumer is
@@ -401,6 +405,7 @@ native schema merge (#30) is what would force the question.
 | `validation.py` | load-time: parse, expand, resolve, check everything |
 | `piecewise.py` | `piecewise:` → λ-formulation declarations + curvature guard |
 | `api.py` | native entry point: `check` / `solve` / `write`, linopy-free |
+| `latex.py` | **spike** — resolved AST → LaTeX. A reader, not a lane: no model, no data, no plan |
 | `sources.py` | bind runtime data (parquet paths / in-memory tables) to a validated schema |
 | `lowering.py` | core AST → logical plan (defines the relational subset) |
 | `helpers.py` | the closed set of built-in operators: their *names* and *call shapes* — no registry |

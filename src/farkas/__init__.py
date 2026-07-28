@@ -27,6 +27,7 @@ from farkas.errors import (
     PiecewiseExpansionError,
     SchemaError,
 )
+from farkas.latex import to_latex
 from farkas.schema import MathSchema
 
 __all__ = [
@@ -41,6 +42,7 @@ __all__ = [
     'check',
     'load_schema',
     'solve',
+    'to_latex',
     'write',
 ]
 
