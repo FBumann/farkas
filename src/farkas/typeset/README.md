@@ -6,12 +6,13 @@ prints it.
 
 | Module | Role |
 |---|---|
-| `__init__.py` | `typeset` / `to_latex` / `to_typst`, and the `FORMATS` registry |
+| `__init__.py` | `typeset` / `to_latex` / `to_markdown` / `to_typst`, and the `FORMATS` registry |
 | `walk.py` | resolved AST → `Line`s. Every decision about the **math**, written once |
 | `format.py` | the seam: what a format must spell, and the operator vocabulary |
 | `symbols.py` | which symbol a name gets, and the `SymbolTable` sidecar that overrides it |
 | `latex.py` | amsmath — the format that lands in a journal |
 | `typst.py` | Typst — the format that compiles without a toolchain |
+| `markdown.py` | GitHub-flavoured Markdown — LaTeX math, Markdown document layer |
 
 ## The split, and why it is here
 
@@ -45,13 +46,20 @@ Two rules keep it honest:
    syntax decision it should not, or the seam is missing a method — fix that
    rather than special-casing.
 
+`markdown.py` is the cheap case worth knowing about: Markdown has no math of
+its own, so it *forwards* every math method to `LatexFormat` and writes only
+the document layer. Forwarding, not subclassing — inheritance would silently
+absorb any method later added to `LatexFormat`, and since the two differ
+exactly in the document methods, the silent case is a `\paragraph` in a
+Markdown file.
+
 `tests/test_typeset.py` runs the shared expectations against **every** entry in
 `FORMATS`, so a new format inherits the suite. Two of them are the point: every
 operator name is spelled, and no format leaks another's syntax.
 
 ## Verified, not assumed
 
-Both formats are **compiled** in CI, not just string-matched. LaTeX needs a
+LaTeX and Typst are **compiled** in CI, not just string-matched. LaTeX needs a
 two-package apt install; Typst is a pip wheel, so the suite compiles it
 in-process. Structural checks (brace balance, environment nesting,
 `\left`/`\right` pairing) run too — they are what a *generator* gets wrong —

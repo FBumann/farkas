@@ -28,7 +28,7 @@ from farkas.errors import (
     SchemaError,
 )
 from farkas.schema import MathSchema
-from farkas.typeset import SymbolTable, to_latex, to_typst
+from farkas.typeset import SymbolTable, to_latex, to_markdown, to_typst
 
 __all__ = [
     'DataError',
@@ -44,6 +44,7 @@ __all__ = [
     'load_schema',
     'solve',
     'to_latex',
+    'to_markdown',
     'to_typst',
     'write',
 ]

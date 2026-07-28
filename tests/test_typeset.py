@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import farkas as fk
-from farkas.typeset import FORMATS, SymbolTable, to_latex, to_typst, typeset
+from farkas.typeset import FORMATS, SymbolTable, to_latex, to_markdown, to_typst, typeset
 from farkas.typeset.format import OPERATOR_NAMES
 from farkas.typeset.symbols import _derive_name_symbol
 
@@ -158,14 +158,33 @@ def test_an_invalid_model_fails_the_same_way_check_does(fmt: Format):
         typeset(broken, fmt)
 
 
-@EVERY_FORMAT
-def test_no_format_leaks_another_formats_syntax(fmt: Format):
-    """The seam's whole job. A `\\mathcal` in the Typst output means the walk
-    is spelling something instead of asking the format to."""
-    text = '\n'.join(typeset(p, fmt, standalone=True) for p in _examples())
-    for other in (f for f in FORMATS.values() if f is not fmt):
-        fingerprint = other.script('X')
-        assert fingerprint not in text, f'{fingerprint} leaked into the {fmt.suffix} output'
+#: Syntax that could only have come from one family of formats. Markdown is
+#: absent on purpose: it *is* LaTeX math in a Markdown wrapper, and inherits
+#: every math method — so sharing LaTeX's spelling is the design, not a leak.
+_FINGERPRINTS = {
+    'latex': (r'\mathcal{', r'\mathit{', r'\sum_{', r'\begin{align'),
+    'typst': ('cal(', 'italic("', 'sum_(', '#set '),
+}
+
+
+@pytest.mark.parametrize(
+    ('name', 'foreign'),
+    [('latex', 'typst'), ('typst', 'latex'), ('markdown', 'typst')],
+)
+def test_no_format_leaks_another_formats_syntax(name: str, foreign: str):
+    """The seam's whole job. Typst syntax in the LaTeX output means the walk is
+    spelling something itself instead of asking the format to.
+
+    Checking *syntax families* rather than one rendered symbol matters: an
+    earlier version of this test looked for the literal ``\\mathcal{X}``, which
+    no model declares, so it passed without ever reading the output.
+    """
+    text = '\n'.join(typeset(p, FORMATS[name], standalone=True) for p in _examples())
+    assert any(mark in text for mark in _FINGERPRINTS[name if name != 'markdown' else 'latex']), (
+        f'{name} output contains none of its own syntax — is this test still reading anything?'
+    )
+    for mark in _FINGERPRINTS[foreign]:
+        assert mark not in text, f'{foreign} syntax {mark!r} leaked into the {name} output'
 
 
 # ---------------------------------------------------------------------------
@@ -291,6 +310,55 @@ def test_typst_uses_its_own_grouping_and_set_notation():
 def test_typst_group_sum_renders_the_coordinate_map():
     typ = to_typst('examples/transport.yaml', legend=False)
     assert 'sum_(g in cal(G) colon upright("bus")(g) = b) p_(t,g)' in typ
+
+
+# ---------------------------------------------------------------------------
+# Markdown — the one that renders where the docs already live
+# ---------------------------------------------------------------------------
+
+
+def test_markdown_is_latex_math_in_a_markdown_wrapper():
+    """The math is byte-identical to the LaTeX lane's; only the wrapper differs.
+    That is the claim the module makes, so it is the one asserted."""
+    md = to_markdown(DISPATCH, legend=False)
+    assert r'\sum_{g \in \mathcal{G}} p_{t,g}' in md  # same spelling as LaTeX
+    assert '#### Subject to' in md  # different document layer
+    assert r'\begin{align}' not in md
+    assert r'\paragraph' not in md
+
+
+def test_markdown_uses_aligned_because_align_does_not_survive_a_dollar_block():
+    md = to_markdown(DISPATCH, legend=False)
+    assert md.count('$$') % 2 == 0
+    assert r'$$\begin{aligned}' in md
+    assert r'\end{aligned}$$' in md
+
+
+def test_markdown_renders_the_legend_as_a_table():
+    md = to_markdown(DISPATCH)
+    assert '| Symbol | Meaning |' in md
+    assert '| `p_max` over' in md.replace('$p^{\\mathrm{max}}$ ', '')
+
+
+def test_the_gallery_notation_is_reproducible_from_the_model():
+    """`docs/models/dispatch.md` states its math by hand, in symbols a reader of
+    the gallery expects. Those symbols are expressible, so the page *could* be
+    generated — which is the whole argument for this format existing."""
+    md = to_markdown('examples/dispatch.yaml', symbols='examples/symbols/dispatch.yaml', legend=False)
+    for hand_written in (r'p_{s,g}', r'c_{g}', r'\ell_{s}', r'\bar p_{g}'):
+        assert hand_written in md, f'the gallery writes {hand_written}; the generated math does not'
+
+
+def test_the_generated_math_states_the_mask_the_hand_written_math_omits():
+    """Found by writing the comparison above: the gallery's displayed math has
+    no mask, while the prose under it calls `where: "p_max > 0"` the one line
+    worth pausing on. A generated equation cannot drift from its model that way."""
+    page = Path('docs/models/dispatch.md').read_text()
+    hand_written = page.split('$$')[1]
+    assert '>' not in hand_written  # no mask stated
+
+    generated = to_markdown('examples/dispatch.yaml', symbols='examples/symbols/dispatch.yaml', legend=False)
+    assert r'\bar p_{g} > 0' in generated
 
 
 def test_typst_standalone_adds_page_setup():

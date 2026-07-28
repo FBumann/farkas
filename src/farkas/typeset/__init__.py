@@ -28,6 +28,7 @@ Usage::
 
     print(fk.to_latex('model.yaml'))
     print(fk.to_typst('model.yaml', standalone=True))
+    print(fk.to_markdown('model.yaml'))  # renders as-is on GitHub
     print(fk.to_latex('model.yaml', symbols='model.symbols.yaml'))
 
 or from a shell::
@@ -44,6 +45,7 @@ from farkas.api import load_schema
 from farkas.piecewise import expand_piecewise
 from farkas.resolution import Namespace
 from farkas.typeset.latex import LatexFormat
+from farkas.typeset.markdown import MarkdownFormat
 from farkas.typeset.symbols import Symbols, SymbolTable
 from farkas.typeset.typst import TypstFormat
 from farkas.typeset.walk import Walk
@@ -55,10 +57,14 @@ if TYPE_CHECKING:
     from farkas.schema import MathSchema
     from farkas.typeset.format import Format
 
-__all__ = ['FORMATS', 'SymbolTable', 'to_latex', 'to_typst', 'typeset']
+__all__ = ['FORMATS', 'SymbolTable', 'to_latex', 'to_markdown', 'to_typst', 'typeset']
 
 #: Every format, by the name the CLI takes. Adding one is a module plus a row.
-FORMATS: dict[str, Format] = {'latex': LatexFormat(), 'typst': TypstFormat()}
+FORMATS: dict[str, Format] = {
+    'latex': LatexFormat(),
+    'markdown': MarkdownFormat(),
+    'typst': TypstFormat(),
+}
 
 
 def typeset(
@@ -114,3 +120,8 @@ def to_latex(model: str | Path | dict[str, Any] | MathSchema, **options: Any) ->
 def to_typst(model: str | Path | dict[str, Any] | MathSchema, **options: Any) -> str:
     """Render *model* as Typst. See :func:`typeset`."""
     return typeset(model, FORMATS['typst'], **options)
+
+
+def to_markdown(model: str | Path | dict[str, Any] | MathSchema, **options: Any) -> str:
+    """Render *model* as GitHub-flavoured Markdown. See :func:`typeset`."""
+    return typeset(model, FORMATS['markdown'], **options)
