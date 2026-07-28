@@ -1,0 +1,68 @@
+"""Ported models, checked against an optimum that did not come from us.
+
+Every other test here compares farkas against farkas. Even the differential
+harness compares two lanes consuming the *same resolved AST* (hard rule 1), so
+a **shared misreading** — both lanes agreeing on a meaning the modeller did not
+intend — passes the whole suite green. This is the net for that class.
+
+Each expected objective was published with the model or produced by somebody
+else's code; ``examples/ports/references/`` holds the scripts, run out of band,
+and ``references.json`` records what they said. So the corpus needs no oracle
+and no extra dependency: it is linopy-free and pandas-free, and runs on the
+bare-install job. See docs/ports.md.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+from typing import Any
+
+import polars as pl
+import pytest
+
+import farkas as fk
+
+PORTS = Path(__file__).resolve().parent.parent / 'examples' / 'ports'
+PAGE = PORTS.parent.parent / 'docs' / 'ports.md'
+REFERENCES: dict[str, dict[str, Any]] = json.loads((PORTS / 'references.json').read_text())
+
+
+def sources(name: str) -> dict[str, Any]:
+    """One JSON per port: a column-oriented table per name, scalars inline."""
+    data = json.loads((PORTS / 'data' / f'{name}.json').read_text())
+    return {k: pl.DataFrame(v) if isinstance(v, dict) else v for k, v in data.items()}
+
+
+@pytest.fixture(params=sorted(REFERENCES), ids=str)
+def port(request: pytest.FixtureRequest) -> dict[str, Any]:
+    return {'name': request.param, 'model': PORTS / f'{request.param}.yaml'} | REFERENCES[request.param]
+
+
+def test_port_reaches_the_reference_optimum(port: dict[str, Any]) -> None:
+    """The objective, never the primal — ``transport_dantzig`` reaches 153.675
+    at a different vertex than the source prints, so a corpus pinned to a
+    solution would fail on a solver upgrade that broke nothing. ``rtol`` is per
+    port because a published optimum is rounded and a solved one is not."""
+    with fk.solve(port['model'], sources(port['name'])) as solution:
+        assert solution.is_ok, f'{port["name"]} did not solve: {solution.status}'
+        assert solution.objective == pytest.approx(port['objective'], rel=port['rtol']), (
+            f'{port["name"]} disagrees with {port["provenance"]}'
+        )
+
+
+def test_port_is_inside_the_language(port: dict[str, Any]) -> None:
+    """Compiles with no data bound, so a language regression fails separately
+    from a semantics one: this breaks when lowering stops accepting the model,
+    the test above when it lowers and misses the number."""
+    fk.check(port['model'])
+
+
+def test_the_page_shows_the_model_that_runs(port: dict[str, Any]) -> None:
+    """A YAML fence on the page equals the model file, byte for byte — the page
+    is what a reader sees and the file is what CI runs. Copying rather than
+    including is the trade ``linopy/semantics.py`` already makes: a copy is
+    fine when a test asserts it, and rots when nothing does."""
+    fences = re.findall(r'^```yaml\n(.*?)^```', PAGE.read_text(), re.MULTILINE | re.DOTALL)
+    assert port['model'].read_text() in fences, f'{PAGE} has drifted from {port["model"]}'

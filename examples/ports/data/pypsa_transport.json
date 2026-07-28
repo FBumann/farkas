@@ -1,0 +1,11 @@
+{
+  "snapshot": {"snapshot": [0, 1, 2, 3]},
+  "bus": {"bus": ["north", "mid", "south"]},
+  "generator": {"generator": ["wind", "gas", "oil"], "bus": ["north", "mid", "south"]},
+  "link": {"link": ["north_mid", "mid_south"], "from": ["north", "mid"], "to": ["mid", "south"]},
+  "p_nom": {"generator": ["wind", "gas", "oil"], "value": [100.0, 150.0, 80.0]},
+  "marginal_cost": {"generator": ["wind", "gas", "oil"], "value": [0.0, 50.0, 80.0]},
+  "rating": {"link": ["north_mid", "mid_south"], "value": [60.0, 50.0]},
+  "neg_rating": {"link": ["north_mid", "mid_south"], "value": [-60.0, -50.0]},
+  "load": {"snapshot": [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3], "bus": ["north", "north", "north", "north", "mid", "mid", "mid", "mid", "south", "south", "south", "south"], "value": [20.0, 30.0, 25.0, 15.0, 90.0, 120.0, 110.0, 80.0, 60.0, 70.0, 65.0, 55.0]}
+}

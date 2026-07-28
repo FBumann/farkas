@@ -1,0 +1,13 @@
+{
+  "plant": {"plant": ["seattle", "san-diego"]},
+  "market": {"market": ["new-york", "chicago", "topeka"]},
+
+  "capacity": {"plant": ["seattle", "san-diego"], "value": [350, 600]},
+  "demand": {"market": ["new-york", "chicago", "topeka"], "value": [325, 300, 275]},
+  "distance": {
+    "plant": ["seattle", "seattle", "seattle", "san-diego", "san-diego", "san-diego"],
+    "market": ["new-york", "chicago", "topeka", "new-york", "chicago", "topeka"],
+    "value": [2.5, 1.7, 1.8, 2.5, 1.8, 1.4]
+  },
+  "freight": 90.0
+}
