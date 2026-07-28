@@ -23,6 +23,16 @@ if TYPE_CHECKING:
     from farkas.relational.sinks.tables import ModelTables
 
 
+#: Nonzeros per constraint chunk. The stream a chunk sorts is its terms plus a
+#: header and a footer per row, carrying rendered text — so this is the knob
+#: that bounds the writer's peak rather than its speed. Measured on
+#: `transport/l`, chunking at this width takes the constraint section's peak
+#: contribution from +0.88 GB to a fraction of it, for no change in the bytes.
+#: Wider costs memory for nothing; much narrower pays per-chunk overhead on
+#: every range.
+EMIT_BUDGET = 2_000_000
+
+
 def _sink(frame: pl.LazyFrame, f: IO[bytes]) -> None:
     """Append a one-column frame to *f*, one raw line per row.
 
@@ -68,7 +78,12 @@ def write_lp_file(model: ModelTables, path: str | Path) -> None:
         _sink(objective, f)
 
         f.write(b'\ns.t.\n\n')
-        _sink(_constraint_blocks(model), f)
+        # One range at a time. The stream a chunk sorts carries rendered text,
+        # so sorting the whole model at once is what the writer's peak *is*;
+        # ranges are ascending and each is internally sorted, so the bytes are
+        # the same ones #109 pins.
+        for lo, hi in model.row_chunks_by_nonzeros(EMIT_BUDGET):
+            _sink(_constraint_blocks(model, lo, hi), f)
 
         f.write(b'\nbounds\n')
         _sink(bounds, f)
@@ -89,7 +104,7 @@ def write_lp_file(model: ModelTables, path: str | Path) -> None:
 _HEADER, _PLACEHOLDER, _FOOTER = -2, -1, 2**62
 
 
-def _constraint_blocks(model: ModelTables) -> pl.LazyFrame:
+def _constraint_blocks(model: ModelTables, lo: int, hi: int) -> pl.LazyFrame:
     """Every constraint line, as one sorted stream of ``(row, ord, line)``.
 
     One line per output line rather than one block per row: the pieces are
@@ -101,25 +116,22 @@ def _constraint_blocks(model: ModelTables) -> pl.LazyFrame:
     A row with no terms still needs a line a solver can parse, and the anti-join
     is what a group-by gave for free.
     """
-    rows = model.rows.lazy()
+    rows = model.rows.lazy().filter(pl.col('row').is_between(lo, hi, closed='left'))
+    matrix = model.matrix.lazy().filter(pl.col('row').is_between(lo, hi, closed='left'))
     header = rows.select(
         'row',
         pl.lit(_HEADER, dtype=pl.Int64).alias('ord'),
         pl.concat_str(pl.lit('c').alias('c'), _digits(pl.col('row')), pl.lit(':').alias('colon')).alias('line'),
     )
-    placeholder = rows.join(model.matrix.lazy().select('row').unique(), on='row', how='anti').select(
+    placeholder = rows.join(matrix.select('row').unique(), on='row', how='anti').select(
         'row',
         pl.lit(_PLACEHOLDER, dtype=pl.Int64).alias('ord'),
         pl.lit('+0 x0').alias('line'),
     )
-    terms = (
-        model.matrix.lazy()
-        .sort('row', 'col')
-        .select(
-            'row',
-            pl.col('col').cast(pl.Int64).alias('ord'),
-            _term(pl.col('coeff'), pl.col('col')).alias('line'),
-        )
+    terms = matrix.sort('row', 'col').select(
+        'row',
+        pl.col('col').cast(pl.Int64).alias('ord'),
+        _term(pl.col('coeff'), pl.col('col')).alias('line'),
     )
     footer = rows.select(
         'row',
