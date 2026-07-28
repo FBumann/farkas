@@ -45,6 +45,56 @@ Inside the language, and it always was.
 
 ## The model
 
+<!-- math:begin -->
+<details>
+<summary>The same model, as math</summary>
+
+#### Sets
+
+| Symbol | Meaning |
+|---|---|
+| $\mathcal{C}$ | index $c$ --- `city` with $\mathrm{as\_from}: \mathcal{C} \to \mathcal{F},\ \mathrm{as\_to}: \mathcal{C} \to \mathcal{T}$ |
+| $\mathcal{F}$ | index $f$ --- `from_city` |
+| $\mathcal{T}$ | index $t$ --- `to_city` |
+
+#### Parameters
+
+| Symbol | Meaning |
+|---|---|
+| $\mathit{distance}$ | `distance` over $\mathcal{F} \times \mathcal{T}$ |
+| $n$ | `n` (scalar) |
+
+#### Variables
+
+| Symbol | Meaning |
+|---|---|
+| $\mathit{travel}$ | `travel` over $\mathcal{F} \times \mathcal{T}$ |
+| $u$ | `u` over $\mathcal{C}$ |
+
+#### Objective
+
+$$\begin{aligned}
+\text{tour\_length:} \quad & \min & \sum_{f \in \mathcal{F},\ t \in \mathcal{T}} \mathit{travel}_{f,t} \cdot \mathit{distance}_{f,t}
+\end{aligned}$$
+
+#### Subject to
+
+$$\begin{aligned}
+\text{leave\_each\_city\_once:} \quad & \sum_{t \in \mathcal{T}} \mathit{travel}_{f,t} & = 1 && \forall\, f \in \mathcal{F} \\
+\text{enter\_each\_city\_once:} \quad & \sum_{f \in \mathcal{F}} \mathit{travel}_{f,t} & = 1 && \forall\, t \in \mathcal{T} \\
+\text{ordering:} \quad & \sum_{c \in \mathcal{C} \,:\, \mathrm{as\_from}(c) = f} u_{c} - \left( \sum_{c \in \mathcal{C} \,:\, \mathrm{as\_to}(c) = t} u_{c} \right) + n \cdot \mathit{travel}_{f,t} & \le n - 1 && \forall\, f \in \mathcal{F},\ t \in \mathcal{T} \,:\, f \neq \text{c01} \wedge t \neq \text{c01}
+\end{aligned}$$
+
+#### Variable domains
+
+$$\begin{aligned}
+\text{travel:} \quad & \mathit{travel}_{f,t} & \in \{0, 1\} && \forall\, f \in \mathcal{F},\ t \in \mathcal{T} \,:\, \mathit{distance}_{f,t} \text{ is defined} \\
+\text{u:} \quad & 1 \le u_{c} & \le 17 && \forall\, c \in \mathcal{C}
+\end{aligned}$$
+
+</details>
+<!-- math:end -->
+
 ```yaml
 # The travelling salesman problem, MTZ formulation. TSPLIB instance `gr17`:
 # 17 cities, explicit distance matrix, published optimum 2085.

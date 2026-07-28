@@ -29,6 +29,68 @@ The [instance](https://github.com/FBumann/farkas/blob/main/examples/ports/data/t
 
 ## The model
 
+<!-- math:begin -->
+<details>
+<summary>The same model, as math</summary>
+
+#### Sets
+
+| Symbol | Meaning |
+|---|---|
+| $\mathcal{P}$ | index $p$ --- `plant` |
+| $\mathcal{M}$ | index $m$ --- `market` |
+| $\mathcal{B}$ | index $b$ --- `bp` |
+
+#### Parameters
+
+| Symbol | Meaning |
+|---|---|
+| $\mathit{capacity}$ | `capacity` over $\mathcal{P}$ |
+| $\mathit{demand}$ | `demand` over $\mathcal{M}$ |
+| $\mathit{distance}$ | `distance` over $\mathcal{P} \times \mathcal{M}$ |
+| $\mathit{freight}$ | `freight` (scalar) |
+| $\mathit{bp}^{\mathrm{x}}$ | `bp_x` over $\mathcal{B}$ |
+| $\mathit{bp}^{\mathrm{y}}$ | `bp_y` over $\mathcal{B}$ |
+
+#### Variables
+
+| Symbol | Meaning |
+|---|---|
+| $\mathit{shipment}$ | `shipment` over $\mathcal{P} \times \mathcal{M}$ |
+| $\mathit{scaled}$ | `scaled` over $\mathcal{P} \times \mathcal{M}$ |
+| $\mathit{economies\_of\_scale\_lam}$ | `economies_of_scale_lam` over $\mathcal{P} \times \mathcal{M} \times \mathcal{B}$ |
+| $\mathit{economies\_of\_scale\_seg}$ | `economies_of_scale_seg` over $\mathcal{P} \times \mathcal{M} \times \mathcal{B}$ |
+
+#### Objective
+
+$$\begin{aligned}
+\text{total\_cost:} \quad & \min & \sum_{p \in \mathcal{P},\ m \in \mathcal{M}} \frac{\mathit{scaled}_{p,m} \cdot \mathit{distance}_{p,m} \cdot \mathit{freight}}{1000}
+\end{aligned}$$
+
+#### Subject to
+
+$$\begin{aligned}
+\text{within\_capacity:} \quad & \sum_{m \in \mathcal{M}} \mathit{shipment}_{p,m} & \le \mathit{capacity}_{p} && \forall\, p \in \mathcal{P} \\
+\text{meet\_demand:} \quad & \sum_{p \in \mathcal{P}} \mathit{shipment}_{p,m} & \ge \mathit{demand}_{m} && \forall\, m \in \mathcal{M} \\
+\text{economies\_of\_scale\_convexity:} \quad & \sum_{b \in \mathcal{B}} \mathit{economies\_of\_scale\_lam}_{p,m,b} & = 1 && \forall\, p \in \mathcal{P},\ m \in \mathcal{M} \\
+\text{economies\_of\_scale\_link0:} \quad & \mathit{shipment}_{p,m} & = \sum_{b \in \mathcal{B}} \mathit{economies\_of\_scale\_lam}_{p,m,b} \cdot \mathit{bp}^{\mathrm{x}}_{b} && \forall\, p \in \mathcal{P},\ m \in \mathcal{M} \\
+\text{economies\_of\_scale\_link1:} \quad & \mathit{scaled}_{p,m} & = \sum_{b \in \mathcal{B}} \mathit{economies\_of\_scale\_lam}_{p,m,b} \cdot \mathit{bp}^{\mathrm{y}}_{b} && \forall\, p \in \mathcal{P},\ m \in \mathcal{M} \\
+\text{economies\_of\_scale\_pick:} \quad & \sum_{b \in \mathcal{B}} \mathit{economies\_of\_scale\_seg}_{p,m,b} & = 1 && \forall\, p \in \mathcal{P},\ m \in \mathcal{M} \\
+\text{economies\_of\_scale\_adjacency:} \quad & \mathit{economies\_of\_scale\_lam}_{p,m,b} & \le \mathit{economies\_of\_scale\_seg}_{p,m,b} + \mathit{economies\_of\_scale\_seg}_{p,m,b - 1} && \forall\, p \in \mathcal{P},\ m \in \mathcal{M},\ b \in \mathcal{B}
+\end{aligned}$$
+
+#### Variable domains
+
+$$\begin{aligned}
+\text{shipment:} \quad & \mathit{shipment}_{p,m} & \ge 0 && \forall\, p \in \mathcal{P},\ m \in \mathcal{M} \\
+\text{scaled:} \quad & \mathit{scaled}_{p,m} & \ge 0 && \forall\, p \in \mathcal{P},\ m \in \mathcal{M} \\
+\text{economies\_of\_scale\_lam:} \quad & 0 \le \mathit{economies\_of\_scale\_lam}_{p,m,b} & \le 1 && \forall\, p \in \mathcal{P},\ m \in \mathcal{M},\ b \in \mathcal{B} \\
+\text{economies\_of\_scale\_seg:} \quad & \mathit{economies\_of\_scale\_seg}_{p,m,b} & \in \{0, 1\} && \forall\, p \in \mathcal{P},\ m \in \mathcal{M},\ b \in \mathcal{B}
+\end{aligned}$$
+
+</details>
+<!-- math:end -->
+
 ```yaml
 # Dantzig's transportation problem with economies of scale — GAMS model
 # library `trnspwl`. Shipping cost grows as sqrt(x) rather than linearly, so a

@@ -18,6 +18,54 @@ opening a warehouse costs money whether or not it ends up busy.
 
 ## The model
 
+<!-- math:begin -->
+<details>
+<summary>The same model, as math</summary>
+
+#### Sets
+
+| Symbol | Meaning |
+|---|---|
+| $\mathcal{W}$ | index $w$ --- `warehouse` |
+| $\mathcal{C}$ | index $c$ --- `customer` |
+
+#### Parameters
+
+| Symbol | Meaning |
+|---|---|
+| $\mathit{fixed\_cost}$ | `fixed_cost` over $\mathcal{W}$ |
+| $\mathit{serve}^{\mathrm{cost}}$ | `serve_cost` over $\mathcal{W} \times \mathcal{C}$ |
+
+#### Variables
+
+| Symbol | Meaning |
+|---|---|
+| $\mathit{is\_open}$ | `is_open` over $\mathcal{W}$ |
+| $\mathit{serve}$ | `serve` over $\mathcal{W} \times \mathcal{C}$ |
+
+#### Objective
+
+$$\begin{aligned}
+\text{total\_cost:} \quad & \min & \sum_{w \in \mathcal{W},\ c \in \mathcal{C}} \left( \mathit{is\_open}_{w} \cdot \mathit{fixed\_cost}_{w} + \mathit{serve}_{w,c} \cdot \mathit{serve}^{\mathrm{cost}}_{w,c} \right)
+\end{aligned}$$
+
+#### Subject to
+
+$$\begin{aligned}
+\text{every\_customer\_served:} \quad & \sum_{w \in \mathcal{W}} \mathit{serve}_{w,c} & = 1 && \forall\, c \in \mathcal{C} \\
+\text{only\_from\_open\_warehouses:} \quad & \mathit{serve}_{w,c} - \mathit{is\_open}_{w} & \le 0 && \forall\, w \in \mathcal{W},\ c \in \mathcal{C}
+\end{aligned}$$
+
+#### Variable domains
+
+$$\begin{aligned}
+\text{is\_open:} \quad & \mathit{is\_open}_{w} & \in \{0, 1\} && \forall\, w \in \mathcal{W} \\
+\text{serve:} \quad & 0 \le \mathit{serve}_{w,c} & \le 1 && \forall\, w \in \mathcal{W},\ c \in \mathcal{C}
+\end{aligned}$$
+
+</details>
+<!-- math:end -->
+
 ```yaml
 # Uncapacitated facility location, OR-Library instance `cap71`: 16 possible
 # warehouses, 50 customers. Open a set of warehouses and assign every customer
