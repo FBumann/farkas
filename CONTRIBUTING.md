@@ -75,7 +75,11 @@ plus `chore` `test` `ci` `build` `style` `revert`, which are hidden. A subject
 that will not parse fails the required check rather than silently dropping the
 entry. Fixing it is an edit to the PR, not a branch rewrite.
 
-Versioning, the release PR and how to override a version: [RELEASING.md](RELEASING.md).
+`main` is protected: no force-push, no deletion, squash-only through a PR, and
+the two required checks above. Approvals are not required, but the PR is.
+
+Versioning, the release PR, and how to force a specific version:
+[RELEASING.md](RELEASING.md).
 
 ## Changing the language
 
