@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.4](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.3...v0.0.1-alpha.4) (2026-07-28)
+
+
+### Documentation
+
+* a model gallery, with a construct matrix read off the plan ([#257](https://github.com/FBumann/farkas/issues/257)) ([e9cf410](https://github.com/FBumann/farkas/commit/e9cf410b6d81a774d18efa13894e9dc5ad359a43))
+
 ## [0.0.1-alpha.3](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.2...v0.0.1-alpha.3) (2026-07-28)
 
 
