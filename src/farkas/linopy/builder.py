@@ -31,6 +31,7 @@ from farkas.expression_parser import (
     VariableNode,
 )
 from farkas.helpers import unknown_helper_message
+from farkas.linopy import semantics
 from farkas.resolution import Namespace, expression_of, where_of
 from farkas.schema import equation_name
 from farkas.where_parser import (
@@ -304,10 +305,10 @@ def _eval_ast(
         return node.value
 
     if isinstance(node, VariableNode):
-        return ctx.model.variables[node.name]
+        return semantics.present(ctx.model.variables[node.name])
 
     if isinstance(node, ParameterNode):
-        return ctx.dataset[node.name]
+        return semantics.coefficient(ctx.dataset[node.name])
 
     if isinstance(node, (NameNode, DimensionNode, CoordinateNode)):
         msg = (
@@ -464,7 +465,7 @@ def _helper_shift(array: Any, **kwargs: float) -> Any:
     if isinstance(array, xr.DataArray):
         return array.shift(by, fill_value=0)
     if hasattr(array, 'shift'):
-        return array.shift(by)
+        return semantics.vacated(array.shift(by))
     msg = f"shift() does not support type '{type(array).__name__}'."
     raise TypeError(msg)
 
