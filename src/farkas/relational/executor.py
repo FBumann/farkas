@@ -491,27 +491,105 @@ class PolarsExecutor:
         row's label is its position in the product — arithmetic on the dim
         ordinals, with no sort and nothing to count. **Masked**, which rows
         survive is not known until the predicate has run, so the position has
-        to be counted, and that costs a sort.
+        to be counted, and that costs a sort — unless the mask *factors*, which
+        is :meth:`_factored`.
 
         Both return ``(dims…, label)`` in that column order. A mask that
         removes nothing has to be indistinguishable from no mask, down to the
         schema.
         """
-        frame = self._q.frame(dims, where)
         if where is None:
+            frame = self._q.frame(dims, None)
             rows = math.prod(self._dim_card[d] for d in dims)
             return self._positional(frame, dims, label, start), start + rows
+
+        free = _free_prefix(dims, _predicate_dims(where, self._param_dims()))
+        if free:
+            return self._factored(dims, free, where, label, start)
 
         import polars as pl
 
         materialised = (
-            frame.sort([_ordinal(d) for d in dims])
+            self._q.frame(dims, where)
+            .sort([_ordinal(d) for d in dims])
             .select(*dims)
             .with_row_index(label, offset=start)
             .select(*dims, pl.col(label).cast(pl.Int64))
             .collect(engine='streaming')
         )
         return materialised, start + materialised.height
+
+    def _param_dims(self) -> dict[str, tuple[str, ...]]:
+        """Each parameter's dims, which is what a predicate reads through."""
+        assert self._program is not None, 'build() has not run'
+        return {p.name: p.dims for p in self._program.parameters}
+
+    def _factored(
+        self,
+        dims: tuple[str, ...],
+        free: int,
+        where: plan.Predicate,
+        label: str,
+        start: int,
+    ) -> tuple[pl.DataFrame, int]:
+        """Labels for a mask that reads none of the first *free* dims.
+
+        A mask that cannot see the leading dims removes the same coordinates
+        under every one of their values, so the survivors are a rectangle: the
+        full product of the leading dims against one surviving set. Ranking
+        that set costs a sort of the *set*, not of the product — on `dispatch`
+        it is a sort of the generators rather than of 10M
+        ``(snapshot, generator)`` pairs.
+
+        The label is then arithmetic again, exactly as :meth:`_positional`:
+        row-major over the leading dims, times the width of the surviving set,
+        plus a survivor's rank within it. That is the same number the sort
+        would have counted, because for each leading coordinate the same
+        survivors appear in the same order.
+
+        The prefix has to be *leading* rather than merely absent from the mask:
+        a label follows declaration order, and only a prefix leaves the
+        surviving set contiguous within it.
+        """
+        import polars as pl
+
+        head, kept = dims[:free], dims[free:]
+        survivors = (
+            self._q.frame(kept, where)
+            .sort([_ordinal(d) for d in kept])
+            .select(*kept)
+            .with_row_index('__rank')
+            .collect(engine='streaming')
+        )
+        width = survivors.height
+        if width == 0:
+            # nothing survived anywhere, so there is no rectangle to describe.
+            # The counted path returns the right columns and dtypes for free.
+            empty = (
+                self._q.frame(dims, where)
+                .select(*dims)
+                .with_row_index(label, offset=start)
+                .select(*dims, pl.col(label).cast(pl.Int64))
+                .collect(engine='streaming')
+            )
+            return empty, start
+
+        stride, position = 1, pl.lit(0, dtype=pl.Int64)
+        for d in reversed(head):
+            position = position + pl.col(_ordinal(d)) * stride
+            stride *= self._dim_card[d]
+
+        labelled = (
+            self._q.frame(head, None)
+            .select(*head, position.alias('__position'))
+            .join(survivors.lazy(), how='cross')
+            .select(
+                *dims,
+                (pl.lit(start, dtype=pl.Int64) + pl.col('__position') * width + pl.col('__rank')).alias(label),
+            )
+            .collect(engine='streaming')
+        )
+        return labelled, start + labelled.height
 
     def _positional(self, frame: pl.LazyFrame, dims: tuple[str, ...], label: str, start: int) -> pl.DataFrame:
         """Labels as row-major position in the coordinate product.
@@ -839,6 +917,51 @@ def _has_repeated_entry(matrix: pl.DataFrame) -> bool:
         return False
     repeated = (pl.col('row') == pl.col('row').shift(1)) & (pl.col('col') == pl.col('col').shift(1))
     return bool(matrix.select(repeated.any()).item())
+
+
+def _predicate_dims(where: plan.Predicate, param_dims: Mapping[str, tuple[str, ...]]) -> frozenset[str]:
+    """Which dims *where* reads.
+
+    A parameter is read through its own dims, a dimension comparison through
+    the dim it names, and a constant reads nothing. Anything unrecognised
+    returns every dim it could possibly touch by returning ``None``'s
+    counterpart — there is no such case today, and a new predicate that forgot
+    to answer here would silently mislabel a model, so it raises instead.
+    """
+    if isinstance(where, plan.BooleanConstant):
+        return frozenset()
+    if isinstance(where, plan.DimensionComparison):
+        return frozenset({where.dimension})
+    if isinstance(where, (plan.ParameterComparison, plan.ParameterDefined)):
+        dims = frozenset(param_dims.get(where.parameter, ()))
+        # a parameter compared against another parameter reads both
+        value = getattr(where, 'value', None)
+        if isinstance(value, str) and value in param_dims:
+            dims |= frozenset(param_dims[value])
+        return dims
+    if isinstance(where, (plan.And, plan.Or)):
+        return _predicate_dims(where.left, param_dims) | _predicate_dims(where.right, param_dims)
+    if isinstance(where, plan.Not):
+        return _predicate_dims(where.operand, param_dims)
+    raise LanguageError(
+        f'{type(where).__name__} is a predicate the label planner does not know how to read; '
+        'add it to _predicate_dims before using it in a where'
+    )
+
+
+def _free_prefix(dims: tuple[str, ...], touched: frozenset[str]) -> int:
+    """How many leading dims the mask does not read.
+
+    Leading, not merely absent: a label follows declaration order, so only a
+    prefix leaves the surviving set contiguous under each of its coordinates.
+    Returns 0 when the mask reads the first dim, which is the case that has to
+    count its survivors the slow way.
+    """
+    free = 0
+    while free < len(dims) and dims[free] not in touched:
+        free += 1
+    # every remaining dim is masked-or-not; the split only helps if something is left
+    return free if free < len(dims) else 0
 
 
 def _stack(frames: list[pl.DataFrame], columns: tuple[str, ...]) -> pl.DataFrame:
