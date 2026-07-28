@@ -29,14 +29,14 @@ flowchart TB
     AST -.->|"farkas.linopy<br/>(opt-in shim: build / extend)"| BUILD
     LOWER -->|"outside the language:<br/>LanguageError naming the construct"| ERR["load error<br/>(no fallback)"]
 
-    subgraph REL["Relational lane — streaming · memory-bounded · linopy-free"]
+    subgraph REL["Relational lane — sparse · batched at every sink · linopy-free"]
         direction TB
         LOWER["lowering.py"] --> PLAN["logical plan<br/>(relational/plan.py)"]
         PLAN --> COMP["compiler.py<br/>plan → lazy frames<br/>pure: nothing is read"]
-        DR[("data<br/>parquet paths / pandas")] --> EXEC
+        DR[("data<br/>parquet paths / any Arrow table")] --> EXEC
         COMP --> EXEC["executor.py<br/>bind sources, label, assemble<br/>the model frames"]
-        EXEC --> LPS["lp_file sink (sinks.py)<br/>portability, debugging<br/>(mps planned)"]
-        EXEC --> DIRECT["solver_direct sink (sinks.py)<br/>COO batches → highspy → HiGHS"]
+        EXEC --> LPS["lp_file sink (sinks/lp_file.py)<br/>portability, debugging<br/>(mps planned)"]
+        EXEC --> DIRECT["solver_direct sink (sinks/highs.py)<br/>COO batches → highspy → HiGHS"]
         DIRECT --> SOL["solution tables<br/>(label join, never dense)"]
     end
 
@@ -384,6 +384,6 @@ implementation each: a primitive's dim rule lives only in `dimensions.py` —
 both its dim *set* and its verdict on an operand that lacks the dim being
 reduced along, which lowering asks for rather than deciding again — and the
 dense-label assignment that gives a coordinate its solver index lives only in
-`DuckdbExecutor._label_frame`, shared by variables and constraint rows. What a
+`PolarsExecutor._label_frame`, shared by variables and constraint rows. What a
 lowering case still owns is what is about the plan: which node the call becomes,
 and the shapes that node cannot represent.

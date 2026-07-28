@@ -7,14 +7,27 @@ mixed-integer programs. The model is never a dense Python object: it is tidy
 frames — masks are absent rows, and a variable's label *is* the solver's own
 column index — assembled relationally and handed to the solver in batches.
 
-Two consequences worth the headline, both measured
+The consequence worth the headline is **cost to a loaded solver** — YAML and
+data in, a populated solver out, no LP file anywhere in between. Measured
+against the eager lane's own best path to the same place, on the top rung of
+each of five benchmark cases — 1M to 12M variables
 ([benchmarks](docs/benchmarks.md)):
 
-- **The whole pipeline peaks below what reading the equivalent LP file costs.**
-  Not "we use less memory than a competitor" — less than the floor under the
-  route through a file, because there is no file.
-- **Per-model cost is flat.** Build a hundred rolling-horizon windows and the
-  hundredth costs what the first did; nothing accumulates between them.
+- **2–4x faster on four of the five**, and 1.13x slower on the fifth, which is
+  in the ladder to be lost — its parameters are dense over the whole variable
+  product, the one shape that suits an array engine.
+- **Lower peak on all five**, from 0.95x to 0.32x. The margins are narrow at
+  the top because HiGHS's own copy of the model dominates once it is loaded and
+  neither lane can shrink it.
+
+Read the sink you use: through the *LP file* the picture is closer, and on one
+case we are behind on peak. That table is in the same file, next to this one.
+
+A third property is architectural rather than measured, and named here as such:
+**nothing accumulates between builds** — no process-wide state, no lifetime to
+leak — so the hundredth rolling-horizon window should cost what the first did.
+No benchmark pins that yet; it is [on the
+list](docs/benchmarks.md#not-measured-yet).
 
 And because the math is a closed spec known before any data is touched, every
 name, dimension and expression is checked at load time — `check()` compiles a
@@ -149,7 +162,7 @@ is refused.
 To see it rather than read it, `python examples/walkthrough.py` runs one small model through every stage — YAML → schema → core AST → logical plan → model frames → LP text → solution — printing the artifact each stage produces, plus two models the language refuses and why. Its output is committed as [examples/walkthrough.out](examples/walkthrough.out) if you would rather just read that.
 
 ```bash
-pip install farkas            # the streaming engine (polars, highspy)
+pip install farkas            # the relational engine (polars, highspy)
 pip install "farkas[linopy]"  # adds linopy + xarray + pandas: the shim, the
                               # oracle, and to_pandas / to_dataarray
 ```

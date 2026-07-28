@@ -610,8 +610,9 @@ def test_row_chunks_are_bounded_by_nonzeros_not_by_rows():
     while it works it. Sizing the range in rows bounds the wrong quantity: the
     same 100k-row range is 900k entries in ``transport`` and 10M in
     ``dispatch``, so what the sink actually holds is set by the model's shape
-    rather than by the budget — which is precisely what hard rule 4 says peak
-    must not be.
+    rather than by the budget — which defeats the point of batching at all: a
+    pass that holds a slice proportional to the model is a pass that holds the
+    model.
 
     Wide rows are the case that separates the two, so this builds them: 50
     generators summed into each of 4 snapshots is 50 entries per row.

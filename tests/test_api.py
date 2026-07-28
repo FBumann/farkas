@@ -70,20 +70,26 @@ def test_parquet_path_sources(dispatch_yaml, dispatch_frame_inputs, tmp_path):
 def test_runtime_is_linopy_free(dispatch_yaml):
     """Import the package, build and solve on Arrow sources — linopy never loads.
 
-    pandas is deliberately *not* on this list even though it is no longer a
-    dependency. duckdb imports it opportunistically when registering any
-    Python object, so "not in ``sys.modules``" is not a claim this package can
-    make or keep. The claim that matters is that it need not be *installed*,
-    and the bare-install CI job is what proves that — it runs this suite with
-    no dataframe library present at all.
+    pandas and pyarrow are on the list too, and that is newer than it looks:
+    on the duckdb engine they could not be, because duckdb imported pandas
+    opportunistically when registering any Python object, so "not in
+    ``sys.modules``" was not a claim this package could keep. polars imports
+    neither until asked, so the stronger claim is now available and is pinned
+    here — a bridge out (``to_pandas``, ``to_dataarray``) must stay a bridge
+    and never become something the build path walks over on its own.
+
+    Distinct from, and weaker than, the claim that they need not be
+    *installed*: the bare-install CI job is what proves that, running this
+    suite with no dataframe library beyond polars present at all.
     """
+    absent = ('linopy', 'xarray', 'pandas', 'pyarrow')
     script = textwrap.dedent(f"""
         import sys
         assert "linopy" not in sys.modules
 
         import polars as pl
         import farkas as fk
-        for lib in ("linopy", "xarray"):
+        for lib in {absent!r}:
             assert lib not in sys.modules, f"package import pulled in {{lib}}"
 
         result = fk.solve(
@@ -103,7 +109,7 @@ def test_runtime_is_linopy_free(dispatch_yaml):
         assert isinstance(result.primal("p"), pl.DataFrame)
         assert result.primal("p").height == 9
         result.close()
-        for lib in ("linopy", "xarray"):
+        for lib in {absent!r}:
             assert lib not in sys.modules, f"solve pulled in {{lib}}"
         print("LINOPY_FREE_OK")
     """)

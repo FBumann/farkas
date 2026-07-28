@@ -18,12 +18,16 @@ and PyPSA's `optimization/constraints.py`. Every item scores **expressible**,
 **genuinely arbitrary Python** (an escape island, or stays a callback). No
 numbers are published until #27 produces them.
 
-Expressiveness is not the axis we lead on. Cost is, and on two claims a reader
-can check rather than take: end-to-end peak against the floor under the
-LP-file route, and marginal cost per model in a loop
-([benchmarks](docs/benchmarks.md)). Build memory *alone* is not one of them —
-it is a small fraction of what solving costs, so shrinking it further changes
-nothing a caller feels.
+Expressiveness is not the axis we lead on. Cost is, on the one claim a reader
+can check rather than take: **end-to-end cost to a loaded solver**, wall and
+peak, against the eager lane's own best path to the same place
+([benchmarks](docs/benchmarks.md)). Build memory *alone* is not that claim — it
+is a small fraction of what solving costs, so shrinking it further changes
+nothing a caller feels. Two claims we would rather lead on are not measured yet
+and are therefore not made: the floor under the LP-file route as a cold cost,
+and marginal cost per model in a loop. Both are listed in
+[Not measured yet](docs/benchmarks.md#not-measured-yet); neither is quoted until
+a table backs it.
 
 ## The degree axis
 
@@ -200,7 +204,10 @@ read-back, now shipped, already was);
 serialization (parquet, more portable than netCDF); elastic relaxation; and
 dualization — transposing a COO matrix is swapping two column names.
 
-**Ahead of comparable declarative layers:** memory-bounded streaming build;
+**Ahead of comparable declarative layers:** sparse-by-construction build with
+no dense intermediate, and a hand-off straight to the solver rather than through
+a file (see [benchmarks](docs/benchmarks.md); a *declared* memory ceiling is
+Track 5, not something we have);
 parameterised `macros:` (Calliope's sub-expressions take no arguments); binary
 and integer variables; piecewise as N links with per-link signs, convex mode and
 `active` gating; non-cyclic `shift`; load-time validation of every expression,
