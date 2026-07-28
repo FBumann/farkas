@@ -321,6 +321,7 @@ native schema merge (#30) is what would force the question.
 | `linopy/__init__.py` | opt-in shim: `build` / `extend` on a `linopy.Model` |
 | `linopy/loader.py` | data coercion to `xr.Dataset`, master coords |
 | `linopy/builder.py` | eager backend: core AST → `linopy.Model` |
+| `linopy/semantics.py` | where this lane answers linopy's v1 arithmetic convention — one home, as linopy's own `semantics.py` is |
 
 Two subpackages, and the directory *is* the rule in both cases. Everything
 under `relational/` is the engine and imports nothing else from the package;
