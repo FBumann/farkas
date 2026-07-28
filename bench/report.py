@@ -30,15 +30,15 @@ def load(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[st
 
 
 Row = dict[str, Any]
-Key = tuple[str, str, str]
+Key = tuple[str, str, str, str]
 
 
 def _key(r: Row) -> Key:
-    return (r['case'], r['size'], r['arm'])
+    return (r['case'], r['size'], r.get('sink', 'lp'), r['arm'])
 
 
 def best(timings: list[Row]) -> dict[Key, Row]:
-    """(case, size, arm) -> the fastest repeat."""
+    """(case, size, sink, arm) -> the fastest repeat."""
     out: dict[Key, Row] = {}
     for r in timings:
         if 'error' in r:
@@ -72,7 +72,7 @@ def _ratio(a: float | None, b: float | None) -> str:
 _DENSITY_RUNG = re.compile(r'd\d+$')
 
 
-def sizes_of(case: str, rows: dict[Key, Row], *, density: bool = False) -> list[str]:
+def sizes_of(case: str, rows: dict[Key, Row], sink: str = 'lp', *, density: bool = False) -> list[str]:
     """Rung labels for *case*, smallest model first.
 
     The density sweep is held at one model size, so mixing it into the size
@@ -81,29 +81,40 @@ def sizes_of(case: str, rows: dict[Key, Row], *, density: bool = False) -> list[
     """
     seen = {
         s: r['counts']['columns']
-        for (c, s, _), r in rows.items()
-        if c == case and bool(_DENSITY_RUNG.match(s)) == density
+        for (c, s, k, _), r in rows.items()
+        if c == case and k == sink and bool(_DENSITY_RUNG.match(s)) == density
     }
     return sorted(seen, key=lambda s: seen[s])
 
 
-def table(case: str, rows: dict[Key, Row]) -> str:
+#: How each arm reaches each sink, said once so a table can name its own seam.
+_SEAM = {
+    'lp': 'farkas writes the LP file, linopy through its `lp-polars` writer.',
+    'highs': (
+        'Both arms end holding a populated `highspy.Highs` with `run()` never '
+        'called: farkas through `build_highs`, linopy through `to_highspy()`. '
+        'The simplex is the same work whoever filled the model, so timing it '
+        'would say nothing about the lane that filled it.'
+    ),
+}
+
+
+def table(case: str, rows: dict[Key, Row], sink: str = 'lp') -> str:
     lines = [
-        f'### {case}',
+        f'### {case} — {sink} sink',
         '',
-        'farkas on its relational engine, linopy through its `lp-polars` writer.',
+        _SEAM[sink],
         '',
-        '| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP | scratch |',
-        '|---|---|---|---|---|---|---|---|---|---|---|',
+        '| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |',
+        '|---|---|---|---|---|---|---|---|---|---|',
     ]
-    for size in sizes_of(case, rows):
-        arms = {'farkas': rows.get((case, size, 'farkas')), 'linopy': rows.get((case, size, 'linopy'))}
+    for size in sizes_of(case, rows, sink):
+        arms = {'farkas': rows.get((case, size, sink, 'farkas')), 'linopy': rows.get((case, size, sink, 'linopy'))}
         ref = next((r for r in arms.values() if r), None)
         if ref is None:
             continue
         wall = {a: (r['wall_seconds'] if r else None) for a, r in arms.items()}
         peak = {a: (r['peak_rss_bytes'] if r else None) for a, r in arms.items()}
-        scratch = (arms['farkas'] or {}).get('workdir_bytes')
         cells = [
             _si(ref['counts']['columns']),
             _live(ref),
@@ -112,8 +123,7 @@ def table(case: str, rows: dict[Key, Row]) -> str:
             _ratio(wall['farkas'], wall['linopy']),
             *(f'{_gb(peak[a])} GB' if peak[a] else '—' for a in ARMS),
             _ratio(peak['farkas'], peak['linopy']),
-            f'{ref["lp_bytes"] / 1e6:.0f} MB',
-            f'{scratch / 1e9:.2f} GB' if scratch else '—',
+            f'{ref["lp_bytes"] / 1e6:.0f} MB' if ref.get('lp_bytes') else '—',
         ]
         lines.append('| ' + ' | '.join(cells) + ' |')
     return '\n'.join(lines)
@@ -137,21 +147,24 @@ def density(rows: dict[Key, Row]) -> str:
     this is the one comparison where the two lanes are not doing the same work
     in different orders — they are doing different amounts of work.
     """
-    cases = [c for c in sorted({c for c, _, _ in rows}) if sizes_of(c, rows, density=True)]
+    cases = [c for c in sorted({c for c, _, _, _ in rows}) if sizes_of(c, rows, 'lp', density=True)]
     if not cases:
         return ''
     lines = [
         '### The mask sweep',
         '',
-        'One model size. For `nodal`, `live` is how many of the 12 technologies '
-        'each node has installed: 12 / 6 / 3 / 1.',
+        'One model size, through the `lp` sink. For `nodal`, `live` is how many '
+        'of the 12 technologies each node has installed: 12 / 6 / 3 / 1.',
         '',
         '| case | live | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |',
         '|---|---|---|---|---|---|---|---|---|',
     ]
     for case in cases:
-        for size in reversed(sizes_of(case, rows, density=True)):
-            arms = {'farkas': rows.get((case, size, 'farkas')), 'linopy': rows.get((case, size, 'linopy'))}
+        for size in reversed(sizes_of(case, rows, 'lp', density=True)):
+            arms = {
+                'farkas': rows.get((case, size, 'lp', 'farkas')),
+                'linopy': rows.get((case, size, 'lp', 'linopy')),
+            }
             ref = next((r for r in arms.values() if r), None)
             if ref is None:
                 continue
@@ -199,9 +212,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         + '.'
     )
-    for case in sorted({c for c, _, _ in rows}):
-        print()
-        print(table(case, rows))
+    for case in sorted({c for c, _, _, _ in rows}):
+        for sink in sorted({k for c, _, k, _ in rows if c == case}):
+            if not sizes_of(case, rows, sink):
+                continue
+            print()
+            print(table(case, rows, sink))
     density_table = density(rows)
     if density_table:
         print()

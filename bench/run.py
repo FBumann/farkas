@@ -127,20 +127,28 @@ def gate(case: str, timeout: float, arms: Sequence[str] = ('farkas', 'linopy')) 
 
 
 def timings(case: str, sizes: list[str], arms: list[str], opts: argparse.Namespace) -> list[dict[str, Any]]:
-    """Every (size, arm) combination, each in its own process."""
+    """Every (size, sink, arm) combination, each in its own process."""
     out = []
     for size in sizes:
-        for arm in arms:
-            for repeat in range(opts.repeat):
-                args = ['time', '--case', case, '--size', size, '--arm', arm]
-                if arm == 'linopy':
-                    args += ['--io-api', opts.io_api]
-                record = _child(args, opts.timeout)
-                # stamped by the parent so a *failed* run is still fully
-                # identified — a failure is a result here
-                record |= {'record': 'timing', 'case': case, 'size': size, 'arm': arm, 'repeat': repeat}
-                _echo(record)
-                out.append(record)
+        for sink in opts.sinks:
+            for arm in arms:
+                for repeat in range(opts.repeat):
+                    args = ['time', '--case', case, '--size', size, '--arm', arm, '--sink', sink]
+                    if arm == 'linopy' and sink == 'lp':
+                        args += ['--io-api', opts.io_api]
+                    record = _child(args, opts.timeout)
+                    # stamped by the parent so a *failed* run is still fully
+                    # identified — a failure is a result here
+                    record |= {
+                        'record': 'timing',
+                        'case': case,
+                        'size': size,
+                        'arm': arm,
+                        'sink': sink,
+                        'repeat': repeat,
+                    }
+                    _echo(record)
+                    out.append(record)
     return out
 
 
@@ -165,6 +173,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument('--arms', nargs='+', default=['farkas', 'linopy'])
     ap.add_argument('--repeat', type=int, default=1)
     ap.add_argument('--io-api', default='lp-polars')
+    ap.add_argument(
+        '--sinks',
+        nargs='+',
+        default=['lp', 'highs'],
+        choices=('lp', 'highs'),
+        help='where each built model goes. Both by default: the LP file is the '
+        'artifact fewest callers want, and it is not the same comparison — '
+        "HiGHS's own model is resident in both arms and narrows the gap.",
+    )
     ap.add_argument('--timeout', type=float, default=3600.0)
     ap.add_argument('--skip-gate', action='store_true', help='time without checking the arms agree')
     ap.add_argument('--out', type=Path, default=RESULTS / 'latest.jsonl')
