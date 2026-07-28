@@ -1,4 +1,9 @@
 {
+  "facility_location": {
+    "objective": 932615.75,
+    "rtol": 1e-09,
+    "provenance": "published by OR-Library (Beasley) for instance cap71 of the uncapacitated warehouse location set, in the file uncapopt: http://people.brunel.ac.uk/~mastjjb/jeb/orlib/uncapinfo.html"
+  },
   "pypsa_cyclic_storage": {
     "objective": 17228.77962151063,
     "rtol": 1e-09,
@@ -258,6 +263,38 @@
     "objective": 24900.0,
     "rtol": 1e-09,
     "provenance": "pypsa 1.2.4 (its own linopy 0.9.0), via examples/ports/references/pypsa_unit_commitment.py"
+  },
+  "stigler_diet": {
+    "objective": 0.10866227820675685,
+    "rtol": 1e-09,
+    "provenance": "linopy 0.9.0, via examples/ports/references/stigler_diet.py — dollars per day; x365 = $39.6617/year",
+    "corroborated_by": "Laderman (1947) at the National Bureau of Standards published $39.69/year for this data, the first serious test of the simplex method. This LP's exact optimum is 0.08% under it — his rounding, not a different model — and both select the same five foods: wheat flour, liver, cabbage, spinach, navy beans.",
+    "duals": {
+      "meet_requirement": {
+        "nutrient": [
+          "calories_kcal",
+          "protein_g",
+          "calcium_g",
+          "iron_mg",
+          "vitamin_a_kiu",
+          "vitamin_b1_mg",
+          "vitamin_b2_mg",
+          "niacin_mg",
+          "vitamin_c_mg"
+        ],
+        "value": [
+          0.008765147298049494,
+          -0.0,
+          0.03173771344563702,
+          -0.0,
+          0.0004002327217253815,
+          -0.0,
+          0.016358032699276687,
+          -0.0,
+          0.00014411751545899708
+        ]
+      }
+    }
   },
   "transport_dantzig": {
     "objective": 153.675,

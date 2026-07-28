@@ -19,6 +19,8 @@ readable?** · **does it get the right answer?**
 | [PyPSA LOPF rung 5](pypsa_kvl.md) ✔ | passive AC lines under Kirchhoff's voltage law |
 | [PyPSA unit commitment](pypsa_unit_commitment.md) ✔ | which units are *on* — the corpus's MILP |
 | [Dantzig, economies of scale](transport_pwl.md) ✔ | GAMS `trnspwl` — piecewise `sqrt` shipping cost |
+| [Stigler's diet](stigler_diet.md) ✔ | the cheapest year of food — where LP started |
+| [Facility location](facility_location.md) ✔ | OR-Library `cap71` — which warehouses to open |
 
 ## Does it get the right answer?
 
@@ -38,6 +40,8 @@ modeller did not intend, which passes every farkas-against-farkas test green.
 | [PyPSA LOPF rung 5](pypsa_kvl.md) | PyPSA 1.2.4, running its own linopy | 17000.0 |
 | [PyPSA unit commitment](pypsa_unit_commitment.md) | PyPSA 1.2.4, running its own linopy | 24900.0 |
 | [Dantzig, economies of scale](transport_pwl.md) | linopy 0.9.0's own piecewise formulation | 8.786852757777865 |
+| [Stigler's diet](stigler_diet.md) | linopy 0.9.0; corroborated by Laderman (1947), $39.69/yr | 0.10866227820675685 |
+| [Facility location](facility_location.md) | **published** by OR-Library (`cap71`) | 932615.750 |
 
 **The objective is not the only thing checked.** Every port that has a dual
 solution also records the reference's **shadow prices** and is asserted against
@@ -69,12 +73,14 @@ drift from what the engine builds. Regenerate with
 | [storage](storage.md) | · | **✓** | · | **✓** | · | **✓** | · | · |
 | [transport](transport.md) | · | · | **✓** | · | · | **✓** | · | · |
 | [walkthrough](walkthrough.md) | · | **✓** | · | · | **✓** | **✓** | · | · |
+| [facility_location](facility_location.md) | **✔** 932616 | **✓** | · | · | · | **✓** | · | **✓** |
 | [pypsa_cyclic_storage](pypsa_cyclic_storage.md) | **✔** 17228.8 | · | **✓** | **✓** | **✓** | **✓** | · | · |
 | [pypsa_kvl](pypsa_kvl.md) | **✔** 17000 | **✓** | **✓** | · | · | **✓** | · | · |
 | [pypsa_ramp](pypsa_ramp.md) | **✔** 18200 | · | **✓** | **✓** | **✓** | **✓** | · | · |
 | [pypsa_storage](pypsa_storage.md) | **✔** 15253.2 | · | **✓** | **✓** | **✓** | **✓** | · | · |
 | [pypsa_transport](pypsa_transport.md) | **✔** 22000 | · | **✓** | · | · | **✓** | · | · |
 | [pypsa_unit_commitment](pypsa_unit_commitment.md) | **✔** 24900 | **✓** | · | **✓** | **✓** | **✓** | · | **✓** |
+| [stigler_diet](stigler_diet.md) | **✔** 0.108662 | **✓** | · | · | · | **✓** | · | · |
 | [transport_dantzig](transport_dantzig.md) | **✔** 153.675 | **✓** | · | · | · | **✓** | · | · |
 | [transport_pwl](transport_pwl.md) | **✔** 8.78685 | **✓** | · | **✓** | · | **✓** | **✓** | **✓** |
 <!-- constructs:end -->

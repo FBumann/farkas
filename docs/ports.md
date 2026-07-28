@@ -21,6 +21,8 @@ suite green. This is the net for that class, and the evidence behind
 | [PyPSA LOPF rung 5](models/pypsa_kvl.md) | PyPSA 1.2.4, its own linopy 0.9.0 | 17000.0 |
 | [PyPSA unit commitment](models/pypsa_unit_commitment.md) | PyPSA 1.2.4, its own linopy 0.9.0 | 24900.0 |
 | [Dantzig, economies of scale](models/transport_pwl.md) | linopy 0.9.0's own piecewise formulation | 8.786852757777865 |
+| [Stigler's diet](models/stigler_diet.md) | linopy 0.9.0; corroborated by Laderman (1947) | 0.10866227820675685 |
+| [Facility location](models/facility_location.md) | **published** by OR-Library (`cap71`) | 932615.750 |
 
 Adding one is four files and five rules:
 [CONTRIBUTING.md](../CONTRIBUTING.md#adding-a-ported-model).
@@ -82,7 +84,7 @@ is refused by design rather than unimplemented. The two halves of that answer
 are worth keeping apart: one is a macro nobody has written, the other is the
 ceiling doing its job.
 
-Two rows from eight ports — a rate worth watching once the corpus has hit the
+Two rows from ten ports — a rate worth watching once the corpus has hit the
 ceiling a few more times.
 
 ---
