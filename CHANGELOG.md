@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.1-alpha.8](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.7...v0.0.1-alpha.8) (2026-07-28)
+
+
+### Bug Fixes
+
+* **piecewise:** emit foreach in declaration order, not set order ([#271](https://github.com/FBumann/farkas/issues/271)) ([c06907b](https://github.com/FBumann/farkas/commit/c06907b0ef5e634542f5f52960a9488271f1bcf7))
+* **where:** a declared dimension on a comparison RHS is a load error ([#272](https://github.com/FBumann/farkas/issues/272)) ([5b1784e](https://github.com/FBumann/farkas/commit/5b1784ee1271f0cb88ff1e4657940ff526aee19a))
+
 ## [0.0.1-alpha.7](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.6...v0.0.1-alpha.7) (2026-07-28)
 
 
