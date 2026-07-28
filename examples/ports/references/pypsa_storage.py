@@ -1,10 +1,13 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["pypsa==1.2.4", "linopy==0.9.0", "highspy==1.15.1"]
+# dependencies = ["pypsa==1.2.4", "linopy==0.9.0", "pandas==3.0.5", "xarray==2026.7.0", "highspy==1.15.1"]
 # # linopy is pinned because PyPSA builds its model *through* it: the
-# # formulation, and so the number, is theirs jointly. Unpinned, a rerun
-# # could resolve a different linopy and no longer be the run recorded.
+# # formulation, and so the number, is theirs jointly. pandas is pinned because
+# # the recorded duals are reshaped with it, and `stack()` dropped NA rows by
+# # default before 3.0 — an unpinned rerun could silently record a shorter
+# # price vector than it solved for. xarray is linopy's data model, so
+# # alignment and broadcasting decide which coefficient lands in which row.
 # ///
 """Reference for ``pypsa_storage``: PyPSA's own LOPF. See docs/ports.md.
 

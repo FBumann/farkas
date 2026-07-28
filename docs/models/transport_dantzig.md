@@ -118,7 +118,11 @@ def shadow_prices(m: linopy.Model, name: str, dim: str) -> dict[str, list]:
 
 def main() -> float:
     m = build(json.loads(DATA.read_text()))
-    m.solve(solver_name='highs')
+    status, condition = m.solve(solver_name='highs')
+    # The other references assert this; without it a failed solve prints an
+    # objective of whatever linopy left behind and a dual table read off a
+    # solution that does not exist — recorded as fact in references.json.
+    assert status == 'ok', f'{status}: {condition}'
     print(f'linopy {linopy.__version__}')
     print(f'objective {float(m.objective.value)!r}')
     print(

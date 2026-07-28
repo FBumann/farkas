@@ -123,8 +123,10 @@ examples/ports/references.json          the recorded objective and where it came
 docs/models/<name>.md                   the gallery page — maths, model, side-by-side
 ```
 
-- **A published optimum needs no script.** `transport_dantzig` has none: the
-  number came from the literature. Record the citation as its provenance.
+- **A published optimum needs no script.** `transport_dantzig`'s number comes
+  from the literature, and the citation *is* its provenance. It also ships a
+  reference implementation, but as `corroborated_by` rather than as what
+  verifies it — a second opinion, where the published figure is the first.
 - **Reference scripts are never run by CI.** Pinning PyPSA into this project
   would hand their release cadence a veto over the suite. They carry their
   dependencies inline ([PEP 723](https://peps.python.org/pep-0723/)), pinned to
