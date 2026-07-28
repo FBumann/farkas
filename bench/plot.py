@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-NAME = {'farkas': 'polars', 'linopy': 'linopy', 'duckdb': 'duckdb', 'duckdb@1GB': 'duckdb@1GB'}
+NAME = {'farkas': 'polars', 'linopy': 'linopy'}
 LADDER = ('xs', 's', 'm', 'l')
 SCALING = ('xs', 's', 'm', 'l', 'xl', '2xl')
 _DATA = re.compile(r'^const DATA = .*;$', re.MULTILINE)
@@ -60,8 +60,8 @@ def main() -> int:
     scaling = best(Path('bench/results/scaling.jsonl'), 'lp')
     cases = sorted({c for c, _, _ in ladder['wall']})
     data = {
-        'scaling': panel(scaling, 'dispatch', SCALING, ('farkas', 'linopy', 'duckdb', 'duckdb@1GB')),
-        'cases': {c: panel(ladder, c, LADDER, ('farkas', 'linopy', 'duckdb')) for c in cases},
+        'scaling': panel(scaling, 'dispatch', SCALING, ('farkas', 'linopy')),
+        'cases': {c: panel(ladder, c, LADDER, ('farkas', 'linopy')) for c in cases},
         'caseNames': cases,
         'rungs': list(LADDER),
     }

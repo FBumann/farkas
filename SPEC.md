@@ -236,10 +236,10 @@ both lanes agree by construction.
 Binary operators **union**: an outer product is legitimate when the frame
 declares the result. What must not be silent is the declaration disagreeing —
 so a **constraint** requires `dims(lhs) ∪ dims(rhs)` to *equal* `foreach` (a
-stray dim multiplies rows, an unused `foreach` dim repeats one row across them,
-and under a memory budget the first quietly builds a bigger model than the file
-reads as), while a **where** predicate's dims and a **bound** parameter's dims
-must not exceed the frame.
+stray dim multiplies rows and an unused `foreach` dim repeats one row across
+them, either way building a different model than the file reads as), while a
+**where** predicate's dims and a **bound** parameter's dims must not exceed the
+frame.
 
 ## 6. Where strings
 
