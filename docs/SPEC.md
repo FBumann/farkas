@@ -279,13 +279,18 @@ value      ::= NUMBER | NAME_OR_STRING
 | `name` (bare) | parameter | defined: non-null **and** finite |
 | `name` (bare) | variable | defined: the variable exists at this coordinate. The counterpart of the parameter row, and the way to say which coordinates the row-dropping rule above applies to |
 | `name` (bare) | dimension | load error — true everywhere, so it reads as a condition and is not one; compare it instead |
-| `name OP value` | parameter | element-wise, NaN → False. RHS is a literal number or a bare name read as a string coordinate |
+| `name OP value` | parameter | element-wise, NaN → False. RHS is a literal number, or a bare name read as a string coordinate — a name that is *declared* is a load error instead (below) |
 | `name OP value` | dimension | filter on the frame's own coordinate column |
 | `AND` `OR` `NOT` | — | case-insensitive; `NOT` > `AND` > `OR` |
 | `True` / `False` | — | literals; `True` ≡ no `where` |
 
 Comparing two parameters is not in the language — precompute a boolean parameter
-in data prep. An **undeclared** name is a load error on both lanes; it used to
+in data prep — and neither is comparing two dimensions. The string reading of an
+RHS name is for names the model does *not* declare, which is how a string
+coordinate is compared; a **declared** name on the RHS (parameter, variable or
+dimension) is a load error naming the near miss, because reading it as text
+would compare a coordinate column against another declaration's name and mask
+everything out. An **undeclared** name is a load error on both lanes; it used to
 evaluate to scalar `False`, which built a model that solved and was silently
 empty. A mask dim outside `foreach` is a load error (§5.2); it was previously
 `any()`-reduced, which fails *open*.
