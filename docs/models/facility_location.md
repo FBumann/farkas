@@ -45,23 +45,29 @@ opening a warehouse costs money whether or not it ends up busy.
 
 #### Objective
 
-$$\begin{aligned}
-\text{total\_cost:} \quad & \min & \sum_{w \in \mathcal{W},\ c \in \mathcal{C}} \left( \mathit{is\_open}_{w} \cdot \mathit{fixed\_cost}_{w} + \mathit{serve}_{w,c} \cdot \mathit{serve}^{\mathrm{cost}}_{w,c} \right)
-\end{aligned}$$
+**`total_cost`**
+
+$$\min \sum_{w \in \mathcal{W},\enspace c \in \mathcal{C}} \left( \mathit{is\_open}_{w} \cdot \mathit{fixed\_cost}_{w} + \mathit{serve}_{w,c} \cdot \mathit{serve}^{\mathrm{cost}}_{w,c} \right)$$
 
 #### Subject to
 
-$$\begin{aligned}
-\text{every\_customer\_served:} \quad & \sum_{w \in \mathcal{W}} \mathit{serve}_{w,c} & = 1 && \forall\, c \in \mathcal{C} \\
-\text{only\_from\_open\_warehouses:} \quad & \mathit{serve}_{w,c} - \mathit{is\_open}_{w} & \le 0 && \forall\, w \in \mathcal{W},\ c \in \mathcal{C}
-\end{aligned}$$
+**`every_customer_served`**
+
+$$\sum_{w \in \mathcal{W}} \mathit{serve}_{w,c} = 1 \qquad \forall\thinspace c \in \mathcal{C}$$
+
+**`only_from_open_warehouses`**
+
+$$\mathit{serve}_{w,c} - \mathit{is\_open}_{w} \le 0 \qquad \forall\thinspace w \in \mathcal{W},\enspace c \in \mathcal{C}$$
 
 #### Variable domains
 
-$$\begin{aligned}
-\text{is\_open:} \quad & \mathit{is\_open}_{w} & \in \{0, 1\} && \forall\, w \in \mathcal{W} \\
-\text{serve:} \quad & 0 \le \mathit{serve}_{w,c} & \le 1 && \forall\, w \in \mathcal{W},\ c \in \mathcal{C}
-\end{aligned}$$
+**`is_open`**
+
+$$\mathit{is\_open}_{w} \in \{0, 1\} \qquad \forall\thinspace w \in \mathcal{W}$$
+
+**`serve`**
+
+$$0 \le \mathit{serve}_{w,c} \le 1 \qquad \forall\thinspace w \in \mathcal{W},\enspace c \in \mathcal{C}$$
 
 </details>
 <!-- math:end -->

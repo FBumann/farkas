@@ -63,30 +63,57 @@ The [instance](https://github.com/FBumann/farkas/blob/main/examples/ports/data/t
 
 #### Objective
 
-$$\begin{aligned}
-\text{total\_cost:} \quad & \min & \sum_{p \in \mathcal{P},\ m \in \mathcal{M}} \frac{\mathit{scaled}_{p,m} \cdot \mathit{distance}_{p,m} \cdot \mathit{freight}}{1000}
-\end{aligned}$$
+**`total_cost`**
+
+$$\min \sum_{p \in \mathcal{P},\enspace m \in \mathcal{M}} \frac{\mathit{scaled}_{p,m} \cdot \mathit{distance}_{p,m} \cdot \mathit{freight}}{1000}$$
 
 #### Subject to
 
-$$\begin{aligned}
-\text{within\_capacity:} \quad & \sum_{m \in \mathcal{M}} \mathit{shipment}_{p,m} & \le \mathit{capacity}_{p} && \forall\, p \in \mathcal{P} \\
-\text{meet\_demand:} \quad & \sum_{p \in \mathcal{P}} \mathit{shipment}_{p,m} & \ge \mathit{demand}_{m} && \forall\, m \in \mathcal{M} \\
-\text{economies\_of\_scale\_convexity:} \quad & \sum_{b \in \mathcal{B}} \mathit{economies\_of\_scale\_lam}_{p,m,b} & = 1 && \forall\, p \in \mathcal{P},\ m \in \mathcal{M} \\
-\text{economies\_of\_scale\_link0:} \quad & \mathit{shipment}_{p,m} & = \sum_{b \in \mathcal{B}} \mathit{economies\_of\_scale\_lam}_{p,m,b} \cdot \mathit{bp}^{\mathrm{x}}_{b} && \forall\, p \in \mathcal{P},\ m \in \mathcal{M} \\
-\text{economies\_of\_scale\_link1:} \quad & \mathit{scaled}_{p,m} & = \sum_{b \in \mathcal{B}} \mathit{economies\_of\_scale\_lam}_{p,m,b} \cdot \mathit{bp}^{\mathrm{y}}_{b} && \forall\, p \in \mathcal{P},\ m \in \mathcal{M} \\
-\text{economies\_of\_scale\_pick:} \quad & \sum_{b \in \mathcal{B}} \mathit{economies\_of\_scale\_seg}_{p,m,b} & = 1 && \forall\, p \in \mathcal{P},\ m \in \mathcal{M} \\
-\text{economies\_of\_scale\_adjacency:} \quad & \mathit{economies\_of\_scale\_lam}_{p,m,b} & \le \mathit{economies\_of\_scale\_seg}_{p,m,b} + \mathit{economies\_of\_scale\_seg}_{p,m,b - 1} && \forall\, p \in \mathcal{P},\ m \in \mathcal{M},\ b \in \mathcal{B}
-\end{aligned}$$
+**`within_capacity`**
+
+$$\sum_{m \in \mathcal{M}} \mathit{shipment}_{p,m} \le \mathit{capacity}_{p} \qquad \forall\thinspace p \in \mathcal{P}$$
+
+**`meet_demand`**
+
+$$\sum_{p \in \mathcal{P}} \mathit{shipment}_{p,m} \ge \mathit{demand}_{m} \qquad \forall\thinspace m \in \mathcal{M}$$
+
+**`economies_of_scale_convexity`**
+
+$$\sum_{b \in \mathcal{B}} \mathit{economies\_of\_scale\_lam}_{p,m,b} = 1 \qquad \forall\thinspace p \in \mathcal{P},\enspace m \in \mathcal{M}$$
+
+**`economies_of_scale_link0`**
+
+$$\mathit{shipment}_{p,m} = \sum_{b \in \mathcal{B}} \mathit{economies\_of\_scale\_lam}_{p,m,b} \cdot \mathit{bp}^{\mathrm{x}}_{b} \qquad \forall\thinspace p \in \mathcal{P},\enspace m \in \mathcal{M}$$
+
+**`economies_of_scale_link1`**
+
+$$\mathit{scaled}_{p,m} = \sum_{b \in \mathcal{B}} \mathit{economies\_of\_scale\_lam}_{p,m,b} \cdot \mathit{bp}^{\mathrm{y}}_{b} \qquad \forall\thinspace p \in \mathcal{P},\enspace m \in \mathcal{M}$$
+
+**`economies_of_scale_pick`**
+
+$$\sum_{b \in \mathcal{B}} \mathit{economies\_of\_scale\_seg}_{p,m,b} = 1 \qquad \forall\thinspace p \in \mathcal{P},\enspace m \in \mathcal{M}$$
+
+**`economies_of_scale_adjacency`**
+
+$$\mathit{economies\_of\_scale\_lam}_{p,m,b} \le \mathit{economies\_of\_scale\_seg}_{p,m,b} + \mathit{economies\_of\_scale\_seg}_{p,m,b - 1} \qquad \forall\thinspace p \in \mathcal{P},\enspace m \in \mathcal{M},\enspace b \in \mathcal{B}$$
 
 #### Variable domains
 
-$$\begin{aligned}
-\text{shipment:} \quad & \mathit{shipment}_{p,m} & \ge 0 && \forall\, p \in \mathcal{P},\ m \in \mathcal{M} \\
-\text{scaled:} \quad & \mathit{scaled}_{p,m} & \ge 0 && \forall\, p \in \mathcal{P},\ m \in \mathcal{M} \\
-\text{economies\_of\_scale\_lam:} \quad & 0 \le \mathit{economies\_of\_scale\_lam}_{p,m,b} & \le 1 && \forall\, p \in \mathcal{P},\ m \in \mathcal{M},\ b \in \mathcal{B} \\
-\text{economies\_of\_scale\_seg:} \quad & \mathit{economies\_of\_scale\_seg}_{p,m,b} & \in \{0, 1\} && \forall\, p \in \mathcal{P},\ m \in \mathcal{M},\ b \in \mathcal{B}
-\end{aligned}$$
+**`shipment`**
+
+$$\mathit{shipment}_{p,m} \ge 0 \qquad \forall\thinspace p \in \mathcal{P},\enspace m \in \mathcal{M}$$
+
+**`scaled`**
+
+$$\mathit{scaled}_{p,m} \ge 0 \qquad \forall\thinspace p \in \mathcal{P},\enspace m \in \mathcal{M}$$
+
+**`economies_of_scale_lam`**
+
+$$0 \le \mathit{economies\_of\_scale\_lam}_{p,m,b} \le 1 \qquad \forall\thinspace p \in \mathcal{P},\enspace m \in \mathcal{M},\enspace b \in \mathcal{B}$$
+
+**`economies_of_scale_seg`**
+
+$$\mathit{economies\_of\_scale\_seg}_{p,m,b} \in \{0, 1\} \qquad \forall\thinspace p \in \mathcal{P},\enspace m \in \mathcal{M},\enspace b \in \mathcal{B}$$
 
 </details>
 <!-- math:end -->

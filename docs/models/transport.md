@@ -4,7 +4,7 @@ A network: generators sit on buses, lines connect buses, and power balances at e
 
 ## The problem
 
-$$\sum_{g \,:\, \mathrm{bus}(g) = b} p_{s,g} \;+\; \sum_{\ell \,:\, \mathrm{to}(\ell) = b} f_{s,\ell} \;-\; \sum_{\ell \,:\, \mathrm{from}(\ell) = b} f_{s,\ell} \;=\; d_{s,b}$$
+$$\sum_{g \thinspace:\thinspace \mathrm{bus}(g) = b} p_{s,g} \quad+\quad \sum_{\ell \thinspace:\thinspace \mathrm{to}(\ell) = b} f_{s,\ell} \quad-\quad \sum_{\ell \thinspace:\thinspace \mathrm{from}(\ell) = b} f_{s,\ell} \quad=\quad d_{s,b}$$
 
 Each sum is over the lines or generators a *coordinate map* sends to bus $b$ —
 $\mathrm{bus}$, $\mathrm{to}$ and $\mathrm{from}$ are the coordinates the
@@ -24,7 +24,7 @@ $\ell$ is already the line index.
 | $\mathcal{S}$ | index $s$ --- `snapshot` --- dispatch periods |
 | $\mathcal{G}$ | index $g$ --- `generator` with $\mathrm{bus}: \mathcal{G} \to \mathcal{B}$ --- generating units |
 | $\mathcal{B}$ | index $b$ --- `bus` --- network nodes |
-| $\mathcal{L}$ | index $\ell$ --- `line` with $\mathrm{from}: \mathcal{L} \to \mathcal{B},\ \mathrm{to}: \mathcal{L} \to \mathcal{B}$ --- transmission lines, each joining two buses |
+| $\mathcal{L}$ | index $\ell$ --- `line` with $\mathrm{from}: \mathcal{L} \to \mathcal{B},\enspace \mathrm{to}: \mathcal{L} \to \mathcal{B}$ --- transmission lines, each joining two buses |
 
 #### Parameters
 
@@ -45,22 +45,25 @@ $\ell$ is already the line index.
 
 #### Objective
 
-$$\begin{aligned}
-\text{total\_cost:} \quad & \min & \sum_{s \in \mathcal{S},\ g \in \mathcal{G}} p_{s,g} \cdot c_{g}
-\end{aligned}$$
+**`total_cost`**
+
+$$\min \sum_{s \in \mathcal{S},\enspace g \in \mathcal{G}} p_{s,g} \cdot c_{g}$$
 
 #### Subject to
 
-$$\begin{aligned}
-\text{balance:} \quad & \sum_{g \in \mathcal{G} \,:\, \mathrm{bus}(g) = b} p_{s,g} + \sum_{\ell \in \mathcal{L} \,:\, \mathrm{to}(\ell) = b} f_{s,\ell} - \left( \sum_{\ell \in \mathcal{L} \,:\, \mathrm{from}(\ell) = b} f_{s,\ell} \right) & = d_{s,b} && \forall\, s \in \mathcal{S},\ b \in \mathcal{B}
-\end{aligned}$$
+**`balance`**
+
+$$\sum_{g \in \mathcal{G} \thinspace:\thinspace \mathrm{bus}(g) = b} p_{s,g} + \sum_{\ell \in \mathcal{L} \thinspace:\thinspace \mathrm{to}(\ell) = b} f_{s,\ell} - \left( \sum_{\ell \in \mathcal{L} \thinspace:\thinspace \mathrm{from}(\ell) = b} f_{s,\ell} \right) = d_{s,b} \qquad \forall\thinspace s \in \mathcal{S},\enspace b \in \mathcal{B}$$
 
 #### Variable domains
 
-$$\begin{aligned}
-\text{p:} \quad & 0 \le p_{s,g} & \le \bar p_{g} && \forall\, s \in \mathcal{S},\ g \in \mathcal{G} \\
-\text{f:} \quad & \underline{f}_{\ell} \le f_{s,\ell} & \le \bar f_{\ell} && \forall\, s \in \mathcal{S},\ \ell \in \mathcal{L}
-\end{aligned}$$
+**`p`**
+
+$$0 \le p_{s,g} \le \bar p_{g} \qquad \forall\thinspace s \in \mathcal{S},\enspace g \in \mathcal{G}$$
+
+**`f`**
+
+$$\underline{f}_{\ell} \le f_{s,\ell} \le \bar f_{\ell} \qquad \forall\thinspace s \in \mathcal{S},\enspace \ell \in \mathcal{L}$$
 
 </details>
 <!-- math:end -->

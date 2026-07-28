@@ -44,21 +44,21 @@ the same engine.
 
 #### Objective
 
-$$\begin{aligned}
-\text{total\_cost:} \quad & \min & \sum_{f \in \mathcal{F}} \mathit{spend}_{f}
-\end{aligned}$$
+**`total_cost`**
+
+$$\min \sum_{f \in \mathcal{F}} \mathit{spend}_{f}$$
 
 #### Subject to
 
-$$\begin{aligned}
-\text{meet\_requirement:} \quad & \sum_{f \in \mathcal{F}} \mathit{spend}_{f} \cdot \mathit{nutrient}^{\mathrm{per,dollar}}_{f,n} & \ge \mathit{daily\_minimum}_{n} && \forall\, n \in \mathcal{N}
-\end{aligned}$$
+**`meet_requirement`**
+
+$$\sum_{f \in \mathcal{F}} \mathit{spend}_{f} \cdot \mathit{nutrient}^{\mathrm{per,dollar}}_{f,n} \ge \mathit{daily\_minimum}_{n} \qquad \forall\thinspace n \in \mathcal{N}$$
 
 #### Variable domains
 
-$$\begin{aligned}
-\text{spend:} \quad & \mathit{spend}_{f} & \ge 0 && \forall\, f \in \mathcal{F}
-\end{aligned}$$
+**`spend`**
+
+$$\mathit{spend}_{f} \ge 0 \qquad \forall\thinspace f \in \mathcal{F}$$
 
 </details>
 <!-- math:end -->

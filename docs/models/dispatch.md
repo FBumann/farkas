@@ -7,9 +7,9 @@ Least-cost generation against a load profile — the smallest model that is stil
 Pick an output $p_{s,g}$ for every generator in every snapshot, so that the
 fleet meets the load exactly and costs as little as possible:
 
-$$\min \sum_{s,g} c_g \, p_{s,g}
+$$\min \sum_{s,g} c_g \thinspace p_{s,g}
 \quad\text{s.t.}\quad \sum_g p_{s,g} = \ell_s ,\quad 0 \le p_{s,g} \le \bar p_g
-\;\;\text{where}\;\; \bar p_g > 0$$
+\quad\text{where}\quad \bar p_g > 0$$
 
 ## The model
 
@@ -40,21 +40,21 @@ $$\min \sum_{s,g} c_g \, p_{s,g}
 
 #### Objective
 
-$$\begin{aligned}
-\text{total\_cost:} \quad & \min & \sum_{s \in \mathcal{S},\ g \in \mathcal{G}} p_{s,g} \cdot c_{g}
-\end{aligned}$$
+**`total_cost`**
+
+$$\min \sum_{s \in \mathcal{S},\enspace g \in \mathcal{G}} p_{s,g} \cdot c_{g}$$
 
 #### Subject to
 
-$$\begin{aligned}
-\text{power\_balance:} \quad & \sum_{g \in \mathcal{G}} p_{s,g} & = \ell_{s} && \forall\, s \in \mathcal{S}
-\end{aligned}$$
+**`power_balance`**
+
+$$\sum_{g \in \mathcal{G}} p_{s,g} = \ell_{s} \qquad \forall\thinspace s \in \mathcal{S}$$
 
 #### Variable domains
 
-$$\begin{aligned}
-\text{p:} \quad & 0 \le p_{s,g} & \le \bar p_{g} && \forall\, s \in \mathcal{S},\ g \in \mathcal{G} \,:\, \bar p_{g} > 0
-\end{aligned}$$
+**`p`**
+
+$$0 \le p_{s,g} \le \bar p_{g} \qquad \forall\thinspace s \in \mathcal{S},\enspace g \in \mathcal{G} \thinspace:\thinspace \bar p_{g} > 0$$
 
 </details>
 <!-- math:end -->

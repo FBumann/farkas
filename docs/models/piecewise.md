@@ -44,26 +44,41 @@ $$p_g = \sum_k \lambda_{g,k}\, x_{g,k}, \quad
 
 #### Objective
 
-$$\begin{aligned}
-\text{total\_cost:} \quad & \min & \sum_{t \in \mathcal{T},\ g \in \mathcal{G}} \mathrm{cost}_{t,g}
-\end{aligned}$$
+**`total_cost`**
+
+$$\min \sum_{t \in \mathcal{T},\enspace g \in \mathcal{G}} \mathrm{cost}_{t,g}$$
 
 #### Subject to
 
-$$\begin{aligned}
-\text{balance:} \quad & \sum_{g \in \mathcal{G}} p_{t,g} & = \mathit{load}_{t} && \forall\, t \in \mathcal{T} \\
-\text{cost\_curve\_convexity:} \quad & \sum_{k \in \mathcal{K}} \lambda_{t,g,k} & = 1 && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \\
-\text{cost\_curve\_link0:} \quad & p_{t,g} & = \sum_{k \in \mathcal{K}} \lambda_{t,g,k} \cdot x_{g,k} && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \\
-\text{cost\_curve\_link1:} \quad & \mathrm{cost}_{t,g} & = \sum_{k \in \mathcal{K}} \lambda_{t,g,k} \cdot y_{g,k} && \forall\, t \in \mathcal{T},\ g \in \mathcal{G}
-\end{aligned}$$
+**`balance`**
+
+$$\sum_{g \in \mathcal{G}} p_{t,g} = \mathit{load}_{t} \qquad \forall\thinspace t \in \mathcal{T}$$
+
+**`cost_curve_convexity`**
+
+$$\sum_{k \in \mathcal{K}} \lambda_{t,g,k} = 1 \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
+
+**`cost_curve_link0`**
+
+$$p_{t,g} = \sum_{k \in \mathcal{K}} \lambda_{t,g,k} \cdot x_{g,k} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
+
+**`cost_curve_link1`**
+
+$$\mathrm{cost}_{t,g} = \sum_{k \in \mathcal{K}} \lambda_{t,g,k} \cdot y_{g,k} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
 
 #### Variable domains
 
-$$\begin{aligned}
-\text{p:} \quad & 0 \le p_{t,g} & \le p^{\mathrm{max}}_{g} && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \\
-\text{op\_cost:} \quad & \mathrm{cost}_{t,g} & \ge 0 && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \\
-\text{cost\_curve\_lam:} \quad & 0 \le \lambda_{t,g,k} & \le 1 && \forall\, t \in \mathcal{T},\ g \in \mathcal{G},\ k \in \mathcal{K}
-\end{aligned}$$
+**`p`**
+
+$$0 \le p_{t,g} \le p^{\mathrm{max}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
+
+**`op_cost`**
+
+$$\mathrm{cost}_{t,g} \ge 0 \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
+
+**`cost_curve_lam`**
+
+$$0 \le \lambda_{t,g,k} \le 1 \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G},\enspace k \in \mathcal{K}$$
 
 </details>
 <!-- math:end -->

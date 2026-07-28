@@ -31,21 +31,21 @@ The dispatch model plus a macro and a named expression — the one used to print
 
 #### Objective
 
-$$\begin{aligned}
-\text{total\_cost:} \quad & \min & \sum_{s \in \mathcal{S}} \sum_{g \in \mathcal{G}} p_{s,g} \cdot c_{g}
-\end{aligned}$$
+**`total_cost`**
+
+$$\min \sum_{s \in \mathcal{S}} \sum_{g \in \mathcal{G}} p_{s,g} \cdot c_{g}$$
 
 #### Subject to
 
-$$\begin{aligned}
-\text{power\_balance:} \quad & \sum_{g \in \mathcal{G}} p_{s,g} & = \ell_{s} && \forall\, s \in \mathcal{S}
-\end{aligned}$$
+**`power_balance`**
+
+$$\sum_{g \in \mathcal{G}} p_{s,g} = \ell_{s} \qquad \forall\thinspace s \in \mathcal{S}$$
 
 #### Variable domains
 
-$$\begin{aligned}
-\text{p:} \quad & 0 \le p_{s,g} & \le \bar p_{g} && \forall\, s \in \mathcal{S},\ g \in \mathcal{G} \,:\, \bar p_{g} > 0
-\end{aligned}$$
+**`p`**
+
+$$0 \le p_{s,g} \le \bar p_{g} \qquad \forall\thinspace s \in \mathcal{S},\enspace g \in \mathcal{G} \thinspace:\thinspace \bar p_{g} > 0$$
 
 </details>
 <!-- math:end -->

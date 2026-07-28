@@ -41,22 +41,25 @@ $$\min \sum_{i,j} c_{ij} x_{ij}
 
 #### Objective
 
-$$\begin{aligned}
-\text{total\_cost:} \quad & \min & \sum_{i \in \mathcal{I},\ j \in \mathcal{J}} \frac{x_{i,j} \cdot d_{i,j} \cdot f}{1000}
-\end{aligned}$$
+**`total_cost`**
+
+$$\min \sum_{i \in \mathcal{I},\enspace j \in \mathcal{J}} \frac{x_{i,j} \cdot d_{i,j} \cdot f}{1000}$$
 
 #### Subject to
 
-$$\begin{aligned}
-\text{within\_capacity:} \quad & \sum_{j \in \mathcal{J}} x_{i,j} & \le a_{i} && \forall\, i \in \mathcal{I} \\
-\text{meet\_demand:} \quad & \sum_{i \in \mathcal{I}} x_{i,j} & \ge b_{j} && \forall\, j \in \mathcal{J}
-\end{aligned}$$
+**`within_capacity`**
+
+$$\sum_{j \in \mathcal{J}} x_{i,j} \le a_{i} \qquad \forall\thinspace i \in \mathcal{I}$$
+
+**`meet_demand`**
+
+$$\sum_{i \in \mathcal{I}} x_{i,j} \ge b_{j} \qquad \forall\thinspace j \in \mathcal{J}$$
 
 #### Variable domains
 
-$$\begin{aligned}
-\text{shipment:} \quad & x_{i,j} & \ge 0 && \forall\, i \in \mathcal{I},\ j \in \mathcal{J}
-\end{aligned}$$
+**`shipment`**
+
+$$x_{i,j} \ge 0 \qquad \forall\thinspace i \in \mathcal{I},\enspace j \in \mathcal{J}$$
 
 </details>
 <!-- math:end -->

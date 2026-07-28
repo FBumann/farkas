@@ -29,7 +29,7 @@ them, 18200.
 | $\mathcal{T}$ | index $t$ --- `snapshot` |
 | $\mathcal{B}$ | index $b$ --- `bus` |
 | $\mathcal{G}$ | index $g$ --- `generator` with $\mathrm{bus}: \mathcal{G} \to \mathcal{B}$ |
-| $\mathcal{L}$ | index $l$ --- `link` with $\mathrm{from}: \mathcal{L} \to \mathcal{B},\ \mathrm{to}: \mathcal{L} \to \mathcal{B}$ |
+| $\mathcal{L}$ | index $l$ --- `link` with $\mathrm{from}: \mathcal{L} \to \mathcal{B},\enspace \mathrm{to}: \mathcal{L} \to \mathcal{B}$ |
 
 #### Parameters
 
@@ -54,24 +54,33 @@ $t \ominus k$ denotes cyclic translation: index $t-k$ taken modulo the size of t
 
 #### Objective
 
-$$\begin{aligned}
-\text{total\_cost:} \quad & \min & \sum_{t \in \mathcal{T},\ g \in \mathcal{G}} p_{t,g} \cdot \mathit{marginal\_cost}_{g}
-\end{aligned}$$
+**`total_cost`**
+
+$$\min \sum_{t \in \mathcal{T},\enspace g \in \mathcal{G}} p_{t,g} \cdot \mathit{marginal\_cost}_{g}$$
 
 #### Subject to
 
-$$\begin{aligned}
-\text{nodal\_balance:} \quad & \sum_{g \in \mathcal{G} \,:\, \mathrm{bus}(g) = b} p_{t,g} + \sum_{l \in \mathcal{L} \,:\, \mathrm{to}(l) = b} f_{t,l} - \left( \sum_{l \in \mathcal{L} \,:\, \mathrm{from}(l) = b} f_{t,l} \right) & = \mathit{load}_{t,b} && \forall\, t \in \mathcal{T},\ b \in \mathcal{B} \\
-\text{ramp\_0:} \quad & p_{t,g} - p_{t \ominus 1,g} & \le \mathit{ramp\_limit\_up}_{g} \cdot p^{\mathrm{nom}}_{g} && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \,:\, t > 0 \\
-\text{ramp\_1:} \quad & p_{t \ominus 1,g} - p_{t,g} & \le \mathit{ramp\_limit\_down}_{g} \cdot p^{\mathrm{nom}}_{g} && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \,:\, t > 0
-\end{aligned}$$
+**`nodal_balance`**
+
+$$\sum_{g \in \mathcal{G} \thinspace:\thinspace \mathrm{bus}(g) = b} p_{t,g} + \sum_{l \in \mathcal{L} \thinspace:\thinspace \mathrm{to}(l) = b} f_{t,l} - \left( \sum_{l \in \mathcal{L} \thinspace:\thinspace \mathrm{from}(l) = b} f_{t,l} \right) = \mathit{load}_{t,b} \qquad \forall\thinspace t \in \mathcal{T},\enspace b \in \mathcal{B}$$
+
+**`ramp_0`**
+
+$$p_{t,g} - p_{t \ominus 1,g} \le \mathit{ramp\_limit\_up}_{g} \cdot p^{\mathrm{nom}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t > 0$$
+
+**`ramp_1`**
+
+$$p_{t \ominus 1,g} - p_{t,g} \le \mathit{ramp\_limit\_down}_{g} \cdot p^{\mathrm{nom}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t > 0$$
 
 #### Variable domains
 
-$$\begin{aligned}
-\text{p:} \quad & 0 \le p_{t,g} & \le p^{\mathrm{nom}}_{g} && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \\
-\text{f:} \quad & \mathit{neg\_rating}_{l} \le f_{t,l} & \le \mathit{rating}_{l} && \forall\, t \in \mathcal{T},\ l \in \mathcal{L}
-\end{aligned}$$
+**`p`**
+
+$$0 \le p_{t,g} \le p^{\mathrm{nom}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
+
+**`f`**
+
+$$\mathit{neg\_rating}_{l} \le f_{t,l} \le \mathit{rating}_{l} \qquad \forall\thinspace t \in \mathcal{T},\enspace l \in \mathcal{L}$$
 
 </details>
 <!-- math:end -->

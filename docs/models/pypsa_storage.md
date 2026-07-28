@@ -25,7 +25,7 @@ third, which is what a free end-of-horizon buys you.
 | $\mathcal{T}$ | index $t$ --- `snapshot` |
 | $\mathcal{B}$ | index $b$ --- `bus` |
 | $\mathcal{G}$ | index $g$ --- `generator` with $\mathrm{bus}: \mathcal{G} \to \mathcal{B}$ |
-| $\mathcal{L}$ | index $l$ --- `link` with $\mathrm{from}: \mathcal{L} \to \mathcal{B},\ \mathrm{to}: \mathcal{L} \to \mathcal{B}$ |
+| $\mathcal{L}$ | index $l$ --- `link` with $\mathrm{from}: \mathcal{L} \to \mathcal{B},\enspace \mathrm{to}: \mathcal{L} \to \mathcal{B}$ |
 | $\mathcal{S}$ | index $s$ --- `storage` with $\mathrm{bus}: \mathcal{S} \to \mathcal{B}$ |
 
 #### Parameters
@@ -60,29 +60,53 @@ $t \ominus k$ denotes cyclic translation: index $t-k$ taken modulo the size of t
 
 #### Objective
 
-$$\begin{aligned}
-\text{total\_cost:} \quad & \min & \sum_{t \in \mathcal{T},\ g \in \mathcal{G}} p_{t,g} \cdot \mathit{marginal\_cost}_{g}
-\end{aligned}$$
+**`total_cost`**
+
+$$\min \sum_{t \in \mathcal{T},\enspace g \in \mathcal{G}} p_{t,g} \cdot \mathit{marginal\_cost}_{g}$$
 
 #### Subject to
 
-$$\begin{aligned}
-\text{nodal\_balance:} \quad & \sum_{g \in \mathcal{G} \,:\, \mathrm{bus}(g) = b} p_{t,g} + \sum_{l \in \mathcal{L} \,:\, \mathrm{to}(l) = b} f_{t,l} - \left( \sum_{l \in \mathcal{L} \,:\, \mathrm{from}(l) = b} f_{t,l} \right) + \sum_{s \in \mathcal{S} \,:\, \mathrm{bus}(s) = b} p^{\mathrm{dispatch}}_{t,s} - \left( \sum_{s \in \mathcal{S} \,:\, \mathrm{bus}(s) = b} p^{\mathrm{store}}_{t,s} \right) & = \mathit{load}_{t,b} && \forall\, t \in \mathcal{T},\ b \in \mathcal{B} \\
-\text{ramp\_0:} \quad & p_{t,g} - p_{t \ominus 1,g} & \le \mathit{ramp\_limit\_up}_{g} \cdot p^{\mathrm{nom}}_{g} && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \,:\, t > 0 \\
-\text{ramp\_1:} \quad & p_{t \ominus 1,g} - p_{t,g} & \le \mathit{ramp\_limit\_down}_{g} \cdot p^{\mathrm{nom}}_{g} && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \,:\, t > 0 \\
-\text{energy\_balance\_0:} \quad & \mathit{soc}_{t,s} & = \mathit{soc}^{\mathrm{initial}}_{s} + p^{\mathrm{store}}_{t,s} \cdot \mathit{efficiency\_store}_{s} - \frac{p^{\mathrm{dispatch}}_{t,s}}{\mathit{efficiency\_dispatch}_{s}} && \forall\, t \in \mathcal{T},\ s \in \mathcal{S} \,:\, t = 0 \\
-\text{energy\_balance\_1:} \quad & \mathit{soc}_{t,s} & = \mathit{soc}_{t \ominus 1,s} \cdot \left( 1 - \mathit{standing\_loss}_{s} \right) + p^{\mathrm{store}}_{t,s} \cdot \mathit{efficiency\_store}_{s} - \frac{p^{\mathrm{dispatch}}_{t,s}}{\mathit{efficiency\_dispatch}_{s}} && \forall\, t \in \mathcal{T},\ s \in \mathcal{S} \,:\, t > 0
-\end{aligned}$$
+**`nodal_balance`**
+
+$$\sum_{g \in \mathcal{G} \thinspace:\thinspace \mathrm{bus}(g) = b} p_{t,g} + \sum_{l \in \mathcal{L} \thinspace:\thinspace \mathrm{to}(l) = b} f_{t,l} - \left( \sum_{l \in \mathcal{L} \thinspace:\thinspace \mathrm{from}(l) = b} f_{t,l} \right) + \sum_{s \in \mathcal{S} \thinspace:\thinspace \mathrm{bus}(s) = b} p^{\mathrm{dispatch}}_{t,s} - \left( \sum_{s \in \mathcal{S} \thinspace:\thinspace \mathrm{bus}(s) = b} p^{\mathrm{store}}_{t,s} \right) = \mathit{load}_{t,b} \qquad \forall\thinspace t \in \mathcal{T},\enspace b \in \mathcal{B}$$
+
+**`ramp_0`**
+
+$$p_{t,g} - p_{t \ominus 1,g} \le \mathit{ramp\_limit\_up}_{g} \cdot p^{\mathrm{nom}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t > 0$$
+
+**`ramp_1`**
+
+$$p_{t \ominus 1,g} - p_{t,g} \le \mathit{ramp\_limit\_down}_{g} \cdot p^{\mathrm{nom}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t > 0$$
+
+**`energy_balance_0`**
+
+$$\mathit{soc}_{t,s} = \mathit{soc}^{\mathrm{initial}}_{s} + p^{\mathrm{store}}_{t,s} \cdot \mathit{efficiency\_store}_{s} - \frac{p^{\mathrm{dispatch}}_{t,s}}{\mathit{efficiency\_dispatch}_{s}} \qquad \forall\thinspace t \in \mathcal{T},\enspace s \in \mathcal{S} \thinspace:\thinspace t = 0$$
+
+**`energy_balance_1`**
+
+$$\mathit{soc}_{t,s} = \mathit{soc}_{t \ominus 1,s} \cdot \left( 1 - \mathit{standing\_loss}_{s} \right) + p^{\mathrm{store}}_{t,s} \cdot \mathit{efficiency\_store}_{s} - \frac{p^{\mathrm{dispatch}}_{t,s}}{\mathit{efficiency\_dispatch}_{s}} \qquad \forall\thinspace t \in \mathcal{T},\enspace s \in \mathcal{S} \thinspace:\thinspace t > 0$$
 
 #### Variable domains
 
-$$\begin{aligned}
-\text{p:} \quad & 0 \le p_{t,g} & \le p^{\mathrm{nom}}_{g} && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \\
-\text{f:} \quad & \mathit{neg\_rating}_{l} \le f_{t,l} & \le \mathit{rating}_{l} && \forall\, t \in \mathcal{T},\ l \in \mathcal{L} \\
-\text{p\_dispatch:} \quad & 0 \le p^{\mathrm{dispatch}}_{t,s} & \le \mathit{storage}^{\mathrm{p,nom}}_{s} && \forall\, t \in \mathcal{T},\ s \in \mathcal{S} \\
-\text{p\_store:} \quad & 0 \le p^{\mathrm{store}}_{t,s} & \le \mathit{storage}^{\mathrm{p,nom}}_{s} && \forall\, t \in \mathcal{T},\ s \in \mathcal{S} \\
-\text{soc:} \quad & 0 \le \mathit{soc}_{t,s} & \le \mathit{soc}^{\mathrm{max}}_{s} && \forall\, t \in \mathcal{T},\ s \in \mathcal{S}
-\end{aligned}$$
+**`p`**
+
+$$0 \le p_{t,g} \le p^{\mathrm{nom}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
+
+**`f`**
+
+$$\mathit{neg\_rating}_{l} \le f_{t,l} \le \mathit{rating}_{l} \qquad \forall\thinspace t \in \mathcal{T},\enspace l \in \mathcal{L}$$
+
+**`p_dispatch`**
+
+$$0 \le p^{\mathrm{dispatch}}_{t,s} \le \mathit{storage}^{\mathrm{p,nom}}_{s} \qquad \forall\thinspace t \in \mathcal{T},\enspace s \in \mathcal{S}$$
+
+**`p_store`**
+
+$$0 \le p^{\mathrm{store}}_{t,s} \le \mathit{storage}^{\mathrm{p,nom}}_{s} \qquad \forall\thinspace t \in \mathcal{T},\enspace s \in \mathcal{S}$$
+
+**`soc`**
+
+$$0 \le \mathit{soc}_{t,s} \le \mathit{soc}^{\mathrm{max}}_{s} \qquad \forall\thinspace t \in \mathcal{T},\enspace s \in \mathcal{S}$$
 
 </details>
 <!-- math:end -->

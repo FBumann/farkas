@@ -51,30 +51,57 @@ $t \ominus k$ denotes cyclic translation: index $t-k$ taken modulo the size of t
 
 #### Objective
 
-$$\begin{aligned}
-\text{total\_cost:} \quad & \min & \sum_{t \in \mathcal{T},\ g \in \mathcal{G}} \left( p_{t,g} \cdot \mathit{marginal\_cost}_{g} + \mathit{start\_up}_{t,g} \cdot \mathit{start\_up\_cost}_{g} + \mathit{shut\_down}_{t,g} \cdot \mathit{shut\_down\_cost}_{g} \right)
-\end{aligned}$$
+**`total_cost`**
+
+$$\min \sum_{t \in \mathcal{T},\enspace g \in \mathcal{G}} \left( p_{t,g} \cdot \mathit{marginal\_cost}_{g} + \mathit{start\_up}_{t,g} \cdot \mathit{start\_up\_cost}_{g} + \mathit{shut\_down}_{t,g} \cdot \mathit{shut\_down\_cost}_{g} \right)$$
 
 #### Subject to
 
-$$\begin{aligned}
-\text{power\_balance:} \quad & \sum_{g \in \mathcal{G}} p_{t,g} & = \mathit{load}_{t} && \forall\, t \in \mathcal{T} \\
-\text{commitment\_0:} \quad & p_{t,g} - p^{\mathrm{nom}}_{g} \cdot \mathit{status}_{t,g} & \le 0 && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \\
-\text{commitment\_1:} \quad & p_{t,g} - p^{\mathrm{min,pu}}_{g} \cdot p^{\mathrm{nom}}_{g} \cdot \mathit{status}_{t,g} & \ge 0 && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \\
-\text{transition\_0:} \quad & \mathit{start\_up}_{t,g} - \mathit{status}_{t,g} & \ge -1 && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \,:\, t = 0 \\
-\text{transition\_1:} \quad & \mathit{start\_up}_{t,g} - \mathit{status}_{t,g} + \mathit{status}_{t \ominus 1,g} & \ge 0 && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \,:\, t > 0 \\
-\text{transition\_2:} \quad & \mathit{shut\_down}_{t,g} + \mathit{status}_{t,g} & \ge 1 && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \,:\, t = 0 \\
-\text{transition\_3:} \quad & \mathit{shut\_down}_{t,g} + \mathit{status}_{t,g} - \mathit{status}_{t \ominus 1,g} & \ge 0 && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \,:\, t > 0
-\end{aligned}$$
+**`power_balance`**
+
+$$\sum_{g \in \mathcal{G}} p_{t,g} = \mathit{load}_{t} \qquad \forall\thinspace t \in \mathcal{T}$$
+
+**`commitment_0`**
+
+$$p_{t,g} - p^{\mathrm{nom}}_{g} \cdot \mathit{status}_{t,g} \le 0 \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
+
+**`commitment_1`**
+
+$$p_{t,g} - p^{\mathrm{min,pu}}_{g} \cdot p^{\mathrm{nom}}_{g} \cdot \mathit{status}_{t,g} \ge 0 \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
+
+**`transition_0`**
+
+$$\mathit{start\_up}_{t,g} - \mathit{status}_{t,g} \ge -1 \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t = 0$$
+
+**`transition_1`**
+
+$$\mathit{start\_up}_{t,g} - \mathit{status}_{t,g} + \mathit{status}_{t \ominus 1,g} \ge 0 \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t > 0$$
+
+**`transition_2`**
+
+$$\mathit{shut\_down}_{t,g} + \mathit{status}_{t,g} \ge 1 \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t = 0$$
+
+**`transition_3`**
+
+$$\mathit{shut\_down}_{t,g} + \mathit{status}_{t,g} - \mathit{status}_{t \ominus 1,g} \ge 0 \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t > 0$$
 
 #### Variable domains
 
-$$\begin{aligned}
-\text{p:} \quad & p_{t,g} & \ge 0 && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \\
-\text{status:} \quad & \mathit{status}_{t,g} & \in \{0, 1\} && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \\
-\text{start\_up:} \quad & \mathit{start\_up}_{t,g} & \in \{0, 1\} && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \\
-\text{shut\_down:} \quad & \mathit{shut\_down}_{t,g} & \in \{0, 1\} && \forall\, t \in \mathcal{T},\ g \in \mathcal{G}
-\end{aligned}$$
+**`p`**
+
+$$p_{t,g} \ge 0 \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
+
+**`status`**
+
+$$\mathit{status}_{t,g} \in \{0, 1\} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
+
+**`start_up`**
+
+$$\mathit{start\_up}_{t,g} \in \{0, 1\} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
+
+**`shut_down`**
+
+$$\mathit{shut\_down}_{t,g} \in \{0, 1\} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
 
 </details>
 <!-- math:end -->

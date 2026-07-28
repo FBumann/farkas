@@ -53,7 +53,7 @@ Inside the language, and it always was.
 
 | Symbol | Meaning |
 |---|---|
-| $\mathcal{C}$ | index $c$ --- `city` with $\mathrm{as\_from}: \mathcal{C} \to \mathcal{F},\ \mathrm{as\_to}: \mathcal{C} \to \mathcal{T}$ |
+| $\mathcal{C}$ | index $c$ --- `city` with $\mathrm{as\_from}: \mathcal{C} \to \mathcal{F},\enspace \mathrm{as\_to}: \mathcal{C} \to \mathcal{T}$ |
 | $\mathcal{F}$ | index $f$ --- `from_city` |
 | $\mathcal{T}$ | index $t$ --- `to_city` |
 
@@ -73,24 +73,33 @@ Inside the language, and it always was.
 
 #### Objective
 
-$$\begin{aligned}
-\text{tour\_length:} \quad & \min & \sum_{f \in \mathcal{F},\ t \in \mathcal{T}} \mathit{travel}_{f,t} \cdot \mathit{distance}_{f,t}
-\end{aligned}$$
+**`tour_length`**
+
+$$\min \sum_{f \in \mathcal{F},\enspace t \in \mathcal{T}} \mathit{travel}_{f,t} \cdot \mathit{distance}_{f,t}$$
 
 #### Subject to
 
-$$\begin{aligned}
-\text{leave\_each\_city\_once:} \quad & \sum_{t \in \mathcal{T}} \mathit{travel}_{f,t} & = 1 && \forall\, f \in \mathcal{F} \\
-\text{enter\_each\_city\_once:} \quad & \sum_{f \in \mathcal{F}} \mathit{travel}_{f,t} & = 1 && \forall\, t \in \mathcal{T} \\
-\text{ordering:} \quad & \sum_{c \in \mathcal{C} \,:\, \mathrm{as\_from}(c) = f} u_{c} - \left( \sum_{c \in \mathcal{C} \,:\, \mathrm{as\_to}(c) = t} u_{c} \right) + n \cdot \mathit{travel}_{f,t} & \le n - 1 && \forall\, f \in \mathcal{F},\ t \in \mathcal{T} \,:\, f \neq \text{c01} \wedge t \neq \text{c01}
-\end{aligned}$$
+**`leave_each_city_once`**
+
+$$\sum_{t \in \mathcal{T}} \mathit{travel}_{f,t} = 1 \qquad \forall\thinspace f \in \mathcal{F}$$
+
+**`enter_each_city_once`**
+
+$$\sum_{f \in \mathcal{F}} \mathit{travel}_{f,t} = 1 \qquad \forall\thinspace t \in \mathcal{T}$$
+
+**`ordering`**
+
+$$\sum_{c \in \mathcal{C} \thinspace:\thinspace \mathrm{as\_from}(c) = f} u_{c} - \left( \sum_{c \in \mathcal{C} \thinspace:\thinspace \mathrm{as\_to}(c) = t} u_{c} \right) + n \cdot \mathit{travel}_{f,t} \le n - 1 \qquad \forall\thinspace f \in \mathcal{F},\enspace t \in \mathcal{T} \thinspace:\thinspace f \neq \text{c01} \wedge t \neq \text{c01}$$
 
 #### Variable domains
 
-$$\begin{aligned}
-\text{travel:} \quad & \mathit{travel}_{f,t} & \in \{0, 1\} && \forall\, f \in \mathcal{F},\ t \in \mathcal{T} \,:\, \mathit{distance}_{f,t} \text{ is defined} \\
-\text{u:} \quad & 1 \le u_{c} & \le 17 && \forall\, c \in \mathcal{C}
-\end{aligned}$$
+**`travel`**
+
+$$\mathit{travel}_{f,t} \in \{0, 1\} \qquad \forall\thinspace f \in \mathcal{F},\enspace t \in \mathcal{T} \thinspace:\thinspace \mathit{distance}_{f,t} \text{ is defined}$$
+
+**`u`**
+
+$$1 \le u_{c} \le 17 \qquad \forall\thinspace c \in \mathcal{C}$$
 
 </details>
 <!-- math:end -->

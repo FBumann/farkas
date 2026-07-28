@@ -47,25 +47,37 @@ $t \ominus k$ denotes cyclic translation: index $t-k$ taken modulo the size of t
 
 #### Objective
 
-$$\begin{aligned}
-\text{total\_cost:} \quad & \min & \sum_{s \in \mathcal{S},\ g \in \mathcal{G}} p_{s,g} \cdot c_{g}
-\end{aligned}$$
+**`total_cost`**
+
+$$\min \sum_{s \in \mathcal{S},\enspace g \in \mathcal{G}} p_{s,g} \cdot c_{g}$$
 
 #### Subject to
 
-$$\begin{aligned}
-\text{power\_balance:} \quad & \sum_{g \in \mathcal{G}} p_{s,g} + \mathrm{discharge}_{s} - \mathrm{charge}_{s} & = \ell_{s} && \forall\, s \in \mathcal{S} \\
-\text{soc\_balance:} \quad & \mathrm{soc}_{s} & = \mathrm{soc}_{s \ominus 1} + \mathrm{charge}_{s} \cdot 0.9 - \mathrm{discharge}_{s} && \forall\, s \in \mathcal{S}
-\end{aligned}$$
+**`power_balance`**
+
+$$\sum_{g \in \mathcal{G}} p_{s,g} + \mathrm{discharge}_{s} - \mathrm{charge}_{s} = \ell_{s} \qquad \forall\thinspace s \in \mathcal{S}$$
+
+**`soc_balance`**
+
+$$\mathrm{soc}_{s} = \mathrm{soc}_{s \ominus 1} + \mathrm{charge}_{s} \cdot 0.9 - \mathrm{discharge}_{s} \qquad \forall\thinspace s \in \mathcal{S}$$
 
 #### Variable domains
 
-$$\begin{aligned}
-\text{p:} \quad & 0 \le p_{s,g} & \le \bar p_{g} && \forall\, s \in \mathcal{S},\ g \in \mathcal{G} \\
-\text{charge:} \quad & 0 \le \mathrm{charge}_{s} & \le 30 && \forall\, s \in \mathcal{S} \\
-\text{discharge:} \quad & 0 \le \mathrm{discharge}_{s} & \le 30 && \forall\, s \in \mathcal{S} \\
-\text{soc:} \quad & 0 \le \mathrm{soc}_{s} & \le 100 && \forall\, s \in \mathcal{S}
-\end{aligned}$$
+**`p`**
+
+$$0 \le p_{s,g} \le \bar p_{g} \qquad \forall\thinspace s \in \mathcal{S},\enspace g \in \mathcal{G}$$
+
+**`charge`**
+
+$$0 \le \mathrm{charge}_{s} \le 30 \qquad \forall\thinspace s \in \mathcal{S}$$
+
+**`discharge`**
+
+$$0 \le \mathrm{discharge}_{s} \le 30 \qquad \forall\thinspace s \in \mathcal{S}$$
+
+**`soc`**
+
+$$0 \le \mathrm{soc}_{s} \le 100 \qquad \forall\thinspace s \in \mathcal{S}$$
 
 </details>
 <!-- math:end -->
