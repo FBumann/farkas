@@ -6,7 +6,7 @@ Renaming one breaks tests; changing one changes what the docs claim, and a test
 will say so.
 
 **Read them explained** in [docs/models/](../docs/models/index.md) — the maths,
-what each construct exercises, and for the two ports a side-by-side against the
+what each construct exercises, and for a port a side-by-side against the
 reference implementation. This directory is the source; that is the guided tour.
 
 | | |
@@ -16,7 +16,7 @@ reference implementation. This directory is the source; that is the guided tour.
 | `transport.yaml` | a network: coordinates on a dimension *are* the topology (`group_sum`) |
 | `piecewise.yaml` | per-generator convex cost curves (`piecewise:`) |
 | `walkthrough.yaml` | the model `walkthrough.py` prints every pipeline stage for |
-| `ports/` | models somebody else already solved, checked against an optimum that did not come from us |
+| `ports/` | eleven models somebody else already solved, checked against an optimum that did not come from us |
 
 `walkthrough.py` runs one model through YAML → schema → AST → plan → frames →
 LP text → solution, printing what each stage produces, then two models the
@@ -27,8 +27,13 @@ asserted, so it cannot drift from what the code does:
 python examples/walkthrough.py
 ```
 
-`ports/` carries four files per model — the YAML, the instance, a reference
-implementation importing no farkas, and the recorded objective with its
-provenance. Reference scripts are **never run by CI** and carry their
-dependencies inline; adding one is described in
+`ports/` carries three or four files per model — the YAML, the instance, the
+recorded objective with its provenance, and a reference implementation
+importing no farkas. That last one is absent where the optimum is *published*
+and needs nothing of ours to reproduce it: `facility_location` (OR-Library) and
+`tsp_mtz` (TSPLIB) cite the literature instead, which is the strongest tier the
+corpus has.
+
+Reference scripts are **never run by CI** and carry their dependencies inline;
+adding a port is described in
 [CONTRIBUTING.md](../CONTRIBUTING.md#adding-a-ported-model).
