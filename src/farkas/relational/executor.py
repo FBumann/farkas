@@ -53,11 +53,11 @@ from typing import TYPE_CHECKING, Any, Literal, get_args
 from farkas.errors import DataError, LanguageError, LinopyYamlError, NoSolutionError
 from farkas.relational import chunking, plan, sinks
 from farkas.relational.arrow import as_table
-from farkas.relational.compiler import CompiledExpression, SqlCompiler
+from farkas.relational.compiler import CompiledExpression, SqlCompiler, TermFragment
 from farkas.relational.sql import path_literal
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
     import pandas as pd
 
@@ -562,6 +562,10 @@ class DuckdbExecutor:
                 return frozenset({d})
             case plan.ParameterComparison(parameter=n) | plan.ParameterDefined(parameter=n):
                 return param_dims.get(n, frozenset())
+            case plan.VariableDefined(variable=v):
+                # Read through the variable's own foreach, as a parameter is read
+                # through its dims — the planner only asks which dims are touched.
+                return frozenset(next(x.dims for x in self._program.variables if x.name == v))
             case plan.Not(operand=x):
                 return self._predicate_dims(x)
             case plan.And(left=a, right=b) | plan.Or(left=a, right=b):
@@ -575,6 +579,7 @@ class DuckdbExecutor:
         where: plan.Predicate | None,
         label: str,
         start: int,
+        restrictions: tuple[tuple[tuple[str, ...], str], ...] = (),
     ) -> int:
         """Materialise the masked coord product of *dims* as *table*, with a
         dense ``label`` column continuing from *start*. Returns the next label.
@@ -596,7 +601,17 @@ class DuckdbExecutor:
         collist = ', '.join(f't_{d}.val AS {d}' for d in dims)
         from_clause, where_clause, order_key = self._sql.frame(dims, where)
 
-        if where is None:
+        # A term whose variable is absent takes the row with it, so the row set
+        # has to be cut *before* the numbering — `row` is the solver's own row
+        # index, and deciding existence after labels exist would misalign it.
+        # Which rows survive is data, so this also forfeits the unmasked
+        # arithmetic path: `_absence_restrictions` therefore hands over nothing
+        # at all unless a variable in the equation is actually masked.
+        for i, (on_dims, presence) in enumerate(restrictions):
+            on = ' AND '.join(f'r{i}.{d} = t_{d}.val' for d in on_dims)
+            from_clause += f' SEMI JOIN ({presence}) r{i} ON {on}'
+
+        if where is None and not restrictions:
             self._con.execute(
                 f'CREATE TABLE {table} AS SELECT {collist}, '
                 f'{self._sql.positional_label(dims, start)} AS {label} FROM {from_clause}'
@@ -614,7 +629,7 @@ class DuckdbExecutor:
         # coordinates are identical for every leading value. Rank them once
         # over a table of size `other` and the label is arithmetic: no window
         # function, no per-chunk sort. Same labels as the general path below.
-        if rest and lead not in self._predicate_dims(where):
+        if rest and not restrictions and lead not in self._predicate_dims(where):
             surv_from, surv_where, surv_order = self._sql.frame(tuple(rest), where)
             surv_cols = ', '.join(f't_{d}.val AS {d}' for d in rest)
             self._con.execute(f'DROP TABLE IF EXISTS surv_{table}')
@@ -683,7 +698,8 @@ class DuckdbExecutor:
                     f'foreach {list(c.dims)} — missing a Sum/GroupSum?'
                 )
 
-        self._n_rows = self._label_frame(f'con_{c.name}', c.dims, c.where, 'row', self._n_rows)
+        restrictions = _absence_restrictions([f for f, _ in terms])
+        self._n_rows = self._label_frame(f'con_{c.name}', c.dims, c.where, 'row', self._n_rows, restrictions)
 
         rhs_sql = ' + '.join(f'{sign} * COALESCE(({self._sql.constant_scalar(p)}), 0)' for p, sign in consts) or '0'
 
@@ -920,3 +936,20 @@ def _release(con: Any, workdir: Path | None) -> None:
         con.close()
     if workdir is not None:
         shutil.rmtree(workdir, ignore_errors=True)
+
+
+def _absence_restrictions(terms: Sequence[TermFragment]) -> tuple[tuple[tuple[str, ...], str], ...]:
+    """The presence relations a constraint's rows must be contained in.
+
+    Absence propagates into the comparison and drops the row there: ``x + y >= 10``
+    is not ``x >= 10`` where ``y`` is masked, it is no constraint at all. Only
+    *variable* absence counts — a sparse parameter is a compressed dense array
+    whose missing rows mean a zero coefficient (SPEC §8), which is why the
+    fragment carries ``presence`` apart from its ``sql`` and why this reads that.
+
+    A fragment with nothing to restrict is skipped, and that is load-bearing
+    rather than tidy: a restriction is *data*, so it costs ``_label_frame`` its
+    arithmetic paths. An unmasked variable's presence is the whole coordinate
+    product and would remove nothing, so it never gets to impose that cost.
+    """
+    return tuple((p.dims, p.presence) for p in terms if p.presence is not None and p.dims)

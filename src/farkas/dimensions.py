@@ -65,6 +65,7 @@ from farkas.where_parser import (
     ParameterDefinedNode,
     UnresolvedComparisonNode,
     UnresolvedNameNode,
+    VariableDefinedNode,
     WhereNode,
 )
 
@@ -254,6 +255,15 @@ def _check_where_dims(
                 f"{context}: where-parameter '{node.name}' has dims "
                 f'{sorted(pdims - frame)} outside the frame {sorted(frame)}. Reducing '
                 f'a mask over an unlisted dim would silently widen it.'
+            )
+    elif isinstance(node, VariableDefinedNode):
+        vdims = frozenset(schema.variables[node.name].foreach)
+        if not vdims <= frame:
+            raise DimensionError(
+                f"{context}: where-variable '{node.name}' has dims "
+                f'{sorted(vdims - frame)} outside the frame {sorted(frame)}. A mask '
+                f'reducing over an unlisted dim would silently widen it — say which '
+                f'reduction you mean.'
             )
     elif isinstance(node, DimensionComparisonNode):
         if node.name not in frame:

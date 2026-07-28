@@ -75,6 +75,16 @@ ACCEPTED = [
     'p_max > 0 OR snapshot >= 0',
 ]
 
+#: Predicates this sweep cannot host, with where they are checked instead. The
+#: sweep masks ``variables.p.where`` on the dispatch model, and a bare variable
+#: name fits neither slot: in a variable's own where it is a self-reference
+#: (rejected at load), and on ``balance`` it spans a dim the constraint does not
+#: (a DimensionError, correctly — reducing it needs ROADMAP Track 1 item 6).
+#: Mapped rather than skipped so the coverage guard below still names a test.
+COVERED_ELSEWHERE = {
+    'VariableDefinedNode': ('tests/test_relational.py::test_a_bare_variable_name_in_a_where_asks_whether_it_exists'),
+}
+
 
 @pytest.mark.parametrize('where', ACCEPTED)
 def test_both_lanes_build_the_same_model(tmp_path, data, coords, where):
@@ -112,7 +122,7 @@ def test_every_resolved_predicate_is_parity_tested():
     unresolved = {UnresolvedNameNode, UnresolvedComparisonNode}  # rewritten by resolution, never evaluated
     expected = set(get_args(WhereNode)) - unresolved
 
-    ns = Namespace((), ('p_max', 'cost', 'load'), ('snapshot', 'generator'))
+    ns = Namespace(('p',), ('p_max', 'cost', 'load'), ('snapshot', 'generator'))
     covered: set[type] = set()
 
     def walk(node):
@@ -123,9 +133,13 @@ def test_every_resolved_predicate_is_parity_tested():
 
     for where in ACCEPTED:
         walk(where_of(where, ns, 't'))
+    covered |= {t for t in expected if t.__name__ in COVERED_ELSEWHERE}
 
     missing = expected - covered
-    assert not missing, f'resolved predicates with no both-lanes test: {sorted(t.__name__ for t in missing)}'
+    assert not missing, (
+        f'resolved predicates with no both-lanes test: {sorted(t.__name__ for t in missing)}. '
+        f'Add it to ACCEPTED, or to COVERED_ELSEWHERE naming the test that does cover it.'
+    )
 
 
 @pytest.mark.xfail(strict=True, reason='orphaned constraint rows: the lanes disagree — see the docstring')
