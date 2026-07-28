@@ -211,6 +211,44 @@
   border-left: none;
 }
 
+/* --- Mermaid in dark mode ---
+ *
+ * The diagrams colour some nodes through `classDef`, e.g.
+ * `classDef stream fill:#f0f7f0,stroke:#3a7d44,color:#111`. In slate that came
+ * apart and the labels disappeared — near-white text on a near-white fill.
+ *
+ * The two halves of that declaration do not survive the same way, and neither
+ * can be fixed by overriding a rule:
+ *
+ *   fill  — mermaid emits `#<generated-id> .stream > * { fill: … !important }`.
+ *           An ID *and* `!important`: nothing we can write outranks it, so the
+ *           pale fills are fixed in both schemes.
+ *   color — never applies at all. It reaches the text only by inheritance,
+ *           while Material styles `.nodeLabel` directly, and a directly-applied
+ *           value beats an inherited one at any specificity. The label colour
+ *           is always Material's, which is light in slate. Hence the clash.
+ *
+ * So the fills win and the labels follow the scheme — the one combination that
+ * cannot work. Rather than fight it, render the whole diagram the way its
+ * colours were chosen for: light, on its own card, in both schemes.
+ *
+ * This is variable shadowing, not a specificity contest. Material defines each
+ * of these as `var(--md-mermaid-…)` and mermaid's generated CSS *reads* them
+ * inside the SVG; redefining them on the container is what those `var()` calls
+ * resolve against. The values below are what the default scheme computes.
+ */
+[data-md-color-scheme="slate"] .md-typeset .mermaid {
+  --md-mermaid-label-fg-color: #272822;          /* = default's --md-code-fg-color */
+  --md-mermaid-edge-color: #272822;
+  --md-mermaid-node-bg-color: rgba(2, 132, 199, 0.1);
+  --md-mermaid-node-fg-color: #0284c7;           /* sky-600, our light accent */
+  --md-mermaid-label-bg-color: #ffffff;
+
+  background: #ffffff;
+  border-radius: 4px;
+  padding: 0.8rem 0.4rem;
+}
+
 /* --- Landing page --- */
 
 /* Centered hero: tagline, badges, CTA buttons */
