@@ -285,6 +285,39 @@ def test_missing_source_rejected(dispatch_data):
         ex.build(dispatch_program(), sources)
 
 
+#: A scalar parameter used in a bound and in the objective — the two places a
+#: silent row multiplication is least visible.
+SCALAR_MODEL = {
+    'dimensions': {'i': {'dtype': 'int', 'values': [0, 1]}},
+    'parameters': {'s': {'dims': []}},
+    'variables': {'x': {'foreach': ['i'], 'bounds': {'lower': 0, 'upper': 's'}}},
+    'constraints': {'floor': {'foreach': ['i'], 'equations': [{'expression': 'x >= 1'}]}},
+    'objectives': {'total': {'sense': 'minimize', 'equations': [{'expression': 'sum(x * s, over=i)'}]}},
+}
+
+
+@pytest.mark.parametrize('rows', [2, 0])
+def test_a_dimensionless_parameter_must_be_one_row(rows):
+    """No dims means one value broadcast everywhere, and nothing used to check it.
+
+    The join that broadcasts a dimensionless parameter is ``ON TRUE``, which is
+    right for one row and a silent row multiplication for two — duplicate
+    columns for one variable in a bound, duplicate mask rows in a where. The
+    per-coordinate check next door skipped this case entirely, because a
+    parameter with no dims has nothing to group by (#166).
+    """
+    data = {'s': pd.DataFrame({'value': pd.Series([1.0] * rows, dtype='float64')})}
+    with pytest.raises(DataError, match=f"parameter 's' .* its source has {rows} rows"):
+        fk.build(SCALAR_MODEL, data)
+
+
+def test_a_dimensionless_parameter_of_one_row_still_builds():
+    """The control: the shape the check exists to let through."""
+    data = {'s': pd.DataFrame({'value': [10.0]})}
+    with fk.solve(SCALAR_MODEL, data) as result:
+        assert result.objective == pytest.approx(20.0)  # x == 1 at both coordinates of i, times s
+
+
 def test_out_of_foreach_dims_rejected(dispatch_data):
     gens, load = dispatch_data
     prog = dispatch_program()

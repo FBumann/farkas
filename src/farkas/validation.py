@@ -146,6 +146,13 @@ def validate_expressions(
         )
 
     for oname, odef in schema.objectives.items():
+        if len(odef.equations) > 1:
+            errors.append(
+                f"Objective '{oname}': {len(odef.equations)} entries under 'equations:', "
+                f'and an objective is one expression — only the first would be used.\n'
+                f'Add the terms together in a single expression instead: '
+                f"'{odef.equations[0].expression} + {odef.equations[1].expression}'."
+            )
         for i, eq in enumerate(odef.equations):
             context = f"Objective '{oname}', equation {i}"
             _check_where(eq.where, ns, context, errors)

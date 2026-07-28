@@ -53,6 +53,24 @@ class TestValidateExpressions:
         with pytest.raises(ValueError, match='must not contain a comparison'):
             validate_expressions(schema)
 
+    def test_objective_with_a_second_equations_entry(self):
+        """An objective is one expression, and silently using the first is worse.
+
+        ``constraints.<name>.equations`` being a list means "several constraints
+        under one name", so the same key under an objective reads as "several
+        terms in one objective" — and used to drop everything past the first,
+        giving a wrong answer with nothing to see (#198).
+        """
+        schema = _schema(
+            objectives={
+                'cost': {'equations': [{'expression': 'sum(p, over=g)'}, {'expression': 'sum(p_max, over=g)'}]}
+            },
+        )
+        with pytest.raises(ValueError, match="2 entries under 'equations:'") as exc_info:
+            validate_expressions(schema)
+        # the message names the rewrite, spelled from what was written
+        assert 'sum(p, over=g) + sum(p_max, over=g)' in str(exc_info.value)
+
     def test_unknown_helper(self):
         schema = _schema(
             objectives={'cost': {'equations': [{'expression': 'frobnicate(p, over=g)'}]}},
