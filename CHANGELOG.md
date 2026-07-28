@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.0.0-alpha.33](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.32...v0.0.0-alpha.33) (2026-07-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* absence propagates and drops the row, plus defined(v) ([#239](https://github.com/FBumann/farkas/issues/239))
+
+### Features
+
+* absence propagates and drops the row, plus defined(v) ([#239](https://github.com/FBumann/farkas/issues/239)) ([5eb5943](https://github.com/FBumann/farkas/commit/5eb5943bc1f83ff4451e1dbfa526d318f7cf7746))
+
+## [0.0.0-alpha.32](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.31...v0.0.0-alpha.32) (2026-07-28)
+
+
+### Features
+
+* **compat:** answer linopy's v1 convention where the position knows the answer ([#236](https://github.com/FBumann/farkas/issues/236)) ([facee3f](https://github.com/FBumann/farkas/commit/facee3f250096724de20ffd6e0aa215dd8eb6534)), closes [#8](https://github.com/FBumann/farkas/issues/8)
+
+## [0.0.0-alpha.31](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.30...v0.0.0-alpha.31) (2026-07-28)
+
+
+### Documentation
+
+* alpha.30 credited a perf fix it does not contain ([#230](https://github.com/FBumann/farkas/issues/230)) ([5afb004](https://github.com/FBumann/farkas/commit/5afb004cfb5ede08b0a203bde47f19ec54607476))
+
+## [0.0.0-alpha.30](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.29...v0.0.0-alpha.30) (2026-07-28)
+
+
+### Documentation
+
+* pin all three label paths, and write the row-major order down ([#152](https://github.com/FBumann/farkas/issues/152)) ([3d8c725](https://github.com/FBumann/farkas/commit/3d8c7251bc210bbc4438382ec58c3b699683624a))
+
+*No functional change: this release is alpha.29 plus tests and a paragraph of
+`ARCHITECTURE.md`. The commit subject says `perf:` and claims a speed-up, which
+is wrong — that optimisation shipped in alpha.29 as
+[#178](https://github.com/FBumann/farkas/issues/178). #152 was retitled after it
+had already been merged and released, too late for the squash subject.*
+
 ## [0.0.0-alpha.29](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.28...v0.0.0-alpha.29) (2026-07-28)
 
 
