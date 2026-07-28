@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.0.0-alpha.33](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.32...v0.0.0-alpha.33) (2026-07-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* absence propagates and drops the row, plus defined(v) ([#239](https://github.com/FBumann/farkas/issues/239))
+
+### Features
+
+* absence propagates and drops the row, plus defined(v) ([#239](https://github.com/FBumann/farkas/issues/239)) ([5eb5943](https://github.com/FBumann/farkas/commit/5eb5943bc1f83ff4451e1dbfa526d318f7cf7746))
+
 ## [0.0.0-alpha.32](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.31...v0.0.0-alpha.32) (2026-07-28)
 
 
