@@ -43,20 +43,39 @@ jobs:
       - run: uv run --no-sync pyrefly check --output-format=github
       - run: uv run --no-sync pytest -q
 
-      # Re-sync the same checkout into the shipped shape, at the declared floors.
-      # Two claims in one install:
-      #   1. the streaming product runs with no linopy/xarray on disk;
+      # Re-install the same checkout into the shipped shape, at the declared
+      # floors. Two claims in one install:
+      #   1. the relational product runs with no linopy, xarray, pandas or
+      #      pyarrow on disk — polars is the only dataframe library it needs;
       #   2. the lower bounds in pyproject.toml are real. Without this they are
-      #      decoration — `>=1.0` on duckdb was five minor versions below the
-      #      first release with `to_arrow_reader`, and nothing noticed.
-      # Safe to share the checkout: uv.lock is gitignored, so it is a byproduct
-      # of each sync rather than a committed pin, and uv records the resolution
-      # strategy in it — this re-resolves instead of inheriting what the sync
-      # above locked. Verified: pandas 2.2.0 / numpy 1.26.0 / pyarrow 16.0.0 /
-      # duckdb 1.5.0 / pydantic 2.0. Do not add `--frozen`.
+      #      decoration, and decoration is how they go wrong: `>=1.0` on duckdb
+      #      once sat five minor versions below the first release carrying the
+      #      method the sink called, and nothing noticed until this job existed.
+      #
+      # `uv venv` + `uv pip install`, deliberately, not `uv sync`. uv locks
+      # *universally* — across every declared extra, whether or not it is being
+      # installed — so `uv sync --no-default-groups` still resolves under the
+      # `[linopy]` extra's constraints. linopy 0.9.0 requires `polars>=1.31.1`,
+      # which silently dragged the bare install to polars 1.32 and left our own
+      # `polars>=1.30` untested: claim 2 above, defeated by the thing it exists
+      # to catch. `uv pip install` resolves the requested set and nothing else.
+      # Verified green at polars 1.30.0 / numpy 1.26.0 / highspy 1.10.0 /
+      # pydantic 2.0 / pyparsing 3.1.0 / pyyaml 6.0.
+      #
+      # pytest goes in as a second, unconstrained call: under `lowest-direct`
+      # an unpinned direct requirement resolves to pytest 2.0.0, which is a
+      # 2011 sdist that tries to build itself over plain HTTP.
+      #
+      # The floors are a 3.11 claim only, which is the interpreter this job
+      # pins: pyyaml 6.0 and numpy 1.26.0 predate 3.13 and have no wheel for
+      # it, so `lowest-direct` there tries a source build and fails. Raise a
+      # floor when the code relies on that version's behaviour, not to chase
+      # a newer interpreter — see the early-development note in RELEASING.md.
       - name: bare install, at the dependency floors
         run: |
-          uv sync --no-default-groups --no-editable --resolution lowest-direct
+          rm -rf .venv
+          uv venv
+          uv pip install --resolution lowest-direct .
           uv pip install pytest
           uv run --no-sync python -c "import importlib.util, sys; sys.exit(importlib.util.find_spec('linopy') is not None)"
           uv run --no-sync pytest -q
