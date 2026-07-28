@@ -24,19 +24,37 @@ relational engine, and eagerly through linopy — from the same parquet files to
 the same destination.
 
 **The eager arm is `farkas.linopy.build`, not hand-written linopy.** It is our
-own YAML→`linopy.Model` shim, so it carries our loader on top of linopy's work
-and the ratios below are therefore kind to us. Measured on `dispatch/m`, the
-same 1M-variable model written by hand against the shim: build 0.31 s against
-0.36 s, with emit identical because it is the same `Model.to_file` on the same
-object. So read roughly 15% off the eager arm's build to get what a linopy user
-would see — enough to move a ratio, not enough to move a conclusion.
+own YAML→`linopy.Model` shim, so it carries our loader on top of linopy's work.
+Measured against hand-written linopy on the same model, the shim costs a
+constant **~2.3 ms** — 1.26x at `xs`, 1.15x at `m` — so it is a fixed offset
+rather than the ~15% this file used to claim from one measurement at one rung.
+Nowhere near enough to move a conclusion.
+
+**Which code produced these numbers.** Three engines means three answers, and
+the duckdb arm is a checkout rather than a release, so a version string alone
+is not enough:
+
+| arm | engine | commit |
+|---|---|---|
+| `farkas` | this branch's polars engine, polars 1.43.0 | `45902ec` |
+| `linopy` | linopy **0.8.0.post1.dev140+g346943317** — the v1-semantics build (PyPSA/linopy#717) | shim at the same commit |
+| `duckdb` | the engine this branch replaces, duckdb 1.5.5 | `4a13d38` on `main`, which carries the same v1 semantics (#239) |
+
+highspy 1.15.1 · numpy 2.5.1 · pandas 3.0.5 · xarray 2026.7.0 · pyarrow 25.0.0.
+macOS-26.2-arm64-arm-64bit-Mach-O, python 3.13.2.
+
+`bench/run.py` writes the versions *and* a commit per arm into the first line
+of `latest.jsonl`, because it fingerprints installed distributions: an
+editable install reports the version it was synced at rather than the tree
+that ran, and a checkout arm has no distribution at all.
 
 Produced by [`bench/`](../bench/README.md) and read straight off
 [`bench/results/latest.jsonl`](../bench/results/latest.jsonl), which carries
 the machine fingerprint and library versions that produced it:
 
 ```bash
-uv run python -m bench.run --sizes xs s m l d100 d50 d25 d08
+uv run python -m bench.run --sizes xs s m l d100 d50 d25 d08 \
+    --arms farkas linopy duckdb --duckdb-root ../farkas-main
 uv run python -m bench.report bench/results/latest.jsonl
 ```
 
@@ -57,138 +75,174 @@ actually use — the ratios differ by more than the noise between them.
 
 Both arms end holding a populated `highspy.Highs` with `run()` never called: farkas through `build_highs`, linopy through `to_highspy()`. The simplex is the same work whoever filled the model, so timing it would say nothing about the lane that filled it.
 
-| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
-|---|---|---|---|---|---|---|---|---|---|
-| 10k | 100% | 100 | 0.02 s | 0.20 s | 0.08x | 0.17 GB | 0.20 GB | 0.83x | — |
-| 100k | 100% | 1k | 0.02 s | 0.22 s | 0.11x | 0.21 GB | 0.23 GB | 0.91x | — |
-| 1M | 100% | 10k | 0.09 s | 0.38 s | 0.24x | 0.52 GB | 0.49 GB | 1.05x | — |
-| 10M | 100% | 100k | 0.71 s | 1.99 s | 0.36x | 3.14 GB | 3.30 GB | 0.95x | — |
+| variables | live | rows | wall: farkas | wall: linopy | wall: duckdb | wall | peak: farkas | peak: linopy | peak: duckdb | peak | LP |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 10k | 100% | 100 | 0.02 s | 0.20 s | 0.05 s | 0.08x | 0.17 GB | 0.20 GB | 0.16 GB | 0.83x | — |
+| 100k | 100% | 1k | 0.02 s | 0.22 s | 0.10 s | 0.10x | 0.21 GB | 0.23 GB | 0.19 GB | 0.91x | — |
+| 1M | 100% | 10k | 0.08 s | 0.37 s | 0.39 s | 0.22x | 0.52 GB | 0.50 GB | 0.46 GB | 1.05x | — |
+| 10M | 100% | 100k | 0.68 s | 1.92 s | 2.75 s | 0.35x | 3.13 GB | 3.30 GB | 2.03 GB | 0.95x | — |
 
 ### dispatch — lp sink
 
 farkas writes the LP file, linopy through its `lp-polars` writer.
 
-| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
-|---|---|---|---|---|---|---|---|---|---|
-| 10k | 100% | 100 | 0.01 s | 0.20 s | 0.07x | 0.17 GB | 0.21 GB | 0.79x | 1 MB |
-| 100k | 100% | 1k | 0.03 s | 0.23 s | 0.12x | 0.21 GB | 0.26 GB | 0.81x | 7 MB |
-| 1M | 100% | 10k | 0.13 s | 0.37 s | 0.34x | 0.47 GB | 0.59 GB | 0.80x | 76 MB |
-| 10M | 100% | 100k | 1.20 s | 1.58 s | 0.76x | 2.26 GB | 2.24 GB | 1.01x | 796 MB |
+| variables | live | rows | wall: farkas | wall: linopy | wall: duckdb | wall | peak: farkas | peak: linopy | peak: duckdb | peak | LP |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 10k | 100% | 100 | 0.01 s | 0.20 s | 0.05 s | 0.07x | 0.17 GB | 0.21 GB | 0.16 GB | 0.79x | 1 MB |
+| 100k | 100% | 1k | 0.03 s | 0.21 s | 0.13 s | 0.12x | 0.21 GB | 0.26 GB | 0.18 GB | 0.80x | 7 MB |
+| 1M | 100% | 10k | 0.12 s | 0.33 s | 0.38 s | 0.38x | 0.47 GB | 0.57 GB | 0.33 GB | 0.82x | 76 MB |
+| 10M | 100% | 100k | 1.09 s | 1.53 s | 2.86 s | 0.71x | 2.24 GB | 2.22 GB | 0.77 GB | 1.01x | 796 MB |
 
 ### nodal — highs sink
 
 Both arms end holding a populated `highspy.Highs` with `run()` never called: farkas through `build_highs`, linopy through `to_highspy()`. The simplex is the same work whoever filled the model, so timing it would say nothing about the lane that filled it.
 
-| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
-|---|---|---|---|---|---|---|---|---|---|
-| 3k | 25% | 1k | 0.02 s | 0.21 s | 0.09x | 0.17 GB | 0.20 GB | 0.83x | — |
-| 30k | 25% | 10k | 0.02 s | 0.22 s | 0.10x | 0.19 GB | 0.21 GB | 0.87x | — |
-| 300k | 25% | 100k | 0.05 s | 0.29 s | 0.16x | 0.34 GB | 0.36 GB | 0.95x | — |
-| 3M | 25% | 1M | 0.36 s | 1.11 s | 0.32x | 1.43 GB | 1.78 GB | 0.81x | — |
+| variables | live | rows | wall: farkas | wall: linopy | wall: duckdb | wall | peak: farkas | peak: linopy | peak: duckdb | peak | LP |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 3k | 25% | 1k | 0.02 s | 0.21 s | 0.05 s | 0.08x | 0.17 GB | 0.20 GB | 0.16 GB | 0.83x | — |
+| 30k | 25% | 10k | 0.02 s | 0.22 s | 0.08 s | 0.09x | 0.19 GB | 0.21 GB | 0.17 GB | 0.88x | — |
+| 300k | 25% | 100k | 0.05 s | 0.29 s | 0.26 s | 0.16x | 0.34 GB | 0.35 GB | 0.27 GB | 0.95x | — |
+| 3M | 25% | 1M | 0.34 s | 1.07 s | 1.78 s | 0.32x | 1.43 GB | 1.71 GB | 0.98 GB | 0.84x | — |
 
 ### nodal — lp sink
 
 farkas writes the LP file, linopy through its `lp-polars` writer.
 
-| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
-|---|---|---|---|---|---|---|---|---|---|
-| 3k | 25% | 1k | 0.02 s | 0.21 s | 0.08x | 0.17 GB | 0.21 GB | 0.79x | 0 MB |
-| 30k | 25% | 10k | 0.02 s | 0.22 s | 0.09x | 0.19 GB | 0.24 GB | 0.81x | 2 MB |
-| 300k | 25% | 100k | 0.07 s | 0.26 s | 0.26x | 0.32 GB | 0.45 GB | 0.71x | 25 MB |
-| 3M | 25% | 1M | 0.50 s | 0.81 s | 0.61x | 1.29 GB | 1.57 GB | 0.82x | 264 MB |
+| variables | live | rows | wall: farkas | wall: linopy | wall: duckdb | wall | peak: farkas | peak: linopy | peak: duckdb | peak | LP |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 3k | 25% | 1k | 0.02 s | 0.22 s | 0.05 s | 0.07x | 0.17 GB | 0.21 GB | 0.16 GB | 0.79x | 0 MB |
+| 30k | 25% | 10k | 0.02 s | 0.21 s | 0.08 s | 0.09x | 0.19 GB | 0.24 GB | 0.17 GB | 0.80x | 2 MB |
+| 300k | 25% | 100k | 0.06 s | 0.26 s | 0.27 s | 0.24x | 0.32 GB | 0.44 GB | 0.22 GB | 0.72x | 25 MB |
+| 3M | 25% | 1M | 0.50 s | 0.79 s | 1.79 s | 0.64x | 1.28 GB | 1.48 GB | 0.54 GB | 0.86x | 264 MB |
 
 ### profiled — highs sink
 
 Both arms end holding a populated `highspy.Highs` with `run()` never called: farkas through `build_highs`, linopy through `to_highspy()`. The simplex is the same work whoever filled the model, so timing it would say nothing about the lane that filled it.
 
-| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
-|---|---|---|---|---|---|---|---|---|---|
-| 12k | 100% | 1k | 0.02 s | 0.21 s | 0.09x | 0.18 GB | 0.20 GB | 0.86x | — |
-| 120k | 100% | 10k | 0.04 s | 0.23 s | 0.17x | 0.27 GB | 0.25 GB | 1.10x | — |
-| 1.2M | 100% | 100k | 0.27 s | 0.43 s | 0.63x | 0.91 GB | 0.64 GB | 1.42x | — |
-| 12M | 100% | 1M | 2.91 s | 2.58 s | 1.13x | 4.37 GB | 4.47 GB | 0.98x | — |
+| variables | live | rows | wall: farkas | wall: linopy | wall: duckdb | wall | peak: farkas | peak: linopy | peak: duckdb | peak | LP |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 12k | 100% | 1k | 0.02 s | 0.21 s | 0.06 s | 0.09x | 0.17 GB | 0.21 GB | 0.17 GB | 0.85x | — |
+| 120k | 100% | 10k | 0.03 s | 0.23 s | 0.19 s | 0.15x | 0.26 GB | 0.25 GB | 0.22 GB | 1.06x | — |
+| 1.2M | 100% | 100k | 0.20 s | 0.43 s | 0.88 s | 0.47x | 0.85 GB | 0.64 GB | 0.59 GB | 1.32x | — |
+| 12M | 100% | 1M | 2.15 s | 2.49 s | 6.34 s | 0.86x | 4.14 GB | 4.73 GB | 2.70 GB | 0.88x | — |
 
 ### profiled — lp sink
 
 farkas writes the LP file, linopy through its `lp-polars` writer.
 
-| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
-|---|---|---|---|---|---|---|---|---|---|
-| 12k | 100% | 1k | 0.02 s | 0.21 s | 0.09x | 0.18 GB | 0.22 GB | 0.80x | 1 MB |
-| 120k | 100% | 10k | 0.04 s | 0.23 s | 0.19x | 0.27 GB | 0.30 GB | 0.89x | 9 MB |
-| 1.2M | 100% | 100k | 0.32 s | 0.38 s | 0.83x | 0.77 GB | 0.72 GB | 1.07x | 95 MB |
-| 12M | 100% | 1M | 3.43 s | 1.93 s | 1.78x | 3.62 GB | 3.19 GB | 1.14x | 986 MB |
+| variables | live | rows | wall: farkas | wall: linopy | wall: duckdb | wall | peak: farkas | peak: linopy | peak: duckdb | peak | LP |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 12k | 100% | 1k | 0.02 s | 0.21 s | 0.06 s | 0.08x | 0.18 GB | 0.22 GB | 0.16 GB | 0.80x | 1 MB |
+| 120k | 100% | 10k | 0.04 s | 0.22 s | 0.22 s | 0.17x | 0.26 GB | 0.29 GB | 0.20 GB | 0.88x | 9 MB |
+| 1.2M | 100% | 100k | 0.26 s | 0.38 s | 0.89 s | 0.69x | 0.71 GB | 0.69 GB | 0.41 GB | 1.04x | 95 MB |
+| 12M | 100% | 1M | 2.62 s | 1.95 s | 6.47 s | 1.35x | 3.43 GB | 3.06 GB | 1.50 GB | 1.12x | 986 MB |
 
 ### sector — highs sink
 
 Both arms end holding a populated `highspy.Highs` with `run()` never called: farkas through `build_highs`, linopy through `to_highspy()`. The simplex is the same work whoever filled the model, so timing it would say nothing about the lane that filled it.
 
-| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
-|---|---|---|---|---|---|---|---|---|---|
-| 1k | 6% | 1k | 0.02 s | 0.23 s | 0.09x | 0.17 GB | 0.20 GB | 0.83x | — |
-| 10k | 6% | 10k | 0.02 s | 0.23 s | 0.10x | 0.19 GB | 0.22 GB | 0.87x | — |
-| 100k | 6% | 100k | 0.05 s | 0.32 s | 0.15x | 0.34 GB | 0.50 GB | 0.69x | — |
-| 1M | 6% | 1M | 0.31 s | 1.22 s | 0.26x | 0.94 GB | 3.01 GB | 0.31x | — |
+| variables | live | rows | wall: farkas | wall: linopy | wall: duckdb | wall | peak: farkas | peak: linopy | peak: duckdb | peak | LP |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1k | 6% | 1k | 0.02 s | 0.22 s | — | 0.09x | 0.17 GB | 0.20 GB | — | 0.83x | — |
+| 10k | 6% | 10k | 0.02 s | 0.23 s | — | 0.10x | 0.19 GB | 0.22 GB | — | 0.87x | — |
+| 100k | 6% | 100k | 0.05 s | 0.31 s | — | 0.15x | 0.34 GB | 0.49 GB | — | 0.69x | — |
+| 1M | 6% | 1M | 0.31 s | 1.23 s | — | 0.25x | 0.96 GB | 2.98 GB | — | 0.32x | — |
 
 ### sector — lp sink
 
 farkas writes the LP file, linopy through its `lp-polars` writer.
 
-| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
-|---|---|---|---|---|---|---|---|---|---|
-| 1k | 6% | 1k | 0.02 s | 0.22 s | 0.08x | 0.17 GB | 0.21 GB | 0.79x | 0 MB |
-| 10k | 6% | 10k | 0.02 s | 0.23 s | 0.10x | 0.19 GB | 0.24 GB | 0.79x | 1 MB |
-| 100k | 6% | 100k | 0.06 s | 0.31 s | 0.18x | 0.34 GB | 0.53 GB | 0.65x | 12 MB |
-| 1M | 6% | 1M | 0.39 s | 1.05 s | 0.37x | 0.92 GB | 2.97 GB | 0.31x | 120 MB |
+| variables | live | rows | wall: farkas | wall: linopy | wall: duckdb | wall | peak: farkas | peak: linopy | peak: duckdb | peak | LP |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1k | 6% | 1k | 0.02 s | 0.22 s | — | 0.08x | 0.17 GB | 0.21 GB | — | 0.79x | 0 MB |
+| 10k | 6% | 10k | 0.02 s | 0.22 s | — | 0.10x | 0.19 GB | 0.24 GB | — | 0.79x | 1 MB |
+| 100k | 6% | 100k | 0.05 s | 0.30 s | — | 0.18x | 0.34 GB | 0.52 GB | — | 0.65x | 12 MB |
+| 1M | 6% | 1M | 0.39 s | 1.04 s | — | 0.37x | 0.94 GB | 2.91 GB | — | 0.32x | 120 MB |
 
 ### transport — highs sink
 
 Both arms end holding a populated `highspy.Highs` with `run()` never called: farkas through `build_highs`, linopy through `to_highspy()`. The simplex is the same work whoever filled the model, so timing it would say nothing about the lane that filled it.
 
-| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
-|---|---|---|---|---|---|---|---|---|---|
-| 9.8k | 100% | 1.4k | 0.02 s | 0.23 s | 0.11x | 0.17 GB | 0.20 GB | 0.85x | — |
-| 98k | 100% | 14k | 0.03 s | 0.25 s | 0.13x | 0.22 GB | 0.23 GB | 0.95x | — |
-| 980k | 100% | 140k | 0.15 s | 0.47 s | 0.32x | 0.60 GB | 0.56 GB | 1.08x | — |
-| 9.8M | 100% | 1.4M | 1.33 s | 2.57 s | 0.52x | 3.14 GB | 3.89 GB | 0.81x | — |
+| variables | live | rows | wall: farkas | wall: linopy | wall: duckdb | wall | peak: farkas | peak: linopy | peak: duckdb | peak | LP |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 9.8k | 100% | 1.4k | 0.02 s | 0.23 s | 0.06 s | 0.11x | 0.17 GB | 0.20 GB | 0.17 GB | 0.85x | — |
+| 98k | 100% | 14k | 0.03 s | 0.25 s | 0.12 s | 0.14x | 0.22 GB | 0.23 GB | 0.21 GB | 0.95x | — |
+| 980k | 100% | 140k | 0.12 s | 0.43 s | 0.50 s | 0.28x | 0.60 GB | 0.57 GB | 0.54 GB | 1.05x | — |
+| 9.8M | 100% | 1.4M | 1.12 s | 2.49 s | 3.59 s | 0.45x | 3.02 GB | 3.95 GB | 2.54 GB | 0.76x | — |
 
 ### transport — lp sink
 
 farkas writes the LP file, linopy through its `lp-polars` writer.
 
-| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
-|---|---|---|---|---|---|---|---|---|---|
-| 9.8k | 100% | 1.4k | 0.02 s | 0.23 s | 0.11x | 0.18 GB | 0.22 GB | 0.81x | 1 MB |
-| 98k | 100% | 14k | 0.04 s | 0.25 s | 0.15x | 0.23 GB | 0.29 GB | 0.81x | 8 MB |
-| 980k | 100% | 140k | 0.21 s | 0.42 s | 0.48x | 0.55 GB | 0.66 GB | 0.83x | 79 MB |
-| 9.8M | 100% | 1.4M | 2.04 s | 2.07 s | 0.99x | 3.02 GB | 1.90 GB | 1.59x | 820 MB |
+| variables | live | rows | wall: farkas | wall: linopy | wall: duckdb | wall | peak: farkas | peak: linopy | peak: duckdb | peak | LP |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 9.8k | 100% | 1.4k | 0.02 s | 0.23 s | 0.06 s | 0.10x | 0.18 GB | 0.22 GB | 0.16 GB | 0.80x | 1 MB |
+| 98k | 100% | 14k | 0.04 s | 0.24 s | 0.15 s | 0.15x | 0.23 GB | 0.29 GB | 0.20 GB | 0.81x | 8 MB |
+| 980k | 100% | 140k | 0.20 s | 0.39 s | 0.48 s | 0.52x | 0.56 GB | 0.64 GB | 0.34 GB | 0.87x | 79 MB |
+| 9.8M | 100% | 1.4M | 1.60 s | 1.87 s | 3.49 s | 0.85x | 3.12 GB | 1.85 GB | 1.16 GB | 1.68x | 820 MB |
 
 ## What this says
 
-**Below ~1M variables we win on both axes, by 2–3x on wall time.** That is the
-range declarative modelling is actually used in, and the range a rolling horizon
-lives in entirely.
+**Ahead on both axes, on every case, through the sink most callers use.**
+At the `l` rung, to a loaded solver: wall 0.35x, 0.32x, 0.25x, 0.45x, 0.86x
+and peak 0.95x, 0.84x, 0.32x, 0.76x, 0.88x. `profiled` was the exception until
+the duplicate-coordinate check stopped grouping 12M rows to answer a yes/no
+question; it is now a win like the rest.
 
-**The sink decides the answer, and `transport`'s peak is the clearest case.**
-Through the LP writer it is 1.59x — the number this file has called the one
-open problem at scale. Through the hand-off, the sink most callers actually
-use, the same model at the same rung is **0.81x**. Nothing about the build
-changed between those two columns: the LP path spends its peak turning doubles
-into text, while HiGHS's own dense model is resident in both arms and dwarfs
-the difference between the lanes that filled it.
+**The sink decides the answer.** The LP file is the artifact fewest callers
+want and the ratios there are far weaker — 0.71x to 1.35x on wall, and
+`transport` is 1.61x on peak. Most of an LP write is turning doubles into
+text, which is work neither lane avoids, so that ratio compresses toward 1.00
+however fast the build gets. Read the sink you actually use.
 
-So the honest reading is per sink. At the `l` rung, wall and peak:
+**Against the engine this replaces**, at the same rung: polars is 2.2-5.2x
+faster than duckdb on every case and both sinks, and duckdb is 1.2-2.9x
+lighter. That is the trade this branch makes, and neither half of it is
+marginal. duckdb is also slower than the eager lane everywhere here — the
+streaming engine's advantage was never wall time.
 
-| | lp | highs |
-|---|---|---|
-| dispatch | 0.76x / 1.01x | **0.36x** / **0.95x** |
-| nodal | 0.61x / 0.82x | **0.32x** / **0.81x** |
-| sector | 0.37x / 0.31x | **0.26x** / 0.31x |
-| transport | 0.99x / **1.59x** | **0.52x** / **0.81x** |
-| profiled | 1.78x / 1.14x | 1.13x / **0.98x** |
+### Two costs, and both are real
 
-**We are ahead on both axes on four of five cases through the hand-off**, and
-the one we are not is `profiled`.
+The harness spawns one process per measurement, so every timing above is a
+*first* build, and a first build pays whatever lazy work a lane does on its
+first call. That is the right number for a caller who builds one model and
+solves it, and the wrong one for a rolling horizon, which pays it once. So the
+build is measured both ways, to the same end point — build **and** hand-off,
+because linopy defers ~82% of its work to whatever consumes the model and a
+build-only comparison would measure our finished matrix against its
+placeholder:
+
+| case | vars | farkas: first | farkas: steady | linopy: first | linopy: steady | duckdb: first | duckdb: steady | steady vs linopy |
+|---|---|---|---|---|---|---|---|---|
+| transport | 9.8k | 19.8 ms | **13.4 ms** | 222.4 ms | 35.5 ms | 56.8 ms | 34.1 ms | 0.38x |
+| dispatch | 10k | 10.5 ms | **5.8 ms** | 196.6 ms | 13.8 ms | 45.6 ms | 22.3 ms | 0.42x |
+| nodal | 12k | 12.1 ms | **6.9 ms** | 205.7 ms | 18.6 ms | 44.6 ms | 22.7 ms | 0.37x |
+| profiled | 12k | 16.2 ms | **8.3 ms** | 206.0 ms | 19.6 ms | 52.6 ms | 32.6 ms | 0.42x |
+| sector | 17k | 14.8 ms | **9.2 ms** | 214.6 ms | 24.5 ms | 48.3 ms | 25.2 ms | 0.38x |
+| transport | 98k | 26.5 ms | **19.2 ms** | 224.8 ms | 37.8 ms | 101.4 ms | 80.0 ms | 0.51x |
+| dispatch | 100k | 14.0 ms | **8.0 ms** | 194.5 ms | 14.6 ms | 82.7 ms | 60.1 ms | 0.55x |
+| nodal | 120k | 14.5 ms | **8.6 ms** | 238.8 ms | 21.1 ms | 168.9 ms | 51.9 ms | 0.41x |
+| profiled | 120k | 25.6 ms | **17.9 ms** | 208.7 ms | 21.2 ms | 163.6 ms | 149.3 ms | 0.84x |
+| sector | 170k | 18.6 ms | **11.7 ms** | 219.3 ms | 27.4 ms | 62.7 ms | 41.1 ms | 0.43x |
+| transport | 980k | 78.4 ms | **68.8 ms** | 253.2 ms | 64.7 ms | 371.1 ms | 367.7 ms | 1.06x |
+| dispatch | 1M | 27.4 ms | **18.9 ms** | 201.8 ms | 21.7 ms | 281.3 ms | 256.3 ms | 0.87x |
+| nodal | 1.2M | 29.6 ms | **20.1 ms** | 224.2 ms | 29.8 ms | 217.7 ms | 187.0 ms | 0.67x |
+| profiled | 1.2M | 146.8 ms | **120.7 ms** | 230.3 ms | 37.8 ms | 756.0 ms | 723.3 ms | 3.19x |
+| sector | 1.7M | 41.5 ms | **30.2 ms** | 255.0 ms | 60.7 ms | 209.2 ms | 177.0 ms | 0.50x |
+| transport | 9.8M | 649.2 ms | **624.0 ms** | 639.9 ms | 411.7 ms | 2410.9 ms | 2285.6 ms | 1.52x |
+| dispatch | 10M | 156.9 ms | **128.1 ms** | 275.0 ms | 85.5 ms | 1661.1 ms | 1589.0 ms | 1.50x |
+| nodal | 12M | 179.1 ms | **149.6 ms** | 359.7 ms | 128.2 ms | 1399.5 ms | 1349.5 ms | 1.17x |
+| profiled | 12M | 1654.9 ms | **1328.9 ms** | 398.0 ms | 192.9 ms | 5085.8 ms | 4939.5 ms | 6.89x |
+| sector | 17M | 242.5 ms | **224.9 ms** | 668.6 ms | 479.5 ms | 1137.4 ms | 1125.4 ms | 0.47x |
+
+**Warm-up is ~180 ms on the eager lane, ~21 ms on duckdb, ~4-10 ms here**, and
+it does not depend on model size. Hand-written linopy with no farkas anywhere
+pays 138 ms of that 180, so it is linopy and xarray's own machinery rather
+than our shim, which adds a constant ~2.3 ms.
+
+That is most of the margin at the smallest rungs: `xs` reads 0.05-0.10x on a
+first build and **0.38-0.47x** steady. Both are true; they answer different
+questions.
 
 **The obvious explanation for that peak was wrong.** COO — a
 `(row, col, coeff)` triple per nonzero where a dense array carries one float —
@@ -280,12 +334,12 @@ four mask densities. The expectation was that an absent pair costs the
 relational lane nothing and costs the eager lane a NaN, so the gap should widen
 as density falls.
 
-| case | live | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
-|---|---|---|---|---|---|---|---|---|
-| nodal | 100% | 1.2M | 0.17 s | 0.38 s | 0.45x | 0.58 GB | 0.64 GB | 0.90x |
-| nodal | 50% | 600k | 0.10 s | 0.32 s | 0.32x | 0.41 GB | 0.60 GB | 0.69x |
-| nodal | 25% | 300k | 0.06 s | 0.27 s | 0.24x | 0.32 GB | 0.45 GB | 0.71x |
-| nodal | 8% | 100k | 0.04 s | 0.26 s | 0.17x | 0.26 GB | 0.35 GB | 0.74x |
+| case | live | variables | wall: farkas | wall: linopy | wall: duckdb | wall | peak: farkas | peak: linopy | peak: duckdb | peak |
+|---|---|---|---|---|---|---|---|---|---|
+| nodal | 100% | 1.2M | 0.17 s | 0.37 s | 0.65 s | 0.46x | 0.58 GB | 0.62 GB | 0.33 GB | 0.93x |
+| nodal | 50% | 600k | 0.10 s | 0.30 s | 0.39 s | 0.34x | 0.41 GB | 0.58 GB | 0.26 GB | 0.71x |
+| nodal | 25% | 300k | 0.07 s | 0.27 s | 0.27 s | 0.25x | 0.32 GB | 0.44 GB | 0.22 GB | 0.73x |
+| nodal | 8% | 100k | 0.04 s | 0.24 s | 0.22 s | 0.16x | 0.26 GB | 0.34 GB | 0.20 GB | 0.76x |
 
 **It now does, and it did not before.** Wall time falls from 0.45x to 0.17x as
 density drops, and peak improves at every rung — 0.87x, 0.70x, 0.71x, 0.74x.
