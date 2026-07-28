@@ -327,6 +327,33 @@ The `sector` row above is the clearest result in this file — 3x less memory
 at 1M live variables out of a 12M product — and the density sweep below shows
 why it took two cases to find.
 
+## Absurd sizes, and the trade at them
+
+The ladder above stops at `l` because that is where the published tables are
+comparable. This is the other question — does the polars engine hold together
+where duckdb is supposed to win — run separately on `dispatch`, LP sink, one
+process per measurement:
+
+| variables | polars | linopy | duckdb |
+|---|---|---|---|
+| 40M (`xl`) | **4.4 s** / 5.34 GB | 9.2 s / 6.87 GB | 11.3 s / **5.95 GB** |
+| 120M (`2xl`) | **28.3 s** / 7.83 GB | 62.0 s / 10.02 GB | 81.7 s / **2.01 GB** |
+
+**Nothing falls over.** At 120M variables — a 9.97 GB LP file, on a 25 GB
+machine — every engine finishes, and the polars lane is the fastest of the
+three by 2.2x and 2.9x.
+
+**But this is where duckdb earns its reputation, and the shape of the trade
+changes.** At 40M its peak is no better than ours. At 120M it is **3.9x
+lighter**, because that is the size at which an engine that spills starts
+spilling and one that does not keeps everything resident. Extrapolating, the
+polars lane runs out of machine before duckdb does — the question is only
+whether the models people build reach that point.
+
+Read the two rows together: **polars buys speed at every size and pays memory
+only at the top**, and the top is beyond what the rest of this file measures.
+Both numbers are the trade, and neither is the whole answer.
+
 ## The density sweep, and the claim it used to refuse
 
 One model size (50 nodes x 12 technologies x 2000 snapshots = 1.2M coordinates),

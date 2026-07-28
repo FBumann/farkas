@@ -421,6 +421,53 @@ def _transport_eager(paths: dict[str, str]) -> tuple[dict[str, Any], dict[str, A
 
 
 # --------------------------------------------------------------------------
+# fleet — many declarations rather than one large one
+
+
+#: The variables `fleet` declares. Named here rather than inline because the
+#: model file and the eager arm both have to agree on them, and a mismatch
+#: would show up as a parity failure rather than as the typo it is.
+FLEET_VARIABLES = (
+    'p', 'p_up', 'p_down', 'reserve_up', 'reserve_down', 'charge',
+    'discharge', 'soc', 'spill', 'curtail', 'import_', 'export_',
+)  # fmt: skip
+
+
+def _fleet_data(shape: Shape, dest: Path) -> dict[str, str]:
+    rng = _seed(shape)
+    n_snap, n_unit = shape.sizes['snapshot'], shape.sizes['unit']
+    units = [f'u{i:05d}' for i in range(n_unit)]
+
+    p_max = rng.uniform(50.0, 150.0, n_unit)
+    # the balance can be met three ways and all three are priced, so the
+    # optimum is a choice rather than "take the free one"
+    demand = p_max.sum() * 0.6 * (0.8 + 0.4 * rng.random(n_snap))
+
+    return _dump(
+        {
+            'p_max': pd.DataFrame({'unit': units, 'value': p_max}),
+            'cost': pd.DataFrame({'unit': units, 'value': rng.uniform(10.0, 100.0, n_unit)}),
+            'demand': pd.DataFrame({'snapshot': np.arange(n_snap), 'value': demand}),
+            'unit': pd.DataFrame({'unit': units}),
+            'snapshot': pd.DataFrame({'snapshot': np.arange(n_snap)}),
+        },
+        dest,
+    )
+
+
+def _fleet_eager(paths: dict[str, str]) -> tuple[dict[str, Any], dict[str, Any]]:
+    p_max = pd.read_parquet(paths['p_max']).set_index('unit')['value']
+    cost = pd.read_parquet(paths['cost']).set_index('unit')['value']
+    demand = pd.read_parquet(paths['demand']).set_index('snapshot')['value']
+    data = {'p_max': p_max, 'cost': cost, 'demand': demand}
+    coords = {
+        'unit': pd.Index(p_max.index, name='unit'),
+        'snapshot': pd.Index(demand.index, name='snapshot'),
+    }
+    return data, coords
+
+
+# --------------------------------------------------------------------------
 # profiled — the one case whose input is the same order as the model
 
 
@@ -559,6 +606,18 @@ CASES: dict[str, Case] = {
         ladder=_ladder({'generator': 100}, (100, 1_000, 10_000, 100_000, 400_000, 1_200_000), per_snapshot=100),
         write=_dispatch_data,
         eager_inputs=_dispatch_eager,
+    ),
+    'fleet': Case(
+        name='fleet',
+        model=MODELS / 'fleet.yaml',
+        # 12 variables and 7 constraints over (snapshot, unit), so the rung
+        # labels count the *total* across declarations and stay comparable
+        # with the rest of the ladder. `per_snapshot` is 12 declarations x 50
+        # units; what this case varies is how many declarations that total is
+        # spread over, and nothing else.
+        ladder=_ladder({'unit': 50}, (20, 200, 2_000, 20_000), per_snapshot=600),
+        write=_fleet_data,
+        eager_inputs=_fleet_eager,
     ),
     'nodal': Case(
         name='nodal',

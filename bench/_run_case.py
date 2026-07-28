@@ -60,7 +60,7 @@ def _run_farkas(
     case: Case, paths: dict[str, str], lp: Path, phases: Phases, opts: argparse.Namespace
 ) -> dict[str, Any]:
     import farkas as fk
-    from farkas.relational.sinks import build_highs
+    from farkas.relational.sinks.highs import build_highs
 
     # The parameter/dimension split is harness bookkeeping — it re-parses the
     # YAML only because the runner, not farkas, decides which parquet file is
@@ -82,12 +82,16 @@ def _run_farkas(
         _handle = build_highs(ex._tables())
     phases.mark('emit')
 
-    # read after the clock stops: counts are the harness's, not the engine's
+    # Read after the clock stops: counts are the harness's, not the engine's.
+    # `matrix` is this engine's frame and an older one exposes its own shape,
+    # so the nonzero count is optional — this runner is also driven against a
+    # foreign checkout's `farkas`, where only the two totals are common.
     tables = ex._tables()
+    matrix = getattr(tables, 'matrix', None)
     counts = {
         'columns': tables.column_count,
         'rows': tables.row_count,
-        'nonzeros': tables.matrix.height,
+        'nonzeros': getattr(matrix, 'height', None),
     }
 
     phases.reset()

@@ -207,17 +207,6 @@ def loops(case: str, sizes: list[str], arms: list[str], opts: argparse.Namespace
     return out
 
 
-def _carries(root: Path | None, case: str) -> bool:
-    """Whether a foreign checkout defines *case* at all.
-
-    An older engine predates cases added since, and a row it never ran must
-    not be rendered as one it lost.
-    """
-    if root is None:
-        return True
-    return (root / 'bench' / 'models' / f'{case}.yaml').exists()
-
-
 def gate(case: str, timeout: float, arms: Sequence[str] = ('farkas', 'linopy')) -> dict[str, Any]:
     """Solve the smallest rung on every arm; objectives must agree.
 
@@ -234,7 +223,7 @@ def gate(case: str, timeout: float, arms: Sequence[str] = ('farkas', 'linopy')) 
         results[arm] = _child(
             ['solve', '--case', case, '--size', size, '--arm', spawn_as, '--cache', str(CACHE)],
             timeout,
-            root,
+            interpreter=root,
         )
     failed = {arm: r['error'] for arm, r in results.items() if 'error' in r}
     if failed:
@@ -260,8 +249,13 @@ def timings(case: str, sizes: list[str], arms: list[str], opts: argparse.Namespa
         for sink in opts.sinks:
             for arm in arms:
                 for repeat in range(opts.repeat):
+                    # A foreign arm runs **this** harness under *its*
+                    # interpreter, so both arms time the same code and only the
+                    # engine differs — and the ladder is ours, so a case or a
+                    # rung added since that checkout is still covered. Running
+                    # its own `bench/` instead would silently limit the arm to
+                    # whatever ladder it happened to ship with.
                     root = FOREIGN_ARMS.get(arm)
-                    # a foreign arm runs its own engine under its own name
                     spawn_as = 'farkas' if root else arm
                     args = [
                         'time',
@@ -278,7 +272,7 @@ def timings(case: str, sizes: list[str], arms: list[str], opts: argparse.Namespa
                     ]
                     if arm == 'linopy' and sink == 'lp':
                         args += ['--io-api', opts.io_api]
-                    record = _child(args, opts.timeout, root)
+                    record = _child(args, opts.timeout, interpreter=root)
                     # stamped by the parent so a *failed* run is still fully
                     # identified — a failure is a result here
                     record |= {
@@ -359,9 +353,7 @@ def main(argv: list[str] | None = None) -> int:
     if not opts.skip_gate:
         print('\nparity gate')
         for case in opts.cases:
-            # an arm whose checkout has no such case cannot be gated on it
-            gated = [a for a in opts.arms if a not in FOREIGN_ARMS or _carries(FOREIGN_ARMS[a], case)]
-            result = gate(case, opts.timeout, gated)
+            result = gate(case, opts.timeout, opts.arms)
             records.append(result)
             if not result['passed']:
                 print(f'  {case:<10} FAILED — {result.get("reason", result)}')
@@ -378,10 +370,7 @@ def main(argv: list[str] | None = None) -> int:
         # density sweep only exists on masked cases, and `--sizes all` should
         # still mean "everything this case has"
         sizes = rungs if 'all' in opts.sizes else [s for s in opts.sizes if s in rungs]
-        arms = [a for a in opts.arms if a not in FOREIGN_ARMS or _carries(FOREIGN_ARMS[a], case)]
-        for missing in [a for a in opts.arms if a not in arms]:
-            print(f'  {case:<10} {missing}: skipped — that checkout has no such case')
-        records += timings(case, sizes, arms, opts)
+        records += timings(case, sizes, opts.arms, opts)
 
     if opts.builds:
         print('\nmarginal cost per model (build only, one process)')
