@@ -7,13 +7,21 @@ untouched. That separation is why this file can be rewritten by a benchmark run
 without anything in `SPEC.md` moving.
 
 **Build memory alone is not the claim.** It is a small fraction of what solving
-costs, so shrinking it further changes nothing a caller feels — the tables below
-are the input to two claims that do, and both live further down: end-to-end peak
-against the floor under the LP-file route, and marginal cost per model in a loop.
+costs, so shrinking it further changes nothing a caller feels. What the tables
+below settle is the claim a caller does feel: **cost to a loaded solver**, which
+is [Build and hand off](#build-and-hand-off--the-number-a-user-actually-pays) —
+wall *and* peak, on the sink most callers reach for, against the eager lane's
+own best path to the same place. The LP-file columns are the secondary route,
+and they answer a different question; read the sink you actually use.
+
+Two things this file does **not** measure, both named in [Not measured
+yet](#not-measured-yet): the floor under the LP-file route as a cold cost
+(writing a file and reading it back), and marginal cost per model in a loop.
+Neither is quoted here, and neither should be quoted from here.
 
 Peak RSS and wall time for the same model built two ways — declaratively on the
 relational engine, and eagerly through linopy — from the same parquet files to
-the same LP file.
+the same destination.
 
 **The eager arm is `farkas.linopy.build`, not hand-written linopy.** It is our
 own YAML→`linopy.Model` shim, so it carries our loader on top of linopy's work
@@ -414,6 +422,37 @@ invariant violation. Two caveats:
 - **The diagonal argument dies with the aligned restriction.** General bilinear
   `Q` is not diagonal, and its cost stops tracking the model — a second,
   independent reason that restriction is load-bearing.
+
+## Not measured yet
+
+This section exists so that a claim with no table under it is visible as one.
+Two of its entries are load-bearing elsewhere — `README.md` and `ROADMAP.md`
+lead on cost, and until these land they lead on the hand-off numbers above and
+nothing else.
+
+In rough order of what would change a decision:
+
+- **The LP-file route as a cold floor.** The hand-off tables compare against
+  linopy's *best* path deliberately. What they do not price is the route the
+  claim "there is no file" is really about: write the LP, then have a solver
+  read it back. The one figure in that direction is anecdotal and single-case —
+  `dispatch/l` through linopy's `io_api='lp'` peaks at 6.92 GB against 3.38 GB
+  direct — and it prices only the *writing* half, in the eager lane.
+- **Marginal cost per model in a loop.** The architectural claim is that
+  nothing accumulates between builds, so the hundredth rolling-horizon window
+  costs what the first did. It follows from there being no process-wide state
+  and no lifetime to leak, and every rung here is a single build in a fresh
+  process — which is exactly why none of them tests it.
+- **`storage` — `roll`, the bounded-halo self-join.** The one plan shape in the
+  language whose cost is not obviously linear in the model, and no case
+  exercises it.
+- **A MILP**, where solve time dwarfs build and the build ratio stops mattering.
+- **A hand-written highspy/CSR arm** as the speed-of-light floor. Without one,
+  every ratio here has linopy as its only denominator.
+
+Two entries that used to be here are now measured and have moved into the file:
+`solver_direct` end to end (the `highs` sink, which now runs by default) and the
+mask-density sweep.
 
 ## Method
 
