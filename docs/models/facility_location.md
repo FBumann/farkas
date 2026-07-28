@@ -90,7 +90,13 @@ it wrong and the answer is still 932615.750, just much slower to reach.
 ## What it finds
 
 Eleven of the sixteen warehouses open — `w01`–`w04`, `w06`–`w09`, `w11`–`w13` —
-for a total of **932615.75** against fixed costs of 7500 apiece.
+for a total of **932615.75**.
+
+Ten of them cost 7500 to open. **`w11` costs nothing**: `cap71` gives it a fixed
+cost of 0, so it is free and opening it is never a trade-off at all. Worth
+noticing, because it is the one warehouse whose presence in the answer says
+nothing about the instance being hard — and a reader checking the arithmetic
+against "7500 apiece" would come up 7500 short.
 
 ## What it exercises
 
