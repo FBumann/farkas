@@ -10,12 +10,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import polars as pl
+
 from farkas.errors import DataError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    import polars as pl
 
 __all__ = ['as_frame', 'labels_frame']
 
@@ -31,8 +32,6 @@ def as_frame(obj: object, dims: Sequence[str] = ()) -> pl.LazyFrame | None:
     mask's truthiness from the column type (#47).
     """
     import sys
-
-    import polars as pl
 
     if isinstance(obj, bool) and not dims:
         return pl.LazyFrame({'value': [obj]}, schema={'value': pl.Boolean})
@@ -80,8 +79,6 @@ def _from_pandas(frame: Any) -> pl.LazyFrame:
     numpy's float ``nan`` becomes a null rather than a string; the test is on
     the numpy dtype, since that is what polars sees.
     """
-    import polars as pl
-
     columns: dict[str, Any] = {}
     for name in frame.columns:
         values = frame[name].to_numpy()
@@ -99,7 +96,6 @@ def _is_missing(value: Any) -> bool:
 
 def labels_frame(dname: str, values: object) -> pl.LazyFrame:
     """A one-column index frame from a plain sequence of labels."""
-    import polars as pl
 
     try:
         labels: list[Any] = list(values)  # pyrefly: ignore[bad-argument-type]  — `values` is whatever a caller passed

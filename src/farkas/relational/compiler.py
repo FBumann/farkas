@@ -23,13 +23,14 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import polars as pl
+
 from farkas.errors import LanguageError
 from farkas.relational import plan
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
-    import polars as pl
 
 #: Scratch columns. The spaces make them unrepresentable as declared names, so
 #: they cannot collide with a dimension or coordinate the model already has.
@@ -56,7 +57,6 @@ class TermFragment:
     Never needed for correctness — the assembly aggregates either way — but it
     lets the executor skip an aggregate over every nonzero in the model.
     """
-
     label_dims: frozenset[str] = frozenset()
     """The dims ``var_label`` determines: a variable's own ``foreach``.
 
@@ -128,7 +128,6 @@ class PolarsCompiler:
 
     def _coordinate_product(self, dims: tuple[str, ...]) -> pl.LazyFrame:
         """Cross join of the dim tables: labels and ordinals, nothing else."""
-        import polars as pl
 
         out: pl.LazyFrame | None = None
         for d in dims:
@@ -173,7 +172,6 @@ class PolarsCompiler:
         Walking joins the parameters, so the condition is built first and the
         frame read after — one expression would return the pre-walk frame.
         """
-        import polars as pl
 
         joined: set[str] = set()
         carrier = frame
@@ -224,7 +222,6 @@ class PolarsCompiler:
         Joins and arithmetic are one object, so a bound cannot be evaluated
         against a frame missing what it reads.
         """
-        import polars as pl
 
         carrier = frame
         joined: set[str] = set()
@@ -261,7 +258,6 @@ class PolarsCompiler:
 
     def expression(self, expr: plan.Expression, context: str) -> CompiledExpression:
         """Compile an affine expression into term and const fragments."""
-        import polars as pl
 
         def ev(e: plan.Expression) -> CompiledExpression:
             if isinstance(e, plan.Constant):
@@ -293,7 +289,6 @@ class PolarsCompiler:
     def _parameter_fragment(self, name: str) -> TermFragment:
         """A parameter as a constant part, keyed by its declared dims —
         which the executor enforces by refusing a duplicated coordinate."""
-        import polars as pl
 
         dims = self.program.parameter(name).dims
         frame = self.parameters[name].select(*dims, pl.col('value').cast(pl.Float64).alias('cval'))
@@ -301,7 +296,6 @@ class PolarsCompiler:
 
     def _variable_fragment(self, name: str) -> TermFragment:
         """A variable as a term with unit coefficients."""
-        import polars as pl
 
         dims = self.program.variable(name).dims
         frame = self.variables[name].select(*dims, 'var_label', pl.lit(1.0, dtype=pl.Float64).alias('coeff'))
@@ -341,7 +335,6 @@ class PolarsCompiler:
         The rows that carried them stay, and collapse in the terminal
         ``sum(coeff)`` at assembly.
         """
-        import polars as pl
 
         missing = [d for d in over if d not in p.dims]
         if missing and not p.is_term:
@@ -372,7 +365,6 @@ class PolarsCompiler:
         ``x`` indexed by snapshot alone — they do not, and the terminal
         aggregate has to run.
         """
-        import polars as pl
 
         if g.over not in p.dims:
             raise LanguageError(f"in {context}: GroupSum over '{g.over}' but the expression has dims {list(p.dims)}")
@@ -390,7 +382,6 @@ class PolarsCompiler:
         out-of-range ordinal does not join — the zero acyclic promises. No
         window function; this is bounded-halo locality.
         """
-        import polars as pl
 
         if s.dimension not in p.dims:
             raise LanguageError(
@@ -424,7 +415,6 @@ class PolarsCompiler:
 
         One hash group-by, rather than a lookup repeated per frame row.
         """
-        import polars as pl
 
         if not p.dims:
             return p.frame.select(pl.col('cval').sum())
@@ -452,7 +442,6 @@ def _falsy_if_null(condition: pl.Expr) -> pl.Expr:
 
 def _compare(column: pl.Expr, op: plan.ComparisonOperator, value: float | str) -> pl.Expr:
     """One where-comparison. A string and a float are both literals here."""
-    import polars as pl
 
     literal = pl.lit(value)
     match op:
@@ -487,7 +476,6 @@ def _map_fragments(
 
 
 def _negate(p: TermFragment) -> TermFragment:
-    import polars as pl
 
     return TermFragment(p.dims, p.frame.with_columns(-pl.col(p.value_column)), p.is_term, p.keyed, p.label_dims)
 
@@ -500,8 +488,6 @@ def _join_mul(a: TermFragment, c: TermFragment, is_term: bool, divide: bool = Fa
     a column by itself. The dims *c* contributes are broadcast, so the label
     says nothing about them.
     """
-    import polars as pl
-
     shared = [d for d in a.dims if d in c.dims]
     out_dims = a.dims + tuple(d for d in c.dims if d not in a.dims)
     right = c.frame.rename({'cval': _RHS})

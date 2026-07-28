@@ -8,9 +8,13 @@ section.
 
 from __future__ import annotations
 
+from typing import get_args
+
 import numpy as np
+import polars as pl
 import pytest
 
+from farkas.relational import plan
 from tests.differential import differential
 from tests.oracle import pd
 
@@ -86,3 +90,24 @@ def test_commitment_milp_agrees_and_stays_integral(commitment_inputs):
 
         # the LP file carries integrality, not just bounds
         assert 'binary' in run.lp.read_text()
+
+
+def test_cols_vtype_is_an_enum_over_every_declared_variable_type(commitment_inputs):
+    """``cols.vtype`` is an Enum, and its members are ``plan.VariableType``.
+
+    The storage choice is a performance one — one word per column, the same
+    handful of words for the whole model, and the widest thing on the row as a
+    string. The *members* are a contract: an Enum rejects a value outside it,
+    so a fourth variable type added to the plan and not reaching the column
+    fails where the column is built rather than in whichever sink first
+    compares against a name it does not know.
+    """
+    data, coords = commitment_inputs
+
+    with differential(COMMITMENT_YAML, data, coords) as run:
+        vtype = run.executor._tables().cols.schema['vtype']
+        held = set(run.executor._tables().cols['vtype'].unique().to_list())
+
+    assert isinstance(vtype, pl.Enum), f'vtype is {vtype}, so it stores a word per column'
+    assert set(vtype.categories.to_list()) == set(get_args(plan.VariableType))
+    assert held == {'continuous', 'binary'}, 'this model declares both, so both must survive the stack'

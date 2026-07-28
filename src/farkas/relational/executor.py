@@ -16,7 +16,9 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, get_args
+
+import polars as pl
 
 from farkas.errors import DataError, LanguageError, LinopyYamlError, NoSolutionError
 from farkas.relational import plan, sinks
@@ -27,7 +29,6 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     import pandas as pd
-    import polars as pl
 
     from farkas.relational.status import SolveStatus
 
@@ -38,13 +39,21 @@ _OBJ = ('col', 'coeff')
 _ROWS = ('row', 'sense', 'rhs')
 _MATRIX = ('row', 'col', 'coeff')
 
-#: Which of those columns is a label, a number, or a word — the whole dtype
-#: vocabulary the four frames use between them.
+#: The dtype of each of those columns. ``vtype`` is an ``Enum`` over the
+#: variable types the plan declares, rather than a string: it holds one word
+#: per column and the same handful of words for the whole model, so as a string
+#: it stores that word once per row — 0.098 GB of the ``cols`` frame's 0.333 at
+#: 9.8M columns, against 0.010 as an Enum. The Enum also makes the vocabulary
+#: explicit, so a fourth variable type added to
+#: :data:`~farkas.relational.plan.VariableType` and not reaching here fails
+#: where the column is built rather than in whichever sink first compares
+#: against a name it does not know.
 _DTYPES = {
-    'col': 'Int64', 'row': 'Int64',
-    'lb': 'Float64', 'ub': 'Float64', 'rhs': 'Float64', 'coeff': 'Float64',
-    'vtype': 'String', 'sense': 'String',
+    'col': pl.Int64, 'row': pl.Int64,
+    'lb': pl.Float64, 'ub': pl.Float64, 'rhs': pl.Float64, 'coeff': pl.Float64,
+    'sense': pl.String, 'vtype': pl.Enum(get_args(plan.VariableType)),
 }  # fmt: skip
+
 
 #: Scratch column carrying a source row's position while first-occurrence
 #: order is computed. The spaces make it unrepresentable as a declared name, so
@@ -270,7 +279,6 @@ class PolarsExecutor:
 
     def _create_param_frame(self, p: plan.ParameterDeclaration, sources: Mapping[str, Any]) -> None:
         """Bind one parameter's source and register it as a tidy frame."""
-        import polars as pl
 
         if p.name not in sources:
             raise DataError(f"no source bound for parameter '{p.name}'")
@@ -303,7 +311,6 @@ class PolarsExecutor:
         (:attr:`~farkas.relational.compiler.TermFragment.keyed`), for one pass
         over a source orders of magnitude smaller than the matrix.
         """
-        import polars as pl
 
         if not p.dims:
             return
@@ -321,7 +328,6 @@ class PolarsExecutor:
         )
 
     def _source_frame(self, name: str, source: Any) -> pl.LazyFrame:
-        import polars as pl
 
         if isinstance(source, (str, Path)):
             return pl.scan_parquet(source)
@@ -341,7 +347,6 @@ class PolarsExecutor:
         mistyped coordinate from vanishing in the join that places its terms,
         leaving a model that builds and solves without them.
         """
-        import polars as pl
 
         dims: set[str] = set()
         for v in program.variables:
@@ -392,7 +397,6 @@ class PolarsExecutor:
         position exactly as the eager lane does even for string labels. A
         label's position is the row it first appears at.
         """
-        import polars as pl
 
         if isinstance(source, (str, Path)):
             frame = pl.scan_parquet(source)
@@ -427,7 +431,6 @@ class PolarsExecutor:
 
     def _check_coordinates_single_valued(self, d: str, names: list[str], frame: pl.LazyFrame) -> None:
         """One label, one coordinate value — two rows disagreeing is a data bug."""
-        import polars as pl
 
         for c in names:
             bad = frame.group_by(d).agg(pl.col(c).n_unique().alias('n')).filter(pl.col('n') > 1).collect().height
@@ -447,7 +450,6 @@ class PolarsExecutor:
         for "not present". Only a value that is present and unknown is a typo,
         and that is the case worth stopping — it would drop terms silently.
         """
-        import polars as pl
 
         known = self._dimensions[target].select(pl.col('val').alias(cname))
         bad = (
@@ -507,8 +509,6 @@ class PolarsExecutor:
         if free:
             return self._factored(dims, free, where, label, start)
 
-        import polars as pl
-
         materialised = (
             self._q.frame(dims, where)
             .sort([_ordinal(d) for d in dims])
@@ -551,7 +551,6 @@ class PolarsExecutor:
         a label follows declaration order, and only a prefix leaves the
         surviving set contiguous within it.
         """
-        import polars as pl
 
         head, kept = dims[:free], dims[free:]
         survivors = (
@@ -599,7 +598,6 @@ class PolarsExecutor:
         ordinals the frame already carries — no ordering imposed, because the
         answer does not depend on the order rows arrive in.
         """
-        import polars as pl
 
         stride, position = 1, pl.lit(start, dtype=pl.Int64)
         for d in reversed(dims):
@@ -613,7 +611,6 @@ class PolarsExecutor:
 
     def _build_variable(self, v: plan.VariableDeclaration) -> pl.DataFrame:
         """One variable's labelled frame, and its share of ``cols``."""
-        import polars as pl
 
         if not v.dims:
             raise LanguageError(f"variable '{v.name}' has no dims (scalars: use dims of size 1)")
@@ -625,7 +622,7 @@ class PolarsExecutor:
             pl.col('var_label').alias('col'),
             pl.col('lb').cast(pl.Float64),
             pl.col('ub').cast(pl.Float64),
-            pl.lit(v.variable_type, dtype=pl.String).alias('vtype'),
+            pl.lit(v.variable_type, dtype=_DTYPES['vtype']).alias('vtype'),
         ).collect(engine='streaming')
 
         bad = cols.filter(pl.col('lb').is_null() | pl.col('ub').is_null()).height
@@ -647,7 +644,6 @@ class PolarsExecutor:
         ``GroupSum`` — which project rather than aggregate — collapse, and it
         is skipped where nothing can (:func:`_needs_aggregate`).
         """
-        import polars as pl
 
         if not c.dims:
             raise LanguageError(f"constraint '{c.name}' has no dims")
@@ -726,7 +722,6 @@ class PolarsExecutor:
         interpret as it likes. So a missed aggregate here is a wrong objective
         that still solves, not a slow one.
         """
-        import polars as pl
 
         comp = self._q.expression(o.expression, 'objective')
         for p in comp.consts:
@@ -911,8 +906,6 @@ def _has_repeated_entry(matrix: pl.DataFrame) -> bool:
     answer is yes on every row, and at the `l` rung the aggregate collapses
     exactly nothing out of 12.6M entries.
     """
-    import polars as pl
-
     if matrix.height < 2:
         return False
     repeated = (pl.col('row') == pl.col('row').shift(1)) & (pl.col('col') == pl.col('col').shift(1))
@@ -970,8 +963,6 @@ def _stack(frames: list[pl.DataFrame], columns: tuple[str, ...]) -> pl.DataFrame
     Named rather than inferred because a model may legitimately have nothing to
     stack, and a sink still has to find what it reads.
     """
-    import polars as pl
-
     if frames:
         return pl.concat(frames)
-    return pl.DataFrame(schema={name: getattr(pl, _DTYPES[name]) for name in columns})
+    return pl.DataFrame(schema={name: _DTYPES[name] for name in columns})
