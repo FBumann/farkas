@@ -8,7 +8,8 @@ claim nobody can re-run is a claim with a shelf life.
 ```bash
 # every rung docs/benchmarks.md publishes — one invocation, because the run
 # REPLACES the results file rather than adding to it
-uv run python -m bench.run --sizes xs s m l d100 d50 d25 d08
+uv run python -m bench.run --sizes xs s m l d100 d50 d25 d08 \
+    --arms farkas linopy duckdb --duckdb-root ../farkas-main
 uv run python -m bench.report bench/results/latest.jsonl    # -> markdown
 
 # anything narrower than the published ladder: send it somewhere else
@@ -57,6 +58,30 @@ than a rival dialect.
 
 Not measured, deliberately: solve time (that is HiGHS, identical either way, and
 it would swamp the build), and anything about expressiveness.
+
+## The third arm
+
+`duckdb` is the engine this branch replaces, and the comparison that says
+whether replacing it was worth doing. It cannot be imported here — it is not on
+this branch — so the arm **runs a different checkout's own code**: that
+checkout's interpreter, its `bench/_run_case.py`, its engine. Nothing about
+duckdb is reimplemented on this side; `--duckdb-root` is a path and the rest is
+`subprocess`.
+
+It is an arm rather than a second ladder run for one reason: **interleaving**.
+Two runs are two machine states, and this harness has already been caught out
+by that twice — a baseline block still warming up, and a run contaminated by a
+concurrent job. Interleaved, every arm of a row sees the same load. It also
+buys two things a spliced pair cannot:
+
+- **One parquet cache**, passed to both checkouts with `--cache`, so all three
+  arms build byte-identical models rather than two datasets that ought to
+  match.
+- **A parity gate across all three.** duckdb, polars and linopy must agree on
+  the objective before anything is timed.
+
+A case the foreign checkout does not carry — `sector` postdates it — is
+announced and skipped, never rendered as a row that arm lost.
 
 ## Why it is built this way
 

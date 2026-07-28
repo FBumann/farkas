@@ -50,13 +50,53 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 RESULTS = Path(__file__).resolve().parent / 'results'
+CACHE = Path(__file__).resolve().parent / '.cache'
+
+#: Arms whose engine is not on this branch, and the checkout each needs. The
+#: value is filled from `--duckdb-root`; an arm with no root is skipped rather
+#: than silently dropped, because "we did not run it" and "it has no row" look
+#: identical in a table.
+FOREIGN_ARMS = {'duckdb': None}
 GATE_RTOL = 1e-9
 _EXCEPTION = re.compile(r'^[\w.]*(Error|Exception)\b')
 TRACKED = ('farkas', 'linopy', 'duckdb', 'highspy', 'polars', 'pandas', 'numpy', 'xarray', 'pyarrow')
 
 
+def _commit(root: Path) -> str | None:
+    """The commit *root* is checked out at, dirty flag included.
+
+    Recorded because the version strings below fingerprint *installed
+    distributions*, and an editable install reports the version it was synced
+    at rather than the tree that ran. For an arm that is a checkout rather than
+    a release — `duckdb` is — the commit is the only identifier there is.
+    """
+    try:
+        head = subprocess.run(
+            ['git', '-C', str(root), 'rev-parse', '--short', 'HEAD'],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
+        ).stdout.strip()
+        dirty = subprocess.run(
+            ['git', '-C', str(root), 'status', '--porcelain'],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
+        ).stdout.strip()
+    except (subprocess.SubprocessError, OSError):
+        return None
+    return f'{head}-dirty' if dirty else head
+
+
 def fingerprint() -> dict[str, Any]:
     """Everything a number needs to still mean something in six months."""
+    here = Path(__file__).resolve().parent.parent
+    commits = {'farkas': _commit(here)}
+    for arm, root in FOREIGN_ARMS.items():
+        if root is not None:
+            commits[arm] = _commit(root)
     versions = {}
     for pkg in TRACKED:
         try:
@@ -70,17 +110,38 @@ def fingerprint() -> dict[str, Any]:
         'processor': platform.processor() or platform.machine(),
         'python': platform.python_version(),
         'versions': versions,
+        # which *tree* ran, per arm — see _commit
+        'commits': commits,
     }
 
 
-def _child(args: list[str], timeout: float) -> dict[str, Any]:
-    """Run one measurement and parse its single JSON line."""
+def _child(
+    args: list[str],
+    timeout: float,
+    root: Path | None = None,
+    interpreter: Path | None = None,
+) -> dict[str, Any]:
+    """Run one measurement and parse its single JSON line.
+
+    *root* runs the measurement out of a **different checkout**, with that
+    checkout's own interpreter — which is how the `duckdb` arm works: the
+    engine it measures does not exist on this branch, so the only honest way
+    to compare against it is to let it run its own code. Both are pointed at
+    one parquet cache, so the model is the same bytes on every arm.
+    """
+    here = Path(__file__).resolve().parent.parent
+    # *root* runs another checkout's code with its python. *interpreter* runs
+    # **this** checkout's code with another's python — which is how an
+    # engine-agnostic driver reaches a foreign engine without being copied there.
+    where = root or here
+    borrowed = interpreter or root
+    python = str(borrowed / '.venv' / 'bin' / 'python') if borrowed else sys.executable
     proc = subprocess.run(
-        [sys.executable, '-m', 'bench._run_case', *args],
+        [python, '-m', 'bench._run_case', *args],
         capture_output=True,
         text=True,
         timeout=timeout,
-        cwd=Path(__file__).resolve().parent.parent,
+        cwd=where,
         check=False,
     )
     if proc.returncode != 0:
@@ -99,6 +160,64 @@ def _child(args: list[str], timeout: float) -> dict[str, Any]:
     return json.loads(lines[-1])
 
 
+def loops(case: str, sizes: list[str], arms: list[str], opts: argparse.Namespace) -> list[dict[str, Any]]:
+    """Build-only, repeated in one process: first model against every later one.
+
+    A separate pass from `timings` because it answers a different question and
+    must not disturb that one — a repeated build raises the high-water mark
+    that `timings` reports as peak.
+
+    Build-only also means sink-free, so this runs once per (size, arm) rather
+    than once per sink.
+    """
+    out = []
+    for size in sizes:
+        for arm in arms:
+            # A foreign arm needs no backport. The loop driver is
+            # engine-agnostic — it calls `fk.build` and nothing else — so it
+            # runs from *this* tree under *that* checkout's interpreter, which
+            # is where its `farkas` lives. Only the python changes.
+            root = FOREIGN_ARMS.get(arm)
+            record = _child(
+                [
+                    'loop',
+                    '--case',
+                    case,
+                    '--size',
+                    size,
+                    '--arm',
+                    'farkas' if root else arm,
+                    '--cache',
+                    str(CACHE),
+                    '--builds',
+                    str(opts.builds),
+                ],
+                opts.timeout,
+                interpreter=root,
+            )
+            record |= {'record': 'loop', 'case': case, 'size': size, 'arm': arm}
+            first = record.get('first_build_seconds')
+            steady = record.get('steady_build_seconds')
+            if first is not None and steady is not None:
+                print(
+                    f'  {case:<10} {size:<3} {arm:<8} first {first * 1000:7.1f} ms  '
+                    f'steady {steady * 1000:6.1f} ms  warm-up {(first - steady) * 1000:7.1f} ms'
+                )
+            out.append(record)
+    return out
+
+
+def _carries(root: Path | None, case: str) -> bool:
+    """Whether a foreign checkout defines *case* at all.
+
+    An older engine predates cases added since, and a row it never ran must
+    not be rendered as one it lost.
+    """
+    if root is None:
+        return True
+    return (root / 'bench' / 'models' / f'{case}.yaml').exists()
+
+
 def gate(case: str, timeout: float, arms: Sequence[str] = ('farkas', 'linopy')) -> dict[str, Any]:
     """Solve the smallest rung on every arm; objectives must agree.
 
@@ -108,7 +227,15 @@ def gate(case: str, timeout: float, arms: Sequence[str] = ('farkas', 'linopy')) 
     check the first two answer to.
     """
     size = CASES[case].ladder[0].label
-    results = {arm: _child(['solve', '--case', case, '--size', size, '--arm', arm], timeout) for arm in arms}
+    results = {}
+    for arm in arms:
+        root = FOREIGN_ARMS.get(arm)
+        spawn_as = 'farkas' if root else arm
+        results[arm] = _child(
+            ['solve', '--case', case, '--size', size, '--arm', spawn_as, '--cache', str(CACHE)],
+            timeout,
+            root,
+        )
     failed = {arm: r['error'] for arm, r in results.items() if 'error' in r}
     if failed:
         return {'record': 'gate', 'case': case, 'size': size, 'passed': False, 'reason': failed, 'detail': results}
@@ -133,10 +260,25 @@ def timings(case: str, sizes: list[str], arms: list[str], opts: argparse.Namespa
         for sink in opts.sinks:
             for arm in arms:
                 for repeat in range(opts.repeat):
-                    args = ['time', '--case', case, '--size', size, '--arm', arm, '--sink', sink]
+                    root = FOREIGN_ARMS.get(arm)
+                    # a foreign arm runs its own engine under its own name
+                    spawn_as = 'farkas' if root else arm
+                    args = [
+                        'time',
+                        '--case',
+                        case,
+                        '--size',
+                        size,
+                        '--arm',
+                        spawn_as,
+                        '--sink',
+                        sink,
+                        '--cache',
+                        str(CACHE),
+                    ]
                     if arm == 'linopy' and sink == 'lp':
                         args += ['--io-api', opts.io_api]
-                    record = _child(args, opts.timeout)
+                    record = _child(args, opts.timeout, root)
                     # stamped by the parent so a *failed* run is still fully
                     # identified — a failure is a result here
                     record |= {
@@ -171,7 +313,21 @@ def main(argv: list[str] | None = None) -> int:
         '--sizes', nargs='+', default=['xs', 's', 'm'], help="rung labels, or 'all' for every rung a case has"
     )
     ap.add_argument('--arms', nargs='+', default=['farkas', 'linopy'])
+    ap.add_argument(
+        '--duckdb-root',
+        type=Path,
+        default=None,
+        help='checkout of the duckdb engine (with its own synced .venv) to run the '
+        '`duckdb` arm from. That engine is not on this branch, so the arm is '
+        'skipped without it rather than quietly absent.',
+    )
     ap.add_argument('--repeat', type=int, default=1)
+    ap.add_argument(
+        '--builds',
+        type=int,
+        default=5,
+        help='how many times the loop pass rebuilds each model in one process. 0 skips the pass.',
+    )
     ap.add_argument('--io-api', default='lp-polars')
     ap.add_argument(
         '--sinks',
@@ -187,6 +343,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument('--out', type=Path, default=RESULTS / 'latest.jsonl')
     opts = ap.parse_args(argv)
 
+    if opts.duckdb_root:
+        root = opts.duckdb_root.resolve()
+        if not (root / '.venv' / 'bin' / 'python').exists():
+            ap.error(f'--duckdb-root {root} has no synced .venv — run `uv sync` in that checkout')
+        FOREIGN_ARMS['duckdb'] = root
+    unrooted = [a for a in opts.arms if a in FOREIGN_ARMS and FOREIGN_ARMS[a] is None]
+    if unrooted:
+        ap.error(f'arm(s) {unrooted} need a checkout to run from; pass --duckdb-root')
+
     records: list[dict[str, Any]] = [fingerprint()]
     print(f'{records[0]["platform"]} · python {records[0]["python"]}')
     print('  ' + '  '.join(f'{k} {v}' for k, v in records[0]['versions'].items() if v))
@@ -194,7 +359,9 @@ def main(argv: list[str] | None = None) -> int:
     if not opts.skip_gate:
         print('\nparity gate')
         for case in opts.cases:
-            result = gate(case, opts.timeout, opts.arms)
+            # an arm whose checkout has no such case cannot be gated on it
+            gated = [a for a in opts.arms if a not in FOREIGN_ARMS or _carries(FOREIGN_ARMS[a], case)]
+            result = gate(case, opts.timeout, gated)
             records.append(result)
             if not result['passed']:
                 print(f'  {case:<10} FAILED — {result.get("reason", result)}')
@@ -211,7 +378,17 @@ def main(argv: list[str] | None = None) -> int:
         # density sweep only exists on masked cases, and `--sizes all` should
         # still mean "everything this case has"
         sizes = rungs if 'all' in opts.sizes else [s for s in opts.sizes if s in rungs]
-        records += timings(case, sizes, opts.arms, opts)
+        arms = [a for a in opts.arms if a not in FOREIGN_ARMS or _carries(FOREIGN_ARMS[a], case)]
+        for missing in [a for a in opts.arms if a not in arms]:
+            print(f'  {case:<10} {missing}: skipped — that checkout has no such case')
+        records += timings(case, sizes, arms, opts)
+
+    if opts.builds:
+        print('\nmarginal cost per model (build only, one process)')
+        for case in opts.cases:
+            rungs = [r.label for r in CASES[case].ladder]
+            sizes = rungs if 'all' in opts.sizes else [s for s in opts.sizes if s in rungs]
+            records += loops(case, sizes, opts.arms, opts)
 
     _save(opts.out, records)
     print(f'\n{len(records)} records -> {opts.out}')

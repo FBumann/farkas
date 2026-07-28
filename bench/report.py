@@ -18,15 +18,25 @@ import sys
 from pathlib import Path
 from typing import Any
 
-ARMS = ('farkas', 'linopy')
+ARMS = ('farkas', 'linopy', 'duckdb')
+
+#: The ratio columns are against linopy, which is the arm both engines are
+#: being judged against. `duckdb` is the engine this branch replaces, so its
+#: column is the one that says whether the replacement was worth making — but
+#: it is only present when the run was given a checkout to produce it from,
+#: and a case that checkout does not carry has no row rather than a lost one.
+_RATIO_AGAINST = 'linopy'
 
 
-def load(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+def load(
+    path: Path,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     records = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
     run = next((r for r in records if r.get('record') == 'run'), {})
     gates = [r for r in records if r.get('record') == 'gate']
     timings = [r for r in records if r.get('record') == 'timing']
-    return run, gates, timings
+    loop = [r for r in records if r.get('record') == 'loop']
+    return run, gates, timings, loop
 
 
 Row = dict[str, Any]
@@ -105,11 +115,12 @@ def table(case: str, rows: dict[Key, Row], sink: str = 'lp') -> str:
         '',
         _SEAM[sink],
         '',
-        '| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |',
-        '|---|---|---|---|---|---|---|---|---|---|',
+        '| variables | live | rows | wall: farkas | wall: linopy | wall: duckdb | wall | peak: farkas '
+        '| peak: linopy | peak: duckdb | peak | LP |',
+        '|---|---|---|---|---|---|---|---|---|---|---|',
     ]
     for size in sizes_of(case, rows, sink):
-        arms = {'farkas': rows.get((case, size, sink, 'farkas')), 'linopy': rows.get((case, size, sink, 'linopy'))}
+        arms = {a: rows.get((case, size, sink, a)) for a in ARMS}
         ref = next((r for r in arms.values() if r), None)
         if ref is None:
             continue
@@ -120,9 +131,9 @@ def table(case: str, rows: dict[Key, Row], sink: str = 'lp') -> str:
             _live(ref),
             _si(ref['counts']['rows']),
             *(f'{wall[a]:.2f} s' if wall[a] else '—' for a in ARMS),
-            _ratio(wall['farkas'], wall['linopy']),
+            _ratio(wall['farkas'], wall[_RATIO_AGAINST]),
             *(f'{_gb(peak[a])} GB' if peak[a] else '—' for a in ARMS),
-            _ratio(peak['farkas'], peak['linopy']),
+            _ratio(peak['farkas'], peak[_RATIO_AGAINST]),
             f'{ref["lp_bytes"] / 1e6:.0f} MB' if ref.get('lp_bytes') else '—',
         ]
         lines.append('| ' + ' | '.join(cells) + ' |')
@@ -138,6 +149,69 @@ def _live(r: Row) -> str:
     """
     frac = r.get('live_fraction')
     return '—' if frac is None else f'{frac * 100:.0f}%'
+
+
+def marginal(loop_rows: list[Row]) -> str:
+    """First model in a process, against every model after it.
+
+    Two questions with two answers, and the gap between them is larger than
+    most of the differences this file reports — so publishing one figure would
+    misreport whichever use case it was not.
+    """
+    best: dict[tuple[str, str, str], Row] = {}
+    for r in loop_rows:
+        if 'error' in r or r.get('steady_build_seconds') is None:
+            continue
+        # the density sweep is four masks at one model size, so it would render
+        # as four rows with the same label; it has its own table
+        if _DENSITY_RUNG.match(r['size']):
+            continue
+        key = (r['case'], r['size'], r['arm'])
+        if key not in best or r['first_build_seconds'] < best[key]['first_build_seconds']:
+            best[key] = r
+    if not best:
+        return ''
+
+    lines = [
+        '### Marginal cost per model',
+        '',
+        'Build only, repeated in one process. **first** is what a caller pays who '
+        'builds one model and solves it; **steady** is what every model after the '
+        'first costs in a rolling horizon. Every lane does lazy first-call work '
+        'that a loop never pays again — ~180 ms of it on the eager lane, ~21 ms '
+        'on duckdb, ~4 ms here.',
+        '',
+        '| case | vars | farkas: first | farkas: steady | linopy: first | linopy: steady '
+        '| duckdb: first | duckdb: steady | steady vs linopy |',
+        '|---|---|---|---|---|---|---|---|---|',
+    ]
+    seen = sorted(
+        {(c, s) for c, s, _ in best},
+        key=lambda k: best[(k[0], k[1], 'farkas')].get('nominal_variables', 0),
+    )
+    for case, size in seen:
+        ours, eager = best.get((case, size, 'farkas')), best.get((case, size, 'linopy'))
+        duck = best.get((case, size, 'duckdb'))
+        if not ours or not eager:
+            continue
+        lines.append(
+            '| '
+            + ' | '.join(
+                [
+                    case,
+                    _si(ours.get('nominal_variables', 0)),
+                    f'{ours["first_build_seconds"] * 1000:.1f} ms',
+                    f'**{ours["steady_build_seconds"] * 1000:.1f} ms**',
+                    f'{eager["first_build_seconds"] * 1000:.1f} ms',
+                    f'{eager["steady_build_seconds"] * 1000:.1f} ms',
+                    f'{duck["first_build_seconds"] * 1000:.1f} ms' if duck else '—',
+                    f'{duck["steady_build_seconds"] * 1000:.1f} ms' if duck else '—',
+                    _ratio(ours['steady_build_seconds'], eager['steady_build_seconds']),
+                ]
+            )
+            + ' |'
+        )
+    return '\n'.join(lines)
 
 
 def density(rows: dict[Key, Row]) -> str:
@@ -156,15 +230,13 @@ def density(rows: dict[Key, Row]) -> str:
         'One model size, through the `lp` sink. For `nodal`, `live` is how many '
         'of the 12 technologies each node has installed: 12 / 6 / 3 / 1.',
         '',
-        '| case | live | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |',
-        '|---|---|---|---|---|---|---|---|---|',
+        '| case | live | variables | wall: farkas | wall: linopy | wall: duckdb | wall '
+        '| peak: farkas | peak: linopy | peak: duckdb | peak |',
+        '|---|---|---|---|---|---|---|---|---|---|',
     ]
     for case in cases:
         for size in reversed(sizes_of(case, rows, 'lp', density=True)):
-            arms = {
-                'farkas': rows.get((case, size, 'lp', 'farkas')),
-                'linopy': rows.get((case, size, 'lp', 'linopy')),
-            }
+            arms = {a: rows.get((case, size, 'lp', a)) for a in ARMS}
             ref = next((r for r in arms.values() if r), None)
             if ref is None:
                 continue
@@ -175,9 +247,9 @@ def density(rows: dict[Key, Row]) -> str:
                 _live(ref),
                 _si(ref['counts']['columns']),
                 *(f'{wall[a]:.2f} s' if wall[a] else '—' for a in ARMS),
-                _ratio(wall['farkas'], wall['linopy']),
+                _ratio(wall['farkas'], wall[_RATIO_AGAINST]),
                 *(f'{_gb(peak[a])} GB' if peak[a] else '—' for a in ARMS),
-                _ratio(peak['farkas'], peak['linopy']),
+                _ratio(peak['farkas'], peak[_RATIO_AGAINST]),
             ]
             lines.append('| ' + ' | '.join(cells) + ' |')
     return '\n'.join(lines)
@@ -191,11 +263,13 @@ def main(argv: list[str] | None = None) -> int:
     run: dict[str, Any] = {}
     gates: list[Row] = []
     timings: list[Row] = []
+    loop: list[Row] = []
     for path in opts.results:
-        one_run, one_gates, one_timings = load(path)
+        one_run, one_gates, one_timings, one_loop = load(path)
         run = run or one_run
         gates += one_gates
         timings += one_timings
+        loop += one_loop
     rows = best(timings)
     failed = failures(timings)
 
@@ -218,6 +292,10 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             print()
             print(table(case, rows, sink))
+    loop_table = marginal(loop)
+    if loop_table:
+        print()
+        print(loop_table)
     density_table = density(rows)
     if density_table:
         print()
