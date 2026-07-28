@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.3](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.2...v0.0.1-alpha.3) (2026-07-28)
+
+
+### Documentation
+
+* a CONTRIBUTING.md, and move procedure out of the corpus page ([#255](https://github.com/FBumann/farkas/issues/255)) ([d3d5f96](https://github.com/FBumann/farkas/commit/d3d5f9652944e6915f2be71a73ee7c8e45a070fe))
+
 ## [0.0.1-alpha.2](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.1...v0.0.1-alpha.2) (2026-07-28)
 
 
