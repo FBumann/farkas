@@ -74,21 +74,18 @@ _CONDITION_OF_HIGHS_STATUS = {
 }
 
 
-def solve_direct(
+def build_highs(
     model: ModelTables,
     batch_rows: int | None = None,
     solver_options: Mapping[str, Any] | None = None,
-) -> tuple[SolveStatus, float, pl.DataFrame | None, pl.DataFrame | None]:
-    """Feed the model to HiGHS and solve it.
+) -> Any:
+    """Load the model into a :class:`highspy.Highs` and stop there.
 
-    Returns ``(status, objective, primal, dual)`` as ``(col, value)`` and
-    ``(row, value)`` frames for the caller to join back to coordinates.
-
-    Either can be ``None``, for different reasons. No primal means the solve
-    left nothing worth reading. No dual is narrower: a mixed-integer model has
-    none at all, and neither does a run stopped short of a simplex basis. HiGHS
-    hands back full-length vectors of zeros either way, and returning them
-    would only make them reachable.
+    The hand-off without the simplex. :func:`solve_direct` is this plus
+    ``run()``, and the seam exists because the two are different questions: the
+    simplex is the same work whoever filled the model, so a measurement that
+    includes it says nothing about the lane that filled it. `bench/` ends here,
+    and linopy's ``Model.to_highspy()`` is the same seam on that side.
 
     ``batch_rows`` is the budget in *elements*, spent through
     :mod:`~farkas.relational.chunking` so a chunk's width is stated rather than
@@ -149,6 +146,28 @@ def solve_direct(
 
     if model.objective_sense == 'max':
         h.changeObjectiveSense(highspy.ObjSense.kMaximize)
+    return h
+
+
+def solve_direct(
+    model: ModelTables,
+    batch_rows: int | None = None,
+    solver_options: Mapping[str, Any] | None = None,
+) -> tuple[SolveStatus, float, pl.DataFrame | None, pl.DataFrame | None]:
+    """Feed the model to HiGHS and solve it.
+
+    Returns ``(status, objective, primal, dual)`` as ``(col, value)`` and
+    ``(row, value)`` frames for the caller to join back to coordinates.
+
+    Either can be ``None``, for different reasons. No primal means the solve
+    left nothing worth reading. No dual is narrower: a mixed-integer model has
+    none at all, and neither does a run stopped short of a simplex basis. HiGHS
+    hands back full-length vectors of zeros either way, and returning them
+    would only make them reachable.
+    """
+    import highspy
+
+    h = build_highs(model, batch_rows, solver_options)
     h.run()
 
     status = _status_of(h, highspy)
