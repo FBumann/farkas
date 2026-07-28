@@ -93,7 +93,7 @@ def _run_farkas(
     phases.reset()
     ex.close()
     phases.mark('teardown')
-    return {'phases': phases.times, 'counts': counts, 'workdir_bytes': 0}
+    return {'phases': phases.times, 'counts': counts}
 
 
 def _run_linopy(
@@ -117,7 +117,7 @@ def _run_linopy(
         _handle = m.to_highspy()
     phases.mark('emit')
     counts = {'columns': int(m.nvars), 'rows': int(m.ncons), 'nonzeros': None}
-    return {'phases': phases.times, 'counts': counts, 'workdir_bytes': 0}
+    return {'phases': phases.times, 'counts': counts}
 
 
 ARMS = {'farkas': _run_farkas, 'linopy': _run_linopy}

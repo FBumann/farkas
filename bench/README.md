@@ -9,15 +9,23 @@ claim nobody can re-run is a claim with a shelf life.
 # every rung docs/benchmarks.md publishes — one invocation, because the run
 # REPLACES the results file rather than adding to it
 uv run python -m bench.run --sizes xs s m l d100 d50 d25 d08
-uv run python -m bench.run --cases dispatch --sizes m l     # one case, two rungs
-uv run python -m bench.run --sinks highs                    # skip the LP file
 uv run python -m bench.report bench/results/latest.jsonl    # -> markdown
+
+# anything narrower than the published ladder: send it somewhere else
+uv run python -m bench.run --cases dispatch --sizes m l --out /tmp/two.jsonl
+uv run python -m bench.run --sinks highs --out /tmp/highs.jsonl
 ```
 
 The bare `bench.run` is **not** the committed ladder: it defaults to `xs s m`,
 so it stops below the rung every interesting claim lives at. Narrowing the run
 and then committing the file leaves the published tables with no provenance,
 and nothing about the file looks wrong afterwards.
+
+**Pass `--out` for every run that is not the full ladder.** The default target
+is the committed `results/latest.jsonl` and the run *replaces* it, so a
+one-rung smoke test overwrites 294 records of provenance with 4 — silently, and
+in a file whose diff nobody reads closely. `git checkout` gets it back; noticing
+is the hard part.
 
 ## What it measures
 
@@ -40,8 +48,9 @@ minus a file** — HiGHS's own dense model is resident in both arms and narrows
 the gap between them. Measuring only the LP path reports the wrong number for
 the common case, which is why both run by default.
 
-Both arms read the same parquet files and produce an LP file, so the comparison
-is one language, one output format, two engines. The linopy arm is the right
+Both arms read the same parquet files and end at the same seam — an LP file on
+disk, or a populated `highspy.Highs` — so the comparison is one language, one
+destination, two engines. The linopy arm is the right
 comparison and the only one worth making first: it accepts *exactly* the same
 YAML (ARCHITECTURE.md hard rule 3), which is what makes it the oracle rather
 than a rival dialect.
@@ -78,32 +87,39 @@ the other never does. The boundaries are therefore explicit:
 | **before the clock** | splitting parquet paths into parameters vs dimensions (harness bookkeeping — it re-parses the YAML only because the *runner* decides which file is which) | — |
 | `import` | `import farkas` | `import farkas.linopy` → linopy, xarray |
 | `build` | `fk.build(...)` — the engine scans the parquet itself | `read_parquet` + reshape + `farkas.linopy.build(...)` |
-| `emit` | `ex.write_lp(path)` | `Model.to_file(path, io_api='lp-polars')` |
+| `emit` | `ex.write_lp(path)` / `build_highs(ex._tables())` | `Model.to_file(path, io_api='lp-polars')` / `Model.to_highspy()` |
 | `teardown` | `ex.close()` — releases the built model | — (nothing to release) |
-| **after the clock** | row counts, `count(*) FROM A`, scratch-dir size | `nvars` / `ncons` |
+| **after the clock** | row, column and nonzero counts off the built frames | `nvars` / `ncons` |
 
 Three of those are deliberate calls rather than defaults:
 
 - **Import is excluded from `wall_seconds`** but recorded. It is fixed, paid
   once per process, and at the `xs` rung linopy's import alone exceeds farkas's
   entire build — including it would make the small end meaningless.
-- **Teardown is included.** Releasing a scratch database is work a user pays
-  for, and the arm that has one should be charged for it.
+- **Teardown is included, and it is now near-free.** It was there to charge the
+  arm holding a scratch database for releasing it. There is no scratch database
+  any more — `close()` drops frames this process owns — so the phase is kept as
+  a tripwire rather than a cost: if it ever stops reading ~0, something
+  acquired a lifetime again.
 - **`progress=False` is passed to linopy.** Its default is
   `m._xCounter > 10_000`, so every rung above `xs` would render tqdm bars that
   the farkas arm has no equivalent of — ~7% of the write at 10M variables, and
   stderr noise in a harness that parses stdout.
 
-Both arms start from the same parquet files and end with an LP file on disk, so
+Both arms start from the same parquet files and stop at the same seam, so
 each pays for its own data ingestion. That is the honest unit; note that the
 *phases* are not comparable one-for-one, because linopy defers coefficient
 materialisation to `to_polars()` inside `to_file` — its `build` allocates dense
 arrays and little else. Compare totals, and read the phases as attribution
 within an arm.
 
-**Memory is not the whole cost.** farkas trades RAM for a scratch database on
-disk; `workdir_bytes` records how much, so a peak-RSS win cannot quietly hide a
-multi-gigabyte temp file. It is sampled at the end of emit, not at its peak.
+**Peak RSS is the whole cost, now that there is no scratch on disk.** The
+duckdb engine traded RAM for a workdir, so a peak-RSS win could hide a
+multi-gigabyte temp file and the harness recorded `workdir_bytes` to stop it.
+Neither arm writes anything but the LP file today, so that field is gone rather
+than left reading zero — a column that is always 0 is read as "measured and
+fine", which is the same failure in the other direction. Restore it in
+`_run_case.py` if a sink ever spills again.
 
 **Failures are results.** A run that dies is written to the JSONL with the
 exception line that killed it, and the report renders it as a cell. An OOM is
