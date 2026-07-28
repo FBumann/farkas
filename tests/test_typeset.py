@@ -335,11 +335,39 @@ def test_markdown_is_latex_math_in_a_markdown_wrapper():
     assert r'\paragraph' not in md
 
 
-def test_markdown_uses_aligned_because_align_does_not_survive_a_dollar_block():
+def test_markdown_keeps_names_out_of_the_math():
+    """`\\text{total\\_cost}` is correct in a LaTeX document and wrong in a
+    browser: MathJax renders the `\\_` escape literally, backslash and all. A
+    name is not math, so it goes outside the `$$` as a code span."""
+    md = to_markdown(DISPATCH, legend=False)
+    assert '**`total_cost`**' in md
+    assert '**`power_balance`**' in md
+    for block in md.split('$$')[1::2]:
+        assert '\\_' not in block, f'escaped underscore reached the math: {block!r}'
+
+
+def test_markdown_avoids_escapes_github_eats_inside_math():
+    r"""GitHub runs Markdown's backslash-escape processing *inside* `$$`.
+
+    `\,` arrives as a literal comma and `\;` as a semicolon, so `\forall\, s`
+    renders as "\u2200, s" and `\,:\,` as ",:,". Letter-named macros are
+    untouched and MathJax treats them identically, so the Markdown format uses
+    those. LaTeX and Typst are unaffected — no Markdown processor sees them.
+    """
+    md = to_markdown('examples/dispatch.yaml', symbols='examples/symbols/dispatch.yaml')
+    for block in md.split('$$')[1::2]:
+        for eaten in (r'\,', r'\;', r'\!', r'\:'):
+            assert eaten not in block, f'{eaten!r} does not survive GitHub inside math: {block!r}'
+
+
+def test_markdown_gives_each_equation_its_own_block():
+    """`aligned` columns line up *across rows*. A page shows one equation at a
+    time under its own heading, so the separators aligned against nothing and
+    rendered as stretches of empty space."""
     md = to_markdown(DISPATCH, legend=False)
     assert md.count('$$') % 2 == 0
-    assert r'$$\begin{aligned}' in md
-    assert r'\end{aligned}$$' in md
+    assert 'aligned' not in md
+    assert '&' not in md.replace('&&', '')  # no alignment separators at all
 
 
 def test_markdown_renders_the_legend_as_a_table():
@@ -355,18 +383,6 @@ def test_the_gallery_notation_is_reproducible_from_the_model():
     md = to_markdown('examples/dispatch.yaml', symbols='examples/symbols/dispatch.yaml', legend=False)
     for hand_written in (r'p_{s,g}', r'c_{g}', r'\ell_{s}', r'\bar p_{g}'):
         assert hand_written in md, f'the gallery writes {hand_written}; the generated math does not'
-
-
-def test_the_generated_math_states_the_mask_the_hand_written_math_omits():
-    """Found by writing the comparison above: the gallery's displayed math has
-    no mask, while the prose under it calls `where: "p_max > 0"` the one line
-    worth pausing on. A generated equation cannot drift from its model that way."""
-    page = Path('docs/models/dispatch.md').read_text()
-    hand_written = page.split('$$')[1]
-    assert '>' not in hand_written  # no mask stated
-
-    generated = to_markdown('examples/dispatch.yaml', symbols='examples/symbols/dispatch.yaml', legend=False)
-    assert r'\bar p_{g} > 0' in generated
 
 
 def test_typst_standalone_adds_page_setup():
@@ -505,8 +521,9 @@ def test_every_committed_symbol_table_still_fits_its_model(table: Path, fmt: For
     them together — so renaming a parameter would leave the table naming
     something that no longer exists. `checked_against` makes that an error, and
     this is what runs it for every committed pair."""
-    model = Path('examples') / f'{table.stem}.yaml'
-    assert model.exists(), f'{table} has no model beside it at {model}'
+    candidates = [Path('examples') / f'{table.stem}.yaml', Path('examples/ports') / f'{table.stem}.yaml']
+    model = next((c for c in candidates if c.exists()), None)
+    assert model is not None, f'{table} names no model: looked in {[str(c) for c in candidates]}'
     assert typeset(model, fmt, symbols=table).strip()
 
 

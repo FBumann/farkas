@@ -44,7 +44,17 @@ class MarkdownFormat:
     """See :class:`farkas.typeset.format.Format`. Math is LaTeX's; prose is not."""
 
     suffix: ClassVar[str] = '.md'
-    operators: ClassVar[Mapping[str, str]] = LatexFormat.operators
+
+    #: LaTeX's, except where the spelling uses a backslash before punctuation.
+    #: GitHub runs Markdown's escape processing *inside* `$$`, so `\,` arrives
+    #: as a literal comma and `\;` as a semicolon — `\forall\, s` renders as
+    #: "∀, s". Letter-named macros (`\thinspace`, `\quad`) pass through
+    #: untouched, and MathJax treats them identically.
+    operators: ClassVar[Mapping[str, str]] = {
+        **LatexFormat.operators,
+        'forall': r'\forall\thinspace',
+        'such_that': r'\thinspace:\thinspace',
+    }
 
     # -- atoms and structure: LaTeX's, because MathJax is what renders them --
 
@@ -85,7 +95,10 @@ class MarkdownFormat:
         return _LATEX.apply(function, argument)
 
     def joined(self, parts: list[str], operator: str) -> str:
-        return _LATEX.joined(parts, operator)
+        # `,\ ` is safe — a backslash before a *space* is not a Markdown
+        # escape — but spelling it `\enspace` says why without the reader
+        # having to know that.
+        return f' {operator} '.join(parts) if operator else r',\enspace '.join(parts)
 
     # -- the document layer, which is the whole difference -------------------
 
@@ -94,13 +107,31 @@ class MarkdownFormat:
         return f'`{text}`'
 
     def equations(self, lines: list[Line], *, numbered: bool) -> str:
-        del numbered  # `aligned` cannot number; see the module docstring
-        rows = [
-            f'{self.prose(line.label + ":")} \\quad & {line.left} & {line.right} && {line.condition}'.rstrip(' &')
-            for line in lines
-        ]
-        body = ' \\\\\n'.join(rows)
-        return f'$$\\begin{{aligned}}\n{body}\n\\end{{aligned}}$$'
+        """One display block per equation, with the name *outside* the math.
+
+        Not the `aligned` environment the LaTeX format uses, for two reasons
+        that only show up in a browser:
+
+        * A name is not math. ``\\text{total\\_cost}`` is right in a LaTeX
+          document and wrong here — MathJax renders the ``\\_`` escape
+          literally, backslash and all. Outside the math it is a plain
+          backtick span, and the question does not arise.
+        * `aligned` columns align *across rows*. A page shows one equation at
+          a time under its own heading, so the columns have nothing to line up
+          against and the ``&`` separators become stretches of empty space.
+
+        The LaTeX format keeps its alignment, because a paper prints the
+        constraints as one block where the relations genuinely do line up.
+        That difference is the reason these are two formats and not one.
+        """
+        del numbered  # a display block carries no number
+        blocks = []
+        for line in lines:
+            body = f'{line.left} {line.right}'.strip()
+            if line.condition:
+                body = f'{body} \\qquad {line.condition}'
+            blocks.append(f'**{self.mono(line.label)}**\n\n$${body}$$')
+        return '\n\n'.join(blocks)
 
     def glossary(self, title: str, entries: list[Entry]) -> str:
         rows = '\n'.join(
