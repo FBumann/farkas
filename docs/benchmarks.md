@@ -330,29 +330,37 @@ why it took two cases to find.
 ## Absurd sizes, and the trade at them
 
 The ladder above stops at `l` because that is where the published tables are
-comparable. This is the other question — does the polars engine hold together
-where duckdb is supposed to win — run separately on `dispatch`, LP sink, one
-process per measurement:
+comparable across cases. This is the other question — does the polars engine
+hold together where duckdb is supposed to win. One case (`dispatch`), one sink
+(LP), six rungs spanning **12,000x**, all three engines, best of three, gated:
 
 | variables | polars | linopy | duckdb |
 |---|---|---|---|
-| 40M (`xl`) | **4.4 s** / 5.34 GB | 9.2 s / 6.87 GB | 11.3 s / **5.95 GB** |
-| 120M (`2xl`) | **28.3 s** / 7.83 GB | 62.0 s / 10.02 GB | 81.7 s / **2.01 GB** |
+| 10k | **0.01 s** / 0.17 GB | 0.20 s / 0.21 GB | 0.05 s / **0.16 GB** |
+| 100k | **0.03 s** / 0.21 GB | 0.28 s / 0.26 GB | 0.14 s / **0.18 GB** |
+| 1M | **0.15 s** / 0.47 GB | 0.39 s / 0.56 GB | 0.40 s / **0.32 GB** |
+| 10M | **1.69 s** / 2.01 GB | 1.73 s / 2.09 GB | 3.09 s / **0.73 GB** |
+| 40M | **5.07 s** / 5.78 GB | 7.43 s / 7.93 GB | 19.5 s / **1.38 GB** |
+| 120M | **20.6 s** / 9.44 GB | 38.5 s / 9.81 GB | 64.3 s / **1.98 GB** |
 
-**Nothing falls over.** At 120M variables — a 9.97 GB LP file, on a 25 GB
-machine — every engine finishes, and the polars lane is the fastest of the
-three by 2.2x and 2.9x.
+Read from `bench/results/scaling.jsonl`, which is kept beside the ladder
+because it answers a different question and would otherwise be re-run by hand
+every time someone asks it.
 
-**But this is where duckdb earns its reputation, and the shape of the trade
-changes.** At 40M its peak is no better than ours. At 120M it is **3.9x
-lighter**, because that is the size at which an engine that spills starts
-spilling and one that does not keeps everything resident. Extrapolating, the
-polars lane runs out of machine before duckdb does — the question is only
-whether the models people build reach that point.
+**Nothing falls over.** At 120M variables — a 9.97 GB LP file on a 25 GB
+machine — every engine finishes, and the polars lane is fastest at *every*
+rung, by 1.02x to 14x.
 
-Read the two rows together: **polars buys speed at every size and pays memory
-only at the top**, and the top is beyond what the rest of this file measures.
-Both numbers are the trade, and neither is the whole answer.
+**But the memory curves are shaped differently, and that is the decision.**
+Across a 12,000x range of model sizes duckdb's peak grows **12x** (0.16 to
+1.98 GB) while polars grows **56x** (0.17 to 9.44 GB). duckdb spills; polars
+keeps the model resident. Extrapolate the two lines and the polars lane runs
+out of machine while duckdb is still going.
+
+So: **polars buys speed at every size and pays memory only at the top.**
+Whether that is the right trade is a question about the models people actually
+build, not one this file can settle — but the shape of both curves is now
+measured rather than assumed.
 
 ## The density sweep, and the claim it used to refuse
 
