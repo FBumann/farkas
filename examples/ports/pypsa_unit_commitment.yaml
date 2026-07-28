@@ -1,0 +1,80 @@
+# PyPSA unit commitment: binary status per generator per snapshot, with
+# start-up and shut-down charges. Optimum 24900.0, from PyPSA itself.
+# See docs/ports.md.
+
+dimensions:
+  snapshot:
+    dtype: int
+  generator:
+    dtype: str
+
+parameters:
+  p_nom:
+    dims: [generator]
+  marginal_cost:
+    dims: [generator]
+  p_min_pu:
+    dims: [generator]
+  start_up_cost:
+    dims: [generator]
+  shut_down_cost:
+    dims: [generator]
+  load:
+    dims: [snapshot]
+
+variables:
+  p:
+    foreach: [snapshot, generator]
+    bounds:
+      lower: 0
+  # All three are binary in PyPSA. start_up and shut_down are implied by the
+  # transitions below, but PyPSA declares them integral rather than leaving it
+  # to the status variables, and the port matches that.
+  status:
+    foreach: [snapshot, generator]
+    binary: true
+  start_up:
+    foreach: [snapshot, generator]
+    binary: true
+  shut_down:
+    foreach: [snapshot, generator]
+    binary: true
+
+constraints:
+  power_balance:
+    foreach: [snapshot]
+    equations:
+      - expression: sum(p, over=generator) == load
+
+  # A committed unit runs between p_min_pu * p_nom and p_nom; an uncommitted
+  # one is pinned to zero from both sides. `p_nom * status` is a parameter
+  # against a variable, so the product stays degree 1.
+  commitment:
+    foreach: [snapshot, generator]
+    equations:
+      - expression: p - p_nom * status <= 0
+      - expression: p - p_min_pu * p_nom * status >= 0
+
+  # start_up must be 1 on a snapshot where status rises, shut_down where it
+  # falls. The first snapshot has no predecessor, and PyPSA's default is that
+  # the unit was already up before the horizon — so the start-up row is
+  # slackened to -1 there (never binding) while the shut-down row still
+  # charges a unit that begins the horizon off. That asymmetry is PyPSA's, and
+  # it is worth 50 on this instance.
+  transition:
+    foreach: [snapshot, generator]
+    equations:
+      - expression: start_up - status >= -1
+        where: "snapshot == 0"
+      - expression: start_up - status + roll(status, snapshot=1) >= 0
+        where: "snapshot > 0"
+      - expression: shut_down + status >= 1
+        where: "snapshot == 0"
+      - expression: shut_down + status - roll(status, snapshot=1) >= 0
+        where: "snapshot > 0"
+
+objectives:
+  total_cost:
+    sense: minimize
+    equations:
+      - expression: p * marginal_cost + start_up * start_up_cost + shut_down * shut_down_cost

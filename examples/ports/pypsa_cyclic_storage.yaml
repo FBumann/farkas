@@ -1,0 +1,99 @@
+# PyPSA linear optimal power flow, rung 4: rung 3's storage, closed into a
+# cycle — the first snapshot's state of charge carries over from the last.
+# Optimum 17228.77962151063, from PyPSA itself. See docs/ports.md.
+
+dimensions:
+  snapshot:
+    dtype: int
+  bus:
+    dtype: str
+  generator:
+    dtype: str
+    coords: [bus]                  # every generator sits on a bus
+  link:
+    dtype: str
+    coords: {from: bus, to: bus}   # both endpoints are buses
+  storage:
+    dtype: str
+    coords: [bus]                  # a storage unit sits on a bus too
+
+parameters:
+  p_nom:
+    dims: [generator]
+  marginal_cost:
+    dims: [generator]
+  ramp_limit_up:
+    dims: [generator]
+  ramp_limit_down:
+    dims: [generator]
+  rating:
+    dims: [link]
+  neg_rating:
+    dims: [link]
+  storage_p_nom:
+    dims: [storage]
+  soc_max:
+    dims: [storage]
+  efficiency_store:
+    dims: [storage]
+  efficiency_dispatch:
+    dims: [storage]
+  standing_loss:
+    dims: [storage]
+  load:
+    dims: [snapshot, bus]
+
+variables:
+  p:
+    foreach: [snapshot, generator]
+    bounds:
+      lower: 0
+      upper: p_nom
+  f:
+    foreach: [snapshot, link]
+    bounds:
+      lower: neg_rating
+      upper: rating
+  p_dispatch:
+    foreach: [snapshot, storage]
+    bounds:
+      lower: 0
+      upper: storage_p_nom
+  p_store:
+    foreach: [snapshot, storage]
+    bounds:
+      lower: 0
+      upper: storage_p_nom
+  soc:
+    foreach: [snapshot, storage]
+    bounds:
+      lower: 0
+      upper: soc_max
+
+constraints:
+  nodal_balance:
+    foreach: [snapshot, bus]
+    equations:
+      - expression: group_sum(p, over=generator, by=bus) + group_sum(f, over=link, by=to) - group_sum(f, over=link, by=from) + group_sum(p_dispatch, over=storage, by=bus) - group_sum(p_store, over=storage, by=bus) == load
+
+  ramp:
+    foreach: [snapshot, generator]
+    where: "snapshot > 0"
+    equations:
+      - expression: p - roll(p, snapshot=1) <= ramp_limit_up * p_nom
+      - expression: roll(p, snapshot=1) - p <= ramp_limit_down * p_nom
+
+  # Rung 3 needed two equations here: one seeding the first snapshot from
+  # soc_initial, one rolling every other. Closing the cycle *removes* the
+  # first — `roll` is already cyclic, so the wrap onto the last snapshot is
+  # what it does unguarded, and dropping the `where` is the whole change.
+  energy_balance:
+    foreach: [snapshot, storage]
+    equations:
+      - expression: soc == roll(soc, snapshot=1) * (1 - standing_loss) + p_store * efficiency_store - p_dispatch / efficiency_dispatch
+
+objectives:
+  total_cost:
+    sense: minimize
+    equations:
+      - expression: p * marginal_cost

@@ -1,0 +1,66 @@
+# PyPSA linear optimal power flow, rung 2: rung 1 plus generator ramp limits.
+# Optimum 18200.0, from PyPSA itself. See docs/ports.md.
+
+dimensions:
+  snapshot:
+    dtype: int
+  bus:
+    dtype: str
+  generator:
+    dtype: str
+    coords: [bus]                  # every generator sits on a bus
+  link:
+    dtype: str
+    coords: {from: bus, to: bus}   # both endpoints are buses
+
+parameters:
+  p_nom:
+    dims: [generator]
+  marginal_cost:
+    dims: [generator]
+  ramp_limit_up:
+    dims: [generator]
+  ramp_limit_down:
+    dims: [generator]
+  rating:
+    dims: [link]
+  neg_rating:
+    dims: [link]
+  load:
+    dims: [snapshot, bus]
+
+variables:
+  p:
+    foreach: [snapshot, generator]
+    bounds:
+      lower: 0
+      upper: p_nom
+  f:
+    foreach: [snapshot, link]
+    bounds:
+      lower: neg_rating
+      upper: rating
+
+constraints:
+  nodal_balance:
+    foreach: [snapshot, bus]
+    equations:
+      - expression: group_sum(p, over=generator, by=bus) + group_sum(f, over=link, by=to) - group_sum(f, over=link, by=from) == load
+
+  # PyPSA states a ramp limit as a fraction of p_nom, so the right-hand side is
+  # parameter arithmetic rather than a precomputed column. Both directions are
+  # written from the *second* snapshot on: there is no dispatch before the
+  # first for it to ramp from, which is what `where` says here. That gate is
+  # also why `roll` is safe — its wrap lands on the one row that is excluded.
+  ramp:
+    foreach: [snapshot, generator]
+    where: "snapshot > 0"
+    equations:
+      - expression: p - roll(p, snapshot=1) <= ramp_limit_up * p_nom
+      - expression: roll(p, snapshot=1) - p <= ramp_limit_down * p_nom
+
+objectives:
+  total_cost:
+    sense: minimize
+    equations:
+      - expression: p * marginal_cost
