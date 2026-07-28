@@ -345,8 +345,23 @@ class DuckdbExecutor:
         resolving it into a sum was a divergence between two lanes that accept
         the same language. It costs one pass over a source that is orders of
         magnitude smaller than the model built from it.
+
+        A parameter with no dims has exactly one coordinate — the empty one —
+        so the same rule reads as "exactly one row", and it is the case where
+        breaking it is least visible: the join that broadcasts a dimensionless
+        parameter is ``ON TRUE``, which is correct for one row and a silent row
+        multiplication for two. In a bound that means duplicate columns for one
+        variable, in a where-mask duplicate mask rows, and both build and solve
+        without a word (#166).
         """
         if not p.dims:
+            rows = self._scalar(f'SELECT count(*) FROM p_{p.name}')
+            if rows != 1:
+                raise DataError(
+                    f"parameter '{p.name}' is declared with no dims, which means one value "
+                    f'broadcast everywhere — but its source has {rows} rows. '
+                    f'Declare the dims it is indexed by, or reduce the source to a single row.'
+                )
             return
         dims = ', '.join(p.dims)
         bad = self._con.execute(
