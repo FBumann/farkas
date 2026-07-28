@@ -64,6 +64,75 @@ compile-check its math in CI. Expansion precedes validation in **both** lanes,
 because a formulation emits declarations and those are language too — a stray
 dim in generated math is the same error as a stray dim in a written one.
 
+## One contract, many consumers
+
+The AST is a **narrow waist**. Everything upstream emits it, everything
+downstream reads it, and nothing else has to agree on anything — so the model
+you write once is the same model that gets checked, solved, typeset and read
+back.
+
+```mermaid
+flowchart TB
+    Y(["your math, written once — one YAML file"])
+
+    Y --> AST
+
+    AST["the whole model, typed and checked<br/>before a byte of data is read"]
+
+    AST --> SHOW
+    AST --> CHECK
+    AST --> RUN
+
+    subgraph SHOW["show it — no data, no solver"]
+        direction TB
+        S1(["typeset the math for a paper or a review"])
+        S2(["drive it from the command line"])
+        S3(["watch what a build is doing"])
+    end
+
+    subgraph CHECK["check it — no data, no solver"]
+        direction TB
+        C1(["will this build, and is the math sayable?"])
+        C2(["do the dimensions line up?"])
+        C3(["will that solver take it, and how big is it?"])
+    end
+
+    subgraph RUN["run it — the only part that touches your data"]
+        direction TB
+        R1(["stream it straight into a solver"])
+        R2(["write an LP file for anything else"])
+        R3(["put the same math on a linopy model"])
+    end
+
+    R1 --> ANS
+
+    subgraph ANS["your answers, as tables you can join"]
+        direction TB
+        A1(["values and shadow prices, by name"])
+        A2(["derived results and diagnostics"])
+        A3(["change a number, re-solve, keep the labels"])
+    end
+
+    classDef built fill:#eef6ee,stroke:#3a7d44,stroke-width:1.5px,color:#111
+    classDef plan fill:#fdf4e8,stroke:#b7791f,stroke-width:1.5px,stroke-dasharray:5 4,color:#111
+    classDef waist fill:#e9edfa,stroke:#4a5fc1,stroke-width:3px,color:#111
+    classDef fam fill:#fcfcfb,stroke:#c9c5be,color:#111
+    class Y,R1,R2,R3,C1,C2,A1 built
+    class C3,S1,S2,S3,A2,A3 plan
+    class AST waist
+    class RUN,CHECK,SHOW,ANS fam
+```
+
+**Solid is what ships today; dashed is what the shape makes cheap.** None of the
+dashed boxes is a rewrite — each reads the same AST the engine reads, so a
+renderer is a tree walk, a check is a pass with no data bound, and a new output
+format is one function in `relational/sinks/`. Two properties carry it: **data
+enters at exactly one place**, which is why checking a model costs seconds and
+needs nothing but the file; and the waist is **closed**, which is what the
+ceiling in [Two tiers](#two-tiers-and-the-ceiling) protects — a new consumer is
+free, a new primitive is taxed. What is planned, and why, is
+[docs/ROADMAP.md](ROADMAP.md).
+
 ## Hard rules
 
 *Enforced, not aspirational: `tests/test_architecture.py` encodes these as
