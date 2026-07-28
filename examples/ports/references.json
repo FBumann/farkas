@@ -330,5 +330,10 @@
     "objective": 8.786852757777865,
     "rtol": 1e-09,
     "provenance": "linopy 0.9.0's own add_piecewise_formulation, via examples/ports/references/transport_pwl.py; the model is GAMS model library trnspwl (Dantzig transport with economies of scale), which publishes the formulation and its discretisation but no optimal objective"
+  },
+  "tsp_mtz": {
+    "objective": 2085.0,
+    "rtol": 1e-09,
+    "provenance": "published by TSPLIB for instance gr17 (Groetschel, 17 cities, EXPLICIT lower-diagonal distance matrix); optimum 2085 as listed in the TSPLIB solutions file"
   }
 }

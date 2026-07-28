@@ -23,6 +23,7 @@ suite green. This is the net for that class, and the evidence behind
 | [Dantzig, economies of scale](models/transport_pwl.md) | linopy 0.9.0's own piecewise formulation | 8.786852757777865 |
 | [Stigler's diet](models/stigler_diet.md) | linopy 0.9.0; corroborated by Laderman (1947) | 0.10866227820675685 |
 | [Facility location](models/facility_location.md) | **published** by OR-Library (`cap71`) | 932615.750 |
+| [Travelling salesman, MTZ](models/tsp_mtz.md) | **published** by TSPLIB (`gr17`) | 2085 |
 
 Adding one is four files and five rules:
 [CONTRIBUTING.md](../CONTRIBUTING.md#adding-a-ported-model).
@@ -72,6 +73,7 @@ Feeds [docs/ROADMAP.md](ROADMAP.md), with the verdict
 |---|---|---|---|
 | PyPSA rung 1 | a bound of `-rating` — PyPSA's `p_min_pu = -1` | shipping `neg_rating` as data | **primitive**: bounds as expressions, [#31](https://github.com/FBumann/farkas/issues/31). A second model asking for it |
 | PyPSA unit commitment | `min_up_time` — a unit that starts must stay up for *T* snapshots | left at 0, so the constraint is not written | **split verdict**, below |
+| Travelling salesman | subtour elimination as DFJ — one row per subset of cities, or cuts generated lazily | rewritten as [MTZ](models/tsp_mtz.md), which is O(n²) and static | **refused, and correctly** — see below |
 
 `min_up_time` is the more interesting row, because the answer depends on
 something the language cares about. The constraint is
@@ -84,8 +86,21 @@ is refused by design rather than unimplemented. The two halves of that answer
 are worth keeping apart: one is a macro nobody has written, the other is the
 ceiling doing its job.
 
-Two rows from ten ports — a rate worth watching once the corpus has hit the
+Three rows from eleven ports — a rate worth watching once the corpus has hit the
 ceiling a few more times.
+
+**The TSP row is the one to read.** It is the first entry where the refusal is
+of a *technique* rather than a shape, and where the rewrite turned out to be
+inside the language all along. DFJ is out because its constraint count depends
+on the data, and lazy cuts are out because they are a solve loop rather than a
+model — both are the rule that makes a plan knowable before data is touched.
+Miller–Tucker–Zemlin is polynomial and static, and
+[it ports](models/tsp_mtz.md) against TSPLIB's published optimum.
+
+So the honest reading of the ceiling is narrower than "no TSP": it refuses an
+algorithm, not a problem. That distinction was worth finding out by trying
+rather than by arguing about it.
+
 
 ---
 
