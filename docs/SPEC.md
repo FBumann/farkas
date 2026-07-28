@@ -2,7 +2,7 @@
 
 What a YAML file may contain and what it means. *Why* it is shaped this way:
 [docs/ARCHITECTURE.md](ARCHITECTURE.md). What is planned or refused:
-[docs/ROADMAP.md](ROADMAP.md). A worked example: [README](../README.md#example).
+[docs/ROADMAP.md](ROADMAP.md). A worked example: [README](https://github.com/FBumann/farkas/blob/main/README.md#example).
 
 ## 1. File shape
 

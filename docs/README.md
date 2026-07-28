@@ -7,10 +7,9 @@ that runs. Then [the models](models/index.md) to browse, and
 Every file here is also published as a site, built by
 [mkdocs-material](https://squidfunk.github.io/mkdocs-material/) from these same
 sources — this page is the view GitHub gives you when you browse the folder,
-and [index.md](index.md) is the site's front door. Nothing here is written for
-the site's benefit: see *the docs* in
-[CONTRIBUTING.md](../CONTRIBUTING.md#the-docs) for the two build-time rules
-that make one set of files serve both.
+and [index.md](index.md) is the site's front door. See *the docs* in
+[CONTRIBUTING.md](../CONTRIBUTING.md#the-docs) for the link conventions that
+make one set of files serve both.
 
 | | |
 |---|---|

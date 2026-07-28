@@ -26,7 +26,7 @@ suite green. This is the net for that class, and the evidence behind
 | [Travelling salesman, MTZ](models/tsp_mtz.md) | **published** by TSPLIB (`gr17`) | 2085 |
 
 Adding one is four files and five rules:
-[CONTRIBUTING.md](../CONTRIBUTING.md#adding-a-ported-model).
+[CONTRIBUTING.md](https://github.com/FBumann/farkas/blob/main/CONTRIBUTING.md#adding-a-ported-model).
 
 ## The ladder
 
@@ -67,7 +67,7 @@ sharper statement about the language than either alone.
 ## Ledger — what a port could not say
 
 Feeds [docs/ROADMAP.md](ROADMAP.md), with the verdict
-[CLAUDE.md](../CLAUDE.md) asks for: macro, primitive, or escape.
+[CLAUDE.md](https://github.com/FBumann/farkas/blob/main/CLAUDE.md) asks for: macro, primitive, or escape.
 
 | Port | What could not be said | Worked around by | Verdict |
 |---|---|---|---|
@@ -112,4 +112,4 @@ the corpus is where it got caught.
 Each port has its own page in [the gallery](models/index.md) — the maths, the
 instance, the model as CI runs it, and a side-by-side against the reference
 implementation. Adding one is four files and five rules:
-[CONTRIBUTING.md](../CONTRIBUTING.md#adding-a-ported-model).
+[CONTRIBUTING.md](https://github.com/FBumann/farkas/blob/main/CONTRIBUTING.md#adding-a-ported-model).

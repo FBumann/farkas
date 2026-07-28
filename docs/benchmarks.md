@@ -24,8 +24,8 @@ you actually use.
 
 ## How to reproduce it
 
-Read straight off [`latest.jsonl`](../bench/results/latest.jsonl) and
-[`density.jsonl`](../bench/results/density.jsonl), each carrying the machine
+Read straight off [`latest.jsonl`](https://github.com/FBumann/farkas/blob/main/bench/results/latest.jsonl) and
+[`density.jsonl`](https://github.com/FBumann/farkas/blob/main/bench/results/density.jsonl), each carrying the machine
 fingerprint, the library versions and the commit that produced it. Two files
 because a run *replaces* its output: one narrower than the tables it publishes
 would leave them unprovenanced while still looking complete.
@@ -407,7 +407,7 @@ mask-density sweep.
 
 ## Method
 
-Recorded in [`bench/README.md`](../bench/README.md) — one process per
+Recorded in [`bench/README.md`](https://github.com/FBumann/farkas/blob/main/bench/README.md) — one process per
 measurement, `ru_maxrss` rather than a tracker, import excluded from
 `wall_seconds` and teardown included, and a parity gate that aborts the run
 before anything is timed if the two lanes disagree. Failures are results and are

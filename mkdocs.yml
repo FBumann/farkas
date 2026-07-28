@@ -11,10 +11,11 @@ strict: true
 #
 #   - `README.md` stays as the folder view GitHub renders when you browse to
 #     `docs/`, and is excluded from the site, where `index.md` does that job.
-#   - Pages cross-link to things outside `docs/` (`../CONTRIBUTING.md`,
-#     `../bench/results/latest.jsonl`). Those are correct on GitHub and would be
-#     404s here, so `tools/mkdocs_hooks.py` rewrites them to blob URLs at build
-#     time. Nothing in the sources is written for the site's benefit.
+#   - A link to something *outside* `docs/` is written as a full GitHub URL, not
+#     as `../CONTRIBUTING.md` — the site has no such file, and a relative link
+#     would resolve in the repo and 404 here. `tests/test_docs_site.py` enforces
+#     both halves of that. Everything inside `docs/` stays relative and mkdocs
+#     validates it.
 exclude_docs: |
   README.md
   # rendered locally by the presentation script and gitignored; the chart page
@@ -150,11 +151,6 @@ markdown_extensions:
 plugins:
   - search
   - include-markdown
-
-# Lives outside `docs/` deliberately: everything under `docs/` is copied into
-# the built site, and the hook is machinery, not a page.
-hooks:
-  - tools/mkdocs_hooks.py
 
 extra_css:
   - stylesheets/extra.css
