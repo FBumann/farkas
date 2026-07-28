@@ -208,6 +208,34 @@ def test_a_result_stays_readable_until_it_is_closed(dispatch_yaml, dispatch_fram
         result.primal('p')
 
 
+def test_a_second_solve_does_not_rewrite_the_first_result(dispatch_yaml, dispatch_frame_inputs):
+    """A result reports its own solve, not the executor's latest.
+
+    Was: the values lived on the executor and every reader went back to them,
+    so `objective` was a snapshot while `primal` was live — one result
+    disagreeing with itself after a second solve, silently and with plausible
+    numbers. Nothing supported re-binds data yet, so the bound has to be moved
+    the way the planned in-place update will (ROADMAP 2c: `changeColsBounds`
+    against labels that are already solver indices).
+    """
+    key = ['snapshot', 'generator']  # a read is a join, so compare on coordinates
+    sources, coords = dispatch_frame_inputs
+    with fk.build(dispatch_yaml, sources, coords=coords) as ex:
+        first = ex.solve()
+        before = first.primal('p').sort(key)
+        assert first.is_ok
+
+        # force a different optimum: flip the costs, so the same feasible set
+        # is served by the other generators
+        assert ex._obj is not None
+        ex._obj = ex._obj.with_columns(-pl.col('coeff'))
+        second = ex.solve()
+
+        assert not second.primal('p').sort(key).equals(before)  # the second solve really moved
+        assert first.primal('p').sort(key).equals(before)  # and the first still reports its own
+        assert first.objective != pytest.approx(second.objective)
+
+
 def test_primal_is_a_frame_and_to_pandas_is_the_bridge(dispatch_yaml, dispatch_frame_inputs):
     """A frame is the shape results come in; pandas is an exit, not a shape.
 

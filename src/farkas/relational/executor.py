@@ -80,12 +80,21 @@ class Result:
     **No lifetime to manage.** The model is frames this process owns, so the
     readers stay valid as long as the object does; :meth:`close` releases a
     large one early but nothing breaks without it.
+
+    **Its values are its own.** The result holds the solver's vectors rather
+    than reading them back off the executor, so a later solve on the same
+    executor cannot rewrite what an earlier result reports. Only the label
+    frames — which the coordinates are joined against, and which a re-solve
+    does not touch — are shared. Holding them costs nothing until the caller
+    retains several results, which is the point: a sweep, a rolling horizon
+    and Benders all keep one per iteration.
     """
 
     _status: SolveStatus
     _objective: float
     _executor: PolarsExecutor
-    _has_duals: bool = False
+    _primal_values: pl.DataFrame | None = None
+    _dual_values: pl.DataFrame | None = None
 
     @property
     def status(self) -> str:
@@ -130,7 +139,7 @@ class Result:
     def primal(self, name: str) -> pl.DataFrame:
         """The tidy solution of *name* — ``(dims…, value)``."""
         self._require_solution(f"the primal of '{name}'")
-        return self._executor._primal(name)
+        return self._executor._primal(name, self._primal_values)
 
     def dual(self, name: str) -> pl.DataFrame:
         """Shadow prices of constraint *name*: ``(dims…, value)``.
@@ -144,9 +153,9 @@ class Result:
         :class:`~farkas.errors.LinopyYamlError`. Duals exist only on this sink.
         """
         self._require_solution(f"the dual of '{name}'")
-        if not self._has_duals:
+        if self._dual_values is None:
             raise LinopyYamlError(self._executor._no_duals_reason(self.termination_condition))
-        return self._executor._dual(name)
+        return self._executor._dual(name, self._dual_values)
 
     def to_pandas(self, name: str) -> pd.DataFrame:
         """:meth:`primal` as a tidy :class:`pandas.DataFrame`.
@@ -157,7 +166,7 @@ class Result:
         import pandas as pd
 
         self._require_solution(f"the primal of '{name}'")
-        frame = self._executor._primal(name)
+        frame = self._executor._primal(name, self._primal_values)
         return pd.DataFrame({column: frame[column].to_numpy() for column in frame.columns})
 
     def to_dataarray(self, name: str) -> Any:
@@ -194,10 +203,15 @@ class Result:
         Sunk straight to disk, never copied into a second representation.
         """
         self._require_solution('the solution')
-        return self._executor._solution_to_parquet(Path(directory))
+        return self._executor._solution_to_parquet(Path(directory), self._primal_values)
 
     def close(self) -> None:
-        """Release the built model early. Optional — see the class docstring."""
+        """Release the built model early. Optional — see the class docstring.
+
+        Drops this result's own values as well as the shared model, so closing
+        still frees everything one solve allocated; a sibling result keeps its.
+        """
+        self._primal_values = self._dual_values = None
         self._executor.close()
 
     def __enter__(self) -> Result:
@@ -224,8 +238,6 @@ class PolarsExecutor:
         self._obj: pl.DataFrame | None = None
         self._rows: pl.DataFrame | None = None
         self._matrix: pl.DataFrame | None = None
-        self._sol: pl.DataFrame | None = None
-        self._duals: pl.DataFrame | None = None
         self._n_cols = 0
         self._n_rows = 0
         self._obj_const = 0.0
@@ -822,34 +834,40 @@ class PolarsExecutor:
         sink's own — see :data:`~farkas.relational.sinks.highs.HANDOFF_BUDGET`.
         """
         status, objective, primal, dual = sinks.solve_direct(self._tables(), batch_rows, solver_options)
-        self._sol, self._duals = primal, dual
-        return Result(_status=status, _objective=objective, _executor=self, _has_duals=dual is not None)
+        return Result(
+            _status=status,
+            _objective=objective,
+            _executor=self,
+            _primal_values=primal,
+            _dual_values=dual,
+        )
 
-    def _solution_frame(self, name: str) -> pl.LazyFrame:
+    def _solution_frame(self, name: str, values: pl.DataFrame | None) -> pl.LazyFrame:
         """The tidy solution of variable *name*: ``(dims…, value)``.
 
-        A label join, never a dense array.
+        A label join, never a dense array. *values* is the solver's column
+        vector, held by the :class:`Result` that asks — the labels are the
+        build's and shared, the values are one solve's and are not.
         """
         assert self._program is not None
-        assert self._sol is not None, 'no solve has stored a primal'
+        assert values is not None, 'no solve has stored a primal'
         dims = self._program.variable(name).dims
         return (
             self._variables[name]
-            .join(self._sol.lazy(), left_on='var_label', right_on='col', how='inner')
+            .join(values.lazy(), left_on='var_label', right_on='col', how='inner')
             .select(*dims, 'value')
         )
 
-    def _primal(self, name: str) -> pl.DataFrame:
-        return self._solution_frame(name).collect(engine='streaming')
+    def _primal(self, name: str, values: pl.DataFrame | None) -> pl.DataFrame:
+        return self._solution_frame(name, values).collect(engine='streaming')
 
-    def _dual(self, name: str) -> pl.DataFrame:
+    def _dual(self, name: str, values: pl.DataFrame) -> pl.DataFrame:
         """:meth:`_solution_frame` against row labels instead of column ones."""
         assert self._program is not None
-        assert self._duals is not None, 'no solve has stored duals'
         dims = self._program.constraint(name).dims
         return (
             self._constraints[name]
-            .join(self._duals.lazy(), on='row', how='inner')
+            .join(values.lazy(), on='row', how='inner')
             .select(*dims, 'value')
             .collect(engine='streaming')
         )
@@ -875,13 +893,13 @@ class PolarsExecutor:
             f'run stopped short of one does not have.'
         )
 
-    def _solution_to_parquet(self, directory: Path) -> dict[str, Path]:
+    def _solution_to_parquet(self, directory: Path, values: pl.DataFrame | None) -> dict[str, Path]:
         assert self._program is not None
         directory.mkdir(parents=True, exist_ok=True)
         written: dict[str, Path] = {}
         for v in self._program.variables:
             out = directory / f'{v.name}.parquet'
-            self._solution_frame(v.name).sink_parquet(out)
+            self._solution_frame(v.name, values).sink_parquet(out)
             written[v.name] = out
         return written
 
@@ -890,7 +908,6 @@ class PolarsExecutor:
     def close(self) -> None:
         """Drop the built model. Optional — see :class:`Result`."""
         self._cols = self._obj = self._rows = self._matrix = None
-        self._sol = self._duals = None
         self._variables.clear()
         self._constraints.clear()
         self._parameters.clear()
