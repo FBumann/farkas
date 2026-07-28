@@ -568,6 +568,12 @@ def _ladder(
     per_snapshot: int,
     density: float = 1.0,
 ) -> tuple[Shape, ...]:
+    #: `xs`..`l` is the published ladder — the range the tables compare across
+    #: cases. `xl` and `2xl` are 4x and 12x the `l` rung and answer a different
+    #: question: whether an engine that keeps the model resident holds together
+    #: where one that spills would. Every case grows by the same two factors, so
+    #: the top rungs stay comparable with each other rather than each case
+    #: choosing its own idea of "large".
     labels = ('xs', 's', 'm', 'l', 'xl', '2xl')
     return tuple(
         Shape(labels[i], {**sizes, 'snapshot': n}, n * per_snapshot, density)
@@ -615,7 +621,7 @@ CASES: dict[str, Case] = {
         # with the rest of the ladder. `per_snapshot` is 12 declarations x 50
         # units; what this case varies is how many declarations that total is
         # spread over, and nothing else.
-        ladder=_ladder({'unit': 50}, (20, 200, 2_000, 20_000), per_snapshot=600),
+        ladder=_ladder({'unit': 50}, (20, 200, 2_000, 20_000, 80_000, 240_000), per_snapshot=600),
         write=_fleet_data,
         eager_inputs=_fleet_eager,
     ),
@@ -627,7 +633,9 @@ CASES: dict[str, Case] = {
         # what survives is measured, never assumed (see `live` in the report).
         # The density sweep is 12 / 6 / 3 / 1 technologies per node.
         ladder=(
-            *_ladder({'node': 50, 'tech': 12}, (20, 200, 2_000, 20_000), per_snapshot=600, density=0.25),
+            *_ladder(
+                {'node': 50, 'tech': 12}, (20, 200, 2_000, 20_000, 80_000, 240_000), per_snapshot=600, density=0.25
+            ),
             *_density_sweep({'node': 50, 'tech': 12}, 2_000, 600, (1.0, 0.5, 0.25, 0.083)),
         ),
         write=_nodal_data,
@@ -641,7 +649,7 @@ CASES: dict[str, Case] = {
         # dense in (node, carrier); the objective spans both.
         ladder=_ladder(
             {'node': 50, 'tech': 12, 'carrier': 5},
-            (20, 200, 2_000, 20_000),
+            (20, 200, 2_000, 20_000, 80_000, 240_000),
             per_snapshot=850,
             density=0.083,
         ),
@@ -657,7 +665,7 @@ CASES: dict[str, Case] = {
         # product or a subset of it, so the rungs can be read against each other.
         # At `l` that is a 12M-row availability table against a 12M coordinate
         # product, which is where the "I/O is noise" claim gets tested.
-        ladder=_ladder({'node': 50, 'tech': 12}, (20, 200, 2_000, 20_000), per_snapshot=600),
+        ladder=_ladder({'node': 50, 'tech': 12}, (20, 200, 2_000, 20_000, 80_000, 240_000), per_snapshot=600),
         write=_profiled_data,
         eager_inputs=_profiled_eager,
     ),
@@ -665,7 +673,9 @@ CASES: dict[str, Case] = {
         name='transport',
         model=MODELS / 'transport.yaml',
         # 100 generators + 40 lines per snapshot
-        ladder=_ladder({'generator': 100, 'bus': 20, 'line': 40}, (70, 700, 7_000, 70_000), per_snapshot=140),
+        ladder=_ladder(
+            {'generator': 100, 'bus': 20, 'line': 40}, (70, 700, 7_000, 70_000, 280_000, 840_000), per_snapshot=140
+        ),
         write=_transport_data,
         eager_inputs=_transport_eager,
     ),
