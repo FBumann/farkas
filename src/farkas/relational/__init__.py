@@ -22,11 +22,11 @@ raises ``farkas.errors.LanguageError`` and ``DataError``; catch those.
 from farkas.relational.executor import (
     DuckdbExecutor,
     RelationalBuildError,
-    Solution,
+    Result,
 )
 
 __all__ = [
     'DuckdbExecutor',
     'RelationalBuildError',
-    'Solution',
+    'Result',
 ]

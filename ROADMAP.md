@@ -92,9 +92,10 @@ exception noted under 2b.
 - **2b — the operational surface.** Mostly queries, and the work that decides
   whether the engine is usable at 3am: algebraic rendering of a row, IIS
   read-back where a solver provides one, model statistics and coefficient-range
-  diagnostics, and dual read-back — the same join as `primal`, and `getSolution()`
-  is already called with only `col_value` taken, so `row_dual` is simply never
-  fetched ([#78](https://github.com/FBumann/farkas/issues/78)). The headline
+  diagnostics. **Dual read-back has shipped** — `sol.dual(constraint)`, the same
+  label join as `primal` against the row table, refusing rather than zero-filling
+  where a model has no dual solution; reduced costs and slacks ride the same join
+  and have not ([#78](https://github.com/FBumann/farkas/issues/78)). The headline
   item is **elastic relaxation**, the infeasibility answer — HiGHS has no IIS, so
   `solver_direct` returns a status code for a model too large to open in an
   editor; slack variables with penalty costs, then a query of nonzero slacks
@@ -178,7 +179,8 @@ shapes escape.
 ## Honest snapshot
 
 **Cheaper here, because the model is tables:** model statistics and
-coefficient-range diagnostics; dual and IIS read-back (joins, not a scatter);
+coefficient-range diagnostics; IIS read-back (a join, not a scatter — as dual
+read-back, now shipped, already was);
 serialization (parquet, more portable than netCDF); elastic relaxation; and
 dualization — transposing a COO matrix is swapping two column names.
 

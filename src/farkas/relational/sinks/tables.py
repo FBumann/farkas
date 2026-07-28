@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from farkas.relational import chunking
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
@@ -39,10 +41,26 @@ class ModelTables:
         assert row is not None
         return row[0]
 
-    def row_chunks(self, per_chunk: int) -> Iterator[tuple[int, int]]:
-        """``(lo, hi)`` half-open row ranges covering the constraint matrix."""
-        for lo in range(0, max(self.row_count, 1), per_chunk):
-            hi = min(lo + per_chunk, self.row_count)
-            if hi <= lo:
-                return
-            yield lo, hi
+    def row_chunks_by_nonzeros(self, budget: int) -> Iterator[tuple[int, int]]:
+        """Row ranges holding roughly ``budget`` *nonzeros* each.
+
+        A sink that reads ``A`` a range at a time pays in nonzeros, not in
+        rows — a range of 100k rows is 900k entries in one model and 10M in
+        another, and only the second is a problem. So the width here is the
+        average row, and there is deliberately no row-counted twin to reach
+        for by mistake.
+        """
+        nonzeros = self.scalar('SELECT count(*) FROM A')
+        return chunking.ranges(self.row_count, budget, nonzeros / max(1, self.row_count))
+
+    def col_chunks(self, budget: int) -> Iterator[tuple[int, int]]:
+        """Column ranges of roughly ``budget`` columns each.
+
+        Width 1, because a column *is* one row of the batch a sink hands over —
+        stated rather than assumed, which is the bargain
+        :mod:`~farkas.relational.chunking` asks for. Ranges exist at all
+        because a query ordered over every column at once is a global sort,
+        and duckdb's sort is the operator that does not reliably stay inside
+        ``memory_limit``.
+        """
+        return chunking.ranges(self.column_count, budget, 1.0)

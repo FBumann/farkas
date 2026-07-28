@@ -46,10 +46,10 @@ def storage_inputs():
     return data, coords
 
 
-def _soc_trace(sol):
+def _soc_trace(result):
     """(soc, prev-contribution inputs) as plain arrays, sorted by snapshot."""
     return tuple(
-        sol.primal(name).set_index('snapshot')['value'].sort_index().to_numpy()
+        result.primal(name).set_index('snapshot')['value'].sort_index().to_numpy()
         for name in ('soc', 'charge', 'discharge')
     )
 
@@ -66,7 +66,7 @@ def test_roll_is_cyclic_on_both_lanes(storage_inputs):
         # the battery must actually cycle for the model to be feasible
         assert float(run.model.solution['discharge'].max()) > 1e-3
 
-        soc, charge, discharge = _soc_trace(run.sol)
+        soc, charge, discharge = _soc_trace(run.result)
         assert np.allclose(soc, np.roll(soc, 1) + 0.9 * charge - discharge, atol=1e-6)
 
 
@@ -86,7 +86,7 @@ def test_shift_is_acyclic_on_both_lanes(storage_inputs):
 
     with differential(acyclic, data, coords) as run:
         # acyclic recurrence: soc[0] has no predecessor (starts from zero)
-        soc, charge, discharge = _soc_trace(run.sol)
+        soc, charge, discharge = _soc_trace(run.result)
         assert np.allclose(soc, np.concatenate([[0.0], soc[:-1]]) + 0.9 * charge - discharge, atol=1e-6)
 
 

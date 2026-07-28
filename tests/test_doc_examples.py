@@ -1,10 +1,10 @@
 """The examples in the docs, checked against the code.
 
-Every example here was wrong at some point: ``ly.write_lp`` never existed, a
+Every example here was wrong at some point: ``fk.write_lp`` never existed, a
 dimension index was passed as a bare ``RangeIndex`` where the streaming lane
 wants a ``coords=`` entry, the ``piecewise:`` block carried a sign on three
 links while the prose two lines below said a sign needs exactly two, and four
-module docstrings leaked the executor by never closing the ``Solution``. Three
+module docstrings leaked the executor by never closing the ``Result``. Three
 separate hand sweeps found three separate batches, which is the argument for
 this file: an example nobody runs is a claim nobody checked.
 
@@ -32,7 +32,7 @@ dimension it does not declare is a failure, and the fix is usually ``wrap=``
 or ``skip`` rather than a bigger example.
 
 In module docstrings, an example is an indented run introduced by ``::`` —
-the reST literal-block marker. Guessing instead ("a run that mentions ``ly.``")
+the reST literal-block marker. Guessing instead ("a run that mentions ``fk.``")
 reads an indented English sentence as code and fails it as a syntax error,
 which would stop prose from naming the API it documents.
 """
@@ -49,8 +49,8 @@ from typing import Any, NamedTuple, get_args
 import pytest
 import yaml
 
-import farkas as ly
-from farkas.relational.executor import DuckdbExecutor, Solution
+import farkas as fk
+from farkas.relational.executor import DuckdbExecutor, Result
 from farkas.schema import MathSchema
 
 try:
@@ -68,9 +68,9 @@ TRACKED = ['README.md', 'SPEC.md', 'ARCHITECTURE.md', 'ROADMAP.md']
 # Names an example may dot into, and the object that decides what is valid.
 # Anything else (pd, np, network, ...) is external and not our contract.
 ROOTS: dict[str, Any] = {
-    'ly': ly,
+    'fk': fk,
     'farkas_linopy': linopy_lane,
-    'sol': Solution,
+    'result': Result,
     'ex': DuckdbExecutor,
     'schema': MathSchema,
 }
@@ -187,9 +187,9 @@ def test_python_block_parses(block: Block) -> None:
 
 @pytest.mark.parametrize('block', _blocks('python'), ids=lambda b: b.where)
 def test_python_block_uses_real_api(block: Block) -> None:
-    """Every ``ly.x`` / ``sol.x`` an example shows must exist.
+    """Every ``fk.x`` / ``result.x`` an example shows must exist.
 
-    This is the check that would have caught ``ly.write_lp``, which was
+    This is the check that would have caught ``fk.write_lp``, which was
     documented for months and never existed.
     """
     if block.note == 'skip':
@@ -217,7 +217,7 @@ def test_readme_example_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     yaml_blocks = [b for b in _blocks('yaml') if b.doc == 'README.md']
     py_blocks = [b for b in _blocks('python') if b.doc == 'README.md']
     model = next(b for b in yaml_blocks if '# dispatch.yaml' in b.code)
-    script = next(b for b in py_blocks if 'ly.solve' in b.code)
+    script = next(b for b in py_blocks if 'fk.solve' in b.code)
 
     (tmp_path / 'dispatch.yaml').write_text(model.code)
     monkeypatch.chdir(tmp_path)
@@ -225,14 +225,14 @@ def test_readme_example_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     ns: dict[str, Any] = {}
     exec(compile(script.code, 'README.md', 'exec'), ns)
 
-    sol = ns['sol']
-    assert sol.status == 'Optimal'
+    result = ns['result']
+    assert result.is_ok
 
     # the README states the objective in a trailing comment; keep them in sync
     claimed = re.search(r'#\s*([0-9]+\.?[0-9]*)\s*$', script.code, re.MULTILINE)
     assert claimed, 'README example no longer states its objective in a comment'
-    assert sol.objective == pytest.approx(float(claimed.group(1))), (
-        f'README claims objective {claimed.group(1)}, run produced {sol.objective}'
+    assert result.objective == pytest.approx(float(claimed.group(1))), (
+        f'README claims objective {claimed.group(1)}, run produced {result.objective}'
     )
 
 
@@ -344,7 +344,7 @@ def _docstring_examples(path: Path) -> list[str]:
 
     The marker is the author's own statement that a run is code, which is why
     it is used instead of guessing. Guessing by "mentions a known root" reads
-    an indented English sentence containing ``ly.solve`` as an example and
+    an indented English sentence containing ``fk.solve`` as an example and
     fails it as a syntax error, so prose could not mention the API it
     documents.
     """
@@ -426,7 +426,7 @@ def test_docstring_example_uses_real_api(example: Example) -> None:
 
 @pytest.mark.parametrize('module', DOCSTRING_MODULES)
 def test_docstring_examples_close_the_solution(module: str) -> None:
-    """``ly.solve`` hands back a live duckdb executor. An example that binds it
+    """``fk.solve`` hands back a live duckdb executor. An example that binds it
     without a ``with`` teaches a leak — which is exactly what three of these
     docstrings did."""
     for code in _docstring_examples(REPO / module):
@@ -446,11 +446,11 @@ def test_docstring_examples_close_the_solution(module: str) -> None:
                 continue
             if call.func.attr not in {'solve', 'build'} or not isinstance(call.func.value, ast.Name):
                 continue
-            if call.func.value.id != 'ly':
+            if call.func.value.id != 'fk':
                 continue
             names = {t.id for t in node.targets if isinstance(t, ast.Name)}
             assert names & managed, (
-                f'{module}: `{", ".join(sorted(names))} = ly.{call.func.attr}(...)` binds a live '
+                f'{module}: `{", ".join(sorted(names))} = fk.{call.func.attr}(...)` binds a live '
                 f'executor outside a `with` block — the example leaks it. Use `with ... as`, '
                 f'or show an explicit `.close()`.'
             )

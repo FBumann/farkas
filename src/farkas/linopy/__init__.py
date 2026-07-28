@@ -25,10 +25,10 @@ supplies their data per call::
 
 For models declared entirely in YAML, use the native API — it streams::
 
-    import farkas as ly
+    import farkas as fk
 
-    with ly.solve('model.yaml', {...}) as sol:
-        sol.primal('p')
+    with fk.solve('model.yaml', {...}) as result:
+        result.primal('p')
 """
 
 from __future__ import annotations

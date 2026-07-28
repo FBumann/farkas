@@ -18,6 +18,13 @@ venv/
 .idea/
 uv.lock
 
+# generated benchmark inputs (regenerated deterministically from bench/cases.py;
+# the results JSONL under bench/results/ *is* tracked — that is the provenance)
+bench/.cache/
+# pytest-benchmark's run store; baselines to compare against are chosen by
+# number at the command line, not committed
+.benchmarks/
+
 # spike outputs (scripts are tracked; data/LP artifacts are not)
 scratch/relational_spike/*_data/
 scratch/relational_spike/bench_out/

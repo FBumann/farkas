@@ -53,27 +53,27 @@ model: examples/walkthrough.yaml
     min
     
     obj:
-    +0 x0
-    +0 x1
-    +50 x2
-    +0 x3
-    +0 x4
-    +50 x5
-    +0 x6
-    +0 x7
-    +50 x8
+    +0.0 x0
+    +0.0 x1
+    +50.0 x2
+    +0.0 x3
+    +0.0 x4
+    +50.0 x5
+    +0.0 x6
+    +0.0 x7
+    +50.0 x8
     ... (76 lines total)
 
 [6] sink: batches -> highspy -> solution tables  (relational/executor.py)
-    status     Optimal
+    status     ok (optimal)
     objective  1,000.0
        snapshot generator  value
-    0         0      wind   80.0
+    0         0       gas    0.0
     1         0     solar    0.0
-    2         0       gas    0.0
-    3         1      wind   60.0
+    2         0      wind   80.0
+    3         1       gas    0.0
     4         1     solar   60.0
-    5         1       gas    0.0
+    5         1      wind   60.0
 
 [7] and what the language refuses  (validation.py, lowering.py)
 

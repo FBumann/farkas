@@ -9,6 +9,13 @@ The one hand-managed chunk in the engine that is not label assignment lives
 here: string aggregates do not spill, so the constraint text is emitted in
 fixed row ranges. That costs nothing in a debugging sink.
 
+Numbers are rendered with ``::VARCHAR`` rather than ``printf('%.17g')``.
+duckdb's double-to-text cast is shortest-round-trip, so it is exact — and it
+is 30-40% faster than ``printf`` on every section, which is most of what emit
+costs (the relational work in this file is under 0.1s of a 2s emit at 10M
+columns; the rest is float-to-text and the write). See
+:func:`_signed` for the one trap that costs.
+
 Block order is not stable run to run (#109); the content is.
 """
 
@@ -27,6 +34,19 @@ if TYPE_CHECKING:
 _COPY_OPTS = "(FORMAT csv, HEADER false, QUOTE '', ESCAPE '')"
 
 
+def _signed(coeff: str) -> str:
+    """A coefficient with the explicit sign LP terms carry.
+
+    ``+ 0.0`` is not decoration. ``-0.0`` is reachable — any negative
+    coefficient times a zero parameter — and it satisfies ``>= 0``, so the sign
+    arm fires while the cast still renders ``-0.0``, giving ``+-0.0``. Adding
+    zero normalises it away for free. The obvious alternative,
+    ``replace('+' || cast, '+-', '-')``, costs the whole speed win: the extra
+    string pass is as expensive as the ``printf`` it replaces.
+    """
+    return f"CASE WHEN {coeff} >= 0 THEN '+' ELSE '' END || ({coeff} + 0.0)::VARCHAR"
+
+
 def write_lp_file(model: ModelTables, path: str | Path) -> None:
     """Write the model as LP text.
 
@@ -40,22 +60,21 @@ def write_lp_file(model: ModelTables, path: str | Path) -> None:
     con = model.connection
 
     con.execute(
-        f"COPY (SELECT printf('%+.17g x%d', coeff, col) FROM obj) TO {path_literal(parts / 'obj')} {_COPY_OPTS}"
+        f"COPY (SELECT {_signed('coeff')} || ' x' || col::VARCHAR FROM obj) "
+        f'TO {path_literal(parts / "obj")} {_COPY_OPTS}'
     )
 
-    nnz = model.scalar('SELECT count(*) FROM A')
-    avg = max(1, nnz // max(1, model.row_count))
     con_parts = []
-    for i, (lo, hi) in enumerate(model.row_chunks(max(1, model.chunk_rows // avg))):
+    for i, (lo, hi) in enumerate(model.row_chunks_by_nonzeros(model.chunk_rows)):
         part = parts / f'cons.{i}'
         con_parts.append(part)
         con.execute(
             f"""
             COPY (
-                SELECT printf('c%d:', r.row) || chr(10)
-                       || COALESCE(string_agg(printf('%+.17g x%d', a.coeff, a.col), chr(10)), '+0 x0')
+                SELECT 'c' || r.row::VARCHAR || ':' || chr(10)
+                       || COALESCE(string_agg({_signed('a.coeff')} || ' x' || a.col::VARCHAR, chr(10)), '+0 x0')
                        || chr(10)
-                       || printf('%s %.17g', CASE r.sense WHEN '==' THEN '=' ELSE r.sense END, r.rhs)
+                       || (CASE r.sense WHEN '==' THEN '=' ELSE r.sense END) || ' ' || r.rhs::VARCHAR
                 FROM rows r LEFT JOIN A a USING (row)
                 WHERE r.row >= {lo} AND r.row < {hi}
                 GROUP BY r.row, r.sense, r.rhs
@@ -66,9 +85,9 @@ def write_lp_file(model: ModelTables, path: str | Path) -> None:
     con.execute(
         f"""
         COPY (
-            SELECT CASE WHEN lb = '-infinity'::DOUBLE THEN '-infinity' ELSE printf('%.17g', lb) END
-                   || printf(' <= x%d <= ', col)
-                   || CASE WHEN ub = 'infinity'::DOUBLE THEN '+infinity' ELSE printf('%.17g', ub) END
+            SELECT CASE WHEN lb = '-infinity'::DOUBLE THEN '-infinity' ELSE lb::VARCHAR END
+                   || ' <= x' || col::VARCHAR || ' <= '
+                   || CASE WHEN ub = 'infinity'::DOUBLE THEN '+infinity' ELSE ub::VARCHAR END
             FROM cols
         ) TO {path_literal(parts / 'bounds')} {_COPY_OPTS}
         """
@@ -80,7 +99,7 @@ def write_lp_file(model: ModelTables, path: str | Path) -> None:
             part = parts / keyword
             integrality_sections.append((keyword, part))
             con.execute(
-                f"COPY (SELECT printf('x%d', col) FROM cols WHERE vtype = '{variable_type}') "
+                f"COPY (SELECT 'x' || col::VARCHAR FROM cols WHERE vtype = '{variable_type}') "
                 f'TO {path_literal(part)} {_COPY_OPTS}'
             )
 

@@ -104,9 +104,15 @@ storage_balance:
 
 **`objectives`** — `sense` ∈ {`minimize`, `maximize`}, default `minimize`. An
 objective is a scalar by definition, so **every dim the expression carries is
-summed**; writing the sums out says nothing extra. Only `equations[0]` is used.
-Declaring more than one objective is a load error — combine them into one
-expression, or keep one per file.
+summed**; writing the sums out says nothing extra. Each *term* is summed over
+the dims **that term** carries, and is not repeated because another term
+carries a dim it does not: in `x * a + y * b` with `x, a` on `i` and `y, b` on
+`j`, the objective has `|i| + |j|` summands, never `|i| · |j|`.
+
+`equations:` takes exactly one entry — unlike a constraint's, where the list
+means several constraints under one name. More than one entry is a load error
+naming the rewrite (`a + b` in one expression), as is declaring more than one
+objective.
 
 ## 3. `expressions` and `macros`
 
@@ -357,30 +363,34 @@ exception tree rooted at `LinopyYamlError`: `LanguageError` (with `SchemaError`,
 was bound to it.
 
 ```python
-import farkas as ly
+import farkas as fk
 
-ly.check("model.yaml")                 # parse → validate → lower, no data bound
-schema = ly.load_schema("model.yaml")  # MathSchema
+fk.check("model.yaml")                 # parse → validate → lower, no data bound
+schema = fk.load_schema("model.yaml")  # MathSchema
 
-with ly.solve("model.yaml", sources, memory_limit="512MB") as sol:
-    sol.status, sol.objective
-    sol.primal("p")            # tidy DataFrame (dims…, value) — the native shape
-    sol.to_dataarray("p")      # the same, labelled: .sel / resample / plot
-    sol.to_dataset()           # every variable by default; names for a subset
-    sol.to_parquet(directory)  # streamed to disk, never through this process
+with fk.solve("model.yaml", sources, memory_limit="512MB",
+             solver_options={"time_limit": 60}) as result:
+    result.status, result.termination_condition, result.objective
+    result.is_ok        # linopy's rollup: not an error, abort or refusal
+    result.has_primal   # narrower: are there values to read
+    result.primal("p")            # tidy DataFrame (dims…, value) — the native shape
+    result.dual("power_balance")  # shadow prices, the same shape and the same join
+    result.to_dataarray("p")      # the same, labelled: .sel / resample / plot
+    result.to_dataset()           # every variable by default; names for a subset
+    result.to_parquet(directory)  # streamed to disk, never through this process
 
-ly.write("model.yaml", sources, "model.lp")   # sink chosen by the suffix
+fk.write("model.yaml", sources, "model.lp")   # sink chosen by the suffix
 ```
 
 **Lifetime is explicit, because the model lives in duckdb, not in Python.**
-`Solution` holds the executor open — its label tables are what back `primal`
+`Result` holds the executor open — its label tables are what back `primal`
 and the `to_*` readers — so it is a context manager, and the readers are only
-valid inside the block. Without one, call `sol.close()`. `ly.build` returns the
+valid inside the block. Without one, call `result.close()`. `fk.build` returns the
 live executor for the same reason, when one build should feed more than one
 sink:
 
 ```python
-with ly.build("model.yaml", sources, memory_limit="512MB") as ex:
+with fk.build("model.yaml", sources, memory_limit="512MB") as ex:
     ex.write_lp("model.lp")
     sol = ex.solve()       # read sol here — closing ex invalidates it
 ```
@@ -392,10 +402,28 @@ linopy. What the *readers* return is unsettled and tracked separately
 ([#105](https://github.com/FBumann/farkas/issues/105)); today `primal`
 returns a pandas DataFrame. Build knobs, shared by all three
 entry points: `coords`, `memory_limit` (default `'1GB'`), `chunk_rows`,
-`threads`, `workdir`. `to_dataset` costs what it says — each variable arrives
+`threads`, `workdir`. **`solver_options` is separate and is not a build knob**
+— it is forwarded verbatim to the solver, the shape linopy takes
+(`{"time_limit": 60, "mip_rel_gap": 0.01}`); build knobs govern construction
+and never reach it.
+
+**`is_ok` is not `has_primal`.** `is_ok` is linopy's rollup of the termination
+condition; `has_primal` adds the solver's own verdict on whether an incumbent
+exists, and it is what every reader gates on. They differ exactly when a run
+stops early: a MIP that hits `time_limit` before finding any feasible point is
+`ok` with nothing to read. Reading anyway raises `NoSolutionError`, and
+`objective` is `nan`. `to_dataset` costs what it says — each variable arrives
 dense over its own dims, so a model built for the memory budget this engine
-exists for should name a subset or use `to_parquet`. Duals are not exposed yet
-(the solve path reads `col_value` only) — ROADMAP Track 2b. `.lp` is the only
+exists for should name a subset or use `to_parquet`. `dual` is the same label
+join against the constraint's row table, and **raises rather than returning
+zeros** in either of the two ways it can come up empty: no values at all is
+`NoSolutionError`, the gate `primal` passes through too, while a solve that
+*did* leave values but no duals — any integer or binary variable makes them
+undefined — raises `LinopyYamlError`, because the primals are still readable
+and only this quantity is missing. Duals exist only on the `solver_direct`
+path — a model written to LP and solved elsewhere never passes back through
+here. Reduced costs and slacks ride the same join and are not exposed yet
+([#78](https://github.com/FBumann/farkas/issues/78)). `.lp` is the only
 sink `write` supports today; `.mps` raises `NotImplementedError`.
 
 **Linopy shim** (`farkas.linopy`, `[linopy]` extra) — two *pure producers*,
@@ -410,7 +438,7 @@ farkas_linopy.extend(m, "ramp.yaml", data={...})                  # mutates m in
 
 `build` returns a plain `linopy.Model` — no accessor, no attached schema, no
 patched attributes — so nothing is lost across `pickle`, `deepcopy` or
-`to_netcdf`; to inspect the math, re-read the file with `ly.load_schema`.
+`to_netcdf`; to inspect the math, re-read the file with `fk.load_schema`.
 `extend` may reference variables already on the model (they come from the model
 argument, not from Python-side history), while the YAML must still declare every
 parameter *and dimension* it uses — the declaration is required, the `values:`
@@ -426,7 +454,7 @@ not a silent override. There is no `register()` decorator and no helper registry
 | time-series processing (resample, cluster, interpolate, align), file IO, units | data prep; pass a parameter |
 | solver breadth | HiGHS via `solver_direct`, Gurobi planned on the same path, LP files for everything else ([#28](https://github.com/FBumann/farkas/issues/28)) |
 | SOS and indicator constraints | `piecewise:` (§4) covers SOS2's usual purpose; the streaming lane's default solver has no SOS or indicator concept at all, so this is a *sink capability* question rather than a language one — [#23](https://github.com/FBumann/farkas/issues/23), ROADMAP Track 4 |
-| multi-objective | one objective; the last defined wins |
+| multi-objective | one objective — declaring a second is a load error (§2); weight them into one expression |
 | schema migrations | — |
 | arbitrary array ops (`merge`, `reindex`, `apply_ufunc`) | data prep, or a declared `escape:` island — the closed AST is what makes streaming possible |
 

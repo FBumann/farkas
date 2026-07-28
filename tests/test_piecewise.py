@@ -101,7 +101,7 @@ def test_the_solution_sits_on_the_curve_not_on_its_hull(nonconvex_inputs):
     with differential(NONCONVEX_YAML, data, coords) as run:
         assert run.oracle == pytest.approx(expected, rel=1e-6)  # ON the curve, not the hull
 
-        cost = run.sol.primal('op_cost').set_index('snapshot')['value']
+        cost = run.result.primal('op_cost').set_index('snapshot')['value']
         for s, load_v in data['load'].items():
             assert cost[s] == pytest.approx(curve(load_v, data['bp_x'], data['bp_y']), abs=1e-6)
 
@@ -181,8 +181,8 @@ def test_three_links_all_track_the_same_curve_position():
     coords = {'snapshot': load.index, 'bp': power_bp.index}
 
     with differential(CHP_YAML, data, coords) as run:
-        fuel = run.sol.primal('fuel').set_index('snapshot')['value']
-        heat = run.sol.primal('heat').set_index('snapshot')['value']
+        fuel = run.result.primal('fuel').set_index('snapshot')['value']
+        heat = run.result.primal('heat').set_index('snapshot')['value']
         for s, load_v in load.items():
             assert fuel[s] == pytest.approx(curve(load_v, power_bp, fuel_bp), abs=1e-6)
             assert heat[s] == pytest.approx(curve(load_v, power_bp, heat_bp), abs=1e-6)
@@ -242,7 +242,7 @@ def test_active_gates_the_curve_off(nonconvex_inputs):
     data = {**data, 'on_flag': on_flag}
 
     with differential(GATED_YAML, data, coords) as run:
-        cost = run.sol.primal('op_cost').set_index('snapshot')['value']
+        cost = run.result.primal('op_cost').set_index('snapshot')['value']
         for s in on_flag.index:
             # on: cost sits ON the curve at the pinned load; off: pinned to zero
             expected = curve(data['load'][s], data['bp_x'], data['bp_y']) if on_flag[s] else 0.0
@@ -274,8 +274,8 @@ def test_breakpoints_may_vary_along_another_dim():
 
     with differential(example, data, coords) as run:
         # each generator's cost sits on its own curve (hull is exact: convex + min)
-        p = run.sol.primal('p').set_index(['snapshot', 'generator'])['value']
-        cost = run.sol.primal('op_cost').set_index(['snapshot', 'generator'])['value']
+        p = run.result.primal('p').set_index(['snapshot', 'generator'])['value']
+        cost = run.result.primal('op_cost').set_index(['snapshot', 'generator'])['value']
         for (s, g), pv in p.items():
             expected = curve(pv, bp_x.sel(generator=g), bp_y.sel(generator=g))
             assert cost[(s, g)] == pytest.approx(expected, abs=1e-5)
@@ -365,12 +365,12 @@ def test_both_lanes_check_the_declarations_a_formulation_emits(tmp_path):
     A link's dims come from its values parameter, so a values parameter
     carrying a dim the links do not is a stray dim in generated math — one row
     per zone where the file reads as one per snapshot. The native lane used to
-    validate the file as written, which made ``ly.check()`` pass on a model
+    validate the file as written, which made ``fk.check()`` pass on a model
     ``farkas_linopy.build`` refused: the same YAML, two answers (hard rule 3).
     """
     import yaml as pyyaml
 
-    import farkas as ly
+    import farkas as fk
     from farkas.errors import DimensionError
 
     raw = override(
@@ -380,7 +380,7 @@ def test_both_lanes_check_the_declarations_a_formulation_emits(tmp_path):
     stray = r"cost_curve_link1.*\['zone'\]"
 
     with pytest.raises(DimensionError, match=stray):
-        ly.check(raw)
+        fk.check(raw)
 
     path = tmp_path / 'stray_dim.yaml'
     path.write_text(pyyaml.safe_dump(raw))
@@ -520,8 +520,8 @@ def test_the_epigraph_pattern_needs_no_formulation_machinery(epigraph_inputs):
     with differential(EPIGRAPH_YAML, data, coords, lp=True) as run:
         # gen_cost equals the true piecewise cost at the optimal dispatch
         # (epigraph is tight under minimisation)
-        p = run.sol.primal('p').set_index(['snapshot', 'generator'])['value']
-        gc = run.sol.primal('gen_cost').set_index(['snapshot', 'generator'])['value']
+        p = run.result.primal('p').set_index(['snapshot', 'generator'])['value']
+        gc = run.result.primal('gen_cost').set_index(['snapshot', 'generator'])['value']
         slopes = data['seg_slope'].to_series().unstack('segment')
         icepts = data['seg_intercept'].to_series().unstack('segment')
         for (s, g), pv in p.items():

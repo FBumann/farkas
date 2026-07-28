@@ -15,17 +15,17 @@ linopy exists only in the optional compatibility/oracle layer
 
 Example::
 
-    import farkas as ly
+    import farkas as fk
 
-    # Solution holds the executor backing primal/to_* — use a with block
-    with ly.solve(
+    # Result holds the executor backing primal/to_* — use a with block
+    with fk.solve(
         'model.yaml',
         {'p_max': 'p_max.parquet', 'load': 'load.parquet'},
         coords={'snapshot': range(8760)},
         memory_limit='2GB',
-    ) as sol:
-        sol.objective
-        sol.primal('p')  # tidy DataFrame (coords..., value)
+    ) as result:
+        result.objective
+        result.primal('p')  # tidy DataFrame (coords..., value)
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING, Any
 from farkas._yaml import read_yaml
 from farkas.lowering import lower_program
 from farkas.piecewise import expand_piecewise
-from farkas.relational.executor import DuckdbExecutor, Solution
+from farkas.relational.executor import DuckdbExecutor, Result
 from farkas.schema import MathSchema
 from farkas.sources import tidy_sources
 from farkas.validation import validate_expressions
@@ -132,17 +132,23 @@ def build(
 def solve(
     model: str | Path | dict[str, Any] | MathSchema,
     sources: Mapping[str, Any],
+    solver_options: Mapping[str, Any] | None = None,
     **build_kwargs: Any,
-) -> Solution:
+) -> Result:
     """Build and solve in one call.
 
-    The executor stays attached to the returned :class:`Solution` (its label
-    tables back ``sol.primal(...)``); call ``sol.close()`` when done, or use
+    ``solver_options`` is forwarded verbatim to the solver — the same shape
+    linopy takes, e.g. ``{'time_limit': 60, 'mip_rel_gap': 0.01}``. Build
+    options (``memory_limit``, ``chunk_rows``, …) stay separate, because they
+    govern *construction* and never reach the solver.
+
+    The executor stays attached to the returned :class:`Result` (its label
+    tables back ``result.primal(...)``); call ``result.close()`` when done, or use
     :func:`build` with a ``with`` block for explicit lifetime control.
     """
     ex = build(model, sources, **build_kwargs)
     try:
-        return ex.solve()
+        return ex.solve(solver_options=solver_options)
     except BaseException:
         ex.close()
         raise

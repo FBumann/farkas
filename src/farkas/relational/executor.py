@@ -15,10 +15,11 @@ building the dim tables, assigning labels, assembling ``cols``/``obj``/
 Hand-managed chunking exists in exactly two places, both forced by operators
 duckdb cannot spill:
 
-1. Label assignment (here) — a global ``ROW_NUMBER`` window materialises its
-   whole input, so labels are assigned per-chunk of the leading dim with a
-   running offset. This is one generic mechanism; every operator inherits it.
-   Unmasked frames need no window at all and say so in ``_row_major_label``.
+1. *Masked* label assignment (here) — a global ``ROW_NUMBER`` window
+   materialises its whole input, so labels are assigned per-chunk of the
+   leading dim with a running offset. This is one generic mechanism; every
+   operator inherits it. Without a mask there is no window to chunk: a label
+   is then its row's position in the product, which is arithmetic.
 2. LP-text ``string_agg`` (in the sink) — string aggregates don't spill, and a
    fixed conservative chunk size costs nothing in the debugging sink.
 
@@ -47,18 +48,20 @@ import tempfile
 import weakref
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, get_args
 
-from farkas.errors import DataError, LanguageError, LinopyYamlError
-from farkas.relational import plan, sinks
+from farkas.errors import DataError, LanguageError, LinopyYamlError, NoSolutionError
+from farkas.relational import chunking, plan, sinks
 from farkas.relational.arrow import as_table
-from farkas.relational.compiler import SqlCompiler
+from farkas.relational.compiler import CompiledExpression, SqlCompiler
 from farkas.relational.sql import path_literal
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     import pandas as pd
+
+    from farkas.relational.status import SolveStatus
 
 _IDENT = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 
@@ -77,21 +80,91 @@ RelationalBuildError = LinopyYamlError
 
 
 @dataclass
-class Solution:
-    """Solve result. ``primal(name)`` joins labels back to coords.
+class Result:
+    """What a solve returned — the outcome, and access to any values.
+
+    Named for linopy's envelope rather than its ``Solution``, and for a
+    reason local to this class: it is returned when the solve produced
+    *nothing*, so "solution" would be a lie in exactly the case a caller most
+    needs to notice. ``primal(name)`` joins labels back to coords.
 
     Tethered to its executor's label tables — use it as a context manager
-    (``with ly.solve(...) as sol:``) or call :meth:`close`. For big models,
+    (``with fk.solve(...) as result:``) or call :meth:`close`. For big models,
     :meth:`to_parquet` streams every variable's tidy solution table to disk
     without materialising any of them in memory.
     """
 
-    status: str
-    objective: float
+    _status: SolveStatus
+    _objective: float
     _executor: DuckdbExecutor
+    _has_duals: bool = False
+
+    @property
+    def status(self) -> str:
+        """Coarse outcome: ``ok`` / ``warning`` / ``error`` / ``aborted`` / ``unknown``."""
+        return self._status.status
+
+    @property
+    def termination_condition(self) -> str:
+        """What the solver said — ``optimal``, ``infeasible``, ``time_limit``…"""
+        return self._status.termination_condition
+
+    @property
+    def is_ok(self) -> bool:
+        """linopy's rollup: not an error, an abort or a refusal."""
+        return self._status.is_ok
+
+    @property
+    def has_primal(self) -> bool:
+        """Whether there are values to read — what the accessors gate on.
+
+        Narrower than :attr:`is_ok`: a run stopped at a time limit before
+        finding any incumbent is ``ok`` and has nothing to read.
+        """
+        return self._status.is_readable
+
+    @property
+    def objective(self) -> float:
+        """The objective value, or ``nan`` when there is no solution."""
+        return self._objective
+
+    def _require_solution(self, what: str) -> None:
+        if self._status.is_readable:
+            return
+        raise NoSolutionError(
+            f'cannot read {what}: the solve terminated {self.termination_condition!r} '
+            f'({self._status.solver_wording}), so there are no values to read. Test '
+            f'`has_primal` first. This raises rather than returning, because the solver '
+            f'hands back a full-length vector of zeros either way and it is '
+            f'indistinguishable from an answer.'
+        )
 
     def primal(self, name: str) -> pd.DataFrame:
+        self._require_solution(f"the primal of '{name}'")
         return self._executor._primal(name)
+
+    def dual(self, name: str) -> pd.DataFrame:
+        """Shadow prices of constraint *name*: ``(dims…, value)``.
+
+        The same label join :meth:`primal` does, against the constraint's row
+        table rather than a variable's column table. A nodal balance's dual is
+        the price at that node, so this is a headline output and not a
+        diagnostic.
+
+        There are two ways to have nothing to return, and they are different
+        failures. No values at all is :class:`~farkas.errors.NoSolutionError`,
+        the same gate :meth:`primal` passes through. A solve that *did* leave
+        values but no duals — any integer or binary variable makes them
+        undefined — is not that one: the primals are perfectly readable, and
+        only this quantity is missing. Both raise rather than returning zeros.
+
+        Duals exist only on this sink: a model written to LP and solved
+        elsewhere never passes back through here.
+        """
+        self._require_solution(f"the dual of '{name}'")
+        if not self._has_duals:
+            raise LinopyYamlError(self._executor._no_duals_reason(self.termination_condition))
+        return self._executor._dual(name)
 
     def to_dataarray(self, name: str) -> Any:
         """``primal(name)`` as a labelled :class:`xarray.DataArray`.
@@ -147,13 +220,14 @@ class Solution:
         through this process's memory. Other formats may follow the same
         shape (``to_csv``, ...) — parquet is the canonical one.
         """
+        self._require_solution('the solution')
         return self._executor._solution_to_parquet(Path(directory))
 
     def close(self) -> None:
         """Release the executor backing this solution's label tables."""
         self._executor.close()
 
-    def __enter__(self) -> Solution:
+    def __enter__(self) -> Result:
         return self
 
     def __exit__(self, *exc: object) -> Literal[False]:
@@ -216,7 +290,14 @@ class DuckdbExecutor:
         # `defined` on a boolean parameter tests the value, not its finiteness
         self._compiler = SqlCompiler(program, dict(self._dim_card), frozenset(self._bool_params))
 
-        self._con.execute('CREATE TABLE cols (col BIGINT, lb DOUBLE, ub DOUBLE, vtype VARCHAR)')
+        # vtype is one of three literals repeated once per column, which as
+        # VARCHAR is the widest thing on the row. An ENUM stores the tag, and
+        # every `vtype = '...'` comparison in the sinks keeps working unchanged.
+        # The members come off plan.VariableType so a fourth one cannot land
+        # without this table following it.
+        types = ', '.join(f"'{t}'" for t in get_args(plan.VariableType))
+        self._con.execute(f'CREATE TYPE variable_type AS ENUM ({types})')
+        self._con.execute('CREATE TABLE cols (col BIGINT, lb DOUBLE, ub DOUBLE, vtype variable_type)')
         self._con.execute('CREATE TABLE obj (col BIGINT, coeff DOUBLE)')
         self._con.execute('CREATE TABLE rows (row BIGINT, sense VARCHAR, rhs DOUBLE)')
         self._con.execute('CREATE TABLE A (row BIGINT, col BIGINT, coeff DOUBLE)')
@@ -259,8 +340,50 @@ class DuckdbExecutor:
             )
         collist = ', '.join(cols)
         self._con.execute(f'CREATE TABLE p_{p.name} AS SELECT {collist} FROM {rel}')
+        self._check_one_row_per_coordinate(p)
         if self._value_type(f'p_{p.name}') == 'BOOLEAN':
             self._bool_params.add(p.name)
+
+    def _check_one_row_per_coordinate(self, p: plan.ParameterDeclaration) -> None:
+        """A parameter is a function of its dims: one row per coordinate.
+
+        Two rows for one coordinate has no defined meaning, and the eager lane
+        refuses to lay such a source out at all, so the relational lane
+        resolving it into a sum was a divergence between two lanes that accept
+        the same language. It costs one pass over a source that is orders of
+        magnitude smaller than the model built from it.
+
+        A parameter with no dims has exactly one coordinate — the empty one —
+        so the same rule reads as "exactly one row", and it is the case where
+        breaking it is least visible: the join that broadcasts a dimensionless
+        parameter is ``ON TRUE``, which is correct for one row and a silent row
+        multiplication for two. In a bound that means duplicate columns for one
+        variable, in a where-mask duplicate mask rows, and both build and solve
+        without a word (#166).
+        """
+        if not p.dims:
+            rows = self._scalar(f'SELECT count(*) FROM p_{p.name}')
+            if rows != 1:
+                raise DataError(
+                    f"parameter '{p.name}' is declared with no dims, which means one value "
+                    f'broadcast everywhere — but its source has {rows} rows. '
+                    f'Declare the dims it is indexed by, or reduce the source to a single row.'
+                )
+            return
+        dims = ', '.join(p.dims)
+        bad = self._con.execute(
+            f'SELECT {dims}, count(*) AS n FROM p_{p.name} GROUP BY {dims} HAVING count(*) > 1 LIMIT 3'
+        ).fetchall()
+        if not bad:
+            return
+        shown = '; '.join(
+            ', '.join(f'{d}={v!r}' for d, v in zip(p.dims, row, strict=False)) + f' ({row[-1]} rows)' for row in bad
+        )
+        raise DataError(
+            f"parameter '{p.name}' has more than one row for a coordinate: {shown}. "
+            f'A parameter is a function of its dims, so which value applies is undefined — '
+            f'aggregate the source to one row per {list(p.dims)} before binding it.'
+        )
 
     def _value_type(self, table: str) -> str:
         rows = self._con.execute(f"SELECT column_type FROM (DESCRIBE {table}) WHERE column_name = 'value'").fetchall()
@@ -423,9 +546,27 @@ class DuckdbExecutor:
         )
 
     def _chunk_starts(self, lead_dim: str, other_card: float) -> list[tuple[int, int]]:
-        card = self._dim_card[lead_dim]
-        per_chunk = max(1, int(self.chunk_rows // max(1.0, other_card)))
-        return [(s, min(s + per_chunk, card)) for s in range(0, card, per_chunk)]
+        """Ranges of the leading dim, one coordinate costing the trailing product."""
+        return list(chunking.ranges(self._dim_card[lead_dim], self.chunk_rows, other_card))
+
+    def _predicate_dims(self, where: plan.Predicate | None) -> frozenset[str]:
+        """The dims a mask reads. Empty means it filters nothing per-coordinate."""
+        if where is None:
+            return frozenset()
+        assert self._program is not None, 'build() has not run'
+        param_dims = {p.name: frozenset(p.dims) for p in self._program.parameters}
+        match where:
+            case plan.BooleanConstant():
+                return frozenset()
+            case plan.DimensionComparison(dimension=d):
+                return frozenset({d})
+            case plan.ParameterComparison(parameter=n) | plan.ParameterDefined(parameter=n):
+                return param_dims.get(n, frozenset())
+            case plan.Not(operand=x):
+                return self._predicate_dims(x)
+            case plan.And(left=a, right=b) | plan.Or(left=a, right=b):
+                return self._predicate_dims(a) | self._predicate_dims(b)
+        raise LanguageError(f'unhandled predicate {type(where).__name__}')
 
     def _label_frame(
         self,
@@ -439,70 +580,74 @@ class DuckdbExecutor:
         dense ``label`` column continuing from *start*. Returns the next label.
 
         Variables (``var_label``) and constraint rows (``row``) are the same
-        operation over different tables, and it is the one place chunking is
-        hand-managed: a global ``ROW_NUMBER`` window materialises its whole
-        input, so labels are assigned per-chunk of the leading dim with a
-        running offset. Writing that twice is how the two would come to
-        disagree about which coordinate gets which solver index.
+        operation over different tables, and writing it twice is how the two
+        would come to disagree about which coordinate gets which solver index.
 
-        Unmasked declarations skip the window entirely — see
-        :meth:`_row_major_label`. The label a sort would have produced has a
-        closed form when nothing is filtered out, and computing it beats
-        sorting for it by ~7x at 10M rows.
+        Two paths, and the mask is what chooses between them. **Unmasked**,
+        every coordinate of the product exists, so a row's label is its
+        position — arithmetic on the dim ordinals
+        (:meth:`SqlCompiler.positional_label`), with no window, no sort and
+        therefore nothing to chunk. **Masked**, which rows survive is not known
+        until the predicate has run, so the position has to be counted: that is
+        the ``ROW_NUMBER`` below, and it is the one place chunking is
+        hand-managed, because a global window materialises its whole input.
+        Labels are assigned per-chunk of the leading dim with a running offset.
         """
         collist = ', '.join(f't_{d}.val AS {d}' for d in dims)
         from_clause, where_clause, order_key = self._sql.frame(dims, where)
+
+        if where is None:
+            self._con.execute(
+                f'CREATE TABLE {table} AS SELECT {collist}, '
+                f'{self._sql.positional_label(dims, start)} AS {label} FROM {from_clause}'
+            )
+            return start + math.prod(self._dim_card[d] for d in dims)
+
         self._con.execute(
             f'CREATE TABLE {table} AS SELECT {collist}, 0::BIGINT AS {label} FROM {from_clause} WHERE FALSE'
         )
 
         lead, *rest = dims
         other = math.prod(self._dim_card[d] for d in rest)
+
+        # When the mask does not read the leading dim, the surviving trailing
+        # coordinates are identical for every leading value. Rank them once
+        # over a table of size `other` and the label is arithmetic: no window
+        # function, no per-chunk sort. Same labels as the general path below.
+        if rest and lead not in self._predicate_dims(where):
+            surv_from, surv_where, surv_order = self._sql.frame(tuple(rest), where)
+            surv_cols = ', '.join(f't_{d}.val AS {d}' for d in rest)
+            self._con.execute(f'DROP TABLE IF EXISTS surv_{table}')
+            self._con.execute(
+                f'CREATE TABLE surv_{table} AS SELECT {surv_cols}, '
+                f'ROW_NUMBER() OVER (ORDER BY {surv_order}) - 1 AS _rank '
+                f'FROM {surv_from} WHERE {surv_where}'
+            )
+            width = self._scalar(f'SELECT count(*) FROM surv_{table}')
+            picks = ', '.join(f's.{d}' for d in rest)
+            next_label = start
+            for lo, hi in self._chunk_starts(lead, other):
+                next_label += self._scalar(
+                    f'INSERT INTO {table} SELECT t_{lead}.val AS {lead}, {picks}, '
+                    f'{next_label} + (t_{lead}.ord - {lo}) * {width} + s._rank '
+                    f'FROM dim_{lead} t_{lead} CROSS JOIN surv_{table} s '
+                    f'WHERE t_{lead}.ord >= {lo} AND t_{lead}.ord < {hi}'
+                )
+            self._con.execute(f'DROP TABLE surv_{table}')
+            return next_label
+
         next_label = start
         for lo, hi in self._chunk_starts(lead, other):
-            label_sql = (
-                f'{next_label} + ROW_NUMBER() OVER (ORDER BY {order_key}) - 1'
-                if where is not None
-                else self._row_major_label(dims, lo, next_label)
-            )
             next_label += self._scalar(
                 f"""
                 INSERT INTO {table}
-                SELECT {collist}, {label_sql}
+                SELECT {collist},
+                       {next_label} + ROW_NUMBER() OVER (ORDER BY {order_key}) - 1
                 FROM {from_clause}
                 WHERE t_{lead}.ord >= {lo} AND t_{lead}.ord < {hi} AND {where_clause}
                 """
             )
         return next_label
-
-    def _row_major_label(self, dims: tuple[str, ...], lo: int, start: int) -> str:
-        """The label of an *unmasked* coordinate, in closed form.
-
-        ``ROW_NUMBER() OVER (ORDER BY ord, ...)`` numbers the coordinate
-        product in row-major order. With no mask every combination survives,
-        so that rank is just the mixed-radix value of the ``ord`` tuple — no
-        sort, no window, no materialisation, and *the same integer*: this
-        emits the labels the window would have, not merely valid ones.
-
-        That equality is the point. Labels decide which solver index a
-        coordinate gets, so a fast path that renumbered them would be a
-        different model on the wire (LP section order, ``solver_direct``
-        batching, golden output). This one is observationally identical, and
-        the differential suite is what says so.
-
-        Masked frames keep the window: denseness there depends on which rows
-        survive the predicate, which no closed form knows.
-        """
-        strides: list[int] = []
-        acc = 1
-        for d in reversed(dims):
-            strides.append(acc)
-            acc *= self._dim_card[d]
-        strides.reverse()
-        # the leading dim is chunked, so its ord is measured from the chunk start
-        terms = [f'(t_{dims[0]}.ord - {lo}) * {strides[0]}']
-        terms += [f't_{d}.ord * {s}' for d, s in zip(dims[1:], strides[1:], strict=True)]
-        return f'{start} + ' + ' + '.join(terms)
 
     def _build_variable(self, v: plan.VariableDeclaration) -> None:
         if not v.dims:
@@ -571,8 +716,55 @@ class DuckdbExecutor:
             self._obj_const += self._scalar(p.sql) or 0.0
         if comp.terms:
             union = ' UNION ALL '.join(f'SELECT var_label AS col, coeff FROM ({p.sql})' for p in comp.terms)
-            self._con.execute(f'INSERT INTO obj SELECT col, SUM(coeff) FROM ({union}) GROUP BY col')
+            if self._objective_column_appears_once(o.expression, comp):
+                self._con.execute(f'INSERT INTO obj SELECT col, coeff FROM ({union})')
+            else:
+                self._con.execute(f'INSERT INTO obj SELECT col, SUM(coeff) FROM ({union}) GROUP BY col')
         self._obj_sense = o.sense
+
+    def _objective_column_appears_once(self, expression: plan.Expression, comp: CompiledExpression) -> bool:
+        """Can the objective's ``GROUP BY col`` be skipped?
+
+        The aggregate is there because several terms can land on one column and
+        an LP objective is their sum. It is dead weight in the common shape —
+        ``p * cost``, one fragment over one variable — where every group holds
+        exactly one row, and a hash aggregate over ten million singleton groups
+        is not free.
+
+        Safe when there is **one fragment**, the expression contains no
+        reduction, and the fragment's dims are the dims of the variable it
+        reads. Rows are then keyed by ``(variable dims…, var_label)`` and
+        ``var_label`` already determines the coordinates, so no column repeats.
+
+        **The dims check alone is not enough**, which is the whole reason this
+        is a named method with a test rather than an inline condition. A
+        reduction drops a dim from the *tuple* without merging the rows that
+        carried it — ``_sum_fragment`` projects, it does not aggregate. So
+        ``sum(q * price, over=generator)`` where ``q`` is indexed by snapshot
+        alone comes out with dims ``('snapshot',)``, matching ``q``'s
+        declaration exactly, while the fragment still holds one row per
+        generator. Skipping the aggregate there writes ``|generator|`` rows
+        into ``obj`` for one column: the LP file would quietly re-sum them, and
+        ``cols LEFT JOIN obj`` in the HiGHS sink would hand the solver more
+        columns than the model has.
+
+        Refusing every reduction is stronger than necessary — a ``sum`` over a
+        dim the variable *does* carry is safe, and so is ``group_sum`` — but
+        the cheap syntactic test covers ``p * cost``, which is the shape that
+        pays, and a false positive here is a silently wrong objective.
+
+        The unpack is the invariant, not a guard: a term fragment is produced
+        by exactly one ``plan.Variable`` node and carried through the shape
+        operators one fragment at a time, so one fragment means one variable.
+        Written to raise rather than to quietly return ``False``, because a
+        future node that broke it would disable this silently everywhere.
+        """
+        assert self._program is not None
+        if len(comp.terms) != 1 or _contains_reduction(expression):
+            return False
+        (name,) = _variable_names(expression)
+        declared = self._program.variable(name).dims
+        return set(comp.terms[0].dims) == set(declared)
 
     # ------------------------------------------------------------------
     # sinks — see relational/sinks/; the executor only supplies the tables
@@ -593,10 +785,20 @@ class DuckdbExecutor:
         """Sink the built model to an LP file."""
         sinks.write_lp_file(self._tables(), path)
 
-    def solve(self, batch_rows: int = 100_000) -> Solution:
-        """Sink the built model straight into HiGHS and solve it."""
-        status, objective = sinks.solve_direct(self._tables(), batch_rows)
-        return Solution(status=status, objective=objective, _executor=self)
+    def solve(
+        self,
+        batch_rows: int | None = None,
+        solver_options: Mapping[str, Any] | None = None,
+    ) -> Result:
+        """Sink the built model straight into HiGHS and solve it.
+
+        ``solver_options`` is forwarded verbatim to the solver, the way
+        linopy's is — ``{'time_limit': 60, 'mip_rel_gap': 0.01}``.
+        ``batch_rows`` defaults to this executor's ``chunk_rows``, so the
+        budget that governs the build governs the hand-off too.
+        """
+        status, objective, has_duals = sinks.solve_direct(self._tables(), batch_rows, solver_options)
+        return Result(_status=status, _objective=objective, _executor=self, _has_duals=has_duals)
 
     def _solution_sql(self, name: str) -> str:
         """The tidy solution of variable *name*: ``(dims…, value)``.
@@ -610,6 +812,41 @@ class DuckdbExecutor:
 
     def _primal(self, name: str) -> pd.DataFrame:
         return self._con.execute(self._solution_sql(name)).df()
+
+    def _dual_sql(self, name: str) -> str:
+        """The tidy duals of constraint *name*: ``(dims…, value)``.
+
+        The adjoint of :meth:`_solution_sql` — same join, against the row
+        labels instead of the column ones.
+        """
+        assert self._program is not None
+        collist = ', '.join([*(f'c.{d}' for d in self._program.constraint(name).dims), 'd.value'])
+        return f'SELECT {collist} FROM con_{name} c JOIN dual d ON d.row = c.row'
+
+    def _dual(self, name: str) -> pd.DataFrame:
+        return self._con.execute(self._dual_sql(name)).df()
+
+    def _no_duals_reason(self, termination_condition: str) -> str:
+        """Why a solve that *did* leave values still has no duals.
+
+        Integrality is decidable from the program, so the model's own reason
+        is preferred over the solver's: naming the variable is actionable in a
+        way that "HiGHS reported no dual solution" is not.
+        """
+        assert self._program is not None
+        discrete = sorted(v.name for v in self._program.variables if v.variable_type != 'continuous')
+        if discrete:
+            names = ', '.join(f"'{n}'" for n in discrete)
+            return (
+                f'duals are undefined for a mixed-integer model: {names} '
+                f'{"is" if len(discrete) == 1 else "are"} not continuous. '
+                f'Drop the integrality to price the LP relaxation instead.'
+            )
+        return (
+            f'the solver returned no dual solution, though the solve terminated '
+            f'{termination_condition!r}. Duals come from a simplex basis, which a '
+            f'run stopped short of one does not have.'
+        )
 
     def _solution_to_parquet(self, directory: Path) -> dict[str, Path]:
         assert self._program is not None
@@ -632,6 +869,50 @@ class DuckdbExecutor:
     def __exit__(self, *exc: object) -> Literal[False]:
         self.close()
         return False
+
+
+def _contains_reduction(expression: plan.Expression) -> bool:
+    """Whether a ``Sum`` or ``GroupSum`` appears anywhere in *expression*.
+
+    Both drop a dim from a fragment's tuple without merging the rows that
+    carried it, so a fragment's dims stop describing how many rows a
+    ``var_label`` has. See :meth:`DuckdbExecutor._objective_column_appears_once`,
+    the only caller, for why that distinction is load-bearing.
+    """
+    match expression:
+        case plan.Sum() | plan.GroupSum():
+            return True
+        case plan.Constant() | plan.Parameter() | plan.Variable():
+            return False
+        case plan.Negate(operand=x) | plan.Translate(operand=x):
+            return _contains_reduction(x)
+        case plan.Add(left=a, right=b) | plan.Multiply(left=a, right=b):
+            return _contains_reduction(a) or _contains_reduction(b)
+        case plan.Divide(numerator=a, divisor=b):
+            return _contains_reduction(a) or _contains_reduction(b)
+    raise LanguageError(f'unhandled expression {type(expression).__name__}')
+
+
+def _variable_names(expression: plan.Expression) -> frozenset[str]:
+    """Every variable an affine expression reads.
+
+    Spelled out rather than generic so the match is exhaustive: ``Divide``
+    names its operands ``numerator``/``divisor``, not ``left``/``right``, and
+    a walker that assumed otherwise would raise ``AttributeError`` on the
+    first objective containing a division.
+    """
+    match expression:
+        case plan.Variable(name=name):
+            return frozenset({name})
+        case plan.Constant() | plan.Parameter():
+            return frozenset()
+        case plan.Negate(operand=x) | plan.Sum(operand=x) | plan.GroupSum(operand=x) | plan.Translate(operand=x):
+            return _variable_names(x)
+        case plan.Add(left=a, right=b) | plan.Multiply(left=a, right=b):
+            return _variable_names(a) | _variable_names(b)
+        case plan.Divide(numerator=a, divisor=b):
+            return _variable_names(a) | _variable_names(b)
+    raise LanguageError(f'unhandled expression {type(expression).__name__}')
 
 
 def _release(con: Any, workdir: Path | None) -> None:

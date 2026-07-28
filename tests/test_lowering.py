@@ -44,7 +44,7 @@ def test_dispatch_yaml_agrees_variable_by_variable(dispatch_yaml, dispatch_input
         # primal agrees with the eager solution variable-by-variable, not only
         # in total — an objective can agree while the dispatch behind it differs
         eager_p = run.model.solution['p'].to_dataframe(name='value').reset_index()
-        rel_p = run.sol.primal('p')
+        rel_p = run.result.primal('p')
         merged = eager_p.merge(rel_p, on=['snapshot', 'generator'], suffixes=('_eager', '_rel'))
         # masked (gas is unmasked; all p_max > 0 here) rows align 1:1
         assert len(merged) == len(rel_p)
@@ -110,7 +110,7 @@ def test_sum_over_absent_dim_raises_at_lowering_too(dispatch_schema):
     SPEC §"dims" and alpha.4 settled the language question: summing over a dim
     the operand does not carry builds a model that solves and is wrong, so it
     is an error rather than the silent identity it once was. ``check_schema``
-    raises it for anything entering through ``ly.check``; this pins that
+    raises it for anything entering through ``fk.check``; this pins that
     ``_lower_expr`` does not quietly disagree one layer down, which is what it
     used to do — it returned the operand unchanged, and the comment claiming
     eager parity outlived the parity.

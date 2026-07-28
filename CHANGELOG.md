@@ -1,5 +1,125 @@
 # Changelog
 
+## [0.0.0-alpha.29](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.28...v0.0.0-alpha.29) (2026-07-28)
+
+
+### Performance
+
+* compute variable labels arithmetically when the mask factors ([#178](https://github.com/FBumann/farkas/issues/178)) ([5d4745f](https://github.com/FBumann/farkas/commit/5d4745ff81179cf5f65afba4ffdc97b46829803f))
+
+## [0.0.0-alpha.28](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.27...v0.0.0-alpha.28) (2026-07-28)
+
+
+### Bug Fixes
+
+* three ways an objective or a scalar parameter answered quietly ([#223](https://github.com/FBumann/farkas/issues/223)) ([ee08d5d](https://github.com/FBumann/farkas/commit/ee08d5d39dde4682b795d62f623d606d8996979a))
+
+## [0.0.0-alpha.27](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.26...v0.0.0-alpha.27) (2026-07-28)
+
+
+### Bug Fixes
+
+* refuse a parameter source that carries a coordinate twice ([#201](https://github.com/FBumann/farkas/issues/201)) ([fffee97](https://github.com/FBumann/farkas/commit/fffee9773f259a9b75cf5014f50a02f40c02a3cb))
+
+## [0.0.0-alpha.26](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.25...v0.0.0-alpha.26) (2026-07-27)
+
+
+### Documentation
+
+* **bench:** correct the label-optimisation numbers, and say how to get them ([#188](https://github.com/FBumann/farkas/issues/188)) ([bf84fd1](https://github.com/FBumann/farkas/commit/bf84fd1c1eb1ad6388d96b26827f83c4de3712c5))
+
+## [0.0.0-alpha.25](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.24...v0.0.0-alpha.25) (2026-07-27)
+
+
+### Performance
+
+* **sink:** size the hand-off by nonzeros, under one budget and one chunking rule ([#195](https://github.com/FBumann/farkas/issues/195)) ([c31beaf](https://github.com/FBumann/farkas/commit/c31beafdbe95e48a902dd19fa4b27de27b9bc4c0))
+
+## [0.0.0-alpha.24](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.23...v0.0.0-alpha.24) (2026-07-27)
+
+
+### Performance
+
+* **sink:** hand Arrow to numpy directly, not through to_pydict ([#193](https://github.com/FBumann/farkas/issues/193)) ([ac64f26](https://github.com/FBumann/farkas/commit/ac64f261239326e48a0c441774beedabb908a46f))
+
+## [0.0.0-alpha.23](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.22...v0.0.0-alpha.23) (2026-07-27)
+
+
+### Performance
+
+* skip the objective's GROUP BY where a column cannot repeat ([#179](https://github.com/FBumann/farkas/issues/179)) ([787b1ce](https://github.com/FBumann/farkas/commit/787b1ce238861acef53049a4ac0135671d850f1a))
+
+## [0.0.0-alpha.22](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.21...v0.0.0-alpha.22) (2026-07-27)
+
+
+### Performance
+
+* **lp:** render doubles with ::VARCHAR instead of printf('%.17g') ([#190](https://github.com/FBumann/farkas/issues/190)) ([b1df538](https://github.com/FBumann/farkas/commit/b1df538c3c0c4e0195d7d2d5ff2be7fb887608f1))
+
+## [0.0.0-alpha.21](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.20...v0.0.0-alpha.21) (2026-07-27)
+
+
+### Performance
+
+* **relational:** a label is a position, so compute it instead of counting it ([#186](https://github.com/FBumann/farkas/issues/186)) ([a31645b](https://github.com/FBumann/farkas/commit/a31645bde58974a041f175a18c56e3251bf6d5cd))
+
+## [0.0.0-alpha.20](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.19...v0.0.0-alpha.20) (2026-07-27)
+
+
+### Bug Fixes
+
+* the HiGHS sink's column ingest was an unbounded global sort ([#181](https://github.com/FBumann/farkas/issues/181)) ([271b0d7](https://github.com/FBumann/farkas/commit/271b0d7254c3cb0b94e740542071185ad0608b8d))
+
+## [0.0.0-alpha.19](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.18...v0.0.0-alpha.19) (2026-07-27)
+
+
+### Features
+
+* expose duals on the solve path (sol.dual) ([#156](https://github.com/FBumann/farkas/issues/156)) ([284df79](https://github.com/FBumann/farkas/commit/284df7927c6f58064fc691e9b8c2f1b2db2f6a7b))
+
+## [0.0.0-alpha.18](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.17...v0.0.0-alpha.18) (2026-07-27)
+
+
+### Features
+
+* **bench:** a performance harness the published numbers come from ([#143](https://github.com/FBumann/farkas/issues/143)) ([144713a](https://github.com/FBumann/farkas/commit/144713a6a2b32dc63efae52ce2853ce266d77191))
+
+## [0.0.0-alpha.17](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.16...v0.0.0-alpha.17) (2026-07-27)
+
+
+### Features
+
+* forward solver_options, and gate reads on an actual incumbent ([#169](https://github.com/FBumann/farkas/issues/169)) ([493a5e6](https://github.com/FBumann/farkas/commit/493a5e6f9d26184e3f1b855d963692343a5bf680))
+
+## [0.0.0-alpha.16](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.15...v0.0.0-alpha.16) (2026-07-27)
+
+
+### Documentation
+
+* the memory invariant says what it actually guarantees ([#150](https://github.com/FBumann/farkas/issues/150)) ([8ffe339](https://github.com/FBumann/farkas/commit/8ffe33929c29ba28e87ccbd60b4f1005a89a6132))
+
+## [0.0.0-alpha.15](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.14...v0.0.0-alpha.15) (2026-07-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* documentation only — the suggested alias is now `fk`. `import farkas` was and remains the actual import.
+
+### Chores
+
+* the import alias is fk, because the package is farkas ([#154](https://github.com/FBumann/farkas/issues/154)) ([fac76f0](https://github.com/FBumann/farkas/commit/fac76f04597e38675f136edf2d8f0bd5d74c85a7))
+
+## [0.0.0-alpha.14](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.13...v0.0.0-alpha.14) (2026-07-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* `Solution` is now `Result`; `status` returns the coarse axis (`ok`) rather than the solver's wording (`Optimal`) — `termination_condition` carries that, and `is_ok` is what most call sites meant. `objective` is `nan` and `primal`/`to_*` raise `NoSolutionError` when the solve produced nothing.
+
+### Features
+
+* a solve result tells you whether it has one ([#148](https://github.com/FBumann/farkas/issues/148)) ([30a91c8](https://github.com/FBumann/farkas/commit/30a91c853913bb7dee9e35323624b26f45ef5a45))
+
 ## [0.0.0-alpha.13](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.12...v0.0.0-alpha.13) (2026-07-26)
 
 
@@ -78,7 +198,7 @@
 * a file declaring more than one objective no longer loads.
 * a Series or DataArray whose index names are not the declared dims is now a DataError; previously the names were discarded.
 * a dimension declares the coordinates its labels carry ([#100](https://github.com/FBumann/linopy-yaml/issues/100))
-* every IR, AST and schema class is renamed, and `ly.LanguageError` no longer covers data-binding failures — those are `ly.DataError`. Both remain under `ly.LinopyYamlError`, as does the deprecated `RelationalBuildError` alias.
+* every IR, AST and schema class is renamed, and `fk.LanguageError` no longer covers data-binding failures — those are `fk.DataError`. Both remain under `fk.LinopyYamlError`, as does the deprecated `RelationalBuildError` alias.
 
 ### Features
 
@@ -118,7 +238,7 @@
 
 ### Features
 
-* Solution.to_xarray() — the labelled form, one call away ([#75](https://github.com/FBumann/linopy-yaml/issues/75)) ([7df73b4](https://github.com/FBumann/linopy-yaml/commit/7df73b4e75a1d1656b4b1a1d928d0e4bf5814a99))
+* Result.to_xarray() — the labelled form, one call away ([#75](https://github.com/FBumann/linopy-yaml/issues/75)) ([7df73b4](https://github.com/FBumann/linopy-yaml/commit/7df73b4e75a1d1656b4b1a1d928d0e4bf5814a99))
 * static dim checking — the type is a set of dim names ([#68](https://github.com/FBumann/linopy-yaml/issues/68)) ([f96bcb4](https://github.com/FBumann/linopy-yaml/commit/f96bcb4f12797514ef93afd1cd8e771cf8490d0b))
 
 
@@ -175,4 +295,4 @@
 
 ### Features
 
-* API polish — check(), write(), LanguageError, Solution lifecycle ([#36](https://github.com/FBumann/linopy-yaml/issues/36)) ([fc36af5](https://github.com/FBumann/linopy-yaml/commit/fc36af515eb9baafdf81c036a27ad8ca9431297f))
+* API polish — check(), write(), LanguageError, Result lifecycle ([#36](https://github.com/FBumann/linopy-yaml/issues/36)) ([fc36af5](https://github.com/FBumann/linopy-yaml/commit/fc36af515eb9baafdf81c036a27ad8ca9431297f))

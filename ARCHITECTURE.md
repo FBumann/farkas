@@ -3,10 +3,11 @@
 Brief, current, precise. A PR that changes the structure described here updates
 this file in the same PR. The language is [SPEC.md](SPEC.md); plans and refusals
 are [ROADMAP.md](ROADMAP.md); measured results are
-[docs/benchmarks.md](docs/benchmarks.md).
+[docs/benchmarks.md](docs/benchmarks.md), produced by the harness in
+[bench/](bench/README.md) — which is also how a claim here gets falsified.
 
 `python examples/walkthrough.py` executes the pipeline below stage by stage
-and prints what each one produces — the same public calls `ly.solve` makes,
+and prints what each one produces — the same public calls `fk.solve` makes,
 so the demonstration cannot drift from the code. Its output is committed as
 [examples/walkthrough.out](examples/walkthrough.out) and asserted line for line
 (`tests/test_walkthrough.py`), so reading it is the same as running it — and a
@@ -53,10 +54,10 @@ flowchart TB
 ```
 
 Eligibility is decided by **attempting the lowering** — `lower_program` returns
-a `Program` or raises `ly.LanguageError` — so it cannot drift from what the
+a `Program` or raises `fk.LanguageError` — so it cannot drift from what the
 engine supports. Errors split model from run: everything under `LanguageError`
 is decidable without data, `DataError` is what a source failed to supply, and
-both are `LinopyYamlError` (`errors.py`). `ly.check()` is exactly parse
+both are `LinopyYamlError` (`errors.py`). `fk.check()` is exactly parse
 → expand → validate → lower with no data bound, so a model repository can
 compile-check its math in CI. Expansion precedes validation in **both** lanes,
 because a formulation emits declarations and those are language too — a stray
@@ -105,7 +106,15 @@ static checks and CI's bare-install job proves the dependency claims.*
    CSR. Two residencies are exempt because neither scales with the budget's
    purpose: the solver's own model when solving in-process, and a model small
    enough that the budget exceeds it (the planned in-memory executor holds
-   everything by design — ROADMAP Track 5). A new feature is judged against the
+   everything by design — ROADMAP Track 5). A **solution vector** is the third:
+   `solve()` receives the primal from the solver as one dense array of length
+   `n_cols` and hands it to duckdb, outside `memory_limit`. That is deliberate
+   and it is not the model — it is `O(n_cols)` where the model is `O(nnz)`, it
+   exists once rather than at every operator, and the solver already holds an
+   identical copy, so we are never the dominant term. Roughly 1.6 GB at 10⁸
+   variables, on a machine that just solved a 10⁸-variable model.
+   `Result.to_parquet` streams and never materialises it, for anyone who
+   cannot afford even that. A new feature is judged against the
    invariant, not the mechanism: the question is whether peak still tracks the
    budget, not whether some array was briefly contiguous.
 5. **Backend-visible YAML files are self-contained.** No Python-side state
@@ -229,9 +238,9 @@ re-solve is cheap and structural editing is out of scope.
 
 Labels are also **row-major over the coordinate product**, and that is a
 contract rather than a side effect of how they are computed: it is what makes a
-build reproducible run to run. Unmasked frames get it in closed form instead of
-by sorting for it (`_label_frame`); masked frames keep the window, because no
-closed form knows which rows a predicate leaves behind.
+build reproducible run to run. `_label_frame` reaches it three ways depending on
+how much of the product survives the mask — arithmetic, factored, counted — and
+they must agree integer for integer, because a label *is* a solver index.
 
 **The plan is affine-by-design.** No node introduces variables or constraints as a
 side effect of an expression; formulations are model *transformations*. Variable
@@ -241,10 +250,12 @@ the streaming lane. Reimplementing linopy's reformulation passes inside the plan
 is explicitly rejected: that duplicates the library this package consumes.
 
 **Chunk only what cannot spill.** duckdb's joins and plain numeric hash
-aggregates spill under `memory_limit` on their own, so only label assignment and
-the LP-text `string_agg` need hand-managed partitioning, and the database must
-be file-backed. The measurements behind those rules — and the operators that
-OOM instead of spilling — are in
+aggregates spill under `memory_limit` on their own, so only *masked* label
+assignment and the LP-text `string_agg` need hand-managed partitioning, and the
+database must be file-backed. Unmasked there is no window to chunk: every
+coordinate of the product exists, so a label is its row's position and falls out
+of arithmetic on the dim ordinals. The measurements behind those rules — and the
+operators that OOM instead of spilling — are in
 [docs/benchmarks.md](docs/benchmarks.md#operational-findings).
 
 **Sinks are capped, explicitly.** Today every sink expresses the same three
@@ -303,6 +314,8 @@ native schema merge (#30) is what would force the question.
 | `relational/arrow.py` | the Arrow boundary — caller tables in, via the PyCapsule protocol |
 | `relational/compiler.py` | plan → SQL text; pure, no connection |
 | `relational/sql.py` | how a value is spelled in SQL — quoting for caller-supplied paths |
+| `relational/chunking.py` | how a batched pass sizes its chunk: budget ÷ the width of one unit |
+| `relational/status.py` | solve outcome on two axes; linopy's vocabulary, copied not imported |
 | `relational/executor.py` | duckdb: bind sources, label, assemble the tables |
 | `relational/sinks/` | how a built model leaves: `lp_file`, `solver_direct` (one module each, [README](src/farkas/relational/sinks/README.md)) |
 | `linopy/__init__.py` | opt-in shim: `build` / `extend` on a `linopy.Model` |
@@ -336,6 +349,28 @@ Two rules follow from that table, and a PR that adds a construct keeps them:
 - **Nothing is abbreviated.** `Cmp` became `ParameterComparison`, `vtype`
   became `variable_type`. The one place abbreviation survives is SQL column
   names inside the executor, which are not Python identifiers.
+
+### Where a concept is already linopy's, use linopy's name
+
+For anything this package shares with linopy — solve statuses, result shapes,
+solver metrics, duals — adopt **linopy's primitive**: its spelling, its field
+names, its decomposition. `Result` is the envelope (status + solution +
+report) and `Solution` the raw arrays, because that is what those words mean
+in linopy; `status` / `termination_condition` are two axes and `is_ok` is the
+rollup, because that is linopy's model. Our audience arrives from
+linopy/PyPSA, and a second vocabulary for one fact is a tax on every one of
+them. It also keeps the oracle honest: the two lanes can be compared exactly
+rather than through case-folding.
+
+**Copy it; do not import it.** The engine may not import linopy (rule 2), so
+the tables live here — and a test imports linopy and asserts the copy still
+matches (`tests/test_solve_status.py`). A copy nobody checks is a copy that
+rots, and the failure should be a red test rather than a user handed two
+dialects.
+
+This applies to vocabulary we *share*. Where the design genuinely differs it
+stays ours: we have no `Solution` of dense arrays to hold, because the values
+live in duckdb and are read by label join.
 
 ## Extension checklists
 
