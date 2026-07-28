@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="320" viewBox="0 0 1280 320" fill="none">
-  <rect width="1280" height="320" fill="#0f201e"></rect>
-  <g transform="translate(96,96) scale(1)">  <polygon points="30,14 50,52 78,52 98,14 92,70 78,88 50,88 36,70" fill="#eef1ef"></polygon>
-  <polygon points="50,88 78,88 64,106" fill="#eef1ef" opacity="0.22"></polygon>
-  <line x1="14" y1="88" x2="114" y2="88" stroke="#1f938a" stroke-width="2.5"></line></g>
-  <text x="264" y="164" font-family="IBM Plex Sans, Helvetica, Arial, sans-serif" font-size="76" font-weight="500" letter-spacing="-1.6" fill="#eef1ef">farkas</text>
-  <text x="266" y="212" font-family="IBM Plex Mono, monospace" font-size="26" fill="#8fb3af">self-documenting optimisation models — at any scale</text>
-</svg>
