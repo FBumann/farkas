@@ -73,7 +73,7 @@ Feeds [docs/ROADMAP.md](ROADMAP.md), with the verdict
 |---|---|---|---|
 | PyPSA rung 1 | a bound of `-rating` — PyPSA's `p_min_pu = -1` | shipping `neg_rating` as data | **primitive**: bounds as expressions, [#31](https://github.com/FBumann/farkas/issues/31). A second model asking for it |
 | PyPSA unit commitment | `min_up_time` — a unit that starts must stay up for *T* snapshots | left at 0, so the constraint is not written | **split verdict**, below |
-| Travelling salesman | subtour elimination as DFJ — one row per subset of cities, or cuts generated lazily | rewritten as [MTZ](models/tsp_mtz.md), which is O(n²) and static | **refused, and correctly** — see below |
+| Travelling salesman | subtour cuts **generated lazily** inside branch-and-cut, which is how every serious TSP code works | [MTZ](models/tsp_mtz.md), O(n²) and static | **refused, and correctly**: a solve loop is an algorithm, not a model |
 
 `min_up_time` is the more interesting row, because the answer depends on
 something the language cares about. The constraint is
@@ -89,17 +89,22 @@ ceiling doing its job.
 Three rows from eleven ports — a rate worth watching once the corpus has hit the
 ceiling a few more times.
 
-**The TSP row is the one to read.** It is the first entry where the refusal is
-of a *technique* rather than a shape, and where the rewrite turned out to be
-inside the language all along. DFJ is out because its constraint count depends
-on the data, and lazy cuts are out because they are a solve loop rather than a
-model — both are the rule that makes a plan knowable before data is touched.
-Miller–Tucker–Zemlin is polynomial and static, and
-[it ports](models/tsp_mtz.md) against TSPLIB's published optimum.
+**The TSP row is the one to read**, and it is narrower than it first looked.
+Writing DFJ's subtour rows out in full *is* sayable — the subsets go in as data
+exactly the way [KVL's cycle basis](models/pypsa_kvl.md) does, and an 8-city
+instance with all 246 subsets solves to a correct tour. There are 2ⁿ of them, so
+it stops being practical around twenty cities, but that is a data-size wall
+rather than a ceiling.
 
-So the honest reading of the ceiling is narrower than "no TSP": it refuses an
-algorithm, not a problem. That distinction was worth finding out by trying
-rather than by arguing about it.
+What is genuinely outside is *lazy* generation: solve, find the violated
+subsets, add rows, re-solve. That is an algorithm, and this language describes
+models. Since lazy generation is what every serious TSP code actually does,
+"farkas can express TSP" and "farkas is a good way to solve a large TSP" are
+different sentences and only the first is true.
+
+An earlier draft of this ledger said DFJ was refused for having a
+data-dependent row count. That was wrong — the cycle basis has one too — and
+the corpus is where it got caught.
 
 
 ---

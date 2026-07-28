@@ -2,12 +2,14 @@
 # 17 cities, explicit distance matrix, published optimum 2085.
 # See docs/ports.md — this is the port that tests where the ceiling actually is.
 #
-# TSP's usual formulation (Dantzig-Fulkerson-Johnson) eliminates subtours with
-# one constraint per subset of cities, or by generating them lazily as they are
-# violated. Neither is sayable here and neither should be: the first has a
-# constraint count that depends on the data, the second is a solve loop rather
-# than a model. Miller-Tucker-Zemlin is the polynomial alternative — O(n^2)
-# rows, all known before any data is read — and it is inside the language.
+# TSP's usual formulation (Dantzig-Fulkerson-Johnson) forbids subtours with one
+# row per subset of cities. Written out in full that is sayable here — the
+# subsets go in as data, exactly as KVL's cycle basis does — but there are 2^n
+# of them, so it stops being practical around twenty cities. What is genuinely
+# outside the language is the way DFJ is actually used: generating the violated
+# rows lazily inside branch-and-cut, which is a solve loop rather than a model.
+# Miller-Tucker-Zemlin is the polynomial alternative — O(n^2) rows, all known
+# before any data is read.
 
 dimensions:
   # The tour position variable `u` lives on `city`; the arc variable lives on

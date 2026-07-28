@@ -11,17 +11,30 @@ to be wrong.
 ## What genuinely is refused, and why
 
 TSP's textbook formulation — Dantzig–Fulkerson–Johnson — forbids subtours with
-one constraint per subset of cities, or generates them lazily as they are
-violated. **Neither is sayable here, and neither should be:**
+one constraint per subset of cities:
 
-| | Why it is out |
+$$\sum_{i \in S}\sum_{j \in S} x_{ij} \le |S| - 1 \qquad \text{for every subset } S$$
+
+Every row is linear and there are finitely many, so DFJ is an ordinary MILP.
+The question is which parts of it this language can say, and the answer is
+narrower than "none":
+
+| | Status |
 |---|---|
-| DFJ, all subsets | the *number of constraints depends on the data*, and the plan must know every component's extent before data is read ([the ceiling](../ARCHITECTURE.md#two-tiers-and-the-ceiling)) |
-| DFJ, lazy cuts | solve, find violations, add rows, re-solve — that is an **algorithm**, not a model. Nothing declarative describes it |
+| DFJ, subsets **written out** | **sayable** — the subsets go in as data, exactly as [KVL's cycle basis](pypsa_kvl.md) does. Verified on an 8-city instance: 246 subsets, one correct tour |
+| DFJ, subsets **generated lazily** | **outside** — solve, find violations, add rows, re-solve is an *algorithm*, not a model. Nothing declarative describes it |
+| MTZ | sayable, and what this port uses |
 
-Those refusals are the same rule that makes a plan knowable before any data is
-touched, which everything else in the engine rests on. Giving them up to gain
-TSP would trade the property for the example.
+So the honest refusal is only the second row. The first is not a language limit
+at all: it is 2ⁿ rows, which stops being practical somewhere around twenty
+cities — a data-size wall, not a ceiling. That distinction is worth being
+precise about, because an earlier draft of this page got it wrong and claimed
+DFJ was refused for having a data-dependent row count. By that reasoning the
+cycle basis would be refused too, and it is not.
+
+**Lazy generation is the thing every serious TSP code actually does**, which is
+why "farkas can express TSP" and "farkas is a good way to solve a large TSP"
+are different sentences, and only the first is true.
 
 ## What that leaves
 
@@ -37,12 +50,14 @@ Inside the language, and it always was.
 # 17 cities, explicit distance matrix, published optimum 2085.
 # See docs/ports.md — this is the port that tests where the ceiling actually is.
 #
-# TSP's usual formulation (Dantzig-Fulkerson-Johnson) eliminates subtours with
-# one constraint per subset of cities, or by generating them lazily as they are
-# violated. Neither is sayable here and neither should be: the first has a
-# constraint count that depends on the data, the second is a solve loop rather
-# than a model. Miller-Tucker-Zemlin is the polynomial alternative — O(n^2)
-# rows, all known before any data is read — and it is inside the language.
+# TSP's usual formulation (Dantzig-Fulkerson-Johnson) forbids subtours with one
+# row per subset of cities. Written out in full that is sayable here — the
+# subsets go in as data, exactly as KVL's cycle basis does — but there are 2^n
+# of them, so it stops being practical around twenty cities. What is genuinely
+# outside the language is the way DFJ is actually used: generating the violated
+# rows lazily inside branch-and-cut, which is a solve loop rather than a model.
+# Miller-Tucker-Zemlin is the polynomial alternative — O(n^2) rows, all known
+# before any data is read.
 
 dimensions:
   # The tour position variable `u` lives on `city`; the arc variable lives on
