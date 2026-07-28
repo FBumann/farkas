@@ -42,6 +42,7 @@ Everything below is the first one, in the order it runs.
 | `ruff format --check .` | formatting drifted. Run `ruff format .`. |
 | `pyrefly check` | a type is wrong. **Fix the type, don't widen it** — if the finding is genuinely wrong, `# pyrefly: ignore[rule-name]` on the one line with a reason, never the rule off globally. |
 | `pytest -q` | the suite. Includes the differential lanes and the ported models. |
+| `mkdocs build --strict` | the site. A dead cross-link, an anchor that no longer resolves, or a page under `docs/` with no `nav:` entry — see *the docs* below. |
 | **bare install, at the floors** | the engine reached for something it does not declare. |
 
 **The bare-install job is the one worth understanding.** It reinstalls with
@@ -55,6 +56,36 @@ this job, and only this job.
 
 Raise a floor when the code relies on that version's behaviour. Do not raise
 one to chase a newer interpreter.
+
+## The docs
+
+`docs/` is both the site and what you read on GitHub. Write for the repo —
+relative links, no site-only syntax — and the build handles the difference.
+
+```bash
+uv sync --group docs
+uv run mkdocs serve      # http://127.0.0.1:8000, live-reloading
+uv run mkdocs build --strict   # what CI runs
+```
+
+Two rules the build enforces, so neither has to be remembered:
+
+- **Every page under `docs/` needs a `nav:` entry** in `mkdocs.yml`. Adding a
+  model page without one fails the build rather than shipping an unreachable
+  page. `docs/README.md` is the deliberate exception — it is the folder view
+  GitHub renders, and `exclude_docs` keeps it out of the site, where
+  `docs/index.md` is the home page.
+- **Links that leave `docs/` are rewritten to GitHub blob URLs** by
+  `tools/mkdocs_hooks.py` — `../CONTRIBUTING.md` and
+  `../bench/results/latest.jsonl` are correct in the repo and would be 404s on
+  the site. `tests/test_docs_site.py` pins the rule, and asserts every such
+  target still exists; mkdocs cannot check that side.
+
+Headings are slugged the way GitHub slugs them, so `#track-4--sink-capabilities`
+means the same thing in both places.
+
+Read the Docs builds and publishes from `main` (`.readthedocs.yaml`); nothing
+needs deploying by hand.
 
 ## Branches, commits, PRs
 

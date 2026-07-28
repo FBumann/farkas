@@ -37,6 +37,7 @@ whole model repository in CI with nothing bound to it at all.
 > system of linear inequalities either has a solution, or has a certificate that
 > it has none — never both, never neither.
 
+<!--flow-start-->
 ```mermaid
 flowchart LR
     Y["YAML + data"] --> AST["core AST"]
@@ -54,9 +55,11 @@ flowchart LR
     class ERR err
     classDef err fill:#fdf3e7,stroke:#b7791f,color:#111
 ```
+<!--flow-end-->
 
 ## Example
 
+<!--quickstart-start-->
 ```yaml
 # dispatch.yaml
 dimensions:
@@ -106,6 +109,7 @@ none of them. Results come back as frames, so nothing has to be released and
 no dataframe library is a dependency: `result.to_pandas("p")`,
 `.to_dataarray("p")` and `.to_parquet(dir)` are the bridges out, each named for
 what it costs.
+<!--quickstart-end-->
 
 ## Why
 

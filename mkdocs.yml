@@ -1,0 +1,178 @@
+site_name: farkas
+site_description: Self-documenting optimisation models — declarative LP/MILP, built relationally and handed straight to the solver
+site_url: https://farkas.readthedocs.io/en/latest/
+repo_url: https://github.com/FBumann/farkas
+repo_name: FBumann/farkas
+edit_uri: edit/main/docs/
+strict: true
+
+# `docs/` is the site *and* what contributors read on GitHub, so every page here
+# is a file that already had to make sense on its own. Two consequences:
+#
+#   - `README.md` stays as the folder view GitHub renders when you browse to
+#     `docs/`, and is excluded from the site, where `index.md` does that job.
+#   - Pages cross-link to things outside `docs/` (`../CONTRIBUTING.md`,
+#     `../bench/results/latest.jsonl`). Those are correct on GitHub and would be
+#     404s here, so `tools/mkdocs_hooks.py` rewrites them to blob URLs at build
+#     time. Nothing in the sources is written for the site's benefit.
+exclude_docs: |
+  README.md
+  # rendered locally by the presentation script and gitignored; the chart page
+  # (benchmarks-scaling.html) is a source and stays.
+  relational.html
+  relational.pdf
+
+validation:
+  # Under `strict: true` a warning is a failed build, which is the point: a
+  # model page added without a nav entry, or a link that stopped resolving,
+  # fails CI rather than shipping.
+  nav:
+    omitted_files: warn
+    not_found: warn
+  links:
+    not_found: warn
+    anchors: warn
+    absolute_links: warn
+    unrecognized_links: warn
+
+nav:
+  - Home: index.md
+  - Writing a model: guide.md
+  - Models:
+      - models/index.md
+      - dispatch: models/dispatch.md
+      - storage: models/storage.md
+      - transport: models/transport.md
+      - piecewise: models/piecewise.md
+      - walkthrough: models/walkthrough.md
+      - Dantzig transport: models/transport_dantzig.md
+      - PyPSA LOPF rung 1: models/pypsa_transport.md
+      - PyPSA LOPF rung 2: models/pypsa_ramp.md
+      - PyPSA LOPF rung 3: models/pypsa_storage.md
+      - PyPSA LOPF rung 4: models/pypsa_cyclic_storage.md
+      - PyPSA LOPF rung 5: models/pypsa_kvl.md
+      - PyPSA unit commitment: models/pypsa_unit_commitment.md
+      - Dantzig, economies of scale: models/transport_pwl.md
+      - Stigler's diet: models/stigler_diet.md
+      - Facility location: models/facility_location.md
+      - Travelling salesman: models/tsp_mtz.md
+  - Reference:
+      - Language: SPEC.md
+      - Benchmarks: benchmarks.md
+  - Internals:
+      - Architecture: ARCHITECTURE.md
+      - Roadmap: ROADMAP.md
+      - Verified ports: ports.md
+  - Changelog: changelog.md
+
+theme:
+  name: material
+  language: en
+
+  palette:
+    # Dark first = default for new visitors (no auto/system-pref entry).
+    # Icon represents the CURRENT scheme — moon when active is dark,
+    # sun when active is light. The `name` describes the toggle action.
+    - scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+
+  font:
+    text: Roboto
+    code: JetBrains Mono
+
+  icon:
+    repo: fontawesome/brands/github
+
+  features:
+    - header.autohide
+    # navigation.instant left off — MathJax fails to re-typeset on
+    # no-math → math swaps, and no documented reset recipe fixes it.
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.prune
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.select
+    - content.tabs.link
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      # GitHub's slug rules, not mkdocs'. The pages here are read in both
+      # places and already cross-link by anchor — `ROADMAP.md#track-4--sink-
+      # capabilities`, whose double hyphen is the em dash GitHub drops. The
+      # default slugifier collapses that to one, so every such link would 404
+      # on the site while working in the repo. Same file, same anchor, both
+      # renderings.
+      slugify: !!python/object/apply:pymdownx.slugs.slugify {kwds: {case: lower}}
+  - pymdownx.highlight:
+      anchor_linenums: true
+      use_pygments: true
+  - pymdownx.inlinehilite
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.superfences:
+      custom_fences:
+        # README and ARCHITECTURE both draw the lane diagram in mermaid.
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+plugins:
+  - search
+  - include-markdown
+
+# Lives outside `docs/` deliberately: everything under `docs/` is copied into
+# the built site, and the hook is machinery, not a page.
+hooks:
+  - tools/mkdocs_hooks.py
+
+extra_css:
+  - stylesheets/extra.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/FBumann/farkas
+      name: farkas on GitHub
+    - icon: simple/pypi
+      link: https://pypi.org/project/farkas/
+      name: farkas on PyPI
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+
+watch:
+  - docs
+  - README.md
+  - CHANGELOG.md

@@ -17,6 +17,8 @@ Three docs, kept short on purpose — if a change makes one of them longer, chec
 
 A PR that adds, renames, or retires a construct updates `docs/SPEC.md`. Rationale belongs in the PR description or a code comment, not in a new doc section; historical "this used to work differently" notes belong in git.
 
+Everything under `docs/` is also published as an mkdocs-material site (`mkdocs.yml`), built from these same sources — write for the repo, with relative links, and the build handles the difference. Two consequences worth knowing: **a new page under `docs/` needs a `nav:` entry** or `mkdocs build --strict` fails in CI, and links that leave `docs/` are rewritten to GitHub blob URLs by `tools/mkdocs_hooks.py`. See *the docs* in [CONTRIBUTING.md](CONTRIBUTING.md).
+
 **Before proposing a new language feature**, triage it: **macro, primitive, or escape?** Most requests are compositions (macro, free); a genuinely new shape earns a primitive only if it clears the expressive ceiling in `docs/ARCHITECTURE.md` (degree 1 ∩ relational ∩ local); unsayable math goes to a declared `escape:` island (#38) rather than into the language. Check the deliberate non-primitives in `docs/ROADMAP.md` first — parity with another tool is not by itself a reason to add anything.
 
 ## Common Commands
@@ -42,6 +44,9 @@ uv run pyrefly check
 
 # Hooks (once per clone)
 uv run pre-commit install
+
+# Docs site (own group; `serve` live-reloads, `build --strict` is the CI gate)
+uv sync --group docs && uv run mkdocs serve
 ```
 
 ## Package Structure

@@ -5,6 +5,12 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
+        # mkdocs.yml carries `!!python/name:` and `!!python/object/apply:` tags —
+        # that is how mkdocs is handed a callable (the emoji generators, the
+        # GitHub-compatible slugifier). `safe_load` refuses to construct them, so
+        # the hook reports a valid config as broken. mkdocs parses it on every
+        # build, and CI builds strictly, so it is not unchecked.
+        exclude: ^mkdocs\.yml$
       - id: check-added-large-files
       - id: check-merge-conflict
       - id: debug-statements
