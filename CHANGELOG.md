@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.9](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.8...v0.0.1-alpha.9) (2026-07-28)
+
+
+### Bug Fixes
+
+* **result:** read the solution back in label order ([#278](https://github.com/FBumann/farkas/issues/278)) ([11bf86d](https://github.com/FBumann/farkas/commit/11bf86d8e3c0e5dd02e624b597ae3c4d0aff951b))
+
 ## [0.0.1-alpha.8](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.7...v0.0.1-alpha.8) (2026-07-28)
 
 
