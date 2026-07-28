@@ -6,11 +6,19 @@ set of published numbers came from a `scratch/` script that was deleted, and a
 claim nobody can re-run is a claim with a shelf life.
 
 ```bash
-# every rung docs/benchmarks.md publishes — one invocation, because the run
-# REPLACES the results file rather than adding to it
-uv run python -m bench.run --sizes xs s m l d100 d50 d25 d08 \
-    --arms farkas linopy duckdb --duckdb-root ../farkas-main
-uv run python -m bench.report bench/results/latest.jsonl    # -> markdown
+# every rung docs/benchmarks.md publishes. The size ladder and the mask sweep
+# go to separate files: a run REPLACES its results file rather than adding to
+# it, and the report takes as many files as you give it
+uv run python -m bench.run --sizes xs s m l \
+    --arms farkas linopy duckdb --duckdb-limits none 1GB \
+    --duckdb-root ../farkas-main --repeat 3
+uv run python -m bench.run --sizes d100 d50 d25 d08 --skip-gate \
+    --arms farkas linopy duckdb --duckdb-limits none 1GB \
+    --duckdb-root ../farkas-main --repeat 3 --out bench/results/density.jsonl
+
+uv run python -m bench.report bench/results/latest.jsonl \
+    bench/results/density.jsonl                             # -> markdown
+uv run python -m bench.plot                                 # -> the chart page
 
 # anything narrower than the published ladder: send it somewhere else
 uv run python -m bench.run --cases dispatch --sizes m l --out /tmp/two.jsonl
@@ -21,6 +29,11 @@ The bare `bench.run` is **not** the committed ladder: it defaults to `xs s m`,
 so it stops below the rung every interesting claim lives at. Narrowing the run
 and then committing the file leaves the published tables with no provenance,
 and nothing about the file looks wrong afterwards.
+
+**`bench.plot` rewrites one line of `docs/benchmarks-scaling.html`** — the
+`const DATA = {...};` literal — and nothing else. The page is a tracked source
+file, so its markup and prose are reviewed in the diff like any other code and
+only the measurements inside it are mechanical.
 
 **Pass `--out` for every run that is not the full ladder.** The default target
 is the committed `results/latest.jsonl` and the run *replaces* it, so a
