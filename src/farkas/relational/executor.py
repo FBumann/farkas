@@ -296,8 +296,11 @@ class PolarsExecutor:
         # `sink_csv`, whose default resolves to streaming — and switching every
         # collect costs 29% on a small join-heavy model to save the same 0.15 GB
         # this one saves alone.
-        frame = _plain_strings(frame.select(wanted), p.dims).collect(engine='streaming').lazy()
+        frame = frame.select(wanted).collect(engine='streaming').lazy()
+        # before the cast, not after: a dictionary-encoded column compares on
+        # its codes, and widening it to strings first doubles the check
         self._check_one_row_per_coordinate(p, frame)
+        frame = _plain_strings(frame, p.dims)
         if frame.collect_schema()['value'] == pl.Boolean:
             self._bool_params.add(p.name)
         self._parameters[p.name] = frame
@@ -328,6 +331,14 @@ class PolarsExecutor:
                     f'broadcast everywhere — but its source has {rows} rows. '
                     f'Declare the dims it is indexed by, or reduce the source to a single row.'
                 )
+            return
+        # Ask the cheap question first. Naming the offending coordinates needs a
+        # group-by, which on a parameter spanning the variable product is the
+        # single most expensive thing in the build — 0.88 s of `profiled`'s
+        # 2.34 s at 12M rows. Whether *any* coordinate repeats is one pass at
+        # 0.25 s, and the group-by is then only paid on the path that is about
+        # to raise anyway.
+        if not frame.select(pl.struct(p.dims).is_duplicated().any()).collect().item():
             return
         duplicated = frame.group_by(p.dims).agg(pl.len().alias('n')).filter(pl.col('n') > 1).head(3).collect()
         if duplicated.height == 0:
