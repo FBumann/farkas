@@ -11,13 +11,13 @@ accept exactly the same language; there is no routing and no fallback.
 
 Three docs, kept short on purpose — if a change makes one of them longer, check whether it belongs in another:
 
-- `SPEC.md` — the language reference: what a YAML file may contain and what it means.
-- `ARCHITECTURE.md` — how it fits together, the hard rules, the expressive ceiling, the module map. Update it in any PR that changes structure.
-- `ROADMAP.md` — what we build toward and what we have decided never to build.
+- `docs/SPEC.md` — the language reference: what a YAML file may contain and what it means.
+- `docs/ARCHITECTURE.md` — how it fits together, the hard rules, the expressive ceiling, the module map. Update it in any PR that changes structure.
+- `docs/ROADMAP.md` — what we build toward and what we have decided never to build.
 
-A PR that adds, renames, or retires a construct updates `SPEC.md`. Rationale belongs in the PR description or a code comment, not in a new doc section; historical "this used to work differently" notes belong in git.
+A PR that adds, renames, or retires a construct updates `docs/SPEC.md`. Rationale belongs in the PR description or a code comment, not in a new doc section; historical "this used to work differently" notes belong in git.
 
-**Before proposing a new language feature**, triage it: **macro, primitive, or escape?** Most requests are compositions (macro, free); a genuinely new shape earns a primitive only if it clears the expressive ceiling in `ARCHITECTURE.md` (degree 1 ∩ relational ∩ local); unsayable math goes to a declared `escape:` island (#38) rather than into the language. Check the deliberate non-primitives in `ROADMAP.md` first — parity with another tool is not by itself a reason to add anything.
+**Before proposing a new language feature**, triage it: **macro, primitive, or escape?** Most requests are compositions (macro, free); a genuinely new shape earns a primitive only if it clears the expressive ceiling in `docs/ARCHITECTURE.md` (degree 1 ∩ relational ∩ local); unsayable math goes to a declared `escape:` island (#38) rather than into the language. Check the deliberate non-primitives in `docs/ROADMAP.md` first — parity with another tool is not by itself a reason to add anything.
 
 ## Common Commands
 
@@ -46,7 +46,7 @@ uv run pre-commit install
 
 ## Package Structure
 
-See `ARCHITECTURE.md` for the authoritative module map. In brief:
+See `docs/ARCHITECTURE.md` for the authoritative module map. In brief:
 
 ```
 src/farkas/

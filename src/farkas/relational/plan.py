@@ -4,7 +4,7 @@ An intermediate representation in the compiler sense — the module is named
 for what it *is* to this engine (duckdb, Calcite and Spark all call this
 shape a logical plan) rather than for the generic category.
 
-The lane is described in ARCHITECTURE.md, "The relational lane".
+The lane is described in docs/ARCHITECTURE.md, "The relational lane".
 
 Frozen dataclasses only — no execution logic, no engine imports. A `Program`
 is a complete declarative description of a linear program over named tidy

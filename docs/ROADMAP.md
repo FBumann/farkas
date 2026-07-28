@@ -2,7 +2,7 @@
 
 What we build toward and what we have decided never to build. Ordered work is in
 GitHub issues; this is the index and the rationale. Everything is judged against
-the ceiling in [ARCHITECTURE.md](ARCHITECTURE.md#two-tiers-and-the-ceiling):
+the ceiling in [docs/ARCHITECTURE.md](ARCHITECTURE.md#two-tiers-and-the-ceiling):
 affine ∩ relational ∩ local.
 
 ## How we measure
@@ -21,12 +21,12 @@ numbers are published until #27 produces them.
 Expressiveness is not the axis we lead on. Cost is, on the one claim a reader
 can check rather than take: **end-to-end cost to a loaded solver**, wall and
 peak, against the eager lane's own best path to the same place
-([benchmarks](docs/benchmarks.md)). Build memory *alone* is not that claim — it
+([benchmarks](benchmarks.md)). Build memory *alone* is not that claim — it
 is a small fraction of what solving costs, so shrinking it further changes
 nothing a caller feels. Two claims we would rather lead on are not measured yet
 and are therefore not made: the floor under the LP-file route as a cold cost,
 and marginal cost per model in a loop. Both are listed in
-[Not measured yet](docs/benchmarks.md#not-measured-yet); neither is quoted until
+[Not measured yet](benchmarks.md#not-measured-yet); neither is quoted until
 a table backs it.
 
 ## The degree axis
@@ -55,7 +55,7 @@ oracle covers it. What remains is one blocker and one cost:
 2. **The Hessian is passed whole** — a cost, not a rule-4 violation, since
    under the aligned-only scope `Q` is diagonal and small beside the solver's
    own model. The arithmetic and its two caveats are in
-   [docs/benchmarks.md](docs/benchmarks.md#sink-capabilities).
+   [docs/benchmarks.md](benchmarks.md#sink-capabilities).
 
 Plus a data-time convexity guard, a new plan node, a lowering case and a
 label-ordering change — a bigger diff than SOS, which is a declaration and needs
@@ -137,7 +137,7 @@ exception noted under 2b.
 closure (affine ∩ relational ∩ local) is about streamability and is
 solver-independent; what a sink can *ingest* is separate. Treating them as one
 let HiGHS's limits read as architectural law — the measured table is in
-[docs/benchmarks.md](docs/benchmarks.md#sink-capabilities).
+[docs/benchmarks.md](benchmarks.md#sink-capabilities).
 
 Adopted: a declared capability per **sink** (not per solver — `lp_file` is not
 a solver but has capabilities), modelled on linopy's `SolverFeature` /
@@ -173,7 +173,7 @@ worth stating rather than discovering:
   once and run on a machine chosen by someone else.
 - **The solver is the larger term anyway.** Measured at roughly an order of
   magnitude above the build at 10⁷ variables
-  ([benchmarks](docs/benchmarks.md)), so a ceiling on the build is worth
+  ([benchmarks](benchmarks.md)), so a ceiling on the build is worth
   having for the write path — `fk.write` to LP or MPS, handed to something
   else — and worth much less when the same process goes on to solve.
 
@@ -206,7 +206,7 @@ dualization — transposing a COO matrix is swapping two column names.
 
 **Ahead of comparable declarative layers:** sparse-by-construction build with
 no dense intermediate, and a hand-off straight to the solver rather than through
-a file (see [benchmarks](docs/benchmarks.md); a *declared* memory ceiling is
+a file (see [benchmarks](benchmarks.md); a *declared* memory ceiling is
 Track 5, not something we have);
 parameterised `macros:` (Calliope's sub-expressions take no arguments); binary
 and integer variables; piecewise as N links with per-link signs, convex mode and

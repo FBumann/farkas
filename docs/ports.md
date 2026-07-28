@@ -5,11 +5,11 @@ against **an optimum that did not come from us**.
 
 Every other test compares farkas against farkas. Even the differential harness
 compares two lanes consuming the *same resolved AST*
-([hard rule 1](../ARCHITECTURE.md#hard-rules)) — which is what makes them an
+([hard rule 1](ARCHITECTURE.md#hard-rules)) — which is what makes them an
 oracle for each other, and also what they cannot see: a **shared misreading**,
 both lanes agreeing on a meaning the modeller did not intend, passes the whole
 suite green. This is the net for that class, and the evidence behind
-[the ceiling](../ARCHITECTURE.md#two-tiers-and-the-ceiling).
+[the ceiling](ARCHITECTURE.md#two-tiers-and-the-ceiling).
 
 | Port | Reference | Optimum |
 |---|---|---|
@@ -33,7 +33,7 @@ a row in the ledger. Both are evidence, so no rung is wasted.
 
 ## Ledger — what a port could not say
 
-Feeds [ROADMAP.md](../ROADMAP.md), with the verdict
+Feeds [docs/ROADMAP.md](ROADMAP.md), with the verdict
 [CLAUDE.md](../CLAUDE.md) asks for: macro, primitive, or escape.
 
 | Port | What could not be said | Worked around by | Verdict |

@@ -155,8 +155,8 @@ naming its rewrite.
 
 ## Docs
 
-[SPEC.md](SPEC.md) is the language reference · [ARCHITECTURE.md](ARCHITECTURE.md)
-for how it fits together · [ROADMAP.md](ROADMAP.md) for what is planned and what
+[docs/SPEC.md](docs/SPEC.md) is the language reference · [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+for how it fits together · [docs/ROADMAP.md](docs/ROADMAP.md) for what is planned and what
 is refused · [docs/models/](docs/models/index.md) for every model in the repo,
 with the two checked against somebody else's optimum marked ✔ ·
 [CONTRIBUTING.md](CONTRIBUTING.md) to work on it.

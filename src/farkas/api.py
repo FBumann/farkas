@@ -151,7 +151,7 @@ def write(
     """Build and stream the model to a file; format from the suffix.
 
     ``.lp`` is supported today; ``.mps`` is planned (same streaming
-    mechanics, see ARCHITECTURE.md sinks).
+    mechanics, see docs/ARCHITECTURE.md sinks).
     """
     out = Path(out)
     suffix = out.suffix.lower()
