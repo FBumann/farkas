@@ -189,6 +189,33 @@ def test_solution_to_parquet(dispatch_yaml, dispatch_frame_inputs, tmp_path):
     assert frame.height == result.primal('p').height
 
 
+def test_read_back_is_in_label_order_and_stays_there(dispatch_yaml, dispatch_frame_inputs, tmp_path):
+    """A read is a join, and a join settles no order — so the read states one.
+
+    Was: every call came back in whatever order the hash join finished in, so
+    two reads of one unchanged result disagreed and five writes of one solution
+    produced five different files. Nothing was wrong with the numbers, which is
+    what made it worth stating rather than leaving to the planner.
+
+    Label order is row-major over the coordinate product, so it is checkable
+    against the coordinates themselves: `snapshot` varies slowest, and within
+    it `generator` follows the order the file declares.
+    """
+    sources, coords = dispatch_frame_inputs
+    generators = list(sources['p_max']['generator'])
+    with fk.solve(dispatch_yaml, sources, coords=coords) as result:
+        first = result.primal('p')
+        assert first.equals(result.primal('p'))  # a second read agrees, to the row
+
+        by_declaration = first.with_columns(
+            pl.col('generator').replace_strict(generators, range(len(generators))).alias('ord')
+        )
+        assert by_declaration.equals(by_declaration.sort('snapshot', 'ord'))
+
+        written = [result.to_parquet(tmp_path / f'solution{i}')['p'].read_bytes() for i in range(3)]
+        assert len(set(written)) == 1  # the same solution writes the same bytes
+
+
 def test_a_result_stays_readable_until_it_is_closed(dispatch_yaml, dispatch_frame_inputs):
     """No lifetime to manage: reading is valid until you say otherwise.
 

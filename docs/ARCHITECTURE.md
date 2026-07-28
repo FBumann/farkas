@@ -325,6 +325,13 @@ frames and it is written once (`_label_frame`) — twice is how the two would
 come to disagree about which coordinate gets which index. Everything else
 is order-free, which is what lets the query planner rearrange it.
 
+That order is also what comes **back**. `primal` / `dual` / `to_parquet` sort on
+the label before handing rows over, so a read is row-major over the coordinate
+product — the same order the LP sink writes. Sorting is stated at the read
+rather than assumed from the inputs, because a `where` mask decides which rows
+of the product survive and a join decides nothing about the order they arrive
+in; without it two reads of one unchanged result came back differently.
+
 **A frame is the boundary in both directions.** `relational/frames.py`
 recognises a caller's table through the Arrow PyCapsule protocol without
 importing any dataframe library, and `Result.primal` hands back a
