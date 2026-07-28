@@ -2,8 +2,12 @@
 
 ## Project Overview
 
-`farkas` is a YAML-based math definition layer for [linopy](https://github.com/PyPSA/linopy).
-It lets users define optimisation problems declaratively in YAML and build them into `linopy.Model` objects at runtime.
+`farkas` is a YAML-based math definition layer for LP/MILP. It lets users define
+optimisation problems declaratively in YAML and build them at runtime — natively on the
+relational engine (polars → solver or LP file), which is the product path and needs no
+[linopy](https://github.com/PyPSA/linopy); or through the opt-in `farkas.linopy` shim,
+which puts the same math onto a `linopy.Model` that already exists in memory. Both lanes
+accept exactly the same language; there is no routing and no fallback.
 
 Three docs, kept short on purpose — if a change makes one of them longer, check whether it belongs in another:
 
@@ -47,13 +51,17 @@ src/farkas/
 ├── expression_parser.py # pyparsing grammar for math expressions
 ├── where_parser.py      # pyparsing grammar for where strings
 ├── expansion.py         # macro / named-expression substitution (pre-dispatch)
-├── validation.py        # load-time: parse, expand, name-check everything
+├── resolution.py        # one flat namespace; NameNode → typed Variable/Parameter/Dimension
+├── dimensions.py        # static dim-set checking over the resolved AST
+├── validation.py        # load-time: parse, expand, resolve, name-check everything
 ├── piecewise.py         # piecewise: → λ-formulation declarations
 ├── helpers.py           # built-in helpers — a CLOSED set, no registry
-├── lowering.py          # core AST → logical plan (defines the streaming subset)
+├── lowering.py          # core AST → logical plan (defines the relational subset)
 ├── sources.py           # bind runtime data to a validated schema
 ├── errors.py            # the exception hierarchy (LinopyYamlError root)
-├── relational/          # plan.py + compiler.py + executor.py + sinks/ (duckdb; linopy-free)
+├── relational/          # the engine, on polars; linopy-free. plan.py (frozen, engine-
+│                        # agnostic) + frames.py + compiler.py + executor.py + chunking.py
+│                        # + status.py + sinks/ (lp_file, solver_direct)
 └── linopy/              # opt-in linopy lane ([linopy] extra): the ONLY code
                          # importing linopy/xarray — __init__.py, builder.py, loader.py
 ```
@@ -63,11 +71,14 @@ src/farkas/
 ```python
 import farkas as fk
 
-# Result holds the duckdb executor that backs primal/to_* — use a with block
-# (or sol.close()); fk.build(...) returns the live executor for multiple sinks.
-with fk.solve("model.yaml", {"p_max": "p_max.parquet", "load": "load.parquet"}) as sol:
-    sol.objective
-    sol.primal("p")
+# No lifetime to manage: the model is frames this process owns, so `sol` stays
+# readable as long as it is alive. `close()` and `with` release a large one
+# early and nothing breaks without them.
+sol = fk.solve("model.yaml", {"p_max": "p_max.parquet", "load": "load.parquet"})
+sol.objective
+sol.primal("p")     # a polars.DataFrame; .to_pandas / .to_dataarray are the bridges out
+
+# fk.build(...) hands back the live executor, for driving several sinks off one build.
 ```
 
 Linopy lane — YAML math on a `linopy.Model` that already exists in memory
@@ -90,6 +101,12 @@ farkas_linopy.extend(m, "ramp_constraint.yaml", data={...})  # YAML math onto an
   the one line with `# pyrefly: ignore[rule-name]` and say why — do not turn the rule
   off globally. The rules `pyproject.toml` deliberately leaves unpromoted are
   documented there with the reason.
-- Keep the dependency footprint minimal.
+- Keep the dependency footprint minimal. The runtime set is polars, numpy, pyparsing,
+  pydantic, pyyaml, highspy — and *no dataframe library beyond polars*: pandas and
+  xarray are bridges *out* (`to_pandas`, `to_dataarray`), shipped with the `[linopy]`
+  extra. The bare-install CI job proves the engine builds, solves and reads results
+  back without them, and re-resolves at `--resolution lowest-direct` so the declared
+  lower bounds stay real rather than decorative. Raise a floor when you rely on a
+  version's behaviour; do not raise it to whatever is current.
 - Releasing: the git tag *is* the version (hatch-vcs derives it at build time) — never
   hardcode one in `pyproject.toml`. Conventional commits drive the changelog. See `RELEASING.md`.
