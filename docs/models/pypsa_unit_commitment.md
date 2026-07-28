@@ -16,6 +16,69 @@ commitment at all — see [the ledger](../ports.md#ledger--what-a-port-could-not
 
 ## The model
 
+<!-- math:begin -->
+<details>
+<summary>The same model, as math</summary>
+
+#### Sets
+
+| Symbol | Meaning |
+|---|---|
+| $\mathcal{T}$ | index $t$ --- `snapshot` |
+| $\mathcal{G}$ | index $g$ --- `generator` |
+
+#### Parameters
+
+| Symbol | Meaning |
+|---|---|
+| $p^{\mathrm{nom}}$ | `p_nom` over $\mathcal{G}$ |
+| $\mathit{marginal\_cost}$ | `marginal_cost` over $\mathcal{G}$ |
+| $p^{\mathrm{min,pu}}$ | `p_min_pu` over $\mathcal{G}$ |
+| $\mathit{start\_up\_cost}$ | `start_up_cost` over $\mathcal{G}$ |
+| $\mathit{shut\_down\_cost}$ | `shut_down_cost` over $\mathcal{G}$ |
+| $\mathit{load}$ | `load` over $\mathcal{T}$ |
+
+#### Variables
+
+| Symbol | Meaning |
+|---|---|
+| $p$ | `p` over $\mathcal{T} \times \mathcal{G}$ |
+| $\mathit{status}$ | `status` over $\mathcal{T} \times \mathcal{G}$ |
+| $\mathit{start\_up}$ | `start_up` over $\mathcal{T} \times \mathcal{G}$ |
+| $\mathit{shut\_down}$ | `shut_down` over $\mathcal{T} \times \mathcal{G}$ |
+
+$t \ominus k$ denotes cyclic translation: index $t-k$ taken modulo the size of the dimension (`roll`). Plain $t-k$ (`shift`) has no wraparound --- terms translated past the edge are simply absent.
+
+#### Objective
+
+$$\begin{aligned}
+\text{total\_cost:} \quad & \min & \sum_{t \in \mathcal{T},\ g \in \mathcal{G}} \left( p_{t,g} \cdot \mathit{marginal\_cost}_{g} + \mathit{start\_up}_{t,g} \cdot \mathit{start\_up\_cost}_{g} + \mathit{shut\_down}_{t,g} \cdot \mathit{shut\_down\_cost}_{g} \right)
+\end{aligned}$$
+
+#### Subject to
+
+$$\begin{aligned}
+\text{power\_balance:} \quad & \sum_{g \in \mathcal{G}} p_{t,g} & = \mathit{load}_{t} && \forall\, t \in \mathcal{T} \\
+\text{commitment\_0:} \quad & p_{t,g} - p^{\mathrm{nom}}_{g} \cdot \mathit{status}_{t,g} & \le 0 && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \\
+\text{commitment\_1:} \quad & p_{t,g} - p^{\mathrm{min,pu}}_{g} \cdot p^{\mathrm{nom}}_{g} \cdot \mathit{status}_{t,g} & \ge 0 && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \\
+\text{transition\_0:} \quad & \mathit{start\_up}_{t,g} - \mathit{status}_{t,g} & \ge -1 && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \,:\, t = 0 \\
+\text{transition\_1:} \quad & \mathit{start\_up}_{t,g} - \mathit{status}_{t,g} + \mathit{status}_{t \ominus 1,g} & \ge 0 && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \,:\, t > 0 \\
+\text{transition\_2:} \quad & \mathit{shut\_down}_{t,g} + \mathit{status}_{t,g} & \ge 1 && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \,:\, t = 0 \\
+\text{transition\_3:} \quad & \mathit{shut\_down}_{t,g} + \mathit{status}_{t,g} - \mathit{status}_{t \ominus 1,g} & \ge 0 && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \,:\, t > 0
+\end{aligned}$$
+
+#### Variable domains
+
+$$\begin{aligned}
+\text{p:} \quad & p_{t,g} & \ge 0 && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \\
+\text{status:} \quad & \mathit{status}_{t,g} & \in \{0, 1\} && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \\
+\text{start\_up:} \quad & \mathit{start\_up}_{t,g} & \in \{0, 1\} && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \\
+\text{shut\_down:} \quad & \mathit{shut\_down}_{t,g} & \in \{0, 1\} && \forall\, t \in \mathcal{T},\ g \in \mathcal{G}
+\end{aligned}$$
+
+</details>
+<!-- math:end -->
+
 ```yaml
 # PyPSA unit commitment: binary status per generator per snapshot, with
 # start-up and shut-down charges. Optimum 24900.0, from PyPSA itself.

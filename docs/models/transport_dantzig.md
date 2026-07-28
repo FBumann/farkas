@@ -13,6 +13,54 @@ $$\min \sum_{i,j} c_{ij} x_{ij}
 
 ## The model
 
+<!-- math:begin -->
+<details>
+<summary>The same model, as math</summary>
+
+#### Sets
+
+| Symbol | Meaning |
+|---|---|
+| $\mathcal{I}$ | index $i$ --- `plant` --- canning plants, with limited capacity |
+| $\mathcal{J}$ | index $j$ --- `market` --- markets, with demand to be met |
+
+#### Parameters
+
+| Symbol | Meaning |
+|---|---|
+| $a$ | `capacity` over $\mathcal{I}$ --- capacity of each plant |
+| $b$ | `demand` over $\mathcal{J}$ --- demand at each market |
+| $d$ | `distance` over $\mathcal{I} \times \mathcal{J}$ --- distance from plant to market |
+| $f$ | `freight` (scalar) --- freight rate per case per unit distance |
+
+#### Variables
+
+| Symbol | Meaning |
+|---|---|
+| $x$ | `shipment` over $\mathcal{I} \times \mathcal{J}$ --- cases shipped from plant $i$ to market $j$ |
+
+#### Objective
+
+$$\begin{aligned}
+\text{total\_cost:} \quad & \min & \sum_{i \in \mathcal{I},\ j \in \mathcal{J}} \frac{x_{i,j} \cdot d_{i,j} \cdot f}{1000}
+\end{aligned}$$
+
+#### Subject to
+
+$$\begin{aligned}
+\text{within\_capacity:} \quad & \sum_{j \in \mathcal{J}} x_{i,j} & \le a_{i} && \forall\, i \in \mathcal{I} \\
+\text{meet\_demand:} \quad & \sum_{i \in \mathcal{I}} x_{i,j} & \ge b_{j} && \forall\, j \in \mathcal{J}
+\end{aligned}$$
+
+#### Variable domains
+
+$$\begin{aligned}
+\text{shipment:} \quad & x_{i,j} & \ge 0 && \forall\, i \in \mathcal{I},\ j \in \mathcal{J}
+\end{aligned}$$
+
+</details>
+<!-- math:end -->
+
 ```yaml
 # Dantzig's transportation problem (GAMS model library #1). Optimum 153.675,
 # published with the model. See docs/ports.md.

@@ -29,6 +29,77 @@ spends.
 
 ## The model
 
+<!-- math:begin -->
+<details>
+<summary>The same model, as math</summary>
+
+#### Sets
+
+| Symbol | Meaning |
+|---|---|
+| $\mathcal{T}$ | index $t$ --- `snapshot` |
+| $\mathcal{B}$ | index $b$ --- `bus` |
+| $\mathcal{G}$ | index $g$ --- `generator` with $\mathrm{bus}: \mathcal{G} \to \mathcal{B}$ |
+| $\mathcal{L}$ | index $l$ --- `link` with $\mathrm{from}: \mathcal{L} \to \mathcal{B},\ \mathrm{to}: \mathcal{L} \to \mathcal{B}$ |
+| $\mathcal{S}$ | index $s$ --- `storage` with $\mathrm{bus}: \mathcal{S} \to \mathcal{B}$ |
+
+#### Parameters
+
+| Symbol | Meaning |
+|---|---|
+| $p^{\mathrm{nom}}$ | `p_nom` over $\mathcal{G}$ |
+| $\mathit{marginal\_cost}$ | `marginal_cost` over $\mathcal{G}$ |
+| $\mathit{ramp\_limit\_up}$ | `ramp_limit_up` over $\mathcal{G}$ |
+| $\mathit{ramp\_limit\_down}$ | `ramp_limit_down` over $\mathcal{G}$ |
+| $\mathit{rating}$ | `rating` over $\mathcal{L}$ |
+| $\mathit{neg\_rating}$ | `neg_rating` over $\mathcal{L}$ |
+| $\mathit{storage}^{\mathrm{p,nom}}$ | `storage_p_nom` over $\mathcal{S}$ |
+| $\mathit{soc}^{\mathrm{max}}$ | `soc_max` over $\mathcal{S}$ |
+| $\mathit{efficiency\_store}$ | `efficiency_store` over $\mathcal{S}$ |
+| $\mathit{efficiency\_dispatch}$ | `efficiency_dispatch` over $\mathcal{S}$ |
+| $\mathit{standing\_loss}$ | `standing_loss` over $\mathcal{S}$ |
+| $\mathit{load}$ | `load` over $\mathcal{T} \times \mathcal{B}$ |
+
+#### Variables
+
+| Symbol | Meaning |
+|---|---|
+| $p$ | `p` over $\mathcal{T} \times \mathcal{G}$ |
+| $f$ | `f` over $\mathcal{T} \times \mathcal{L}$ |
+| $p^{\mathrm{dispatch}}$ | `p_dispatch` over $\mathcal{T} \times \mathcal{S}$ |
+| $p^{\mathrm{store}}$ | `p_store` over $\mathcal{T} \times \mathcal{S}$ |
+| $\mathit{soc}$ | `soc` over $\mathcal{T} \times \mathcal{S}$ |
+
+$t \ominus k$ denotes cyclic translation: index $t-k$ taken modulo the size of the dimension (`roll`). Plain $t-k$ (`shift`) has no wraparound --- terms translated past the edge are simply absent.
+
+#### Objective
+
+$$\begin{aligned}
+\text{total\_cost:} \quad & \min & \sum_{t \in \mathcal{T},\ g \in \mathcal{G}} p_{t,g} \cdot \mathit{marginal\_cost}_{g}
+\end{aligned}$$
+
+#### Subject to
+
+$$\begin{aligned}
+\text{nodal\_balance:} \quad & \sum_{g \in \mathcal{G} \,:\, \mathrm{bus}(g) = b} p_{t,g} + \sum_{l \in \mathcal{L} \,:\, \mathrm{to}(l) = b} f_{t,l} - \left( \sum_{l \in \mathcal{L} \,:\, \mathrm{from}(l) = b} f_{t,l} \right) + \sum_{s \in \mathcal{S} \,:\, \mathrm{bus}(s) = b} p^{\mathrm{dispatch}}_{t,s} - \left( \sum_{s \in \mathcal{S} \,:\, \mathrm{bus}(s) = b} p^{\mathrm{store}}_{t,s} \right) & = \mathit{load}_{t,b} && \forall\, t \in \mathcal{T},\ b \in \mathcal{B} \\
+\text{ramp\_0:} \quad & p_{t,g} - p_{t \ominus 1,g} & \le \mathit{ramp\_limit\_up}_{g} \cdot p^{\mathrm{nom}}_{g} && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \,:\, t > 0 \\
+\text{ramp\_1:} \quad & p_{t \ominus 1,g} - p_{t,g} & \le \mathit{ramp\_limit\_down}_{g} \cdot p^{\mathrm{nom}}_{g} && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \,:\, t > 0 \\
+\text{energy\_balance:} \quad & \mathit{soc}_{t,s} & = \mathit{soc}_{t \ominus 1,s} \cdot \left( 1 - \mathit{standing\_loss}_{s} \right) + p^{\mathrm{store}}_{t,s} \cdot \mathit{efficiency\_store}_{s} - \frac{p^{\mathrm{dispatch}}_{t,s}}{\mathit{efficiency\_dispatch}_{s}} && \forall\, t \in \mathcal{T},\ s \in \mathcal{S}
+\end{aligned}$$
+
+#### Variable domains
+
+$$\begin{aligned}
+\text{p:} \quad & 0 \le p_{t,g} & \le p^{\mathrm{nom}}_{g} && \forall\, t \in \mathcal{T},\ g \in \mathcal{G} \\
+\text{f:} \quad & \mathit{neg\_rating}_{l} \le f_{t,l} & \le \mathit{rating}_{l} && \forall\, t \in \mathcal{T},\ l \in \mathcal{L} \\
+\text{p\_dispatch:} \quad & 0 \le p^{\mathrm{dispatch}}_{t,s} & \le \mathit{storage}^{\mathrm{p,nom}}_{s} && \forall\, t \in \mathcal{T},\ s \in \mathcal{S} \\
+\text{p\_store:} \quad & 0 \le p^{\mathrm{store}}_{t,s} & \le \mathit{storage}^{\mathrm{p,nom}}_{s} && \forall\, t \in \mathcal{T},\ s \in \mathcal{S} \\
+\text{soc:} \quad & 0 \le \mathit{soc}_{t,s} & \le \mathit{soc}^{\mathrm{max}}_{s} && \forall\, t \in \mathcal{T},\ s \in \mathcal{S}
+\end{aligned}$$
+
+</details>
+<!-- math:end -->
+
 ```yaml
 # PyPSA linear optimal power flow, rung 4: rung 3's storage, closed into a
 # cycle — the first snapshot's state of charge carries over from the last.

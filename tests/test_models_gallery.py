@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
 import pytest
 
-from tools import constructs
+from tools import constructs, gallery_math
 
 GALLERY = Path(__file__).resolve().parent.parent / 'docs' / 'models'
 
@@ -57,6 +57,30 @@ def test_no_page_without_a_model() -> None:
     named = {name for name, _ in constructs.models()} | {'index'}
     orphans = sorted(p.stem for p in GALLERY.glob('*.md') if p.stem not in named)
     assert not orphans, f'gallery pages with no model behind them: {orphans}'
+
+
+def test_the_gallery_math_is_current() -> None:
+    """Each page's math block equals what the model produces.
+
+    The fourth way a page becomes a lie, and the one that had already
+    happened: three pages stated math their model does not build. A summary
+    can be loose — it is prose, and it is meant to be read at a glance — but
+    the exact statement beside it has to be exact, and only a generator keeps
+    it that way.
+    """
+    assert gallery_math.main(['--check']) == 0, 'stale gallery math'
+
+
+def test_every_page_with_a_model_carries_a_math_block() -> None:
+    """A page added without the markers would silently opt out of the check
+    above, which is the failure mode the check exists to prevent."""
+    missing = [
+        name for name, _ in constructs.models() if gallery_math.BEGIN not in (GALLERY / f'{name}.md').read_text()
+    ]
+    assert not missing, (
+        f'gallery pages with no math block: {missing} — add the '
+        f'{gallery_math.BEGIN}/{gallery_math.END} markers under "## The model"'
+    )
 
 
 def test_the_construct_matrix_is_current() -> None:

@@ -67,6 +67,11 @@ Read off the resolved plan of each model rather than its text, so it cannot
 drift from what the engine builds. Regenerate with
 `uv run python -m tools.constructs`; a test fails if it is stale.
 
+Every page also carries the model **as math**, typeset from the same file the
+engine builds — `uv run python -m tools.gallery_math`, likewise gated by a
+test. Where a model has a symbol table in `examples/symbols/`, the block uses
+the notation that model's prose already does.
+
 <!-- constructs:begin -->
 | model | verified | `sum` | `group_sum` | `roll / shift` | `where` | `bounds` | `piecewise` | MILP |
 |---|---|---|---|---|---|---|---|---|

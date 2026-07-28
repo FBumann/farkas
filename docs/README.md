@@ -28,8 +28,15 @@ them when a PR is opened.
 
 **What is generated, and must not be hand-edited:** the construct matrix in
 [models/index.md](models/index.md) is read off each model's resolved plan by
-`tools/constructs.py`; the tables in [benchmarks.md](benchmarks.md) and the
-numbers in the chart page come from `bench/results/` via `bench.report` and
-`bench.plot`. Everything else here is written by hand — and the YAML and
-Python shown on the model pages and in the guide is asserted against the files
-that run, so a page cannot quietly drift from the thing it describes.
+`tools/constructs.py`; the *"the same model, as math"* block on each model page
+is typeset from the model by `tools/gallery_math.py`; the tables in
+[benchmarks.md](benchmarks.md) and the numbers in the chart page come from
+`bench/results/` via `bench.report` and `bench.plot`. Everything else here is
+written by hand — and the YAML and Python shown on the model pages and in the
+guide is asserted against the files that run, so a page cannot quietly drift
+from the thing it describes.
+
+The one-line summary at the top of each model page *is* hand-written, and
+deliberately: it is a summary, read at a glance, and it is allowed to be loose
+in a way the generated block beneath it is not. Three of them had drifted far
+enough to be wrong before the block existed to check them against.

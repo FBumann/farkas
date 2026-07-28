@@ -385,6 +385,23 @@ def test_the_gallery_notation_is_reproducible_from_the_model():
         assert hand_written in md, f'the gallery writes {hand_written}; the generated math does not'
 
 
+def test_the_dispatch_page_and_its_generated_math_agree_about_the_mask():
+    """This began as the opposite assertion. The page's summary showed a bound
+    for every `(s, g)` while the prose beneath called `where: "p_max > 0"` the
+    one line worth pausing on — found by generating the same equation, and
+    fixed in the same change. It stays as a regression guard: the summary is
+    prose, so nothing else would notice it losing the mask again.
+
+    It lives on this branch rather than with the renderer because it reads
+    `docs/models/dispatch.md`, and that page's fix is here.
+    """
+    summary = Path('docs/models/dispatch.md').read_text().split('$$')[1]
+    assert r'\bar p_g > 0' in summary
+
+    generated = to_markdown('examples/dispatch.yaml', symbols='examples/symbols/dispatch.yaml', legend=False)
+    assert r'\bar p_{g} > 0' in generated
+
+
 def test_typst_standalone_adds_page_setup():
     assert to_typst(DISPATCH, standalone=True).startswith('#set page')
     assert not to_typst(DISPATCH).startswith('#set page')
