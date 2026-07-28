@@ -115,7 +115,7 @@ def _validate_block(schema: MathSchema, name: str, pw: PiecewiseBlock) -> tuple[
                 f"{ctx}: link {i} values parameter '{values}' must carry dim "
                 f"'{pw.over}' (has {schema.parameters[values].dims})"
             )
-        for d in _expr_dims(schema, expr_text, f'{ctx} link {i}'):
+        for d in _declared_order(schema, _expr_dims(schema, expr_text, f'{ctx} link {i}')):
             if d == pw.over:
                 raise PiecewiseExpansionError(
                     f"{ctx}: link {i} expression already carries the breakpoint dim '{pw.over}'"
@@ -126,7 +126,7 @@ def _validate_block(schema: MathSchema, name: str, pw: PiecewiseBlock) -> tuple[
     if pw.active is not None:
         if pw.active in schema.variables and not schema.variables[pw.active].binary:
             raise PiecewiseExpansionError(f"{ctx}: active variable '{pw.active}' must be binary")
-        for d in _expr_dims(schema, pw.active, f'{ctx} active'):
+        for d in _declared_order(schema, _expr_dims(schema, pw.active, f'{ctx} active')):
             if d == pw.over:
                 raise PiecewiseExpansionError(f"{ctx}: active expression must not carry the breakpoint dim '{pw.over}'")
             if d not in frame:
@@ -144,6 +144,20 @@ def _validate_block(schema: MathSchema, name: str, pw: PiecewiseBlock) -> tuple[
         if emitted in schema.constraints:
             raise PiecewiseExpansionError(f"{ctx}: emitted constraint '{emitted}' collides with a declared constraint")
     return tuple(frame)
+
+
+def _declared_order(schema: MathSchema, dims: frozenset[str]) -> list[str]:
+    """*dims* in the order the file declares them.
+
+    An emitted ``foreach`` is a *language* object and inherits the label
+    contract in ARCHITECTURE — row-major over the coordinate product, the same
+    run to run. Iterating the dim *set* instead spends string hashing, which is
+    randomised per process, so the emitted order and every solver column index
+    behind it varied between builds of the same model. Declaration order is
+    what a hand-written ``foreach`` gets, so it is what an emitted one gets.
+    """
+    declared = [d for d in schema.dimensions if d in dims]
+    return declared + sorted(dims.difference(declared))
 
 
 def _expr_dims(schema: MathSchema, text: str, ctx: str) -> frozenset[str]:
