@@ -69,6 +69,47 @@ objectives:
 """
 
 
+#: two dims in the frame, so the emitted ``foreach`` has an order to get wrong.
+TWO_DIM_YAML = """
+dimensions:
+  snapshot: {dtype: int}
+  generator: {dtype: str}
+  bp: {dtype: int}
+
+parameters:
+  load: {dims: [snapshot]}
+  bp_x: {dims: [generator, bp]}
+  bp_y: {dims: [generator, bp]}
+
+variables:
+  p:
+    foreach: [snapshot, generator]
+    bounds: {lower: 0, upper: 100}
+  op_cost:
+    foreach: [snapshot, generator]
+    bounds: {lower: 0}
+
+piecewise:
+  cost_curve:
+    over: bp
+    links:
+      - [p, bp_x]
+      - [op_cost, bp_y]
+
+constraints:
+  balance:
+    foreach: [snapshot]
+    equations:
+      - expression: sum(p, over=generator) == load
+
+objectives:
+  total:
+    sense: minimize
+    equations:
+      - expression: sum(sum(op_cost, over=generator), over=snapshot)
+"""
+
+
 def curve(p, bp_x, bp_y) -> float:
     return float(np.interp(p, np.asarray(bp_x), np.asarray(bp_y)))
 
@@ -299,6 +340,31 @@ def test_expansion_emits_the_lambda_declarations():
         'cost_curve_link1',
         'balance',
     }
+
+
+def test_the_emitted_foreach_follows_declaration_order():
+    """The frame is a *set* of dims until something orders it, and iterating a
+    set spends randomised string hashing — so the emitted ``foreach``, and every
+    solver column index behind it, used to vary between processes building the
+    same file. Asserted both ways round: within one process a set iterates the
+    same way for the same names, so a run that reads the set rather than the
+    declaration would have to fail one of the two.
+    """
+    raw = raw_of(TWO_DIM_YAML)
+    assert list(raw['dimensions']) == ['snapshot', 'generator', 'bp']
+    assert expand_piecewise(schema_of(raw)).variables['cost_curve_lam'].foreach == [
+        'snapshot',
+        'generator',
+        'bp',
+    ]
+
+    flipped = raw_of(TWO_DIM_YAML)
+    flipped['dimensions'] = {d: flipped['dimensions'][d] for d in ('generator', 'snapshot', 'bp')}
+    assert expand_piecewise(schema_of(flipped)).variables['cost_curve_lam'].foreach == [
+        'generator',
+        'snapshot',
+        'bp',
+    ]
 
 
 def test_an_inline_expression_is_a_legal_link():
