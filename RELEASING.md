@@ -55,21 +55,17 @@ so `feat!:` cannot reach for a major either). `prerelease: true` also keeps the
 GitHub releases from showing as "Latest".
 
 **The subject that lands on main.** `main` takes squash merges only, so one PR
-is one commit and its subject is what release-please parses. A subject it cannot
-parse fails nothing — the entry is just silently missing from the changelog,
-which is why [`pr-title.yaml`](.github/workflows/pr-title.yaml) is a required
-check:
+is one commit and its subject is what release-please parses — the rule a
+contributor has to follow, and the allowed types, are in
+[CONTRIBUTING.md](CONTRIBUTING.md#branches-commits-prs). What matters here is
+the failure mode: a subject release-please cannot parse breaks nothing, it just
+goes silently missing from the changelog. That silence is why
+[`pr-title.yaml`](.github/workflows/pr-title.yaml) is a *required* check rather
+than advisory.
 
-```text
-feat: streaming executor for indexed constraints
-fix(parser): where clauses with a trailing comma
-refactor!: closed helper set, no monkey-patch
-```
-
-Types are the ones in `changelog-sections`, plus `revert`. Because
-`squash_merge_commit_title` is `COMMIT_OR_PR_TITLE`, GitHub uses the PR title on
-a multi-commit PR and the commit's own title on a single-commit one; the check
-validates both. Fixing a title is an edit to the PR, not a branch rewrite.
+Because `squash_merge_commit_title` is `COMMIT_OR_PR_TITLE`, GitHub uses the PR
+title on a multi-commit PR and the commit's own title on a single-commit one;
+the check validates both, so neither can slip through.
 
 ## Branch protection
 

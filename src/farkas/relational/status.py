@@ -5,7 +5,7 @@ Anyone arriving from linopy should not have to learn a second vocabulary for
 the same facts, and `tests/test_solve_status.py` asserts the tables still
 match linopy's, so drift is a test failure rather than a discovery.
 
-Nothing here imports linopy: the engine may not (ARCHITECTURE.md, hard rule
+Nothing here imports linopy: the engine may not (docs/ARCHITECTURE.md, hard rule
 2). The test may, and does — linopy is the oracle for this the same way it is
 for the math.
 

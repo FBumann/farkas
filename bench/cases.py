@@ -1,7 +1,7 @@
 """The models we time, and the data that sizes them.
 
 One case = one YAML model + a deterministic data generator + a size ladder.
-Cases are chosen so each stresses a *different* SQL shape (ARCHITECTURE.md,
+Cases are chosen so each stresses a *different* SQL shape (docs/ARCHITECTURE.md,
 "read the verdict off the SQL"), not to cover the language:
 
 ``dispatch``   pointwise bounds + one ``sum`` — raw throughput, and the case

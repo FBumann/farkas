@@ -1,6 +1,6 @@
 """Sinks: how a built model leaves the engine.
 
-ARCHITECTURE.md's pipeline draws two boxes downstream of the executor. This
+docs/ARCHITECTURE.md's pipeline draws two boxes downstream of the executor. This
 package is those boxes — one module each, because that is where the fences
 are: ``highspy`` is an optional dependency of ``solver_direct`` alone, and a
 caller that only writes LP files should never import it.

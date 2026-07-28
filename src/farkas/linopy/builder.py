@@ -315,7 +315,7 @@ def _eval_ast(
         msg = (
             f'{type(node).__name__}({node.name!r}) reached the evaluator. '
             f'Expressions must go through resolution.expression_of() first '
-            f'(ARCHITECTURE.md hard rule 1).'
+            f'(docs/ARCHITECTURE.md hard rule 1).'
         )
         raise AssertionError(msg)
 

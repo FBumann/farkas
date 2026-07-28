@@ -1,16 +1,16 @@
 # Architecture
 
 Brief, current, precise. A PR that changes the structure described here updates
-this file in the same PR. The language is [SPEC.md](SPEC.md); plans and refusals
-are [ROADMAP.md](ROADMAP.md); measured results are
-[docs/benchmarks.md](docs/benchmarks.md), produced by the harness in
-[bench/](bench/README.md) — which is also how a claim here gets falsified. The
-ceiling below is falsified the same way, by [docs/ports.md](docs/ports.md).
+this file in the same PR. The language is [docs/SPEC.md](SPEC.md); plans and refusals
+are [docs/ROADMAP.md](ROADMAP.md); measured results are
+[docs/benchmarks.md](benchmarks.md), produced by the harness in
+[bench/](../bench/README.md) — which is also how a claim here gets falsified. The
+ceiling below is falsified the same way, by [docs/ports.md](ports.md).
 
 `python examples/walkthrough.py` executes the pipeline below stage by stage
 and prints what each one produces — the same public calls `fk.solve` makes,
 so the demonstration cannot drift from the code. Its output is committed as
-[examples/walkthrough.out](examples/walkthrough.out) and asserted line for line
+[examples/walkthrough.out](../examples/walkthrough.out) and asserted line for line
 (`tests/test_walkthrough.py`), so reading it is the same as running it — and a
 stage that starts telling a different story shows up as a diff in that file.
 
@@ -71,8 +71,8 @@ static checks and CI's bare-install job proves the dependency claims.*
 
 **These rules constrain the language.** What a construct may say, which layer
 may know what, and what a file means on its own — each survives any engine, and
-each decides what can enter `SPEC.md`. How much a build *costs* is a property of
-the engine, measured in [docs/benchmarks.md](docs/benchmarks.md) and not a rule.
+each decides what can enter `docs/SPEC.md`. How much a build *costs* is a property of
+the engine, measured in [docs/benchmarks.md](benchmarks.md) and not a rule.
 It was one once, phrased around a `memory_limit` that only one engine had, and
 that made an implementation choice load-bearing in the language's rulebook.
 
@@ -163,9 +163,9 @@ A primitive is finished when `lowering.py` accepts it and the differential test
 against the linopy oracle passes.
 
 **The ceiling is a claim, so it needs evidence.** In
-[docs/ports.md](docs/ports.md), math a ported model needed and this language
+[docs/ports.md](ports.md), math a ported model needed and this language
 could not state becomes a ledger row with its triage verdict — what
-[ROADMAP.md](ROADMAP.md) should be argued from. Those ports also cover a class
+[docs/ROADMAP.md](ROADMAP.md) should be argued from. Those ports also cover a class
 no other test reaches: both lanes consume the same resolved AST by rule 1, so a
 *shared misreading* passes the differential suite green, and only an outside
 optimum catches it.
@@ -201,7 +201,7 @@ The ceiling above is about **streamability** and is solver-independent. What a
 *sink* can ingest is a separate axis, and conflating the two let one solver's
 limits read as architectural law — "no sink carries the stream" described
 HiGHS, not the architecture. Two findings, measured in
-[docs/benchmarks.md](docs/benchmarks.md#sink-capabilities): SOS is
+[docs/benchmarks.md](benchmarks.md#sink-capabilities): SOS is
 **solver-bounded** (HiGHS has no SOS concept at all, while `lp_file` carries it
 as a text section and Gurobi natively), and what blocks quadratic is a
 **conjunction** — HiGHS has integrality *and* a Hessian and refuses the pair —
@@ -322,7 +322,7 @@ native schema merge (#30) is what would force the question.
 | `relational/chunking.py` | how a batched pass sizes its chunk: budget ÷ the width of one unit |
 | `relational/status.py` | solve outcome on two axes; linopy's vocabulary, copied not imported |
 | `relational/executor.py` | bind sources, assign labels, assemble the model frames |
-| `relational/sinks/` | how a built model leaves: `lp_file`, `solver_direct` (one module each, [README](src/farkas/relational/sinks/README.md)) |
+| `relational/sinks/` | how a built model leaves: `lp_file`, `solver_direct` (one module each, [README](../src/farkas/relational/sinks/README.md)) |
 | `linopy/__init__.py` | opt-in shim: `build` / `extend` on a `linopy.Model` |
 | `linopy/loader.py` | data coercion to `xr.Dataset`, master coords |
 | `linopy/builder.py` | eager backend: core AST → `linopy.Model` |

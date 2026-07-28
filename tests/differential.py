@@ -2,7 +2,7 @@
 
 The differential test is this project's central claim — the same YAML must
 mean the same thing on the eager linopy lane and on the streaming relational
-one (ARCHITECTURE.md, hard rule 3). Twelve tests made that claim by hand, in
+one (docs/ARCHITECTURE.md, hard rule 3). Twelve tests made that claim by hand, in
 seven files, each rebuilding the same fifteen lines: build eagerly, solve,
 take the objective, re-parse the schema, lower it, bind sources, execute,
 compare.

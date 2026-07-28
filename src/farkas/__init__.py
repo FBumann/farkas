@@ -1,7 +1,7 @@
 """Declarative optimisation: YAML math on a streaming engine.
 
 Models build relationally on polars and stream to the solver — see
-ARCHITECTURE.md. linopy is not imported at runtime; it serves as the
+docs/ARCHITECTURE.md. linopy is not imported at runtime; it serves as the
 differential-test oracle and as an opt-in compatibility shim
 (``from farkas import linopy as farkas_linopy``).
 

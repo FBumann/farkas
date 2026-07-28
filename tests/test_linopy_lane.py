@@ -7,7 +7,7 @@ idiom were being restated in each of them.
 
 The shim itself is a *pure producer* — no accessor, no session, no state on
 the model. A file's meaning must not depend on what was loaded before it
-(ARCHITECTURE.md, hard rule 5), which is what the last section pins.
+(docs/ARCHITECTURE.md, hard rule 5), which is what the last section pins.
 """
 
 from __future__ import annotations

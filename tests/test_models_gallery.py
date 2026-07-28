@@ -81,3 +81,28 @@ def test_the_page_shows_the_reference_that_runs(reference: Path) -> None:
     body = script[script.index('from __future__') :].rstrip() + '\n'
     fences = re.findall(r'^```python\n(.*?)^```', page.read_text(), re.MULTILINE | re.DOTALL)
     assert body in fences, f'{page} has drifted from {reference}'
+
+
+GUIDE = Path(__file__).resolve().parent.parent / 'docs' / 'guide.md'
+_TAUGHT = re.compile(r'^\s*(?:- expression:|where:)\s*\S.*$', re.MULTILINE)
+
+
+def test_the_guide_teaches_lines_that_exist() -> None:
+    """Every expression the guide shows is copied from a model that runs.
+
+    The guide is prose, so nothing else would notice it drifting — and a
+    tutorial demonstrating syntax the compiler no longer accepts is worse than
+    no tutorial. Only expressions and `where` clauses are checked: the
+    dimension blocks are deliberately written in the compact form to be read,
+    not to be pasted.
+
+    The corpus is ``constructs.models()`` — the same list the gallery and the
+    matrix are built from — rather than a glob of ``examples/*.yaml``, which
+    silently excluded the two ports one directory down. A guide line taken
+    from a port would have failed here for not existing.
+    """
+    models = [path.read_text().split('\n') for _, path in constructs.models()]
+    for line in (m.group(0).strip() for m in _TAUGHT.finditer(GUIDE.read_text())):
+        assert any(line == other.strip() for model in models for other in model), (
+            f'docs/guide.md teaches a line no example model contains:\n  {line}'
+        )

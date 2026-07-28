@@ -1,6 +1,6 @@
 """Lower a parsed YAML schema (typed AST) to the relational logical plan.
 
-This is the lowering seam (ARCHITECTURE.md, "The relational lane"): it
+This is the lowering seam (docs/ARCHITECTURE.md, "The relational lane"): it
 consumes the same typed AST the
 eager builder evaluates (`expression_parser` / `where_parser` nodes) and emits
 a :class:`~farkas.relational.plan.Program`. It lives on the language side —
@@ -12,7 +12,7 @@ comparison, and binary/integer variables (variable_type). Constructs with no
 lowering raise :class:`~farkas.errors.LanguageError` naming
 the construct and its rewrite — never a pointer to another backend: the two
 lanes accept the same language, and a rejection here is a language gap
-(ROADMAP.md), not a routing decision.
+(docs/ROADMAP.md), not a routing decision.
 
 Semantics mirror the eager builder exactly:
 - a reduction over a dim the operand does not carry is an error, not a silent
@@ -190,7 +190,7 @@ def _lower_expr(node: ArithmeticNode, schema: MathSchema, context: str) -> plan.
         msg = (
             f'{type(node).__name__}({node.name!r}) reached lowering. Expressions '
             f'must go through resolution.expression_of() first '
-            f'(ARCHITECTURE.md hard rule 1).'
+            f'(docs/ARCHITECTURE.md hard rule 1).'
         )
         raise AssertionError(msg)
 

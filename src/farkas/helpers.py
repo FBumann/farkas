@@ -2,7 +2,7 @@
 
 The set is closed: there is no Python registry. Both lanes therefore accept
 exactly the same language, which is what makes the differential tests a
-meaningful oracle (ARCHITECTURE.md, hard rule 3). Compositions of these
+meaningful oracle (docs/ARCHITECTURE.md, hard rule 3). Compositions of these
 built-ins belong in ``macros:``; math the language cannot say belongs in a
 declared ``escape:`` island (#38), not in a helper that reads like a
 built-in on the page.

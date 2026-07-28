@@ -1,7 +1,7 @@
 # Contributing
 
 Procedure lives here. **Why** the project is shaped the way it is lives in
-[ARCHITECTURE.md](ARCHITECTURE.md), and that split is deliberate: this file
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and that split is deliberate: this file
 should be readable in one sitting and go stale only when a command changes.
 
 ## Setup
@@ -75,7 +75,11 @@ plus `chore` `test` `ci` `build` `style` `revert`, which are hidden. A subject
 that will not parse fails the required check rather than silently dropping the
 entry. Fixing it is an edit to the PR, not a branch rewrite.
 
-Versioning, the release PR and how to override a version: [RELEASING.md](RELEASING.md).
+`main` is protected: no force-push, no deletion, squash-only through a PR, and
+the two required checks above. Approvals are not required, but the PR is.
+
+Versioning, the release PR, and how to force a specific version:
+[RELEASING.md](RELEASING.md).
 
 ## Changing the language
 
@@ -86,16 +90,16 @@ declared `escape:` island rather than into the language.
 
 Read, in order:
 
-1. [the deliberate non-primitives in ROADMAP.md](ROADMAP.md) — parity with
+1. [the deliberate non-primitives in docs/ROADMAP.md](docs/ROADMAP.md) — parity with
    another tool is not by itself a reason to add anything, and several
    plausible-sounding features are refused there on purpose;
-2. [the ceiling in ARCHITECTURE.md](ARCHITECTURE.md#two-tiers-and-the-ceiling) —
+2. [the ceiling in docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#two-tiers-and-the-ceiling) —
    the admissibility test;
-3. [the extension checklists](ARCHITECTURE.md#extension-checklists), which sit directly under that
+3. [the extension checklists](docs/ARCHITECTURE.md#extension-checklists), which sit directly under that
    test. They stay there rather than moving here: *may I?* and *how?* are one
    question, and splitting them invites answering the second without the first.
 
-A PR that adds, renames or retires a construct updates [SPEC.md](SPEC.md).
+A PR that adds, renames or retires a construct updates [docs/SPEC.md](docs/SPEC.md).
 Rationale belongs in the PR description or a code comment; "this used to work
 differently" belongs in git.
 
@@ -133,7 +137,7 @@ docs/models/<name>.md                   the gallery page — maths, model, side-
   formulation, not the data.
 - **`rtol` is per port.** A published optimum is rounded; a solved one is not.
 - **A rung that cannot be said is also a result.** It goes in the ledger with a
-  verdict — macro, primitive or escape — and feeds ROADMAP.md. Do not work
+  verdict — macro, primitive or escape — and feeds docs/ROADMAP.md. Do not work
   around a gap silently.
 
 ## Refreshing the benchmarks

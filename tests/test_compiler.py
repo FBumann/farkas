@@ -5,7 +5,7 @@ out. That is the seam the split bought: checking what an operator does costs a
 compile, not a build and a solve.
 
 These assertions are deliberately about *shape*, not exact text. They pin the
-properties ARCHITECTURE.md's admissibility test reads off the plan — which dim
+properties docs/ARCHITECTURE.md's admissibility test reads off the plan — which dim
 columns survive, whether an aggregate appears, whether a mask becomes a join or
 a filter — and leave the query planner free to change underneath them.
 

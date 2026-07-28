@@ -1,10 +1,10 @@
 # Measured results
 
 **Cost is a property of the engine, not of the language.** The rules in
-`ARCHITECTURE.md` constrain what a file may say and would survive an engine
+`docs/ARCHITECTURE.md` constrain what a file may say and would survive an engine
 swap untouched; what a build *costs* is settled here, by measurement. That
 separation is why this file can be rewritten by a benchmark run without
-anything in `SPEC.md` moving.
+anything in `docs/SPEC.md` moving.
 
 Peak RSS and wall time for the same model built two ways — declaratively on the
 relational engine, and eagerly through linopy — from the same parquet files to
@@ -333,8 +333,8 @@ Wall time behaves throughout: our advantage grows as the model thins, 1.0x to
 
 What each sink can ingest, measured against the shipped solvers rather than
 assumed. The architectural reading is in
-[ARCHITECTURE.md](../ARCHITECTURE.md#capability-is-not-the-ceiling); the plan is
-[ROADMAP Track 4](../ROADMAP.md#track-4--sink-capabilities).
+[docs/ARCHITECTURE.md](ARCHITECTURE.md#capability-is-not-the-ceiling); the plan is
+[ROADMAP Track 4](ROADMAP.md#track-4--sink-capabilities).
 
 | | `lp_file` | HiGHS direct | Gurobi direct |
 |---|---|---|---|
@@ -377,7 +377,7 @@ invariant violation. Two caveats:
 ## Not measured yet
 
 This section exists so that a claim with no table under it is visible as one.
-Two of its entries are load-bearing elsewhere — `README.md` and `ROADMAP.md`
+Two of its entries are load-bearing elsewhere — `README.md` and `docs/ROADMAP.md`
 lead on cost, and until these land they lead on the hand-off numbers above and
 nothing else.
 

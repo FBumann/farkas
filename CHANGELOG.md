@@ -70,7 +70,7 @@
 * pin all three label paths, and write the row-major order down ([#152](https://github.com/FBumann/farkas/issues/152)) ([3d8c725](https://github.com/FBumann/farkas/commit/3d8c7251bc210bbc4438382ec58c3b699683624a))
 
 *No functional change: this release is alpha.29 plus tests and a paragraph of
-`ARCHITECTURE.md`. The commit subject says `perf:` and claims a speed-up, which
+`docs/ARCHITECTURE.md`. The commit subject says `perf:` and claims a speed-up, which
 is wrong — that optimisation shipped in alpha.29 as
 [#178](https://github.com/FBumann/farkas/issues/178). #152 was retitled after it
 had already been merged and released, too late for the squash subject.*

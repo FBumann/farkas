@@ -234,7 +234,7 @@ def test_no_helper_registry_anywhere():
 
     This is what makes the two lanes accept the same language, and hence what
     makes the differential tests an oracle rather than a comparison of
-    dialects (ARCHITECTURE.md, "The expressive ceiling").
+    dialects (docs/ARCHITECTURE.md, "The expressive ceiling").
     """
     import farkas.helpers as helpers
 

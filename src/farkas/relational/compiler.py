@@ -1,7 +1,7 @@
 """Logical plan → polars. Lazy: nothing is read, nothing is executed.
 
 `lowering.py` compiles the AST to a plan; this compiles the plan to a query, so
-ARCHITECTURE.md's admissibility test is a ``.explain()`` away. An identifier is
+docs/ARCHITECTURE.md's admissibility test is a ``.explain()`` away. An identifier is
 a value here, never syntax.
 
 Column conventions, relied on by the executor:
