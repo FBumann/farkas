@@ -44,6 +44,21 @@ class TermFragment:
     sql: str
     is_term: bool
 
+    presence: str | None = None
+    """A SELECT of the coordinates where the *variable* under this fragment exists.
+
+    Not the same question as which rows :attr:`sql` returns. A fragment loses
+    rows for two unrelated reasons and a constraint row must react to only one:
+    a **masked variable** is genuinely absent there, while a **sparse parameter**
+    is a compressed dense array whose missing rows mean a zero coefficient
+    (SPEC §8). Once the two are joined the result cannot tell them apart, so the
+    variable's own coordinates travel alongside.
+
+    ``None`` means nothing to report — a constant has no variable, an *unmasked*
+    variable exists everywhere, and a reduction clears it because ``sum`` skips
+    absent slots rather than propagating them.
+    """
+
 
 @dataclass(frozen=True)
 class CompiledExpression:
@@ -167,6 +182,15 @@ class SqlCompiler:
                 if p.parameter in self.boolean_parameters:
                     return f'({alias}.value IS NOT NULL AND {alias}.value)'
                 return f'({alias}.value IS NOT NULL AND isfinite({alias}.value))'
+            if isinstance(p, plan.VariableDefined):
+                # Existence lives in the variable's own table, so it is a
+                # semi-join marked with a flag: LEFT JOIN and test for a hit.
+                # The dim rule has already checked the variable's dims are
+                # inside this frame.
+                alias = f'wv_{p.variable}'
+                on = ' AND '.join(f'{alias}.{d} = t_{d}.val' for d in self.program.variable(p.variable).dims)
+                joins[alias] = f'LEFT JOIN var_{p.variable} {alias} ON {on}'
+                return f'({alias}.var_label IS NOT NULL)'
             if isinstance(p, plan.BooleanConstant):
                 return 'TRUE' if p.value else 'FALSE'
             if isinstance(p, (plan.And, plan.Or)):
@@ -229,7 +253,15 @@ class SqlCompiler:
             if isinstance(e, plan.Variable):
                 d = self.program.variable(e.name).dims
                 cols = ', '.join([*d, 'var_label', '1.0 AS coeff'])
-                return CompiledExpression((TermFragment(d, f'SELECT {cols} FROM var_{e.name}', True),), ())
+                # Only a *masked* variable can restrict anything, and whether it
+                # is masked is on the declaration — decided before data is read,
+                # so an unmasked one never costs the label planner its fast path.
+                presence = (
+                    f'SELECT {", ".join(d)} FROM var_{e.name}'
+                    if self.program.variable(e.name).where is not None and d
+                    else None
+                )
+                return CompiledExpression((TermFragment(d, f'SELECT {cols} FROM var_{e.name}', True, presence),), ())
             if isinstance(e, plan.Negate):
                 return _map_fragments(ev(e.operand), _negate)
             if isinstance(e, plan.Add):
@@ -325,7 +357,32 @@ class SqlCompiler:
             f'JOIN dim_{s.dimension} d_in ON d_in.val = t.{s.dimension} '
             f'JOIN dim_{s.dimension} d_out ON {on}'
         )
-        return TermFragment(p.dims, sql, p.is_term)
+        presence = None
+        if p.presence is not None:
+            pcols = ', '.join([*(f't.{d}' for d in others), f'd_out.val AS {s.dimension}'])
+            presence = (
+                f'SELECT {pcols} FROM ({p.presence}) t '
+                f'JOIN dim_{s.dimension} d_in ON d_in.val = t.{s.dimension} '
+                f'JOIN dim_{s.dimension} d_out ON {on}'
+            )
+            if not s.wrap:
+                # The edge `shift` leaves empty is *not* absent: SPEC §7 fixes what
+                # it contributes ("vacated positions contribute zero"), a declared
+                # rule of the language, so the row survives there. Only the
+                # variable's own mask removes a coordinate, and the remap above
+                # already dropped those.
+                edge = (
+                    f'SELECT val AS {s.dimension} FROM dim_{s.dimension} '
+                    f'WHERE ord - {s.by} < 0 OR ord - {s.by} >= {card}'
+                )
+                if others:
+                    ocols = ', '.join(f'o.{d}' for d in others)
+                    edge = (
+                        f'SELECT {ocols}, e.{s.dimension} FROM '
+                        f'(SELECT DISTINCT {", ".join(others)} FROM ({p.presence})) o, ({edge}) e'
+                    )
+                presence = f'SELECT * FROM ({presence}) UNION ({edge})'
+        return TermFragment(p.dims, sql, p.is_term, presence)
 
     # ------------------------------------------------------------------
     # assembly helpers used by the executor
@@ -377,7 +434,7 @@ def _comparison_sql(column: str, op: plan.ComparisonOperator, value: float | str
 def _negate(p: TermFragment) -> TermFragment:
     cols = 'var_label, -coeff AS coeff' if p.is_term else '-cval AS cval'
     sel = ', '.join([*p.dims, cols]) if p.dims else cols
-    return TermFragment(p.dims, f'SELECT {sel} FROM ({p.sql})', p.is_term)
+    return TermFragment(p.dims, f'SELECT {sel} FROM ({p.sql})', p.is_term, p.presence)
 
 
 def _join_mul(a: TermFragment, c: TermFragment, is_term: bool, op: str = '*') -> TermFragment:
@@ -395,4 +452,7 @@ def _join_mul(a: TermFragment, c: TermFragment, is_term: bool, op: str = '*') ->
         out_dims,
         f'SELECT {sel} FROM ({a.sql}) a JOIN ({c.sql}) c ON {on}',
         is_term,
+        # *c* is variable-free: a sparse coefficient zeroes a term, it does not
+        # unmake the variable underneath it.
+        a.presence,
     )

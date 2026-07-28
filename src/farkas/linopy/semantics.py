@@ -38,7 +38,7 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ['coefficient', 'present', 'vacated']
+__all__ = ['coefficient', 'vacated']
 
 
 def coefficient(parameter: Any) -> Any:
@@ -61,34 +61,6 @@ def coefficient(parameter: Any) -> Any:
     return parameter.fillna(0.0)
 
 
-def present(variable: Any) -> Any:
-    """A masked variable as a term contributing **zero** where it is absent.
-
-    Today's language rule: a term carrying a masked-out variable drops out while
-    the row it sits in survives, so ``x + y >= 10`` is ``x >= 10`` wherever ``y``
-    is masked. The relational lane gets that from row absence — the join finds no
-    row, the term is not emitted, the constraint row still is.
-
-    Filling at the **leaf** is what preserves it. Fill any later and §2 has
-    already absorbed the live terms sharing the slot (``(x + y).fillna(0)``
-    yields a bare ``0 >= 10`` with ``x``'s coefficient gone); fill here and ``x``
-    keeps it.
-
-    ``to_linexpr()`` first, because ``Variable.fillna`` means two different
-    things across the versions we support — a label fill routed through
-    ``.where()`` on the released line, an expression fill on the v1 branch. The
-    expression method is the stable one, and the one we want.
-
-    .. note::
-       This is the interim answer, not the settled one. v1 §6/§12 would drop the
-       row instead, and its goal 1 ("no silent wrong answers") indicts the fill:
-       ``x - relmax * size <= 0`` with ``size`` masked silently becomes
-       ``x <= 0``. Adopting that reading is a change to *both* lanes and to
-       SPEC §6, so it is its own commit — and it deletes this function.
-    """
-    return variable.to_linexpr().fillna(0)
-
-
 def vacated(expression: Any) -> Any:
     """A shifted expression with its vacated edge positions at **zero**.
 
@@ -108,5 +80,12 @@ def vacated(expression: Any) -> Any:
     ``x <= shift(dt, t=1)`` forces ``x <= 0`` at the first position unless it is
     masked. Until that is decided, this keeps the documented rule true by
     construction rather than by the legacy convention's accident.
+
+    ``to_linexpr()`` first when the operand is still a bare ``Variable``:
+    ``Variable.fillna`` means two different things across the versions we
+    support — a label fill routed through ``.where()`` on the released line, an
+    expression fill on the v1 branch — and only the expression method is stable.
     """
+    if hasattr(expression, 'to_linexpr'):
+        expression = expression.to_linexpr()
     return expression.fillna(0)

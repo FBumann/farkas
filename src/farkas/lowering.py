@@ -61,6 +61,7 @@ from farkas.where_parser import (
     ParameterDefinedNode,
     UnresolvedComparisonNode,
     UnresolvedNameNode,
+    VariableDefinedNode,
     WhereNode,
 )
 
@@ -91,7 +92,7 @@ def lower_program(schema: MathSchema) -> plan.Program:
             plan.VariableDeclaration(
                 vname,
                 tuple(vdef.foreach),
-                where=_lower_where(vdef.where, ns, f"variable '{vname}'"),
+                where=_lower_where(vdef.where, ns, f"variable '{vname}'", self_variable=vname),
                 lower=lower,
                 upper=upper,
                 variable_type=variable_type,
@@ -327,8 +328,10 @@ def _bound_expression(value: float | str) -> plan.Expression:
 # ---------------------------------------------------------------------------
 
 
-def _lower_where(text: str | None, ns: Namespace, context: str) -> plan.Predicate | None:
-    node = where_of(text, ns, context)
+def _lower_where(
+    text: str | None, ns: Namespace, context: str, self_variable: str | None = None
+) -> plan.Predicate | None:
+    node = where_of(text, ns, context, self_variable)
     if node is None:
         return None
     pred = _lower_where_node(node, context)
@@ -343,6 +346,9 @@ def _lower_where_node(node: WhereNode, context: str) -> plan.Predicate:
 
     if isinstance(node, ParameterDefinedNode):
         return plan.ParameterDefined(node.name)
+
+    if isinstance(node, VariableDefinedNode):
+        return plan.VariableDefined(node.name)
 
     if isinstance(node, ParameterComparisonNode):
         return plan.ParameterComparison(node.name, node.op, node.value)

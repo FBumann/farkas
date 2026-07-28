@@ -198,6 +198,17 @@ class ParameterDefined(Predicate):
 
 
 @dataclass(frozen=True)
+class VariableDefined(Predicate):
+    """True at the coordinates where the variable exists.
+
+    A semi-join against the variable's own frame — pointwise, and the same
+    shape as any mapping-table join.
+    """
+
+    variable: str
+
+
+@dataclass(frozen=True)
 class BooleanConstant(Predicate):
     """Constant predicate (``BooleanConstant(False)`` masks out every row)."""
 
