@@ -65,6 +65,19 @@ def build(data: dict[str, dict[str, list]]) -> pypsa.Network:
     return n
 
 
+def nodal_prices(n: pypsa.Network) -> dict[str, list]:
+    """PyPSA's marginal price per (snapshot, bus), tidy — the dual of the nodal
+    balance, and the output this community reads most often after the cost.
+
+    Recorded in references.json so the port is checked on a whole *vector*, not
+    just the objective. A sign convention that disagreed would be invisible to
+    a scalar comparison and wrong in every reported price.
+    """
+    mp = n.buses_t.marginal_price.stack().reset_index()
+    mp.columns = ['snapshot', 'bus', 'value']
+    return {c: mp[c].tolist() for c in mp.columns}
+
+
 def main() -> float:
     n = build(json.loads(DATA.read_text()))
     status, condition = n.optimize(solver_name='highs')
@@ -74,6 +87,7 @@ def main() -> float:
     assert status == 'ok', f'{status}: {condition} — the ramp limits are tighter than the load swing'
     print(f'pypsa {pypsa.__version__}')
     print(f'objective {float(n.objective)!r}')
+    print(f'duals {json.dumps({"nodal_balance": nodal_prices(n)})}')
     print(n.generators_t.p)
     return float(n.objective)
 

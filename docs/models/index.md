@@ -35,6 +35,19 @@ modeller did not intend, which passes every farkas-against-farkas test green.
 | [PyPSA LOPF rung 4](pypsa_cyclic_storage.md) | PyPSA 1.2.4, running its own linopy | 17228.77962151063 |
 | [PyPSA unit commitment](pypsa_unit_commitment.md) | PyPSA 1.2.4, running its own linopy | 24900.0 |
 
+**The objective is not the only thing checked.** Every port that has a dual
+solution also records the reference's **shadow prices** and is asserted against
+them — for the PyPSA models that is `buses_t.marginal_price`, the nodal price,
+which is the output this audience reads most often after the cost.
+
+That matters because an objective is one number and hides a great deal. A dual
+vector is where two implementations most reliably disagree quietly: which side
+of a constraint the price belongs to, and what sign an inequality's carries.
+[Dantzig transport](transport_dantzig.md) is in that set specifically because
+both of its constraints are inequalities pointing opposite ways.
+[Unit commitment](pypsa_unit_commitment.md) is not: a MILP has no dual
+solution, and farkas refuses to invent one.
+
 How a port is put together, the ladder it climbs, and the ledger of what a port
 could *not* say: [ports.md](../ports.md).
 

@@ -136,6 +136,12 @@ docs/models/<name>.md                   the gallery page — maths, model, side-
   different instance means nothing. What must stay independent is the
   formulation, not the data.
 - **`rtol` is per port.** A published optimum is rounded; a solved one is not.
+- **Record the duals too, if the model has any.** An objective is one number;
+  a dual vector is where two implementations disagree quietly — which side of a
+  constraint the price belongs to, and what sign an inequality's carries. The
+  reference script prints a `duals {...}` line keyed by constraint name; paste
+  it into the port's entry as a `duals` block. A MILP has no dual solution, so
+  it records none and the test skips rather than passing vacuously.
 - **A rung that cannot be said is also a result.** It goes in the ledger with a
   verdict — macro, primitive or escape — and feeds docs/ROADMAP.md. Do not work
   around a gap silently.

@@ -56,3 +56,33 @@ def test_port_is_inside_the_language(port: dict[str, Any]) -> None:
     from a semantics one: this breaks when lowering stops accepting the model,
     the test above when it lowers and misses the number."""
     fk.check(port['model'])
+
+
+def test_port_reaches_the_reference_duals(port: dict[str, Any]) -> None:
+    """The shadow prices, against the same outside implementation.
+
+    An objective is one number and it hides a great deal. A dual vector is the
+    output this audience actually reads — PyPSA's ``marginal_price`` is the
+    nodal price — and it is where two implementations most reliably disagree
+    quietly: which side of the constraint the price belongs to, and what sign
+    an inequality's carries. ``transport_dantzig`` is here for exactly that,
+    since both of its constraints are inequalities pointing opposite ways.
+
+    Ports with no ``duals`` block are skipped rather than passing vacuously:
+    ``pypsa_unit_commitment`` is a MILP, where a dual solution is undefined and
+    farkas refuses to invent one.
+    """
+    expected = port.get('duals')
+    if not expected:
+        pytest.skip(f'{port["name"]} records no duals (a MILP has none)')
+
+    with fk.solve(port['model'], sources(port['name'])) as solution:
+        for constraint, table in expected.items():
+            dims = [c for c in table if c != 'value']
+            got = solution.dual(constraint).sort(dims)
+            want = pl.DataFrame(table).with_columns(pl.col(d).cast(got.schema[d]) for d in dims).sort(dims)
+
+            assert got[dims].equals(want[dims]), f'{port["name"]}.{constraint}: dual is keyed differently'
+            assert got['value'].to_list() == pytest.approx(want['value'].to_list(), rel=port['rtol']), (
+                f'{port["name"]}.{constraint} disagrees with {port["provenance"]}'
+            )
