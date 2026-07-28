@@ -14,10 +14,10 @@ function has, and the shape that found #197.
 
 from __future__ import annotations
 
-import pandas as pd
 import pytest
 
 from tests.differential import differential
+from tests.oracle import pd  # through the guard: a bare import would beat it
 
 #: Two variables pinned to 1 on disjoint dims, so the objective is arithmetic
 #: with no optimisation left in it: whatever comes out is what was summed.
