@@ -388,44 +388,44 @@ import farkas as fk
 fk.check("model.yaml")                 # parse → validate → lower, no data bound
 schema = fk.load_schema("model.yaml")  # MathSchema
 
-with fk.solve("model.yaml", sources, memory_limit="512MB",
-             solver_options={"time_limit": 60}) as result:
-    result.status, result.termination_condition, result.objective
-    result.is_ok        # linopy's rollup: not an error, abort or refusal
-    result.has_primal   # narrower: are there values to read
-    result.primal("p")            # tidy DataFrame (dims…, value) — the native shape
-    result.dual("power_balance")  # shadow prices, the same shape and the same join
-    result.to_dataarray("p")      # the same, labelled: .sel / resample / plot
-    result.to_dataset()           # every variable by default; names for a subset
-    result.to_parquet(directory)  # streamed to disk, never through this process
+result = fk.solve("model.yaml", sources, solver_options={"time_limit": 60})
+result.status, result.termination_condition, result.objective
+result.is_ok        # linopy's rollup: not an error, abort or refusal
+result.has_primal   # narrower: are there values to read
+result.primal("p")            # tidy frame (dims…, value) — the native shape
+result.dual("power_balance")  # shadow prices, the same shape and the same join
+result.to_pandas("p")         # the same, as a DataFrame
+result.to_dataarray("p")      # the same, labelled: .sel / resample / plot
+result.to_dataset()           # every variable by default; names for a subset
+result.to_parquet(directory)  # streamed to disk, never through this process
 
 fk.write("model.yaml", sources, "model.lp")   # sink chosen by the suffix
 ```
 
-**Lifetime is explicit, because the model lives in duckdb, not in Python.**
-`Result` holds the executor open — its label tables are what back `primal`
-and the `to_*` readers — so it is a context manager, and the readers are only
-valid inside the block. Without one, call `result.close()`. `fk.build` returns the
-live executor for the same reason, when one build should feed more than one
-sink:
+**Nothing has to be released.** The built model is frames this process owns, so
+`primal` and the `to_*` readers stay valid for as long as the `Result` does.
+`close()` and the context-manager protocol exist to hand a large model back
+early, not because forgetting them breaks anything. `fk.build` returns the
+executor when one build should feed more than one sink:
 
 ```python
-with fk.build("model.yaml", sources, memory_limit="512MB") as ex:
-    ex.write_lp("model.lp")
-    sol = ex.solve()       # read sol here — closing ex invalidates it
+ex = fk.build("model.yaml", sources)
+ex.write_lp("model.lp")
+result = ex.solve()
 ```
 
 `sources` maps parameter and dimension names to parquet paths, scalars, or any
-table exposing the Arrow PyCapsule protocol — pyarrow, polars and pandas all
+table exposing the Arrow PyCapsule protocol — polars, pyarrow and pandas all
 qualify, and the recogniser imports none of them. Nothing on this path imports
-linopy. What the *readers* return is unsettled and tracked separately
-([#105](https://github.com/FBumann/farkas/issues/105)); today `primal`
-returns a pandas DataFrame. Build knobs, shared by all three
-entry points: `coords`, `memory_limit` (default `'1GB'`), `chunk_rows`,
-`threads`, `workdir`. **`solver_options` is separate and is not a build knob**
-— it is forwarded verbatim to the solver, the shape linopy takes
-(`{"time_limit": 60, "mip_rel_gap": 0.01}`); build knobs govern construction
-and never reach it.
+linopy. `primal` returns a `polars.DataFrame`, which is Arrow-backed and
+exports the same protocol, so no dataframe library is a dependency of this
+package; `to_pandas` and `to_dataarray` are the bridges out and need pandas /
+xarray, which ship with the `[linopy]` extra.
+
+The only build knob is `coords`, shared by all three entry points.
+**`solver_options` is separate and is not a build knob** — it is forwarded
+verbatim to the solver, the shape linopy takes (`{"time_limit": 60,
+"mip_rel_gap": 0.01}`); build knobs govern construction and never reach it.
 
 **`is_ok` is not `has_primal`.** `is_ok` is linopy's rollup of the termination
 condition; `has_primal` adds the solver's own verdict on whether an incumbent
@@ -433,9 +433,9 @@ exists, and it is what every reader gates on. They differ exactly when a run
 stops early: a MIP that hits `time_limit` before finding any feasible point is
 `ok` with nothing to read. Reading anyway raises `NoSolutionError`, and
 `objective` is `nan`. `to_dataset` costs what it says — each variable arrives
-dense over its own dims, so a model built for the memory budget this engine
-exists for should name a subset or use `to_parquet`. `dual` is the same label
-join against the constraint's row table, and **raises rather than returning
+dense over its own dims, so anything but a small model should name a subset or
+use `to_parquet`. `dual` is the same label
+join against the constraint's row frame, and **raises rather than returning
 zeros** in either of the two ways it can come up empty: no values at all is
 `NoSolutionError`, the gate `primal` passes through too, while a solve that
 *did* leave values but no duals — any integer or binary variable makes them

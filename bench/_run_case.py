@@ -69,40 +69,39 @@ def _run_farkas(
     sources, coords = _split_sources(case, paths)
 
     phases.mark('import')
-    ex = fk.build(
-        case.model,
-        sources,
-        coords=coords,
-        memory_limit=opts.memory_limit,
-        chunk_rows=opts.chunk_rows,
-    )
+    # `memory_limit` is a duckdb-engine option and this branch's `fk.build` has
+    # no such parameter, so it is forwarded only when asked for — which is only
+    # ever when this runner is driving a foreign checkout's engine.
+    budget = {'memory_limit': opts.memory_limit} if opts.memory_limit else {}
+    ex = fk.build(case.model, sources, coords=coords, **budget)
     phases.mark('build')
     if opts.sink == 'lp':
         ex.write_lp(lp)
     else:
-        # The handoff, and nothing after it: `run()` is never called, because
-        # HiGHS's simplex is the same work whoever filled the model and would
-        # swamp the phase this harness exists to measure. `build_highs` is the
-        # seam that stops there — linopy's `to_highspy()` on this side of the
-        # fence (#204).
-        _handle = build_highs(ex._tables(), opts.chunk_rows)
+        # the hand-off, and nothing past it. `run()` is never called: the
+        # simplex is the same work whoever filled the model, so timing it would
+        # swamp the phase this harness exists to measure and publish a number
+        # about HiGHS under our name. `build_highs` is the seam that stops
+        # there — linopy's `to_highspy()` is the same seam on the other side.
+        _handle = build_highs(ex._tables())
     phases.mark('emit')
 
-    # read after the clock stops: counts are the harness's, not the engine's
+    # Read after the clock stops: counts are the harness's, not the engine's.
+    # `matrix` is this engine's frame and an older one exposes its own shape,
+    # so the nonzero count is optional — this runner is also driven against a
+    # foreign checkout's `farkas`, where only the two totals are common.
     tables = ex._tables()
+    matrix = getattr(tables, 'matrix', None)
     counts = {
         'columns': tables.column_count,
         'rows': tables.row_count,
-        'nonzeros': tables.scalar('SELECT count(*) FROM A'),
+        'nonzeros': getattr(matrix, 'height', None),
     }
-    # what the RSS number does not show: the engine trades memory for a
-    # scratch database on disk, and someone pays to write and delete it
-    workdir_bytes = sum(f.stat().st_size for f in ex.workdir.rglob('*') if f.is_file())
 
     phases.reset()
     ex.close()
     phases.mark('teardown')
-    return {'phases': phases.times, 'counts': counts, 'workdir_bytes': workdir_bytes}
+    return {'phases': phases.times, 'counts': counts}
 
 
 def _run_linopy(
@@ -116,19 +115,65 @@ def _run_linopy(
     phases.mark('build')
     if opts.sink == 'lp':
         # progress defaults to `m._xCounter > 10_000`, so every rung above `xs`
-        # would render tqdm bars the farkas arm has no equivalent of — ~7% of the
-        # write at 10M variables, and stderr noise in a harness that parses stdout
+        # would render tqdm bars the farkas arm has no equivalent of — ~7% of
+        # the write at 10M variables, and stderr noise in a harness that parses
+        # stdout
         m.to_file(lp, io_api=opts.io_api, progress=False)
     else:
-        # linopy's own seam, and the reason the comparison is exact: both arms
-        # end holding a populated `highspy.Highs` with `run()` never called.
+        # the same seam as the farkas arm: both end holding a populated
+        # `highspy.Highs` with `run()` never called
         _handle = m.to_highspy()
     phases.mark('emit')
     counts = {'columns': int(m.nvars), 'rows': int(m.ncons), 'nonzeros': None}
-    return {'phases': phases.times, 'counts': counts, 'workdir_bytes': 0}
+    return {'phases': phases.times, 'counts': counts}
 
 
 ARMS = {'farkas': _run_farkas, 'linopy': _run_linopy}
+
+
+def _builder(case: Case, paths: dict[str, str], arm: str):
+    """Just the build, callable repeatedly — no sink, no teardown timing."""
+    if arm == 'farkas':
+        import farkas as fk
+
+        sources, coords = _split_sources(case, paths)
+
+        def build() -> None:
+            fk.build(case.model, sources, coords=coords).close()
+    else:
+        from farkas import linopy as farkas_linopy
+
+        def build() -> None:
+            data, coords = case.eager_inputs(paths)
+            farkas_linopy.build(case.model, data=data, coords=coords)
+
+    return build
+
+
+def _run_loop(case: Case, paths: dict[str, str], opts: argparse.Namespace) -> dict[str, Any]:
+    """The same model built repeatedly in one process.
+
+    Two questions, two numbers. **First** is what a caller pays who builds one
+    model and solves it — a fresh interpreter, and whatever lazy work each lane
+    does on its first call lands here. **Steady** is what a rolling horizon
+    pays for every model after the first. They differ by more than an order of
+    magnitude on the eager lane, so a single figure would misreport one of the
+    two use cases whichever it was.
+
+    Deliberately build-only: a sink is measured by `time`, and repeating one
+    would conflate warm-up in the writer with warm-up in the engine.
+    """
+    build = _builder(case, paths, opts.arm)
+    times = []
+    for _ in range(opts.builds):
+        start = time.perf_counter()
+        build()
+        times.append(time.perf_counter() - start)
+    return {
+        'first_build_seconds': times[0],
+        'steady_build_seconds': min(times[1:]) if len(times) > 1 else None,
+        'build_seconds': times,
+    }
 
 
 def _split_sources(case: Case, paths: dict[str, str]) -> tuple[dict[str, str], dict[str, str]]:
@@ -150,9 +195,11 @@ def _objective(case: Case, shape: Shape, paths: dict[str, str], arm: str) -> flo
         import farkas as fk
 
         sources, coords = _split_sources(case, paths)
-        with fk.solve(case.model, sources, coords=coords, memory_limit='2GB') as sol:
-            # linopy's own vocabulary, which #148 adopted: `status` is the
-            # solver's health, `termination_condition` is what it concluded
+        with fk.solve(case.model, sources, coords=coords) as sol:
+            # two axes, not one: `status` is the coarse rollup ('ok') and the
+            # solver's verdict is `termination_condition` ('optimal'). Testing
+            # the wrong one aborted every run with a parity failure that was
+            # really a vocabulary mismatch.
             if sol.termination_condition != 'optimal':
                 raise RuntimeError(f'farkas solve terminated {sol.termination_condition!r}, not optimal')
             return float(sol.objective)
@@ -167,18 +214,30 @@ def _objective(case: Case, shape: Shape, paths: dict[str, str], arm: str) -> flo
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('mode', choices=('time', 'solve'))
+    ap.add_argument('mode', choices=('time', 'solve', 'loop'))
+    ap.add_argument(
+        '--builds',
+        type=int,
+        default=5,
+        help='loop mode: how many times to build the model in one process. The '
+        'first is reported separately from the minimum of the rest.',
+    )
     ap.add_argument('--case', required=True, choices=sorted(CASES))
     ap.add_argument('--size', required=True)
     ap.add_argument('--arm', required=True, choices=sorted(ARMS))
-    ap.add_argument('--memory-limit', default='1GB')
-    ap.add_argument('--chunk-rows', type=int, default=2_000_000)
     ap.add_argument('--io-api', default='lp-polars', help="linopy arm's writer")
+    ap.add_argument(
+        '--memory-limit',
+        default=None,
+        help='budget for an engine that takes one (duckdb). Unset means the engine '
+        'is unbounded, which is the only setting comparable with a lane that has '
+        'no such knob.',
+    )
     ap.add_argument(
         '--sink',
         default='lp',
         choices=('lp', 'highs'),
-        help='where the model lands: an LP file, or a populated HiGHS model (never solved)',
+        help='where the built model goes: an LP file, or straight into HiGHS',
     )
     ap.add_argument('--cache', type=Path, default=None)
     opts = ap.parse_args(argv)
@@ -194,11 +253,16 @@ def main(argv: list[str] | None = None) -> int:
         'dimensions': shape.sizes,
         'nominal_variables': shape.nominal_variables,
         'density': shape.density,
-        'memory_limit': opts.memory_limit if opts.arm == 'farkas' else None,
-        'chunk_rows': opts.chunk_rows if opts.arm == 'farkas' else None,
         'io_api': opts.io_api if opts.arm == 'linopy' and opts.sink == 'lp' else None,
         'sink': opts.sink,
+        'memory_limit': opts.memory_limit,
     }
+
+    if opts.mode == 'loop':
+        record |= _run_loop(case, paths, opts)
+        record['peak_rss_bytes'] = peak_rss_bytes()
+        print(json.dumps(record))
+        return 0
 
     if opts.mode == 'solve':
         record['objective'] = _objective(case, shape, paths, opts.arm)
@@ -212,7 +276,7 @@ def main(argv: list[str] | None = None) -> int:
         # xarray on first use pays for it visibly instead of inside `build`
         result = ARMS[opts.arm](case, paths, lp, Phases(), opts)
         # the highs sink writes no artifact — that is the whole point of it
-        record['lp_bytes'] = lp.stat().st_size if lp.exists() else None
+        record['lp_bytes'] = lp.stat().st_size if opts.sink == 'lp' else None
 
     record.update(result)
     # import is excluded — it is fixed, paid once per process, and at the

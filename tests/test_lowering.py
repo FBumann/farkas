@@ -44,7 +44,7 @@ def test_dispatch_yaml_agrees_variable_by_variable(dispatch_yaml, dispatch_input
         # primal agrees with the eager solution variable-by-variable, not only
         # in total — an objective can agree while the dispatch behind it differs
         eager_p = run.model.solution['p'].to_dataframe(name='value').reset_index()
-        rel_p = run.result.primal('p')
+        rel_p = run.result.to_pandas('p')
         merged = eager_p.merge(rel_p, on=['snapshot', 'generator'], suffixes=('_eager', '_rel'))
         # masked (gas is unmasked; all p_max > 0 here) rows align 1:1
         assert len(merged) == len(rel_p)
@@ -150,9 +150,10 @@ def _tidy_cap(names):
     import pandas as pd
 
     index = pd.MultiIndex.from_tuples(list(CAPS), names=names)
-    # tidy_sources normalises to Arrow, so read the columns back by name —
+    # tidy_sources normalises to a frame, so read the columns back by name —
     # which is the point: a transposition would show up as swapped values
-    table = tidy_sources(MathSchema(**NETWORK), {'cap': pd.Series(list(CAPS.values()), index=index)})['cap'].to_pydict()
+    frame = tidy_sources(MathSchema(**NETWORK), {'cap': pd.Series(list(CAPS.values()), index=index)})['cap'].collect()
+    table = frame.to_dict(as_series=False)
     return dict(zip(zip(table['from_bus'], table['to_bus'], strict=True), table['value'], strict=True))
 
 

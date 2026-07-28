@@ -11,10 +11,12 @@ from __future__ import annotations
 from typing import get_args
 
 import numpy as np
+import polars as pl
 import pytest
 
 from farkas.relational import plan
 from tests.differential import differential
+from tests.oracle import pd
 
 COMMITMENT_YAML = """
 dimensions:
@@ -53,6 +55,27 @@ objectives:
 """
 
 
+@pytest.fixture
+def commitment_inputs():
+    rng = np.random.default_rng(5)
+    n_s = 24
+    p_max = pd.Series({'coal': 120.0, 'gas': 80.0, 'peaker': 60.0})
+    data = {
+        'p_max': p_max,
+        'cost': pd.Series({'coal': 10.0, 'gas': 30.0, 'peaker': 90.0}),
+        'fix_cost': pd.Series({'coal': 400.0, 'gas': 150.0, 'peaker': 20.0}),
+        'load': pd.Series(
+            (rng.uniform(0.3, 0.9, n_s) * p_max.sum()).round(1),
+            index=pd.RangeIndex(n_s, name='snapshot'),
+        ),
+    }
+    coords = {
+        'snapshot': pd.RangeIndex(n_s, name='snapshot'),
+        'generator': pd.Index(p_max.index, name='generator'),
+    }
+    return data, coords
+
+
 def test_commitment_milp_agrees_and_stays_integral(commitment_inputs):
     data, coords = commitment_inputs
 
@@ -61,7 +84,7 @@ def test_commitment_milp_agrees_and_stays_integral(commitment_inputs):
         assert float(run.model.solution['u'].sum()) < run.model.solution['u'].size
 
         # binary variables actually take integral 0/1 values
-        u = run.result.primal('u')['value'].to_numpy()
+        u = run.result.to_pandas('u')['value'].to_numpy()
         assert np.allclose(u, np.round(u), atol=1e-6)
         assert set(np.round(u)) <= {0.0, 1.0}
 
@@ -97,23 +120,22 @@ def test_solver_direct_ingests_columns_in_order_whatever_the_chunking(commitment
         assert set(np.round(u)) <= {0.0, 1.0}, 'integrality landed on the wrong columns'
 
 
-def test_cols_vtype_enum_covers_every_declared_variable_type(commitment_inputs):
-    """``cols.vtype`` is an ENUM, and its members are ``plan.VariableType``.
+def test_cols_vtype_is_an_enum_over_every_declared_variable_type(commitment_inputs):
+    """``cols.vtype`` is an Enum, and its members are ``plan.VariableType``.
 
-    The storage choice is a performance one — three literals repeated once per
-    column are the widest thing on the row — but the *members* are a contract.
-    An ENUM rejects a value it does not know, so a fourth variable type added
-    to the plan and not to the table would fail at insert with a duckdb error
-    about a cast, a long way from the declaration that caused it. This is the
-    test that fails at the declaration instead.
+    The storage choice is a performance one — one word per column, the same
+    handful of words for the whole model, and the widest thing on the row as a
+    string. The *members* are a contract: an Enum rejects a value outside it,
+    so a fourth variable type added to the plan and not reaching the column
+    fails where the column is built rather than in whichever sink first
+    compares against a name it does not know.
     """
     data, coords = commitment_inputs
 
     with differential(COMMITMENT_YAML, data, coords) as run:
-        con = run.executor._con
-        column_type = con.execute("SELECT column_type FROM (DESCRIBE cols) WHERE column_name = 'vtype'").fetchone()
-        assert column_type is not None
-        members = con.execute('SELECT unnest(enum_range(NULL::variable_type))').fetchall()
+        vtype = run.executor._tables().cols.schema['vtype']
+        held = set(run.executor._tables().cols['vtype'].unique().to_list())
 
-    assert column_type[0] != 'VARCHAR'
-    assert {m[0] for m in members} == set(get_args(plan.VariableType))
+    assert isinstance(vtype, pl.Enum), f'vtype is {vtype}, so it stores a word per column'
+    assert set(vtype.categories.to_list()) == set(get_args(plan.VariableType))
+    assert held == {'continuous', 'binary'}, 'this model declares both, so both must survive the stack'

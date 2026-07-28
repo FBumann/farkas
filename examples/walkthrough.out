@@ -22,34 +22,33 @@ model: examples/walkthrough.yaml
       ConstraintDeclaration(name='power_balance', dims=('snapshot',), lhs=Sum(operand=Variable(name='p'), over=('generator',)), sense='==', rhs=Parameter(name='load'), where=None)
       ObjectiveDeclaration(sense='min', expression=Sum(operand=Multiply(left=Variable(name='p'), right=Parameter(name='cost')), over=('generator',)))
     )
-    ^ frozen dataclasses, no macro, no YAML, no linopy, no duckdb
+    ^ frozen dataclasses, no macro, no YAML, no linopy, no engine
 
-[4] IR + data -> tidy tables in duckdb  (relational/executor.py)
-    A                      18 rows
+[4] plan + data -> the model frames  (relational/executor.py)
     cols                   18 rows
-    con_power_balance       6 rows
-    dim_generator           4 rows
-    dim_snapshot            6 rows
     obj                    18 rows
-    p_cost                  4 rows
-    p_load                  6 rows
-    p_p_max                 4 rows
     rows                    6 rows
-    var_p                  18 rows
+    A                      18 rows
 
-    memory_limit=256MB, on disk at $TMPDIR/relational_XXXXXXXX
-    dim_* = coordinates · p_* = parameters · var_* = coord -> column label
-    cols/rows/A/obj = the LP itself, in COO form
+    cols/rows/A/obj = the LP itself, in COO form:
+    a column is a bound and a cost, a row a sense and a rhs,
+    and A is every nonzero coefficient as (row, col, coeff).
 
     where "p_max > 0" is not a mask array — it is row absence:
-    var_p has 18 rows, not 24: retired oil never becomes a column.
-       snapshot generator  var_label
-    0         0      wind          0
-    1         0     solar          1
-    2         0       gas          2
-    3         1      wind          3
+    p has 18 rows, not 24: retired oil never becomes a column.
+    shape: (4, 3)
+    ┌──────────┬───────────┬───────────┐
+    │ snapshot ┆ generator ┆ var_label │
+    │ ---      ┆ ---       ┆ ---       │
+    │ i64      ┆ str       ┆ i64       │
+    ╞══════════╪═══════════╪═══════════╡
+    │ 0        ┆ wind      ┆ 0         │
+    │ 0        ┆ solar     ┆ 1         │
+    │ 0        ┆ gas       ┆ 2         │
+    │ 1        ┆ wind      ┆ 3         │
+    └──────────┴───────────┴───────────┘
 
-[5] sink: stream the tables to an LP file  (relational/executor.py)
+[5] sink: stream the frames to an LP file  (relational/sinks/lp_file.py)
     min
     
     obj:
@@ -64,16 +63,22 @@ model: examples/walkthrough.yaml
     +50.0 x8
     ... (76 lines total)
 
-[6] sink: batches -> highspy -> solution tables  (relational/executor.py)
+[6] sink: batches -> highspy -> solution frames  (relational/sinks/highs.py)
     status     ok (optimal)
     objective  1,000.0
-       snapshot generator  value
-    0         0       gas    0.0
-    1         0     solar    0.0
-    2         0      wind   80.0
-    3         1       gas    0.0
-    4         1     solar   60.0
-    5         1      wind   60.0
+    shape: (6, 3)
+    ┌──────────┬───────────┬───────┐
+    │ snapshot ┆ generator ┆ value │
+    │ ---      ┆ ---       ┆ ---   │
+    │ i64      ┆ str       ┆ f64   │
+    ╞══════════╪═══════════╪═══════╡
+    │ 0        ┆ gas       ┆ 0.0   │
+    │ 0        ┆ solar     ┆ 0.0   │
+    │ 0        ┆ wind      ┆ 80.0  │
+    │ 1        ┆ gas       ┆ 0.0   │
+    │ 1        ┆ solar     ┆ 60.0  │
+    │ 1        ┆ wind      ┆ 60.0  │
+    └──────────┴───────────┴───────┘
 
 [7] and what the language refuses  (validation.py, lowering.py)
 

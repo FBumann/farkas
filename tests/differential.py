@@ -22,7 +22,7 @@ Usage — the executor stays open for the length of the ``with`` block, so
 per-variable primal checks live inside it::
 
     with differential(NONCONVEX_YAML, data, coords, lp=True) as run:
-        assert run.result.primal('op_cost') ...
+        assert run.result.to_pandas('op_cost') ...
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ import numpy as np
 import pytest
 
 from farkas.lowering import lower_program
-from farkas.relational import DuckdbExecutor
+from farkas.relational import PolarsExecutor
 from farkas.sources import tidy_sources
 from tests.conftest import raw_of, schema_of, solve_lp_file
 from tests.oracle import farkas_linopy, linopy
@@ -67,7 +67,7 @@ class Agreement:
     """The relational solution; live until the ``with`` block exits."""
 
     schema: MathSchema
-    executor: DuckdbExecutor
+    executor: PolarsExecutor
     lp: Path | None = None
     """The written LP file, when ``lp=True`` — already checked to agree."""
 
@@ -100,7 +100,7 @@ def differential(
         oracle = float(m.objective.value)
         assert np.isfinite(oracle), 'the eager oracle is infeasible or unbounded — fix the data, not the tolerance'
 
-        with DuckdbExecutor(memory_limit='256MB') as ex:
+        with PolarsExecutor() as ex:
             ex.build(lower_program(schema), tidy_sources(schema, data, coords))
             result = ex.solve()
             assert result.is_ok

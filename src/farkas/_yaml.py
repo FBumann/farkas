@@ -18,7 +18,7 @@ interact with the ``dtype: datetime`` the schema accepts and does not yet
 implement, so they belong to the dtype guard in #65 rather than here.
 
 The output is plain ``dict``/``str``: no loader wrapper reaches the schema,
-the AST, the plan, or duckdb.
+the AST, the plan, or the engine.
 """
 
 from __future__ import annotations

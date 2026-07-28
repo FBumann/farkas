@@ -46,7 +46,7 @@ from farkas.dimensions import dims_of
 from farkas.errors import LanguageError, PiecewiseExpansionError
 from farkas.expression_parser import ComparisonNode, parse_expression
 from farkas.lowering import check_core_subset
-from farkas.relational.arrow import as_table
+from farkas.relational.frames import as_frame
 from farkas.resolution import Namespace, resolve_expression
 from farkas.schema import MathSchema, PiecewiseBlock
 
@@ -228,11 +228,11 @@ def _as_dataarray(schema: MathSchema, pname: str, values: Mapping[str, Any] | An
     """One source as a DataArray indexed by its declared dims.
 
     Two shapes reach here: the linopy lane hands over its ``xr.Dataset``
-    entries directly, and the relational lane hands over the tidy Arrow tables
-    :func:`lowering.tidy_sources` normalised. Arrow's hop out costs no
-    dependency the caller has not taken — asking for a curvature check already
-    requires xarray, which brings pandas — but the check still wants to be
-    numpy-only (issue #27), which would retire this function.
+    entries directly, and the relational lane hands over the tidy frames
+    :func:`sources.tidy_sources` normalised. The hop out costs no dependency
+    the caller has not taken — asking for a curvature check already requires
+    xarray, which brings pandas — but the check still wants to be numpy-only
+    (issue #27), which would retire this function.
     """
     import xarray as xr
 
@@ -242,7 +242,14 @@ def _as_dataarray(schema: MathSchema, pname: str, values: Mapping[str, Any] | An
     if isinstance(obj, xr.DataArray):
         return obj
     dims = list(schema.parameters[pname].dims)
-    table = as_table(obj, tuple(dims))
-    if table is None or not dims or 'value' not in table.column_names:
+    frame = as_frame(obj, tuple(dims))
+    if frame is None or not dims or 'value' not in frame.collect_schema().names():
         raise KeyError(pname)  # a parquet path, or nothing to lay out: skip
-    return xr.DataArray.from_series(table.select([*dims, 'value']).to_pandas().set_index(dims)['value'])
+    import pandas as pd
+
+    # column by column through numpy: a whole-frame conversion would reach for
+    # pyarrow, and this check already costs the caller xarray without adding a
+    # third library to it
+    tidy = frame.select([*dims, 'value']).collect()
+    columns = {name: tidy[name].to_numpy() for name in tidy.columns}
+    return xr.DataArray.from_series(pd.DataFrame(columns).set_index(dims)['value'])

@@ -6,45 +6,82 @@ set of published numbers came from a `scratch/` script that was deleted, and a
 claim nobody can re-run is a claim with a shelf life.
 
 ```bash
-uv run python -m bench.run                                  # the committed ladder
-uv run python -m bench.run --cases dispatch --sizes m l     # one case, two rungs
-uv run python -m bench.run --sinks highs                    # skip the LP file
-uv run python -m bench.run --memory-limits 256MB 1GB 4GB    # sweep the budget
+# every rung docs/benchmarks.md publishes — one invocation, because the run
+# REPLACES the results file rather than adding to it
+uv run python -m bench.run --sizes xs s m l d100 d50 d25 d08 \
+    --arms farkas linopy duckdb --duckdb-root ../farkas-main
 uv run python -m bench.report bench/results/latest.jsonl    # -> markdown
+
+# anything narrower than the published ladder: send it somewhere else
+uv run python -m bench.run --cases dispatch --sizes m l --out /tmp/two.jsonl
+uv run python -m bench.run --sinks highs --out /tmp/highs.jsonl
 ```
+
+The bare `bench.run` is **not** the committed ladder: it defaults to `xs s m`,
+so it stops below the rung every interesting claim lives at. Narrowing the run
+and then committing the file leaves the published tables with no provenance,
+and nothing about the file looks wrong afterwards.
+
+**Pass `--out` for every run that is not the full ladder.** The default target
+is the committed `results/latest.jsonl` and the run *replaces* it, so a
+one-rung smoke test overwrites 294 records of provenance with 4 — silently, and
+in a file whose diff nobody reads closely. `git checkout` gets it back; noticing
+is the hard part.
 
 ## What it measures
 
-**Peak RSS and wall time**, per phase, for the same model built two ways and
-sent two places. Two arms x two sinks:
+**Peak RSS and wall time**, per phase, for the same model built two ways:
 
 | | `lp` | `highs` |
 |---|---|---|
-| `farkas` | `fk.build(...)` then `ex.write_lp(...)` | `fk.build(...)` then the COO batches into `highspy` |
+| `farkas` | `fk.build(...)` then `ex.write_lp(...)` | `fk.build(...)` then `build_highs(...)` |
 | `linopy` | `farkas.linopy.build(...)` then `Model.to_file(io_api='lp-polars')` | `farkas.linopy.build(...)` then `Model.to_highspy()` |
-
-The farkas arm runs at a declared `memory_limit` throughout. Both arms read the
-same parquet files and end at the same place, so each column is one language,
-one destination, two engines. The linopy arm is the right comparison and the
-only one worth making first: it accepts *exactly* the same YAML
-(ARCHITECTURE.md hard rule 3), which is what makes it the oracle rather than a
-rival dialect.
 
 **The `highs` sink stops at the handoff — `run()` is never called.** That is the
 whole discipline of it. HiGHS's simplex is the same work whoever filled the
 model, so including it would swamp the phase this harness exists to measure and
 publish a number about HiGHS under our name. Both arms end holding a populated
 `highspy.Highs` and neither runs it, which is the only reason the two are
-comparable at all: linopy's `to_highspy()` is the same seam on that side of the
-fence.
+comparable: `Model.to_highspy()` is the same seam on linopy's side.
 
-`highs` is the sink most users actually reach for, and it is not simply the lp
-sink minus a file: at `profiled/m` the peak ratio is 0.60x through the LP writer
-and 0.94x through the handoff, because HiGHS's own dense model is resident in
-both arms and swamps the difference between them. Measuring only the LP path
-would have reported the wrong number for the common case.
+`highs` is the sink most callers actually reach for, and it is **not the lp sink
+minus a file** — HiGHS's own dense model is resident in both arms and narrows
+the gap between them. Measuring only the LP path reports the wrong number for
+the common case, which is why both run by default.
 
-Not measured, deliberately: solve time, and anything about expressiveness.
+Both arms read the same parquet files and end at the same seam — an LP file on
+disk, or a populated `highspy.Highs` — so the comparison is one language, one
+destination, two engines. The linopy arm is the right
+comparison and the only one worth making first: it accepts *exactly* the same
+YAML (ARCHITECTURE.md hard rule 3), which is what makes it the oracle rather
+than a rival dialect.
+
+Not measured, deliberately: solve time (that is HiGHS, identical either way, and
+it would swamp the build), and anything about expressiveness.
+
+## The third arm
+
+`duckdb` is the engine this branch replaces, and the comparison that says
+whether replacing it was worth doing. It cannot be imported here — it is not on
+this branch — so the arm **runs a different checkout's own code**: that
+checkout's interpreter, its `bench/_run_case.py`, its engine. Nothing about
+duckdb is reimplemented on this side; `--duckdb-root` is a path and the rest is
+`subprocess`.
+
+It is an arm rather than a second ladder run for one reason: **interleaving**.
+Two runs are two machine states, and this harness has already been caught out
+by that twice — a baseline block still warming up, and a run contaminated by a
+concurrent job. Interleaved, every arm of a row sees the same load. It also
+buys two things a spliced pair cannot:
+
+- **One parquet cache**, passed to both checkouts with `--cache`, so all three
+  arms build byte-identical models rather than two datasets that ought to
+  match.
+- **A parity gate across all three.** duckdb, polars and linopy must agree on
+  the objective before anything is timed.
+
+A case the foreign checkout does not carry — `sector` postdates it — is
+announced and skipped, never rendered as a row that arm lost.
 
 ## Why it is built this way
 
@@ -55,8 +92,9 @@ allocator, so `bench/run.py` never imports farkas or linopy — it only spawns
 
 **`ru_maxrss`, not a tracker.** The same kernel counter `/usr/bin/time -l`
 reports, read via `resource.getrusage`. `docs/benchmarks.md` records why the
-alternative is wrong: memray's tracker slows duckdb ~8x and overcounts polars'
-reserved arenas, so it can attribute memory but must never time anything.
+alternative is wrong: memray's tracker slows an allocation-heavy engine
+several-fold and overcounts reserved arenas, so it can attribute memory but must
+never time anything.
 
 **The parity gate runs before any timing.** The smallest rung of each case is
 solved on both arms and the objectives compared to 1e-9 relative; a mismatch
@@ -73,50 +111,47 @@ the other never does. The boundaries are therefore explicit:
 |---|---|---|
 | **before the clock** | splitting parquet paths into parameters vs dimensions (harness bookkeeping — it re-parses the YAML only because the *runner* decides which file is which) | — |
 | `import` | `import farkas` | `import farkas.linopy` → linopy, xarray |
-| `build` | `fk.build(...)` — duckdb reads the parquet itself | `read_parquet` + reshape + `farkas.linopy.build(...)` |
-| `emit` (`lp`) | `ex.write_lp(path)` | `Model.to_file(path, io_api='lp-polars')` |
-| `emit` (`highs`) | COO batches into a `highspy.Highs` | `Model.to_highspy()` |
-| `teardown` | `ex.close()` — closes duckdb, deletes the scratch database | — (nothing to release) |
-| **after the clock** | row counts, `count(*) FROM A`, scratch-dir size | `nvars` / `ncons` |
+| `build` | `fk.build(...)` — the engine scans the parquet itself | `read_parquet` + reshape + `farkas.linopy.build(...)` |
+| `emit` | `ex.write_lp(path)` / `build_highs(ex._tables())` | `Model.to_file(path, io_api='lp-polars')` / `Model.to_highspy()` |
+| `teardown` | `ex.close()` — releases the built model | — (nothing to release) |
+| **after the clock** | row, column and nonzero counts off the built frames | `nvars` / `ncons` |
 
 Three of those are deliberate calls rather than defaults:
 
 - **Import is excluded from `wall_seconds`** but recorded. It is fixed, paid
   once per process, and at the `xs` rung linopy's import alone exceeds farkas's
   entire build — including it would make the small end meaningless.
-- **Teardown is included.** Releasing a scratch database is work a user pays
-  for, and the arm that has one should be charged for it.
+- **Teardown is included, and it is now near-free.** It was there to charge the
+  arm holding a scratch database for releasing it. There is no scratch database
+  any more — `close()` drops frames this process owns — so the phase is kept as
+  a tripwire rather than a cost: if it ever stops reading ~0, something
+  acquired a lifetime again.
 - **`progress=False` is passed to linopy.** Its default is
   `m._xCounter > 10_000`, so every rung above `xs` would render tqdm bars that
   the farkas arm has no equivalent of — ~7% of the write at 10M variables, and
   stderr noise in a harness that parses stdout.
 
-Both arms start from the same parquet files and end with an LP file on disk, so
+Both arms start from the same parquet files and stop at the same seam, so
 each pays for its own data ingestion. That is the honest unit; note that the
 *phases* are not comparable one-for-one, because linopy defers coefficient
 materialisation to `to_polars()` inside `to_file` — its `build` allocates dense
 arrays and little else. Compare totals, and read the phases as attribution
 within an arm.
 
-**Memory is not the whole cost.** farkas trades RAM for a scratch database on
-disk; `workdir_bytes` records how much, so a peak-RSS win cannot quietly hide a
-multi-gigabyte temp file. It is sampled at the end of emit, not at its peak.
+**Peak RSS is the whole cost, now that there is no scratch on disk.** The
+duckdb engine traded RAM for a workdir, so a peak-RSS win could hide a
+multi-gigabyte temp file and the harness recorded `workdir_bytes` to stop it.
+Neither arm writes anything but the LP file today, so that field is gone rather
+than left reading zero — a column that is always 0 is read as "measured and
+fine", which is the same failure in the other direction. Restore it in
+`_run_case.py` if a sink ever spills again.
 
 **Failures are results.** A run that dies is written to the JSONL with the
-exception line that killed it, and the report renders it as a cell. An OOM at a
-declared budget is the single most informative thing this harness can find — it
-falsifies hard rule 4 for that shape.
+exception line that killed it, and the report renders it as a cell. An OOM is
+the single most informative thing this harness can find — and this is where a
+cost claim is settled, because cost is not one of the architecture's rules.
 
 **Repeats collapse by minimum.** Noise only ever adds.
-
-**A rung the `highs` sink cannot reach is written down, not dropped.**
-`Case.highs_max_variables` caps it, and the cap is a property of the *solver*
-rather than of either engine — HiGHS's model is dense however it was filled, so
-both arms pay it. The skip lands in the JSONL as a `skipped` record and the
-report renders it as a footnote under the table, because a rung nobody ran and a
-rung with no row look identical otherwise, and that is how a coverage hole gets
-published as a result. The lp sink has no such ceiling, which is why the cap is
-per sink instead of a rung the whole ladder stops at.
 
 **Comparing two versions of the same arm? Alternate them.** Repeats inside one
 invocation collapse noise *within* a few seconds; they do nothing about drift
@@ -137,7 +172,7 @@ verdict off the SQL"), not to cover the language:
 | `dispatch` | pointwise bounds + one `sum` per row | raw throughput, and the case a dense eager broadcast is best at — so our worst ratio |
 | `nodal` | `(snapshot, node, tech)`, `where: installed > 0` | sparsity as it actually occurs — see below |
 | `transport` | three `group_sum` joins per row | the mapping-table path, where the eager lane must materialise a bus x generator product |
-| `profiled` | `(snapshot, node, tech)`, `availability` dense over that product | the only case where the input is the same order as the model — see below |
+| `sector` | dense snapshots x dense carriers x sparse portfolio | mixed density in one model — the shape a sector-coupled model actually has, and where the sparsity claim is visible |
 
 **`nodal` is the case worth explaining.** It is dispatch over nodes and
 technologies, and a technology only generates at a node where it is installed:
@@ -153,25 +188,14 @@ The sparsity is *structural and time-invariant*, which is not incidental —
 would sweep the same densities while misrepresenting the shape, and the shape is
 what an engine can exploit.
 
+**Measured, this sweep alone does not show it** — at a 1.2M coordinate product
+a dense array over it is ~10 MB and the fixed cost of the process dominates.
+`sector` runs the same sparsity at a 12M product and the effect is plain. See
+[docs/benchmarks.md](../docs/benchmarks.md#the-density-sweep-and-a-claim-it-refuses).
+
 `Shape.density` (technologies per node: 12 / 6 / 3 / 1) is swept at one model
 size, because sweeping size and density together leaves no way to tell one
 effect from the other. Run the full ladder with `--sizes all`.
-
-**`profiled` is where the input is the same size as the model.** In every other
-case the parameters are far smaller than the coordinate product they explode
-into — 2-15% of it — so reading them is 2-9% of the build and the read path is
-noise. `profiled` is `nodal`'s cardinalities with the mask removed and
-`availability` dense over `(snapshot, node, tech)`: at the `l` rung, a 12M-row
-table against a 12M coordinate product. That makes the read path, the join, and
-the in-memory-vs-parquet question measurable rather than lost in the margin.
-
-It is also the shape the eager lane handles best: a parameter already dense over
-the variable product is the array xarray wants, with no broadcast and no
-alignment to do, while we join a full-size frame against a full-size coordinate
-product. `nodal` is the mirror image, and our clearest win, because there the
-eager lane must materialise coordinates that do not exist. Carrying both is what
-keeps the ladder from only containing shapes that suit one engine — a wind
-profile per node per technology per hour is ordinary in energy modelling.
 
 **The report measures what survived rather than trusting the declaration.**
 `dispatch` declares `where: p_max > 0` against a p_max that is always positive,
@@ -201,9 +225,9 @@ uv run pytest bench/regressions --benchmark-memory-compare=0001 \
 
 It is [`pytest-benchmem`](https://github.com/fluxopt/pytest-benchmem): a memray
 peak pass on top of pytest-benchmark's timing, with `isolate=True` so every pass
-is a fresh process — duckdb would otherwise be measured with a warm buffer pool,
-and isolation is what makes whole-process `rss` available beside the memray
-peak.
+is a fresh process — a warm allocator would otherwise be measured instead of the
+build, and isolation is what makes whole-process `rss` available beside the
+memray peak.
 
 **Why memray here and not in the published ladder.** Measured on `dispatch/m`:
 

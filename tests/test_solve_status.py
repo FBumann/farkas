@@ -13,6 +13,7 @@ the math.
 
 from __future__ import annotations
 
+import polars as pl
 import pytest
 
 import farkas as fk
@@ -30,8 +31,7 @@ INFEASIBLE = {
 
 
 def _infeasible_sources():
-    pa = pytest.importorskip('pyarrow')
-    return {'load': pa.table({'snapshot': [0], 'value': [99.0]})}
+    return {'load': pl.DataFrame({'snapshot': [0], 'value': [99.0]})}
 
 
 # ---------------------------------------------------------------------------
@@ -131,10 +131,9 @@ def _knapsack():
         'constraints': {'budget': {'foreach': ['one'], 'equations': [{'expression': 'sum(x * w, over=i) <= cap'}]}},
         'objectives': {'o': {'sense': 'maximize', 'equations': [{'expression': 'sum(x * w, over=i)'}]}},
     }
-    pa = pytest.importorskip('pyarrow')
     sources = {
-        'w': pa.table({'i': list(range(n)), 'value': [float(v) for v in weights]}),
-        'cap': pa.table({'one': [0], 'value': [float(sum(weights) // 2)]}),
+        'w': pl.DataFrame({'i': list(range(n)), 'value': [float(v) for v in weights]}),
+        'cap': pl.DataFrame({'one': [0], 'value': [float(sum(weights) // 2)]}),
     }
     return model, sources
 

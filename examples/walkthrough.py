@@ -11,7 +11,7 @@ Its output is committed as ``examples/walkthrough.out`` and asserted line for
 line by ``tests/test_walkthrough.py``, so the narration cannot go stale
 unnoticed: a stage that starts saying something else fails CI, and the diff of
 the regenerated file is the record of what changed. Everything printed is
-therefore deterministic — see ``_scrubbed`` for the one thing that is not.
+therefore deterministic.
 
 The point it is trying to make is the thesis in ARCHITECTURE.md: a YAML math
 spec is a closed AST known before any data is touched. Stages 1-3 happen with
@@ -24,25 +24,26 @@ import sys
 import tempfile
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 
 import farkas as fk
 from farkas.expansion import parse_and_expand
 from farkas.expression_parser import parse_expression
 from farkas.lowering import lower_program
-from farkas.relational.executor import DuckdbExecutor
+from farkas.relational.executor import PolarsExecutor
 from farkas.sources import tidy_sources
 
 HERE = Path(__file__).parent
 MODEL = HERE / 'walkthrough.yaml'
 
 #: Six snapshots of demand against four generators. Small enough to print.
+GENERATORS = ['wind', 'solar', 'gas', 'oil']
 SOURCES = {
-    'p_max': pd.Series({'wind': 100.0, 'solar': 60.0, 'gas': 200.0, 'oil': 0.0}),
-    'load': pd.Series([80.0, 120.0, 150.0, 180.0, 140.0, 100.0], index=pd.RangeIndex(6, name='snapshot')),
-    'cost': pd.Series({'wind': 0.0, 'solar': 0.0, 'gas': 50.0, 'oil': 80.0}),
+    'p_max': pl.DataFrame({'generator': GENERATORS, 'value': [100.0, 60.0, 200.0, 0.0]}),
+    'load': pl.DataFrame({'snapshot': range(6), 'value': [80.0, 120.0, 150.0, 180.0, 140.0, 100.0]}),
+    'cost': pl.DataFrame({'generator': GENERATORS, 'value': [0.0, 0.0, 50.0, 80.0]}),
 }
-COORDS = {'snapshot': pd.RangeIndex(6, name='snapshot')}
+COORDS = {'snapshot': range(6)}
 
 #: Two ways out of the language, caught at two different stages (see stage 7).
 _REFUSED = [
@@ -113,37 +114,40 @@ def main() -> None:
         print(f'      {decl}')
     print(f'      {program.objective}')
     print('    )')
-    print('    ^ frozen dataclasses, no macro, no YAML, no linopy, no duckdb')
+    print('    ^ frozen dataclasses, no macro, no YAML, no linopy, no engine')
 
     # ------------------------------------------------------------------
-    banner(4, 'IR + data -> tidy tables in duckdb', 'relational/executor.py')
-    # First stage to see a number. Sources are adapted to tidy tables
-    # (dims..., value); the executor holds them in a file-backed duckdb under
-    # a hard memory_limit — hard rule 4: the full model never resides here.
+    banner(4, 'plan + data -> the model frames', 'relational/executor.py')
+    # First stage to see a number. Sources are adapted to tidy frames
+    # (dims..., value) and the executor assembles the model from them.
     #
-    # `ex._con` below is the one place this script reaches past the public API:
-    # the tables are engine-private by design (hard rule 1 — the IR is internal
-    # and SQL is backend-private), and looking at them is the whole point here.
-    with DuckdbExecutor(memory_limit='256MB') as ex:
+    # The private attributes below are the one place this script reaches past
+    # the public API: the frames are engine-private by design (hard rule 1 —
+    # the plan is internal and the query is backend-private), and looking at
+    # them is the whole point here.
+    with PolarsExecutor() as ex:
         ex.build(program, tidy_sources(schema, SOURCES, COORDS))
-        tables = ex._con.execute(
-            "SELECT table_name FROM duckdb_tables() WHERE database_name = 'model' ORDER BY table_name"
-        ).fetchall()
-        for (name,) in tables:
-            n = ex._con.execute(f'SELECT count(*) FROM {name}').fetchone()[0]
-            print(f'    {name:<20} {n:>4} rows')
-        print(f'\n    memory_limit={ex.memory_limit}, on disk at {_scrubbed(ex.workdir)}')
-        print('    dim_* = coordinates · p_* = parameters · var_* = coord -> column label')
-        print('    cols/rows/A/obj = the LP itself, in COO form')
+        model = ex._tables()
+        for name, frame in (
+            ('cols', model.cols),
+            ('obj', model.obj),
+            ('rows', model.rows),
+            ('A', model.matrix),
+        ):
+            print(f'    {name:<20} {frame.height:>4} rows')
+        print('\n    cols/rows/A/obj = the LP itself, in COO form:')
+        print('    a column is a bound and a cost, a row a sense and a rhs,')
+        print('    and A is every nonzero coefficient as (row, col, coeff).')
 
-        n_var, n_full = ex._con.execute('SELECT count(*) FROM var_p').fetchone()[0], 6 * 4
+        variables = ex._variables['p'].collect()
+        n_full = 6 * 4
         print('\n    where "p_max > 0" is not a mask array — it is row absence:')
-        print(f'    var_p has {n_var} rows, not {n_full}: retired oil never becomes a column.')
-        print(_indent(ex._con.execute('SELECT * FROM var_p ORDER BY var_label LIMIT 4').df()))
+        print(f'    p has {variables.height} rows, not {n_full}: retired oil never becomes a column.')
+        print(_indent(variables.sort('var_label').head(4)))
 
         # --------------------------------------------------------------
-        banner(5, 'sink: stream the tables to an LP file', 'relational/executor.py')
-        # Same tables, second sink. The other one (solver_direct, stage 6)
+        banner(5, 'sink: stream the frames to an LP file', 'relational/sinks/lp_file.py')
+        # Same frames, second sink. The other one (solver_direct, stage 6)
         # hands COO batches to highspy without ever forming a full CSR here.
         with tempfile.TemporaryDirectory() as tmp:
             lp = Path(tmp) / 'model.lp'
@@ -153,14 +157,16 @@ def main() -> None:
             print(f'    ... ({len(text)} lines total)')
 
         # --------------------------------------------------------------
-        banner(6, 'sink: batches -> highspy -> solution tables', 'relational/executor.py')
+        banner(6, 'sink: batches -> highspy -> solution frames', 'relational/sinks/highs.py')
         # Read back by label join, never densified.
         result = ex.solve()
         print(f'    status     {result.status} ({result.termination_condition})')
         print(f'    objective  {result.objective:,.1f}')
-        # sort explicitly: primal() is a label join, and a join has no
-        # inherent row order — leaving it unsorted pins storage layout
-        print(_indent(result.primal('p').sort_values(['snapshot', 'generator'], ignore_index=True).head(6)))
+        # primal() hands back a frame: the engine's own shape, and the one a
+        # caller can pass on without this package depending on their library.
+        # Sorted here because a join's output order is the planner's business,
+        # not a fact about the architecture this file is narrating.
+        print(_indent(result.primal('p').sort('snapshot', 'generator').head(6)))
 
     # ------------------------------------------------------------------
     banner(7, 'and what the language refuses', 'validation.py, lowering.py')
@@ -201,16 +207,6 @@ def _bold(text: str) -> str:
 
 def _dim(text: str) -> str:
     return f'\033[2m{text}\033[0m' if sys.stdout.isatty() else text
-
-
-def _scrubbed(workdir: Path) -> str:
-    """The workdir, minus this run's randomness.
-
-    ``mkdtemp`` appends eight random characters and lives under a temp root
-    that differs per machine and per CI runner. Both are real, and neither is
-    a fact about the architecture, so the golden file gets the shape instead.
-    """
-    return f'$TMPDIR/{workdir.name[:-8]}XXXXXXXX'
 
 
 def _indent(obj: object, pad: str = '    ') -> str:

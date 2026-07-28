@@ -6,7 +6,11 @@ build-backend = "hatchling.build"
 name = "farkas"
 # the git tag is the version — see RELEASING.md. Never hardcode it here.
 dynamic = ["version"]
-description = "Self-documenting optimisation models at any scale: declarative LP/MILP on a streaming relational engine"
+# "at any scale" and "streaming" were true of the duckdb engine, which built
+# under a configured memory ceiling and could exceed RAM. This one holds the
+# model it builds (ROADMAP Track 5), so the description says what is still true:
+# built relationally, sparse, and handed to the solver without a file.
+description = "Self-documenting optimisation models: declarative LP/MILP, built relationally and handed straight to the solver"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -14,7 +18,7 @@ license-files = ["LICENSE"]
 # the contract (that is MathSchema), but it is still how people search.
 keywords = [
     "optimisation", "optimization", "linear-programming", "mixed-integer",
-    "declarative", "yaml", "duckdb", "highs", "operations-research",
+    "declarative", "yaml", "polars", "highs", "operations-research",
 ]
 classifiers = [
     "Programming Language :: Python :: 3.11",
@@ -25,22 +29,27 @@ classifiers = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "pandas>=2.2",
+    # the relational engine: every frame a model is built from, and the parquet
+    # reader that fills them. Arrow-backed, so a result frame exports the
+    # PyCapsule protocol and any consumer takes it without this package
+    # depending on their library.
+    "polars>=1.30",
+    # the solver_direct sink's own arithmetic: `searchsorted` builds the CSR
+    # row starts HiGHS wants, and the batch coercions are its dtypes. Array
+    # work at the solver boundary, not a dataframe dependency.
     "numpy>=1.26",
     "pyparsing>=3.1",
     "pydantic>=2.0",
     "pyyaml>=6.0",
-    "duckdb>=1.5",
-    # required by the solver_direct sink: duckdb's .to_arrow_reader() streams
-    # COO batches to highspy. Used through duckdb, never imported by name.
-    "pyarrow>=16",
     "highspy>=1.10",
 ]
 
 [project.optional-dependencies]
 # linopy + xarray power the compatibility layer (farkas.linopy): YAML math
 # on a Python-built linopy.Model, plus the differential-test oracle.
-# The streaming engine never imports them.
+# The relational engine never imports them, and `dev` installs this extra by
+# name rather than repeating it — one place for the pins, so what CI tests the
+# lane against is what a user of the extra gets.
 #
 # The lower bound is 0.8, not 0.9, because the v1 arithmetic convention this
 # lane requires is not in a release yet: PyPSA/linopy#717 branches from 0.8.x
@@ -50,6 +59,11 @@ dependencies = [
 linopy = [
     "linopy>=0.8.0.post1.dev0",
     "xarray>=2024.2.0",
+    # also what `Result.to_pandas` / `to_dataarray` need. Declared here rather
+    # than as a runtime dependency: pandas is a bridge out of the engine, not
+    # a part of it, and the bare-install CI job proves the engine builds,
+    # solves and reads results back without it.
+    "pandas>=2.2",
 ]
 
 [project.urls]
@@ -67,9 +81,10 @@ packages = ["src/farkas"]
 include = ["/src"]
 
 [dependency-groups]
-# Regression benchmarks (bench/regressions/). Their own group, not `dev`: memray
-# and pytest-benchmark are heavy, and nothing in the test suite or the published
-# ladder needs them. `uv sync --group bench` to run them.
+# Regression benchmarks (bench/regressions/). Their own group, not `dev`: this
+# pulls memray in, and neither the test suite nor the published ladder
+# (`bench/run.py`, which measures RSS out of process) needs it.
+# `uv sync --group bench` to run them.
 bench = [
     "pytest-benchmem>=0.4",
 ]
@@ -79,8 +94,13 @@ dev = [
     "ruff==0.15.7",
     "pyrefly==1.1.1",
     "pre-commit==4.6.0",
-    "linopy>=0.8.0.post1.dev0",
-    "xarray>=2024.2.0",
+    # the shim and the oracle, by reference: the pins live in the extra above,
+    # so they cannot drift from what a user installing `farkas[linopy]` gets
+    "farkas[linopy]",
+    # how pandas reads parquet, which the benchmark harness's linopy arm does
+    # as part of the cost it is there to measure. Not needed by the engine —
+    # the bare-install job runs the suite without it.
+    "pyarrow>=16",
 ]
 
 [tool.ruff]

@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import datetime
 
-import pandas as pd
 import pytest
 
 from farkas.schema import MathSchema
 from farkas.validation import validate_expressions
-from tests.oracle import farkas_linopy, linopy
+from tests.oracle import farkas_linopy, linopy, pd
 
 
 def _schema(**overrides) -> MathSchema:
@@ -230,7 +229,10 @@ class TestDimensionKwargs:
             {
                 'dimensions': {
                     'snapshot': {'dtype': 'int'},
-                    'generator': {'values': ['wind'], 'coords': {'zone': 'snapshot'}},
+                    # `zone` targets a dim `p` does NOT carry: grouping into one
+                    # it already has needs that dim twice, which is its own error
+                    'bus': {'values': ['n']},
+                    'generator': {'values': ['wind'], 'coords': {'zone': 'bus'}},
                 },
                 'parameters': {'load': {'dims': ['snapshot']}},
                 'variables': {'p': {'foreach': ['snapshot', 'generator']}},
@@ -259,7 +261,7 @@ class TestDimensionKwargs:
     def test_declared_dimensions_still_pass(self):
         for expression, foreach in (
             ('sum(p, over=generator) == load', ['snapshot']),
-            ('group_sum(p, over=generator, by=zone) == load', ['snapshot']),
+            ('group_sum(p, over=generator, by=zone) == load', ['snapshot', 'bus']),
             ('roll(p, snapshot=1) == load', ['snapshot', 'generator']),
             ('shift(p, snapshot=1) == load', ['snapshot', 'generator']),
         ):

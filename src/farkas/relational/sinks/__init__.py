@@ -11,12 +11,13 @@ is what makes the planned ``mps`` sink a new module here rather than another
 method on the executor.
 """
 
-from farkas.relational.sinks.highs import solve_direct
+from farkas.relational.sinks.highs import build_highs, solve_direct
 from farkas.relational.sinks.lp_file import write_lp_file
 from farkas.relational.sinks.tables import ModelTables
 
 __all__ = [
     'ModelTables',
+    'build_highs',
     'solve_direct',
     'write_lp_file',
 ]

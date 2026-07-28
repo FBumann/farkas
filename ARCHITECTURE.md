@@ -29,14 +29,14 @@ flowchart TB
     AST -.->|"farkas.linopy<br/>(opt-in shim: build / extend)"| BUILD
     LOWER -->|"outside the language:<br/>LanguageError naming the construct"| ERR["load error<br/>(no fallback)"]
 
-    subgraph REL["Relational lane — streaming · memory-bounded · linopy-free"]
+    subgraph REL["Relational lane — sparse · batched at every sink · linopy-free"]
         direction TB
         LOWER["lowering.py"] --> PLAN["logical plan<br/>(relational/plan.py)"]
-        PLAN --> COMP["compiler.py<br/>plan → SQL text<br/>pure: no connection"]
-        DR[("data<br/>parquet paths / pandas")] --> EXEC
-        COMP --> EXEC["executor.py<br/>tidy tables in file-backed duckdb<br/>under memory_limit"]
-        EXEC --> LPS["lp_file sink (sinks.py)<br/>portability, debugging<br/>(mps planned)"]
-        EXEC --> DIRECT["solver_direct sink (sinks.py)<br/>COO batches → highspy → HiGHS"]
+        PLAN --> COMP["compiler.py<br/>plan → lazy frames<br/>pure: nothing is read"]
+        DR[("data<br/>parquet paths / any Arrow table")] --> EXEC
+        COMP --> EXEC["executor.py<br/>bind sources, label, assemble<br/>the model frames"]
+        EXEC --> LPS["lp_file sink (sinks/lp_file.py)<br/>portability, debugging<br/>(mps planned)"]
+        EXEC --> DIRECT["solver_direct sink (sinks/highs.py)<br/>COO batches → highspy → HiGHS"]
         DIRECT --> SOL["solution tables<br/>(label join, never dense)"]
     end
 
@@ -68,6 +68,13 @@ dim in generated math is the same error as a stray dim in a written one.
 *Enforced, not aspirational: `tests/test_architecture.py` encodes these as
 static checks and CI's bare-install job proves the dependency claims.*
 
+**These rules constrain the language.** What a construct may say, which layer
+may know what, and what a file means on its own — each survives any engine, and
+each decides what can enter `SPEC.md`. How much a build *costs* is a property of
+the engine, measured in [docs/benchmarks.md](docs/benchmarks.md) and not a rule.
+It was one once, phrased around a `memory_limit` that only one engine had, and
+that made an implementation choice load-bearing in the language's rulebook.
+
 0. **The layers are ordered, and imports prove it.** Every module imports only
    downward, at module level, with exactly one declared exception: `lowering.py`
    reaches `piecewise.py` lazily, because a formulation must expand *before*
@@ -78,15 +85,15 @@ static checks and CI's bare-install job proves the dependency claims.*
    it.
 1. **Core AST is the whole language.** Both backends consume only core AST;
    macros, named expressions and `piecewise:` are expanded away before dispatch,
-   and the plan/SQL/xarray are backend-private. The AST crossing that seam is **fully
+   and the plan/query/xarray are backend-private. The AST crossing that seam is **fully
    resolved** — names are typed `Variable`/`Parameter`/`Dimension` nodes — so a backend cannot
    hold its own opinion about what a name refers to. Resolving independently is
    how the two lanes silently disagreed about scoping before.
 2. **The engine knows nothing about linopy, xarray or YAML.**
-   `src/farkas/relational/` goes duckdb → highspy → solver, with linopy's
+   `src/farkas/relational/` goes polars → highspy → solver, with linopy's
    semantics as a spec to match rather than code to share; it never sees the
    schema, the AST, or the eager builder. Engine-internal naming encodes
-   neither "duckdb" nor "yaml". Enforced *more* strictly than stated — the
+   neither "polars" nor "yaml". Enforced *more* strictly than stated — the
    engine imports nothing from the package at all, bar declared
    dependency-free leaves (`errors.py` today, listed in `ENGINE_MAY_IMPORT`)
    — because a near-zero import surface is what keeps the subpackage
@@ -99,27 +106,9 @@ static checks and CI's bare-install job proves the dependency claims.*
    tests an oracle rather than a comparison of dialects. A construct outside the
    language is a load error naming the construct and its rewrite, never a
    redirection to the other lane.
-4. **Peak memory is a function of the configured budget, not of model size.**
-   That is the invariant; "nothing full-model in process" is the *mechanism*
-   that delivers it at scale — build under a duckdb `memory_limit`, hand off in
-   batches, read back by label join, never materialise dense arrays or a full
-   CSR. Two residencies are exempt because neither scales with the budget's
-   purpose: the solver's own model when solving in-process, and a model small
-   enough that the budget exceeds it (the planned in-memory executor holds
-   everything by design — ROADMAP Track 5). A **solution vector** is the third:
-   `solve()` receives the primal from the solver as one dense array of length
-   `n_cols` and hands it to duckdb, outside `memory_limit`. That is deliberate
-   and it is not the model — it is `O(n_cols)` where the model is `O(nnz)`, it
-   exists once rather than at every operator, and the solver already holds an
-   identical copy, so we are never the dominant term. Roughly 1.6 GB at 10⁸
-   variables, on a machine that just solved a 10⁸-variable model.
-   `Result.to_parquet` streams and never materialises it, for anyone who
-   cannot afford even that. A new feature is judged against the
-   invariant, not the mechanism: the question is whether peak still tracks the
-   budget, not whether some array was briefly contiguous.
-5. **Backend-visible YAML files are self-contained.** No Python-side state
+4. **Backend-visible YAML files are self-contained.** No Python-side state
    (registries, session objects) may change what a file means.
-6. **The public interface is a declared model, not a Python API.** YAML is the
+5. **The public interface is a declared model, not a Python API.** YAML is the
    format we ship and document; the contract underneath it is `MathSchema`, and
    whether that seam is ever blessed is open (see Composition). The Python
    surface is the runner (`api.py`); the plan is internal, and a stable
@@ -151,23 +140,24 @@ operators do not. Locality is judged in **data space**: reductions over a
 *coordinate* space ("the last snapshot") read only the small, already
 materialised dim tables and stay admissible even though they look global.
 
-**Read the verdict off the SQL.** Rules 2 and 3 are one question asked twice,
-and the executor already answers it — write the candidate's SQL over the term
-stream first:
+**Read the verdict off the plan.** Rules 2 and 3 are one question asked twice,
+and the compiler already answers it — write the candidate's query over the term
+stream first and read `.explain()`:
 
-| Shape of the emitted SQL | Locality | Rules 2–3 |
+| Shape of the emitted query | Locality | Rules 2–3 |
 |---|---|---|
 | filter on a column already in the frame | pointwise | admissible |
 | equi-join against a parameter or mapping table | pointwise | admissible |
-| join on `dim_d.ord ± k`, `k` fixed | bounded-halo | admissible |
+| join on the dim table at `ord ± k`, `k` fixed | bounded-halo | admissible |
 | dim table only, no data join | coordinate-space | admissible (free) |
 | window over unbounded rows, or a recursive CTE | global | **reject**, with the rewrite |
 
 This is the case analysis `_sum_fragment`, `_group_fragment` and
 `_translate_fragment` already implement — each rewriting one fragment on its
 own, which is what *pointwise* and *bounded-halo* mean in code — so a candidate
-fitting none of those shapes has no executor to be written into. Two limits: **degree is not a SQL property**, and it
-presumes `GROUP BY row, col` stays the only aggregate a *term* passes through.
+fitting none of those shapes has no executor to be written into. Two limits: **degree is not a property of the plan**, and it
+presumes the terminal `sum(coeff)` over `(row, col)` stays the only aggregate a
+*term* passes through.
 A primitive is finished when `lowering.py` accepts it and the differential test
 against the linopy oracle passes.
 
@@ -177,19 +167,18 @@ request can ever be met:
 | Tier | Bounded by | Members | Can it move? |
 |---|---|---|---|
 | **Capability-bounded** | what a given sink can ingest | SOS / indicator (#23); quadratic | per sink — see below |
-| **Budget-bounded** | the escape *label* budget — a cap on emitted rows and columns, not `memory_limit` | global operators, arbitrary Python, non-relational manipulation | already movable — that is what an island is |
+| **Budget-bounded** | the escape *label* budget — a cap on the rows and columns an island may emit | global operators, arbitrary Python, non-relational manipulation | already movable — that is what an island is |
 | **Design-bounded** | our choice of where work belongs | data prep, domain helpers, Python declaring structure | movable any time; we don't want to |
 
 Impossible **in the symbolic plan**: conditionals, iteration, any data-dependent
 structure inside expressions. What is protected here is *static* boundedness —
 the plan must know every component's extent before data is touched — which is a
-different property from rule 4's memory invariant, though the two meet at the
+different property from how much a build costs, though the two meet at the
 escape hatch. That is why an `escape:` island (#38) is admissible where a
 registered Python helper was not: its extent is fixed by the preceding `where`
-mask, it is terminal, and it is named in the file. Its **label budget is how it
-satisfies rule 4** — the same "peak tracks a declared budget" bargain the rest
-of the engine makes, denominated in labels rather than bytes, and enforced
-before any Python runs rather than after it allocates.
+mask, it is terminal, and it is named in the file. Its **label budget is what keeps it
+accountable** — an island's cost is bounded by what it may emit, declared and
+enforced before any Python runs rather than discovered after it allocates.
 
 An escape buys back the *relational* and *local* rules (it returns affine COO
 rows — a running-sum island still emits affine rows, just O(T²) of them) but
@@ -215,13 +204,14 @@ sink, is [ROADMAP Track 4](ROADMAP.md#track-4--sink-capabilities).
 
 ## The relational lane
 
-**Three modules, one per box above.** `compiler.py` turns plan nodes into SQL
-and holds no connection; `executor.py` owns the database and fills the tables;
-`sinks.py` drains them. The split is what makes the admissibility test below
-something you can perform rather than reason about — build a `SqlCompiler`,
-hand it a node, read the `SELECT` (`tests/test_compiler.py` does exactly that,
-with no engine installed). It is also why a new sink is a function in one file
-instead of another method on the executor.
+**Three modules, one per box above.** `compiler.py` turns plan nodes into lazy
+frames and reads nothing; `executor.py` binds the data and fills the model
+frames; `sinks/` drains them. The split is what makes the admissibility test
+below something you can perform rather than reason about — build a
+`PolarsCompiler`, hand it a node, read `.explain()` (`tests/test_compiler.py`
+does exactly that, over empty frames: a schema is all it takes to compile a
+query). It is also why a new sink is a function in one file instead of another
+method on the executor.
 
 **Tidy tables.** Parameters are `(dims…, value)`; a variable frame is
 `(dims…, var_label)`, one row per *existing* variable; a linear expression is
@@ -249,14 +239,21 @@ side effect of an expression; formulations are model *transformations*. Variable
 the streaming lane. Reimplementing linopy's reformulation passes inside the plan
 is explicitly rejected: that duplicates the library this package consumes.
 
-**Chunk only what cannot spill.** duckdb's joins and plain numeric hash
-aggregates spill under `memory_limit` on their own, so only *masked* label
-assignment and the LP-text `string_agg` need hand-managed partitioning, and the
-database must be file-backed. Unmasked there is no window to chunk: every
-coordinate of the product exists, so a label is its row's position and falls out
-of arithmetic on the dim ordinals. The measurements behind those rules — and the
-operators that OOM instead of spilling — are in
-[docs/benchmarks.md](docs/benchmarks.md#operational-findings).
+**Labels are the one place order is load-bearing.** `var_label` is the solver's
+column index and `row` is its row index, so both are assigned by sorting the
+masked coordinate product on its dimensions' declared ordinals and numbering
+the result. Variables and constraint rows are the same operation over different
+frames and it is written once (`_label_frame`) — twice is how the two would
+come to disagree about which coordinate gets which index. Everything else
+is order-free, which is what lets the query planner rearrange it.
+
+**A frame is the boundary in both directions.** `relational/frames.py`
+recognises a caller's table through the Arrow PyCapsule protocol without
+importing any dataframe library, and `Result.primal` hands back a
+`polars.DataFrame`, which exports the same protocol. That symmetry is what
+keeps pandas and pyarrow off the dependency list: they are bridges *out*
+(`to_pandas`, `to_dataarray`), shipped with the `[linopy]` extra, not shapes
+the engine holds. The bare-install CI job runs the suite with neither present.
 
 **Sinks are capped, explicitly.** Today every sink expresses the same three
 streams and no more: `cols` (bounds, objective coefficients, integrality),
@@ -306,17 +303,16 @@ native schema merge (#30) is what would force the question.
 | `validation.py` | load-time: parse, expand, resolve, check everything |
 | `piecewise.py` | `piecewise:` → λ-formulation declarations + curvature guard |
 | `api.py` | native entry point: `check` / `solve` / `write`, linopy-free |
-| `sources.py` | bind runtime data (parquet paths / Arrow tables) to a validated schema |
+| `sources.py` | bind runtime data (parquet paths / in-memory tables) to a validated schema |
 | `lowering.py` | core AST → logical plan (defines the relational subset) |
 | `helpers.py` | the closed set of built-in operators: their *names* and *call shapes* — no registry |
 | `errors.py` | the exception hierarchy; the one module the engine may import |
 | `relational/plan.py` | frozen logical-plan dataclasses |
-| `relational/arrow.py` | the Arrow boundary — caller tables in, via the PyCapsule protocol |
-| `relational/compiler.py` | plan → SQL text; pure, no connection |
-| `relational/sql.py` | how a value is spelled in SQL — quoting for caller-supplied paths |
+| `relational/frames.py` | the boundary — caller tables in, via the Arrow PyCapsule protocol |
+| `relational/compiler.py` | plan → lazy frames; pure, reads nothing |
 | `relational/chunking.py` | how a batched pass sizes its chunk: budget ÷ the width of one unit |
 | `relational/status.py` | solve outcome on two axes; linopy's vocabulary, copied not imported |
-| `relational/executor.py` | duckdb: bind sources, label, assemble the tables |
+| `relational/executor.py` | bind sources, assign labels, assemble the model frames |
 | `relational/sinks/` | how a built model leaves: `lp_file`, `solver_direct` (one module each, [README](src/farkas/relational/sinks/README.md)) |
 | `linopy/__init__.py` | opt-in shim: `build` / `extend` on a `linopy.Model` |
 | `linopy/loader.py` | data coercion to `xr.Dataset`, master coords |
@@ -348,8 +344,8 @@ Two rules follow from that table, and a PR that adds a construct keeps them:
   `shift` are one node, so it is `Translate` — naming it `Shift` would make
   one of the two spellings look privileged.
 - **Nothing is abbreviated.** `Cmp` became `ParameterComparison`, `vtype`
-  became `variable_type`. The one place abbreviation survives is SQL column
-  names inside the executor, which are not Python identifiers.
+  became `variable_type`. The one place abbreviation survives is frame column
+  names inside the engine, which are not Python identifiers.
 
 ### Where a concept is already linopy's, use linopy's name
 
@@ -371,7 +367,7 @@ dialects.
 
 This applies to vocabulary we *share*. Where the design genuinely differs it
 stays ours: we have no `Solution` of dense arrays to hold, because the values
-live in duckdb and are read by label join.
+are read back by joining labels to coordinates.
 
 ## Extension checklists
 
@@ -389,6 +385,6 @@ implementation each: a primitive's dim rule lives only in `dimensions.py` —
 both its dim *set* and its verdict on an operand that lacks the dim being
 reduced along, which lowering asks for rather than deciding again — and the
 dense-label assignment that gives a coordinate its solver index lives only in
-`DuckdbExecutor._label_frame`, shared by variables and constraint rows. What a
+`PolarsExecutor._label_frame`, shared by variables and constraint rows. What a
 lowering case still owns is what is about the plan: which node the call becomes,
 and the shapes that node cannot represent.

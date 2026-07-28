@@ -162,6 +162,15 @@ def _dims_call(
                 f'{sorted(inner)}. Grouping a dim the operand does not carry cannot '
                 f'place its terms — drop the group_sum, or fix the dim.'
             )
+        if by.into in inner - {over.name}:
+            raise DimensionError(
+                f"{context}: group_sum(over={over.name}, by={by.name}) targets '{by.into}', "
+                f'which the expression already carries ({sorted(inner)}). The result would '
+                f"need '{by.into}' twice — once as the operand's own dim and once as the "
+                f'group it is placed into — and neither lane can represent that: the union '
+                f'below would silently absorb one of them. Sum over one of the two first, '
+                f'or group into a dimension the operand does not have.'
+            )
         return (inner - {over.name}) | {by.into}
 
     if node.name in ('roll', 'shift'):

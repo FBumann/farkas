@@ -7,8 +7,8 @@ sources → live executor), ``solve``, and ``write``.
 
 This is the product path (ARCHITECTURE.md). The language is validated at load
 time, lowered to the plan — anything outside the streaming subset raises
-:class:`~farkas.errors.LanguageError` naming the construct — and executed relationally
-under a hard memory budget.
+:class:`~farkas.errors.LanguageError` naming the construct — and executed
+relationally.
 
 linopy exists only in the optional compatibility/oracle layer
 (``import farkas.linopy``) and in the differential test suite.
@@ -17,15 +17,13 @@ Example::
 
     import farkas as fk
 
-    # Result holds the executor backing primal/to_* — use a with block
-    with fk.solve(
+    result = fk.solve(
         'model.yaml',
         {'p_max': 'p_max.parquet', 'load': 'load.parquet'},
         coords={'snapshot': range(8760)},
-        memory_limit='2GB',
-    ) as result:
-        result.objective
-        result.primal('p')  # tidy DataFrame (coords..., value)
+    )
+    result.objective
+    result.primal('p')  # tidy polars.DataFrame (coords..., value)
 """
 
 from __future__ import annotations
@@ -36,7 +34,7 @@ from typing import TYPE_CHECKING, Any
 from farkas._yaml import read_yaml
 from farkas.lowering import lower_program
 from farkas.piecewise import expand_piecewise
-from farkas.relational.executor import DuckdbExecutor, Result
+from farkas.relational.executor import PolarsExecutor, Result
 from farkas.schema import MathSchema
 from farkas.sources import tidy_sources
 from farkas.validation import validate_expressions
@@ -95,17 +93,12 @@ def build(
     sources: Mapping[str, Any],
     *,
     coords: dict[str, Any] | None = None,
-    memory_limit: str = '1GB',
-    chunk_rows: int = 2_000_000,
-    threads: int | None = None,
-    workdir: str | Path | None = None,
-) -> DuckdbExecutor:
-    """Build *model* on the streaming engine and return the live executor.
+) -> PolarsExecutor:
+    """Build *model* on the relational engine and return the executor.
 
-    ``sources`` maps parameter names to parquet paths, DataFrames, or Series
-    (and optionally dimension names to index tables). The returned executor
-    is a context manager: use ``with build(...) as ex:`` and call
-    ``ex.solve()`` / ``ex.write_lp(path)``.
+    ``sources`` maps parameter names to parquet paths or in-memory tables (and
+    optionally dimension names to index tables). One build can feed more than
+    one sink: call ``ex.solve()`` and ``ex.write_lp(path)`` on the same object.
 
     Raises
     ------
@@ -115,12 +108,7 @@ def build(
     """
     schema = load_schema(model)
     program = lower_program(schema)  # strict: no fallback, errors carry the reason
-    ex = DuckdbExecutor(
-        memory_limit=memory_limit,
-        chunk_rows=chunk_rows,
-        threads=threads,
-        workdir=workdir,
-    )
+    ex = PolarsExecutor()
     try:
         ex.build(program, tidy_sources(schema, dict(sources), coords))
     except BaseException:
@@ -139,12 +127,12 @@ def solve(
 
     ``solver_options`` is forwarded verbatim to the solver — the same shape
     linopy takes, e.g. ``{'time_limit': 60, 'mip_rel_gap': 0.01}``. Build
-    options (``memory_limit``, ``chunk_rows``, …) stay separate, because they
-    govern *construction* and never reach the solver.
+    options stay separate, because they govern *construction* and never reach
+    the solver.
 
-    The executor stays attached to the returned :class:`Result` (its label
-    tables back ``result.primal(...)``); call ``result.close()`` when done, or use
-    :func:`build` with a ``with`` block for explicit lifetime control.
+    The executor stays attached to the returned :class:`Result`, whose label
+    frames back ``result.primal(...)``. Nothing has to be released, though
+    ``result.close()`` drops a large model early if you want the memory back.
     """
     ex = build(model, sources, **build_kwargs)
     try:

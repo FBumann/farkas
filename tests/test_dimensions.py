@@ -92,6 +92,23 @@ def test_group_sum_requires_the_grouped_dim():
         _dims('group_sum(load, over=generator, by=bus)')
 
 
+def test_group_sum_into_a_dim_the_operand_already_carries():
+    """`(inner - {over}) | {into}` is a union, and a union absorbs a collision.
+
+    `group_sum(load, over=generator, by=bus)` -- with `load` already carrying
+    `bus` -- asks for `bus` twice: once as the operand's own dim, once as the
+    group its terms are placed into. The union returns one, so the rule reports
+    a shape neither lane can build. The eager lane makes an xarray object with
+    a repeated dim, which xarray warns will fail silently; the relational lane
+    raised polars' DuplicateError from outside the package's exception tree.
+
+    Refusing it at load time is the only answer both lanes can give, which is
+    why the rule lives here rather than in either executor.
+    """
+    with pytest.raises(DimensionError, match='already carries'):
+        _dims('group_sum(load * p, over=generator, by=bus)')
+
+
 def test_roll_requires_the_dim():
     with pytest.raises(DimensionError, match="roll\\(\\) along 'snapshot'"):
         _dims('roll(cost, snapshot=1)')

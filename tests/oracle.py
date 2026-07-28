@@ -9,6 +9,12 @@ directly, so the guard cannot be bypassed by import ordering: isort sorts a
 bare ``import xarray`` above a first-party import, and it would then blow up
 as a collection error before any guard ran.
 
+**pandas is re-exported for the same reason.** It is no longer a runtime
+dependency — it ships with the ``[linopy]`` extra, for the oracle and for
+``Result.to_pandas`` — so a bare ``import pandas as pd`` in a test module is
+exactly the ordering bug described above, one dependency down. Test modules
+take ``pd`` from here instead, and the guard covers it.
+
 This replaces a hand-maintained list of filenames in ``conftest.py``, which
 had to be edited every time a test module was added and silently mis-skipped
 when it was not.
@@ -16,13 +22,33 @@ when it was not.
 
 from __future__ import annotations
 
-import pandas as pd
 import pytest
 
-_REASON = 'needs the [linopy] extra (linopy, xarray)'
+_REASON = 'needs the [linopy] extra (linopy, xarray, pandas)'
 
 linopy = pytest.importorskip('linopy', reason=_REASON)
 xr = pytest.importorskip('xarray', reason=_REASON)
+pd = pytest.importorskip('pandas', reason=_REASON)
+
+# **The oracle is v1, and only v1.** A differential test is an oracle only if
+# the thing it compares against is the convention we implement. Legacy is the
+# one linopy is retiring: it fills every absent slot with 0, so it agrees with a
+# lane that keeps a constraint row whose variable is masked, and disagrees with
+# one that drops it. Measuring against legacy would pin this package to the
+# behaviour v1 classifies as a bug (PyPSA/linopy#712).
+#
+# So this raises rather than skipping. A skip here would be the worst outcome
+# available — the suite would go green having quietly stopped checking the lanes
+# against each other on precisely the cases the convention changed.
+if 'semantics' not in getattr(linopy.options, '_defaults', {}):
+    raise RuntimeError(
+        f'linopy {linopy.__version__} has no options["semantics"], so it cannot speak the v1 '
+        f'arithmetic convention this package is written against. The oracle would silently '
+        f'measure against the legacy convention instead. Install the pin in pyproject.toml '
+        f'([tool.uv.sources]: PyPSA/linopy@feat/arithmetic-convention) — `uv sync`.'
+    )
+
+linopy.options['semantics'] = 'v1'
 
 # **The oracle is v1, and only v1.** A differential test is an oracle only if
 # the thing it compares against is the convention we implement. Legacy is the
@@ -52,7 +78,7 @@ linopy.options['semantics'] = 'v1'
 from farkas import linopy as farkas_linopy  # noqa: E402  — must follow the guard above
 from farkas.linopy import builder, loader  # noqa: E402
 
-__all__ = ['builder', 'farkas_linopy', 'linopy', 'loader', 'transport_eager_objective', 'xr']
+__all__ = ['builder', 'farkas_linopy', 'linopy', 'loader', 'pd', 'transport_eager_objective', 'xr']
 
 
 def transport_eager_objective(gens, lines, load) -> float:

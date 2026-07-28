@@ -34,3 +34,6 @@ scratch/relational_spike/*.lp
 # rendered presentation output (sources docs/*.md + docs/*.svg are tracked)
 docs/*.html
 docs/*.pdf
+# ...except the chart page, which is a source: it carries the numbers inline
+# and is what docs/benchmarks.md links to.
+!docs/benchmarks-scaling.html

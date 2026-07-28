@@ -1,126 +1,189 @@
 """The ``lp_file`` sink: the model as LP text.
 
-Portability, debugging, and the differential oracle. Every section is produced
-by a duckdb ``COPY`` into a part file and the parts are concatenated bytewise,
-so the LP text never exists in this process's memory either — only the file
-handle does.
+Portability, debugging, and the differential oracle. Every section is sunk
+straight into the open file, so the LP text never exists in this process's
+memory — and no byte is written twice.
 
-The one hand-managed chunk in the engine that is not label assignment lives
-here: string aggregates do not spill, so the constraint text is emitted in
-fixed row ranges. That costs nothing in a debugging sink.
+Numbers go through polars' float cast, which round-trips exactly: the text a
+solver reads back is the double the engine computed.
 
-Numbers are rendered with ``::VARCHAR`` rather than ``printf('%.17g')``.
-duckdb's double-to-text cast is shortest-round-trip, so it is exact — and it
-is 30-40% faster than ``printf`` on every section, which is most of what emit
-costs (the relational work in this file is under 0.1s of a 2s emit at 10M
-columns; the rest is float-to-text and the write). See
-:func:`_signed` for the one trap that costs.
-
-Block order is not stable run to run (#109); the content is.
+**Every section is written in label order.** A solver does not care, but a
+reader diffing two LP files does, and so does anyone checking that a model
+builds the same bytes twice (#109).
 """
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import IO, TYPE_CHECKING
 
-from farkas.relational.sql import path_literal
+import polars as pl
 
 if TYPE_CHECKING:
     from farkas.relational.sinks.tables import ModelTables
 
-#: Raw lines, no CSV quoting to undo.
-_COPY_OPTS = "(FORMAT csv, HEADER false, QUOTE '', ESCAPE '')"
+
+#: Nonzeros per constraint chunk. The stream a chunk sorts is its terms plus a
+#: header and a footer per row, carrying rendered text — so this is the knob
+#: that bounds the writer's peak rather than its speed. Measured on
+#: `transport/l`, chunking at this width takes the constraint section's peak
+#: contribution from +0.88 GB to a fraction of it, for no change in the bytes.
+#: Wider costs memory for nothing; much narrower pays per-chunk overhead on
+#: every range.
+EMIT_BUDGET = 2_000_000
 
 
-def _signed(coeff: str) -> str:
-    """A coefficient with the explicit sign LP terms carry.
+def _sink(frame: pl.LazyFrame, f: IO[bytes]) -> None:
+    """Append a one-column frame to *f*, one raw line per row.
 
-    ``+ 0.0`` is not decoration. ``-0.0`` is reachable — any negative
-    coefficient times a zero parameter — and it satisfies ``>= 0``, so the sign
-    arm fires while the cast still renders ``-0.0``, giving ``+-0.0``. Adding
-    zero normalises it away for free. The obvious alternative,
-    ``replace('+' || cast, '+-', '-')``, costs the whole speed win: the extra
-    string pass is as expensive as the ``printf`` it replaces.
+    A CSV writer with the CSV switched off: no header, no quoting, so the bytes
+    on disk are exactly the strings the frame holds.
+
+    The frame goes into the file the caller is already holding rather than into
+    a part file to be concatenated afterwards. Sections are produced in the
+    order the LP format wants them, so there is nothing to reorder — and a
+    concatenation pass would read and rewrite the whole file, which at these
+    sizes costs more than producing it did. polars writes through the handle's
+    own buffer, so a ``f.write()`` between two sinks lands between them.
     """
-    return f"CASE WHEN {coeff} >= 0 THEN '+' ELSE '' END || ({coeff} + 0.0)::VARCHAR"
+    # `maintain_order` is polars' default and is what #109 rests on, so it is
+    # stated rather than inherited: the parameter is documented as unstable,
+    # and a default that flips would make the bytes non-reproducible silently.
+    frame.sink_csv(f, include_header=False, quote_style='never', maintain_order=True)
 
 
 def write_lp_file(model: ModelTables, path: str | Path) -> None:
-    """Write the model as LP text.
+    """Write the model as LP text."""
 
-    Every section is produced by a duckdb ``COPY`` into a part file, then the
-    parts are concatenated bytewise — so the LP text never exists in this
-    process's memory either, only the file handle does.
-    """
     path = Path(path)
-    parts = model.workdir / 'lp_parts'
-    parts.mkdir(exist_ok=True)
-    con = model.connection
-
-    con.execute(
-        f"COPY (SELECT {_signed('coeff')} || ' x' || col::VARCHAR FROM obj) "
-        f'TO {path_literal(parts / "obj")} {_COPY_OPTS}'
-    )
-
-    con_parts = []
-    for i, (lo, hi) in enumerate(model.row_chunks_by_nonzeros(model.chunk_rows)):
-        part = parts / f'cons.{i}'
-        con_parts.append(part)
-        con.execute(
-            f"""
-            COPY (
-                SELECT 'c' || r.row::VARCHAR || ':' || chr(10)
-                       || COALESCE(string_agg({_signed('a.coeff')} || ' x' || a.col::VARCHAR, chr(10)), '+0 x0')
-                       || chr(10)
-                       || (CASE r.sense WHEN '==' THEN '=' ELSE r.sense END) || ' ' || r.rhs::VARCHAR
-                FROM rows r LEFT JOIN A a USING (row)
-                WHERE r.row >= {lo} AND r.row < {hi}
-                GROUP BY r.row, r.sense, r.rhs
-            ) TO {path_literal(part)} {_COPY_OPTS}
-            """
-        )
-
-    con.execute(
-        f"""
-        COPY (
-            SELECT CASE WHEN lb = '-infinity'::DOUBLE THEN '-infinity' ELSE lb::VARCHAR END
-                   || ' <= x' || col::VARCHAR || ' <= '
-                   || CASE WHEN ub = 'infinity'::DOUBLE THEN '+infinity' ELSE ub::VARCHAR END
-            FROM cols
-        ) TO {path_literal(parts / 'bounds')} {_COPY_OPTS}
-        """
-    )
-
-    integrality_sections = []
-    for variable_type, keyword in (('binary', 'binary'), ('integer', 'general')):
-        if model.scalar(f"SELECT count(*) FROM cols WHERE vtype = '{variable_type}'"):
-            part = parts / keyword
-            integrality_sections.append((keyword, part))
-            con.execute(
-                f"COPY (SELECT 'x' || col::VARCHAR FROM cols WHERE vtype = '{variable_type}') "
-                f'TO {path_literal(part)} {_COPY_OPTS}'
+    objective = model.obj.lazy().sort('col').select(_term(pl.col('coeff'), pl.col('col')))
+    bounds = (
+        model.cols.lazy()
+        .sort('col')
+        .select(
+            pl.concat_str(
+                _bound(pl.col('lb'), '-infinity').alias('lb'),
+                pl.lit(' <= x').alias('open'),
+                _digits(pl.col('col')),
+                pl.lit(' <= ').alias('close'),
+                _bound(pl.col('ub'), '+infinity').alias('ub'),
             )
+        )
+    )
 
-    sense = b'min' if model.objective_sense == 'min' else b'max'
     with open(path, 'wb') as f:
-        f.write(sense + b'\n\nobj:\n')
+        f.write((b'min' if model.objective_sense == 'min' else b'max') + b'\n\nobj:\n')
         if model.objective_constant:
             f.write(f'{model.objective_constant:+.17g}\n'.encode())
-        _cat(f, parts / 'obj')
+        _sink(objective, f)
+
         f.write(b'\ns.t.\n\n')
-        for part in con_parts:
-            _cat(f, part)
+        # One range at a time. The stream a chunk sorts carries rendered text,
+        # so sorting the whole model at once is what the writer's peak *is*;
+        # ranges are ascending and each is internally sorted, so the bytes are
+        # the same ones #109 pins.
+        for lo, hi in model.row_chunks_by_nonzeros(EMIT_BUDGET):
+            _sink(_constraint_blocks(model, lo, hi), f)
+
         f.write(b'\nbounds\n')
-        _cat(f, parts / 'bounds')
-        for keyword, part in integrality_sections:
+        _sink(bounds, f)
+
+        for variable_type, keyword in (('binary', 'binary'), ('integer', 'general')):
+            chosen = model.cols.lazy().filter(pl.col('vtype') == variable_type).sort('col')
+            if chosen.select(pl.len()).collect().item() == 0:
+                continue
             f.write(f'\n{keyword}\n'.encode())
-            _cat(f, part)
+            _sink(chosen.select(pl.concat_str(pl.lit('x'), _digits(pl.col('col')))), f)
+
         f.write(b'\nend\n')
-    shutil.rmtree(parts)
 
 
-def _cat(f: Any, part: Path) -> None:
-    with open(part, 'rb') as src:
-        shutil.copyfileobj(src, f)
+#: Sort keys placing a row's header before its terms and its sense after them.
+#: A term sorts on its own column index, which is why the footer has to outrank
+#: every column a model could have.
+_HEADER, _PLACEHOLDER, _FOOTER = -2, -1, 2**62
+
+
+def _constraint_blocks(model: ModelTables, lo: int, hi: int) -> pl.LazyFrame:
+    """Every constraint line, as one sorted stream of ``(row, ord, line)``.
+
+    One line per output line rather than one block per row: the pieces are
+    built independently and interleaved by sorting, so nothing has to gather a
+    row's terms into a string first. That is what makes the bytes reproducible
+    — a hash join hands back groups in whatever order it finishes them, and no
+    amount of sorting the *rows* afterwards fixes the order *within* one.
+
+    A row with no terms still needs a line a solver can parse, and the anti-join
+    is what a group-by gave for free.
+    """
+    rows = model.rows.lazy().filter(pl.col('row').is_between(lo, hi, closed='left'))
+    matrix = model.matrix.lazy().filter(pl.col('row').is_between(lo, hi, closed='left'))
+    header = rows.select(
+        'row',
+        pl.lit(_HEADER, dtype=pl.Int64).alias('ord'),
+        pl.concat_str(pl.lit('c').alias('c'), _digits(pl.col('row')), pl.lit(':').alias('colon')).alias('line'),
+    )
+    placeholder = rows.join(matrix.select('row').unique(), on='row', how='anti').select(
+        'row',
+        pl.lit(_PLACEHOLDER, dtype=pl.Int64).alias('ord'),
+        pl.lit('+0 x0').alias('line'),
+    )
+    terms = matrix.sort('row', 'col').select(
+        'row',
+        pl.col('col').cast(pl.Int64).alias('ord'),
+        _term(pl.col('coeff'), pl.col('col')).alias('line'),
+    )
+    footer = rows.select(
+        'row',
+        pl.lit(_FOOTER, dtype=pl.Int64).alias('ord'),
+        pl.concat_str(pl.col('sense').replace({'==': '='}), pl.lit(' '), _number(pl.col('rhs'))).alias('line'),
+    )
+    return pl.concat([header, placeholder, terms, footer]).sort('row', 'ord').select('line')
+
+
+def _term(coeff: pl.Expr, col: pl.Expr) -> pl.Expr:
+    """One ``+1.5 x7`` term.
+
+    Built by a single ``concat_str`` rather than by chaining ``+``. Every ``+``
+    is its own pass allocating its own full-width string column, and a term has
+    four pieces; this way the line is allocated once.
+    """
+    return pl.concat_str(*_signed(coeff), pl.lit(' x'), _digits(col))
+
+
+def _number(value: pl.Expr) -> pl.Expr:
+    """A float as LP text."""
+
+    return value.cast(pl.String)
+
+
+def _signed(value: pl.Expr) -> tuple[pl.Expr, pl.Expr]:
+    """A coefficient, sign always explicit — the LP format needs the ``+``.
+
+    Two pieces for ``concat_str`` rather than one finished string, because the
+    cast already carries the ``-``: only a non-negative value needs a sign
+    glued on, and the sign column is one character wide however large the
+    model. Deciding the sign and then rendering ``abs()`` would render the
+    magnitude in both arms of the ``when``, at full width, to discard one.
+
+    ``-0.0`` is why zero is spelled out rather than cast: it is ``>= 0``, so it
+    takes the ``+`` arm while the cast still renders ``-0.0``, giving
+    ``+-0.0``, which no LP parser accepts. It is reachable from any negative
+    coefficient times a zero parameter, so it is a real file, not a curiosity.
+    """
+    return (
+        pl.when(value >= 0).then(pl.lit('+')).otherwise(pl.lit('')).alias('sign'),
+        pl.when(value == 0).then(pl.lit('0.0')).otherwise(_number(value)).alias('magnitude'),
+    )
+
+
+def _bound(value: pl.Expr, infinite: str) -> pl.Expr:
+    """A bound, with the LP format's own spelling for an unbounded one."""
+
+    return pl.when(value.is_infinite()).then(pl.lit(infinite)).otherwise(_number(value))
+
+
+def _digits(value: pl.Expr) -> pl.Expr:
+    """An index as text — never in scientific notation, whatever its size."""
+
+    return value.cast(pl.Int64).cast(pl.String)

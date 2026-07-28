@@ -1,0 +1,79 @@
+# Many declarations, not one big one.
+#
+# Every other case in the ladder is a single variable over a large coordinate
+# product — `dispatch` is one `p`, `nodal` is one `p`, `sector` is one `p`.
+# That is the shape a benchmark reaches for because it is easy to scale, and
+# it is *not* the shape a real model has. A unit-commitment or storage model
+# declares a dozen variables and a dozen constraints, each over a moderate
+# product, and the engine's per-declaration costs — a labelled frame each, a
+# stack at the end, a compile per expression — are paid a dozen times.
+#
+# So this case holds the *total* variable count comparable to the others and
+# spends it across 12 declarations instead of 1. What it varies against the
+# rest of the ladder is the number of declarations, and nothing else: no mask,
+# one density, one dimension product.
+#
+# The eager lane pays here too — a `linopy.Model` accumulates a container per
+# declaration — so this is not a shape chosen to suit us. It is the shape that
+# says whether either engine's fixed cost per *declaration* matters once there
+# are enough of them.
+dimensions:
+  snapshot:
+    dtype: int
+  unit:
+    dtype: str
+
+parameters:
+  p_max:
+    dims: [unit]
+  cost:
+    dims: [unit]
+  demand:
+    dims: [snapshot]
+
+variables:
+  p:            {foreach: [snapshot, unit], bounds: {lower: 0, upper: p_max}}
+  p_up:         {foreach: [snapshot, unit], bounds: {lower: 0, upper: p_max}}
+  p_down:       {foreach: [snapshot, unit], bounds: {lower: 0, upper: p_max}}
+  reserve_up:   {foreach: [snapshot, unit], bounds: {lower: 0, upper: p_max}}
+  reserve_down: {foreach: [snapshot, unit], bounds: {lower: 0, upper: p_max}}
+  charge:       {foreach: [snapshot, unit], bounds: {lower: 0, upper: p_max}}
+  discharge:    {foreach: [snapshot, unit], bounds: {lower: 0, upper: p_max}}
+  soc:          {foreach: [snapshot, unit], bounds: {lower: 0, upper: p_max}}
+  spill:        {foreach: [snapshot, unit], bounds: {lower: 0, upper: p_max}}
+  curtail:      {foreach: [snapshot, unit], bounds: {lower: 0, upper: p_max}}
+  import_:      {foreach: [snapshot, unit], bounds: {lower: 0, upper: p_max}}
+  export_:      {foreach: [snapshot, unit], bounds: {lower: 0, upper: p_max}}
+
+constraints:
+  balance:
+    foreach: [snapshot]
+    equations:
+      - expression: "sum(p, over=unit) + sum(discharge, over=unit) + sum(import_, over=unit) == demand"
+  ramp_up:
+    foreach: [snapshot, unit]
+    equations: [{expression: "p_up <= p_max"}]
+  ramp_down:
+    foreach: [snapshot, unit]
+    equations: [{expression: "p_down <= p_max"}]
+  reserve:
+    foreach: [snapshot, unit]
+    equations: [{expression: "reserve_up + reserve_down <= p_max"}]
+  storage:
+    foreach: [snapshot, unit]
+    equations: [{expression: "soc + charge - discharge <= p_max"}]
+  spillage:
+    foreach: [snapshot, unit]
+    equations: [{expression: "spill + curtail <= p_max"}]
+  exchange:
+    foreach: [snapshot, unit]
+    equations: [{expression: "import_ + export_ <= p_max"}]
+
+objectives:
+  total:
+    sense: minimize
+    equations:
+      # every variable the balance can substitute into carries a price, so the
+      # optimum is not "use the free one" — a gate comparing 0 == 0 would pass
+      # whatever the engines did
+      - expression: "sum(sum(p * cost, over=unit), over=snapshot) + sum(sum(discharge * cost, over=unit), over=snapshot) + sum(sum(import_ * cost, over=unit), over=snapshot)"

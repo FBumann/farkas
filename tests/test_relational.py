@@ -11,19 +11,19 @@ from __future__ import annotations
 from dataclasses import replace
 
 import numpy as np
-import pandas as pd
+import polars as pl
 import pytest
 
 import farkas as fk
 from farkas.errors import DataError, LanguageError
+from farkas.lowering import lower_program
 from farkas.relational import (
-    DuckdbExecutor,
+    PolarsExecutor,
     chunking,
 )
 from farkas.relational.plan import (
     Constant,
     ConstraintDeclaration,
-    DimensionComparison,
     DimensionDeclaration,
     GroupSum,
     ObjectiveDeclaration,
@@ -35,9 +35,10 @@ from farkas.relational.plan import (
     Variable,
     VariableDeclaration,
 )
+from farkas.schema import MathSchema
 from tests.conftest import solve_lp_file
 from tests.differential import RTOL, differential
-from tests.oracle import linopy, transport_eager_objective, xr
+from tests.oracle import linopy, pd, transport_eager_objective, xr
 
 # ---------------------------------------------------------------------------
 # model 1: dispatch (the spec example)
@@ -123,7 +124,7 @@ def test_dispatch_roundtrip(dispatch_data, tmp_path):
     gens, load = dispatch_data
     oracle = dispatch_eager_objective(gens, load)
 
-    with DuckdbExecutor(memory_limit='256MB', chunk_rows=500) as ex:
+    with PolarsExecutor() as ex:
         ex.build(dispatch_program(), dispatch_sources(gens, load))
 
         result = ex.solve()
@@ -135,7 +136,7 @@ def test_dispatch_roundtrip(dispatch_data, tmp_path):
         assert solve_lp_file(lp) == pytest.approx(oracle, rel=RTOL)
 
         # masked variable rows are absent, and primal joins back to coords
-        primal = result.primal('p')
+        primal = result.to_pandas('p')
         n_active = int((gens['p_max'] > 0).sum())
         assert len(primal) == n_active * len(load)
         assert set(primal.columns) == {'snapshot', 'generator', 'value'}
@@ -213,7 +214,7 @@ def test_transport_roundtrip(transport_data, tmp_path):
     oracle = transport_eager_objective(gens, lines, load)
     assert np.isfinite(oracle), 'oracle model must be feasible'
 
-    with DuckdbExecutor(memory_limit='256MB', chunk_rows=300) as ex:
+    with PolarsExecutor() as ex:
         ex.build(transport_program(), transport_sources(gens, lines, load))
 
         result = ex.solve()
@@ -225,137 +226,10 @@ def test_transport_roundtrip(transport_data, tmp_path):
         assert solve_lp_file(lp) == pytest.approx(oracle, rel=RTOL)
 
         # flows respect line capacity bounds
-        primal_f = result.primal('f')
+        primal_f = result.to_pandas('f')
         caps = lines.set_index('line')['cap']
         limits = primal_f['line'].map(caps)
         assert (primal_f['value'].abs() <= limits + 1e-6).all()
-
-
-# ---------------------------------------------------------------------------
-# labels
-# ---------------------------------------------------------------------------
-
-
-def test_a_mask_that_removes_nothing_labels_exactly_like_no_mask(dispatch_data):
-    """The two paths through ``_label_frame`` must agree row for row.
-
-    Unmasked, a label is arithmetic on the dim ordinals; masked, it is counted
-    by a chunked ``ROW_NUMBER``. A label *is* the solver column index, so
-    "same number of rows" is not the property that matters — which coordinate
-    got which index is. ``chunk_rows`` is small enough to force several chunks,
-    since a disagreement would live in the running offset between them.
-    """
-    gens, load = dispatch_data
-    gens = gens.assign(p_max=gens['p_max'].where(gens['p_max'] > 0, 1.0))  # leave the mask nothing to remove
-    variable = dispatch_program().variables[0]
-
-    labelled = {}
-    for name, where in (('masked', ParameterComparison('p_max', '>', 0)), ('unmasked', None)):
-        program = replace(dispatch_program(), variables=(replace(variable, where=where),))
-        with DuckdbExecutor(memory_limit='256MB', chunk_rows=60) as ex:
-            ex.build(program, dispatch_sources(gens, load))
-            labelled[name] = ex._con.execute('SELECT snapshot, generator, var_label FROM var_p ORDER BY var_label').df()
-
-    assert len(labelled['unmasked']) == len(gens) * len(load)
-    pd.testing.assert_frame_equal(labelled['masked'], labelled['unmasked'])
-
-
-def _label_program(where):
-    """One variable over three dims of distinct cardinality, masked or not."""
-    return Program(
-        parameters=(ParameterDeclaration('cap', ('line',)),),
-        variables=(
-            VariableDeclaration(
-                'f', ('snapshot', 'bus', 'line'), where=where, lower=Constant(0.0), upper=Constant(1.0)
-            ),
-        ),
-        constraints=(
-            ConstraintDeclaration(
-                'cap_row',
-                ('snapshot',),
-                lhs=Sum(Variable('f'), over=('bus', 'line')),
-                sense='<=',
-                rhs=Constant(1e6),
-            ),
-        ),
-        objective=ObjectiveDeclaration('min', Sum(Variable('f'), over=('snapshot', 'bus', 'line'))),
-    )
-
-
-def _label_sources(n_snapshot=5, n_bus=3, n_line=4, zero_caps=()):
-    lines = [f'l{i}' for i in range(n_line)]
-    caps = [0.0 if i in zero_caps else 10.0 + i for i in range(n_line)]
-    return {
-        'cap': pd.DataFrame({'line': lines, 'value': caps}),
-        'snapshot': pd.DataFrame({'snapshot': np.arange(n_snapshot)}),
-        'bus': pd.DataFrame({'bus': [f'b{i}' for i in range(n_bus)]}),
-        'line': pd.DataFrame({'line': lines}),
-    }
-
-
-@pytest.mark.parametrize('chunk_rows', [12, 1_000_000], ids=['chunked', 'single-chunk'])
-def test_unmasked_labels_are_the_ones_the_window_would_assign(chunk_rows):
-    """The arithmetic path must emit the labels the sort it replaces did.
-
-    Unmasked frames skip ``ROW_NUMBER`` for a closed form
-    (``SqlCompiler.positional_label``). Labels *are* the solver's column
-    indices, so "dense and valid" is not the bar — they have to be the same
-    integers, or the LP section order, ``solver_direct``'s batching and the
-    walkthrough golden all shift underneath us for no stated reason.
-
-    Three dims of distinct cardinality, so a swapped stride cannot pass. The
-    expectation is spelled out rather than computed, so it cannot agree with
-    the implementation by sharing its arithmetic.
-    """
-    with DuckdbExecutor(memory_limit='256MB', chunk_rows=chunk_rows) as ex:
-        ex.build(_label_program(where=None), _label_sources())
-        got = ex._con.execute('SELECT snapshot, bus, line, var_label FROM var_f ORDER BY var_label').fetchall()
-
-    # what ROW_NUMBER() OVER (ORDER BY ord, ord, ord) means, spelled out
-    expected = [
-        (s, f'b{b}', f'l{ln}', i)
-        for i, (s, b, ln) in enumerate((s, b, ln) for s in range(5) for b in range(3) for ln in range(4))
-    ]
-    assert got == expected
-
-
-@pytest.mark.parametrize('chunk_rows', [12, 1_000_000], ids=['chunked', 'single-chunk'])
-def test_masked_labels_stay_dense(chunk_rows):
-    """The counted path stays a dense bijection, across chunk boundaries.
-
-    A mask that reads the *leading* dim cannot factor, so this is the general
-    ``ROW_NUMBER`` path — the one whose density comes from the running offset
-    stitching the per-chunk windows into one range, rather than from
-    arithmetic. Both chunk regimes, since that offset is what a single chunk
-    never exercises.
-    """
-    where = DimensionComparison('snapshot', '>', 0)
-    with DuckdbExecutor(memory_limit='256MB', chunk_rows=chunk_rows) as ex:
-        ex.build(_label_program(where), _label_sources())
-        labels = [r[0] for r in ex._con.execute('SELECT var_label FROM var_f ORDER BY var_label').fetchall()]
-
-    assert labels == list(range(4 * 3 * 4))  # one snapshot of five masked out everywhere
-
-
-def test_a_mask_on_the_trailing_dims_labels_like_the_window_would():
-    """The factoring path and the counted path must agree integer for integer.
-
-    When the mask does not read the leading dim, ``_label_frame`` ranks the
-    surviving trailing coordinates once and multiplies out. That is a third
-    way to reach a label, so it is pinned against the same spelled-out
-    row-major expectation: a mask removing line ``l1`` leaves the remaining
-    three lines in order within each ``(snapshot, bus)`` block.
-    """
-    where = ParameterComparison('cap', '>', 0)
-    with DuckdbExecutor(memory_limit='256MB', chunk_rows=12) as ex:
-        ex.build(_label_program(where), _label_sources(zero_caps=(1,)))
-        got = ex._con.execute('SELECT snapshot, bus, line, var_label FROM var_f ORDER BY var_label').fetchall()
-
-    expected = [
-        (s, f'b{b}', f'l{ln}', i)
-        for i, (s, b, ln) in enumerate((s, b, ln) for s in range(5) for b in range(3) for ln in (0, 2, 3))
-    ]
-    assert got == expected
 
 
 # ---------------------------------------------------------------------------
@@ -372,7 +246,7 @@ def test_nonlinear_product_rejected(dispatch_data):
         constraints=prog.constraints,
         objective=ObjectiveDeclaration('min', Sum(Variable('p') * Variable('p'), over=('generator', 'snapshot'))),
     )
-    with DuckdbExecutor() as ex, pytest.raises(LanguageError, match='nonlinear'):
+    with PolarsExecutor() as ex, pytest.raises(LanguageError, match='nonlinear'):
         ex.build(bad, dispatch_sources(gens, load))
 
 
@@ -380,7 +254,7 @@ def test_missing_source_rejected(dispatch_data):
     gens, load = dispatch_data
     sources = dispatch_sources(gens, load)
     del sources['cost']
-    with DuckdbExecutor() as ex, pytest.raises(DataError, match="no source bound for parameter 'cost'"):
+    with PolarsExecutor() as ex, pytest.raises(DataError, match="no source bound for parameter 'cost'"):
         ex.build(dispatch_program(), sources)
 
 
@@ -399,20 +273,21 @@ SCALAR_MODEL = {
 def test_a_dimensionless_parameter_must_be_one_row(rows):
     """No dims means one value broadcast everywhere, and nothing used to check it.
 
-    The join that broadcasts a dimensionless parameter is ``ON TRUE``, which is
+    A dimensionless parameter is broadcast by joining on nothing, which is
     right for one row and a silent row multiplication for two — duplicate
     columns for one variable in a bound, duplicate mask rows in a where. The
-    per-coordinate check next door skipped this case entirely, because a
-    parameter with no dims has nothing to group by (#166).
+    per-coordinate check skipped this case entirely, because a parameter with
+    no dims has nothing to group by, which also left `keyed` claiming the
+    opposite of what such a source held (#166).
     """
-    data = {'s': pd.DataFrame({'value': pd.Series([1.0] * rows, dtype='float64')})}
+    data = {'s': pl.DataFrame({'value': [1.0] * rows}, schema={'value': pl.Float64})}
     with pytest.raises(DataError, match=f"parameter 's' .* its source has {rows} rows"):
         fk.build(SCALAR_MODEL, data)
 
 
 def test_a_dimensionless_parameter_of_one_row_still_builds():
     """The control: the shape the check exists to let through."""
-    data = {'s': pd.DataFrame({'value': [10.0]})}
+    data = {'s': pl.DataFrame({'value': [10.0]})}
     with fk.solve(SCALAR_MODEL, data) as result:
         assert result.objective == pytest.approx(20.0)  # x == 1 at both coordinates of i, times s
 
@@ -434,26 +309,22 @@ def test_out_of_foreach_dims_rejected(dispatch_data):
         ),
         objective=prog.objective,
     )
-    with DuckdbExecutor() as ex, pytest.raises(LanguageError, match='missing a Sum'):
+    with PolarsExecutor() as ex, pytest.raises(LanguageError, match='missing a Sum'):
         ex.build(bad, dispatch_sources(gens, load))
 
 
-def test_a_quote_in_a_path_does_not_end_the_statement(tmp_path):
+def test_an_awkward_path_is_a_value_not_syntax(tmp_path):
     """Paths come from the calling program, so no language rule constrains them.
 
-    `o'brien` is a legal directory name; interpolated raw it closed the SQL
-    string literal and duckdb raised a ParserException — which is not even a
-    LinopyYamlError, so it escaped the package's own exception tree. Every
-    path-carrying sink and source is exercised here: a parquet source, an
-    explicit index source, the LP writer's workdir, and the parquet sink.
+    ``o'brien`` is a legal directory name, and a quote in one must be as
+    uninteresting as a quote in a label. Every path-carrying sink and source is
+    exercised here: a parquet source, an explicit index source, the LP writer,
+    and the parquet sink.
     """
-    import pyarrow as pa
-    import pyarrow.parquet as pq
-
     odd = tmp_path / "o'brien"
     odd.mkdir()
-    pq.write_table(pa.table({'snapshot': [0, 1], 'value': [1.0, 2.0]}), odd / 'load.parquet')
-    pq.write_table(pa.table({'snapshot': [0, 1]}), odd / 'index.parquet')
+    pl.DataFrame({'snapshot': [0, 1], 'value': [1.0, 2.0]}).write_parquet(odd / 'load.parquet')
+    pl.DataFrame({'snapshot': [0, 1]}).write_parquet(odd / 'index.parquet')
 
     model = {
         'dimensions': {'snapshot': {'dtype': 'int'}},
@@ -464,178 +335,284 @@ def test_a_quote_in_a_path_does_not_end_the_statement(tmp_path):
     }
     sources = {'load': str(odd / 'load.parquet'), 'snapshot': str(odd / 'index.parquet')}
 
-    with fk.solve(model, sources, workdir=str(odd / 'work')) as solution:
-        assert solution.is_ok
-        assert solution.objective == pytest.approx(3.0)
-        written = solution.to_parquet(odd / 'out')
-        assert written['p'].exists()
-
     fk.write(model, sources, odd / 'model.lp')
-    assert (odd / 'model.lp').stat().st_size > 0
+    result = fk.solve(model, sources)
+    assert result.objective == pytest.approx(3.0)
+    assert set(result.to_parquet(odd / 'solution')) == {'p'}
 
 
-# ---------------------------------------------------------------------------
-# objective assembly
-# ---------------------------------------------------------------------------
+def test_a_variable_appearing_twice_in_a_row_is_summed_not_duplicated():
+    """The case the skipped aggregate must not break.
+
+    `x + 2 * x` is two term fragments landing on one solver column, so the
+    assembly has to add them. Its coefficient must be 3, and the row must hold
+    one entry for that column rather than two — a solver handed the same
+    column twice in one row is entitled to reject the model.
+    """
+    model = {
+        'dimensions': {'i': {'dtype': 'int', 'values': [0, 1]}},
+        'parameters': {'rhs': {'dims': ['i']}},
+        'variables': {'x': {'foreach': ['i'], 'bounds': {'lower': 0}}},
+        'constraints': {'c': {'foreach': ['i'], 'equations': [{'expression': 'x + 2 * x >= rhs'}]}},
+        'objectives': {'o': {'sense': 'minimize', 'equations': [{'expression': 'sum(x, over=i)'}]}},
+    }
+    sources = {'rhs': pl.DataFrame({'i': [0, 1], 'value': [6.0, 9.0]})}
+    with fk.build(model, sources) as ex:
+        matrix = ex._tables().matrix
+        assert matrix.height == 2  # one entry per row, not one per fragment
+        assert sorted(matrix['coeff'].to_list()) == [3.0, 3.0]
+        result = ex.solve()
+    assert result.objective == pytest.approx(5.0)  # 6/3 + 9/3
 
 
-def _objective_program(expression):
-    """One masked variable over two dims, and whatever objective is passed."""
-    return Program(
-        parameters=(
-            ParameterDeclaration('p_max', ('generator',)),
-            ParameterDeclaration('cost', ('generator',)),
-            ParameterDeclaration('load', ('snapshot',)),
-        ),
-        variables=(
-            VariableDeclaration(
-                'p',
-                ('snapshot', 'generator'),
-                where=ParameterComparison('p_max', '>', 0),
-                lower=Constant(0.0),
-                upper=Parameter('p_max'),
-            ),
-        ),
-        constraints=(
-            ConstraintDeclaration(
-                'power_balance',
-                ('snapshot',),
-                lhs=Sum(Variable('p'), over=('generator',)),
-                sense='==',
-                rhs=Parameter('load'),
-            ),
-        ),
-        objective=ObjectiveDeclaration('min', expression),
+def test_a_factored_mask_labels_exactly_like_the_counted_path():
+    """The fast path has to be indistinguishable from the one it replaces.
+
+    A mask that reads none of the leading dims removes the same coordinates
+    under every one of their values, so the survivors are a rectangle and the
+    label is arithmetic. That is only a speedup if it lands on the *same*
+    numbers the counted path would have assigned — a label is the solver's own
+    column index, so an off-by-one here is a different model, not a slower one.
+
+    Both paths are run over the same model and compared outright. The mask
+    reads `tech` only, so it factors; forcing it through the counted path is a
+    matter of asking for the labels the sort produces.
+    """
+    import polars as pl_
+
+    from farkas.relational.compiler import _ordinal
+
+    model = {
+        'dimensions': {
+            'snapshot': {'dtype': 'int', 'values': list(range(5))},
+            'node': {'dtype': 'str', 'values': ['a', 'b', 'c']},
+            'tech': {'dtype': 'str', 'values': ['wind', 'gas', 'coal', 'hydro']},
+        },
+        'parameters': {'cap': {'dims': ['node', 'tech']}, 'load': {'dims': ['snapshot']}},
+        'variables': {
+            'p': {'foreach': ['snapshot', 'node', 'tech'], 'where': 'cap > 0', 'bounds': {'lower': 0, 'upper': 'cap'}}
+        },
+        'constraints': {
+            'balance': {
+                'foreach': ['snapshot', 'node'],
+                'equations': [{'expression': 'sum(p, over=tech) >= load'}],
+            }
+        },
+        'objectives': {
+            'o': {
+                'sense': 'minimize',
+                'equations': [{'expression': 'sum(sum(sum(p, over=tech), over=node), over=snapshot)'}],
+            }
+        },
+    }
+    caps = [
+        {'node': n, 'tech': t, 'value': 0.0 if (n, t) in {('a', 'gas'), ('c', 'coal'), ('b', 'hydro')} else 10.0}
+        for n in ['a', 'b', 'c']
+        for t in ['wind', 'gas', 'coal', 'hydro']
+    ]
+    sources = {
+        'cap': pl.DataFrame(caps),
+        'load': pl.DataFrame({'snapshot': list(range(5)), 'value': [1.0] * 5}),
+    }
+
+    with fk.build(model, sources) as ex:
+        fast = ex._variables['p'].collect().sort('var_label')
+        dims = ('snapshot', 'node', 'tech')
+        counted = (
+            ex._q.frame(dims, ex._program.variables[0].where)
+            .sort([_ordinal(d) for d in dims])
+            .select(*dims)
+            .with_row_index('var_label', offset=0)
+            .select(*dims, pl_.col('var_label').cast(pl_.Int64))
+            .collect()
+        )
+
+    assert fast.height == counted.height, 'the two paths disagree about how many coordinates survive'
+    assert fast.equals(counted.sort('var_label')), 'the factored labels are not the counted labels'
+    assert fast['var_label'].to_list() == list(range(fast.height)), 'labels must stay dense from 0'
+
+
+def test_a_dictionary_encoded_source_column_binds_like_a_plain_one():
+    """A `Categorical` dim column is a source encoding, not a different model.
+
+    Any writer that sees a 12M-row table of repeated node names will
+    dictionary-encode it, and pandas does it by default for a `Categorical`.
+    polars will not join `Categorical` against `String`, and the dim frames are
+    built from declared coordinate values and are plain — so without a cast the
+    two agree only by luck, and the failure is a schema error from inside a
+    join rather than anything a caller can act on.
+    """
+    model = {
+        'dimensions': {'node': {'dtype': 'str', 'values': ['a', 'b']}},
+        'parameters': {'cap': {'dims': ['node']}},
+        'variables': {'x': {'foreach': ['node'], 'bounds': {'lower': 0, 'upper': 'cap'}}},
+        'constraints': {'c': {'foreach': ['node'], 'equations': [{'expression': 'x >= cap'}]}},
+        'objectives': {'o': {'sense': 'minimize', 'equations': [{'expression': 'sum(x, over=node)'}]}},
+    }
+    encoded = pl.DataFrame({'node': ['a', 'b'], 'value': [3.0, 4.0]}).with_columns(pl.col('node').cast(pl.Categorical))
+    plain = pl.DataFrame({'node': ['a', 'b'], 'value': [3.0, 4.0]})
+
+    with fk.build(model, {'cap': encoded}) as ex:
+        from_encoded = ex.solve().objective
+    with fk.build(model, {'cap': plain}) as ex:
+        from_plain = ex.solve().objective
+
+    assert from_encoded == pytest.approx(7.0)
+    assert from_encoded == pytest.approx(from_plain), 'the encoding changed the model'
+
+
+def test_an_objective_naming_a_variable_twice_sums_its_coefficients():
+    """Same argument, one dimension down: the objective is a column vector."""
+    model = {
+        'dimensions': {'i': {'dtype': 'int', 'values': [0]}},
+        'parameters': {'lb': {'dims': ['i']}},
+        'variables': {'x': {'foreach': ['i'], 'bounds': {'lower': 'lb'}}},
+        'constraints': {'c': {'foreach': ['i'], 'equations': [{'expression': 'x >= lb'}]}},
+        'objectives': {'o': {'sense': 'minimize', 'equations': [{'expression': 'x + 4 * x'}]}},
+    }
+    with fk.build(model, {'lb': pl.DataFrame({'i': [0], 'value': [2.0]})}) as ex:
+        assert ex._tables().obj.height == 1
+        assert ex._tables().obj['coeff'].to_list() == [5.0]
+        assert ex.solve().objective == pytest.approx(10.0)
+
+
+def test_a_mask_that_removes_nothing_labels_exactly_like_no_mask(dispatch_data):
+    """A vacuous `where` must not shift a single solver index.
+
+    Labels are the solver's own column numbers, so "the mask removed nothing"
+    and "there was no mask" have to produce identical frames rather than merely
+    the same row count.
+    """
+    gens, load = dispatch_data
+    gens = gens.assign(p_max=gens['p_max'].where(gens['p_max'] > 0, 1.0))  # nothing left to mask out
+
+    labels = []
+    for where in (None, ParameterComparison('p_max', '>', 0)):
+        base = dispatch_program()
+        program = replace(base, variables=(replace(base.variables[0], where=where),))
+        with PolarsExecutor() as ex:
+            ex.build(program, dispatch_sources(gens, load))
+            labels.append(ex._variables['p'].collect().sort('var_label'))
+    assert labels[0].equals(labels[1])
+
+
+def _objective_of(program, sources):
+    """`obj` as `{col: coeff}`, plus whether the aggregate was skipped."""
+    with PolarsExecutor() as ex:
+        ex.build(program, sources)
+        obj = ex._tables().obj
+        return dict(zip(obj['col'].to_list(), obj['coeff'].to_list(), strict=True)), obj.height
+
+
+def test_the_matrix_aggregate_runs_on_what_repeats_and_not_on_what_might():
+    """Both branches of the collapse, on models that differ only in overlap.
+
+    `_needs_aggregate` reads the fragments and can only say whether a cell
+    *can* repeat. Two fragments over disjoint variables satisfy it and repeat
+    nothing; two over the same variable repeat every cell. The first must come
+    out untouched and the second must be summed — the point being that the
+    same static answer covers both, so the frame itself has to decide.
+    """
+    base = {
+        'dimensions': {'i': {'dtype': 'int', 'values': [0, 1]}},
+        'parameters': {'rhs': {'dims': ['i']}},
+        'variables': {
+            'x': {'foreach': ['i'], 'bounds': {'lower': 0}},
+            'y': {'foreach': ['i'], 'bounds': {'lower': 0}},
+        },
+        'objectives': {'o': {'sense': 'minimize', 'equations': [{'expression': 'sum(x, over=i) + sum(y, over=i)'}]}},
+    }
+    sources = {'rhs': pl.DataFrame({'i': [0, 1], 'value': [4.0, 6.0]})}
+
+    disjoint = dict(base, constraints={'c': {'foreach': ['i'], 'equations': [{'expression': 'x + y >= rhs'}]}})
+    with fk.build(disjoint, sources) as ex:
+        matrix = ex._tables().matrix
+        assert matrix.height == 4, 'two variables per row, nothing to collapse'
+        assert matrix['coeff'].to_list() == [1.0, 1.0, 1.0, 1.0]
+
+    overlapping = dict(base, constraints={'c': {'foreach': ['i'], 'equations': [{'expression': 'x + 3 * x >= rhs'}]}})
+    with fk.build(overlapping, sources) as ex:
+        matrix = ex._tables().matrix
+        assert matrix.height == 2, 'one cell per row after the collapse'
+        assert matrix['coeff'].to_list() == [4.0, 4.0]
+
+
+def test_the_objective_skips_the_aggregate_only_when_a_column_cannot_repeat():
+    """`p * cost` needs no aggregate; `p * cost + p * cost` does."""
+    base = {
+        'dimensions': {'i': {'dtype': 'int', 'values': [0, 1]}},
+        'parameters': {'cost': {'dims': ['i']}, 'lb': {'dims': ['i']}},
+        'variables': {'p': {'foreach': ['i'], 'bounds': {'lower': 'lb'}}},
+        'constraints': {'c': {'foreach': ['i'], 'equations': [{'expression': 'p >= lb'}]}},
+    }
+    sources = {
+        'cost': pl.DataFrame({'i': [0, 1], 'value': [2.0, 3.0]}),
+        'lb': pl.DataFrame({'i': [0, 1], 'value': [1.0, 1.0]}),
+    }
+    once = lower_program(
+        MathSchema(**dict(base, objectives={'o': {'sense': 'minimize', 'equations': [{'expression': 'p * cost'}]}}))
+    )
+    twice = lower_program(
+        MathSchema(
+            **dict(base, objectives={'o': {'sense': 'minimize', 'equations': [{'expression': 'p * cost + p * cost'}]}})
+        )
     )
 
-
-def _objective_coefficients(expression, dispatch_data):
-    """``obj`` as ``{col: coeff}``, plus whether the aggregate was skipped."""
-    gens, load = dispatch_data
-    sources = {
-        'p_max': gens[['generator', 'p_max']].rename(columns={'p_max': 'value'}),
-        'cost': gens[['generator', 'cost']].rename(columns={'cost': 'value'}),
-        'load': load,
-    }
-    program = _objective_program(expression)
-    with DuckdbExecutor(memory_limit='256MB') as ex:
-        ex.build(program, sources)
-        compiled = ex._sql.expression(expression, 'objective')
-        skipped = ex._objective_column_appears_once(expression, compiled)
-        rows = ex._con.execute('SELECT col, coeff FROM obj ORDER BY col').fetchall()
-    return dict(rows), skipped
+    assert _objective_of(once, sources) == ({0: 2.0, 1: 3.0}, 2)
+    assert _objective_of(twice, sources) == ({0: 4.0, 1: 6.0}, 2)
 
 
-def test_objective_skips_the_aggregate_only_when_a_column_cannot_repeat(dispatch_data):
-    """``p * cost`` needs no ``GROUP BY``; ``p * cost + p * cost`` does.
-
-    The aggregate merges terms landing on the same column. Skipping it when a
-    column genuinely repeats would silently halve those coefficients — an LP
-    that builds, solves, and answers a different question. So the two shapes
-    are asserted together: the fast path must fire on the first *and* must not
-    fire on the second, and the coefficients must come out the same either way.
-    """
-    single = Variable('p') * Parameter('cost')
-    doubled = single + single
-
-    one, skipped_one = _objective_coefficients(single, dispatch_data)
-    two, skipped_two = _objective_coefficients(doubled, dispatch_data)
-
-    assert skipped_one, 'p * cost has one row per column — the aggregate is dead weight'
-    assert not skipped_two, 'the same variable twice must keep the aggregate'
-
-    # the aggregate is what makes the second objective twice the first
-    assert one, 'the objective produced no coefficients at all'
-    assert two == pytest.approx({col: 2.0 * coeff for col, coeff in one.items()})
-
-
-def test_objective_keeps_the_aggregate_when_a_reduction_hides_extra_rows():
+def test_the_objective_keeps_the_aggregate_when_a_reduction_hides_extra_rows():
     """A fragment's dims can match the variable's while its rows do not.
 
-    ``sum(q * price, over=generator)`` with ``q`` indexed by snapshot alone
-    reduces to dims ``('snapshot',)`` — exactly ``q``'s declaration — but
-    ``_sum_fragment`` *projects*, it does not aggregate, so the fragment still
-    carries one row per generator. Skipping the ``GROUP BY`` there writes
-    ``|generator|`` rows into ``obj`` for a single column: the LP file would
-    quietly re-sum them, while ``cols LEFT JOIN obj`` in the HiGHS sink would
-    hand the solver more columns than the model has.
+    `sum(q * price, over=generator)` with `q` indexed by snapshot alone reduces
+    to dims `('snapshot',)` — exactly `q`'s declaration — but `_sum_fragment`
+    *projects*, so the fragment still carries one row per generator. Skipping
+    the aggregate there writes |generator| rows into `obj` for a single column:
+    the LP file would quietly re-sum them, while `cols` joined to `obj` in the
+    HiGHS sink would hand the solver more columns than the model has.
 
-    This is the case a dims-equality test alone gets wrong, so it is the case
-    that is pinned.
+    This is the case a dims-equality test gets wrong, and the reason a fragment
+    tracks which of its dims its label actually determines.
     """
-    program = Program(
-        parameters=(
-            ParameterDeclaration('price', ('snapshot', 'generator')),
-            ParameterDeclaration('load', ('snapshot',)),
-        ),
-        variables=(VariableDeclaration('q', ('snapshot',), where=None, lower=Constant(0.0), upper=Constant(10.0)),),
-        constraints=(
-            ConstraintDeclaration('floor', ('snapshot',), lhs=Variable('q'), sense='>=', rhs=Parameter('load')),
-        ),
-        objective=ObjectiveDeclaration('min', Sum(Variable('q') * Parameter('price'), over=('generator',))),
-    )
-    sources = {
-        'price': pd.DataFrame(
-            {'snapshot': np.repeat([0, 1], 3), 'generator': ['g0', 'g1', 'g2'] * 2, 'value': [1.0, 2.0, 3.0] * 2}
-        ),
-        'load': pd.DataFrame({'snapshot': [0, 1], 'value': [5.0, 5.0]}),
+    model = {
+        'dimensions': {'snapshot': {'dtype': 'int', 'values': [0, 1]}, 'generator': {'values': ['g0', 'g1', 'g2']}},
+        'parameters': {'price': {'dims': ['snapshot', 'generator']}, 'load': {'dims': ['snapshot']}},
+        'variables': {'q': {'foreach': ['snapshot'], 'bounds': {'lower': 0, 'upper': 10}}},
+        'constraints': {'floor': {'foreach': ['snapshot'], 'equations': [{'expression': 'q >= load'}]}},
+        'objectives': {'o': {'sense': 'minimize', 'equations': [{'expression': 'sum(q * price, over=generator)'}]}},
     }
-
-    with DuckdbExecutor(memory_limit='256MB') as ex:
-        ex.build(program, sources)
-        rows = ex._con.execute('SELECT col, coeff FROM obj ORDER BY col').fetchall()
-
-    # one row per column, the three generator prices summed — not three rows
-    assert rows == [(0, 6.0), (1, 6.0)]
-
-
-@pytest.mark.parametrize('batch_rows', [2, 3, 100_000], ids=['ragged', 'exact', 'one-chunk'])
-def test_infinite_bounds_survive_the_arrow_handoff(batch_rows):
-    """An absent upper bound must reach HiGHS as infinity, not as a number.
-
-    The column loop converts Arrow to numpy directly rather than through
-    ``to_pydict``, and infinities are the values a conversion is most likely to
-    mangle — ``nan_to_num`` maps them by keyword, and a column that arrived as
-    nan instead of inf would silently become ``0.0``. A finite upper bound here
-    is not a wrong answer, it is a *different model*: minimising still succeeds
-    while maximising stops being unbounded. So both directions are asserted,
-    and the batch sizes make the infinities straddle a chunk boundary.
-    """
-    program = Program(
-        parameters=(ParameterDeclaration('floor', ('snapshot',)),),
-        variables=(
-            VariableDeclaration('x', ('snapshot',), where=None, lower=Parameter('floor'), upper=Constant(float('inf'))),
+    sources = {
+        'price': pl.DataFrame(
+            {'snapshot': [0, 0, 0, 1, 1, 1], 'generator': ['g0', 'g1', 'g2'] * 2, 'value': [1.0, 2.0, 3.0] * 2}
         ),
-        constraints=(),
-        objective=ObjectiveDeclaration('min', Sum(Variable('x'), over=('snapshot',))),
-    )
-    sources = {'floor': pd.DataFrame({'snapshot': [0, 1, 2], 'value': [5.0, 7.0, 9.0]})}
+        'load': pl.DataFrame({'snapshot': [0, 1], 'value': [5.0, 5.0]}),
+    }
+    # one row per column, each carrying the summed price — not three rows of one
+    assert _objective_of(lower_program(MathSchema(**model)), sources) == ({0: 6.0, 1: 6.0}, 2)
 
-    with DuckdbExecutor(memory_limit='256MB') as ex:
-        ex.build(program, sources)
-        assert ex._con.execute("SELECT count(*) FROM cols WHERE ub = 'infinity'::DOUBLE").fetchone()[0] == 3
-        result = ex.solve(batch_rows=batch_rows)
-        assert result.is_ok
-        assert result.objective == pytest.approx(21.0, rel=RTOL)
 
-    with DuckdbExecutor(memory_limit='256MB') as ex:
-        ex.build(
-            replace(program, objective=ObjectiveDeclaration('max', Sum(Variable('x'), over=('snapshot',)))), sources
-        )
-        unbounded = ex.solve(batch_rows=batch_rows)
-        assert unbounded.termination_condition in ('unbounded', 'infeasible_or_unbounded'), (
-            f'a finite upper bound reached the solver: {unbounded.termination_condition}'
-        )
+def test_infinite_bounds_survive_the_handoff(dispatch_data):
+    """An absent upper bound must reach HiGHS as infinity, not as a number."""
+    gens, load = dispatch_data
+    base = dispatch_program()
+    unbounded = replace(base, variables=(replace(base.variables[0], upper=Constant(float('inf'))),))
+    with PolarsExecutor() as ex:
+        ex.build(unbounded, dispatch_sources(gens, load))
+        assert ex._tables().cols['ub'].is_infinite().all()
+        assert ex.solve().is_ok
 
 
 def test_row_chunks_are_bounded_by_nonzeros_not_by_rows():
     """A chunk of rows is a chunk of *entries*, and only entries are residency.
 
-    Both sinks read ``A`` a range at a time and hold that range while they work
-    it. Sizing the range in rows bounds the wrong quantity: the same 100k-row
-    range is 900k entries in ``transport`` and 10M in ``dispatch``, so what a
-    sink actually holds is set by the model's shape rather than by the budget —
-    which is precisely what hard rule 4 says peak must not be.
+    The solver hand-off reads ``matrix`` a range at a time and holds that range
+    while it works it. Sizing the range in rows bounds the wrong quantity: the
+    same 100k-row range is 900k entries in ``transport`` and 10M in
+    ``dispatch``, so what the sink actually holds is set by the model's shape
+    rather than by the budget — which defeats the point of batching at all: a
+    pass that holds a slice proportional to the model is a pass that holds the
+    model.
 
     Wide rows are the case that separates the two, so this builds them: 50
     generators summed into each of 4 snapshots is 50 entries per row.
@@ -650,22 +627,23 @@ def test_row_chunks_are_bounded_by_nonzeros_not_by_rows():
     )
     load = pd.DataFrame({'snapshot': np.arange(n_s), 'value': np.full(n_s, 100.0)})
 
-    with DuckdbExecutor(memory_limit='256MB') as ex:
+    with PolarsExecutor() as ex:
         ex.build(dispatch_program(), dispatch_sources(gens, load))
         tables = ex._tables()
-        assert tables.scalar('SELECT count(*) FROM A') == n_g * n_s
+        assert tables.matrix.height == n_g * n_s
 
         def widest(ranges):
-            return max(tables.scalar(f'SELECT count(*) FROM A WHERE row >= {lo} AND row < {hi}') for lo, hi in ranges)
+            return max(
+                tables.matrix.filter(pl.col('row').is_between(lo, hi, closed='left')).height for lo, hi in ranges
+            )
 
         budget = 100
-        bounded = list(tables.row_chunks_by_nonzeros(budget))
-        assert widest(bounded) <= budget
+        assert widest(tables.row_chunks_by_nonzeros(budget)) <= budget
 
         # the same budget spent as if a row cost one element puts every entry
         # in one chunk — 2x the budget here, and unbounded in general, because
         # nothing caps how wide a row gets
-        assert widest(list(chunking.ranges(tables.row_count, budget, 1.0))) == n_g * n_s
+        assert widest(chunking.ranges(tables.row_count, budget, 1.0)) == n_g * n_s
 
 
 @pytest.mark.parametrize(
