@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.0-alpha.30](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.29...v0.0.0-alpha.30) (2026-07-28)
+
+
+### Performance
+
+* unmasked label assignment needs no sort ([#152](https://github.com/FBumann/farkas/issues/152)) ([3d8c725](https://github.com/FBumann/farkas/commit/3d8c7251bc210bbc4438382ec58c3b699683624a))
+
 ## [0.0.0-alpha.29](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.28...v0.0.0-alpha.29) (2026-07-28)
 
 
