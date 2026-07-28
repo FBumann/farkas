@@ -14,7 +14,7 @@ $$p_g = \sum_k \lambda_{g,k}\, x_{g,k}, \quad
 ## The model
 
 <!-- math:begin -->
-<details>
+<details markdown="1">
 <summary>The same model, as math</summary>
 
 #### Sets

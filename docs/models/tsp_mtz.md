@@ -46,7 +46,7 @@ Inside the language, and it always was.
 ## The model
 
 <!-- math:begin -->
-<details>
+<details markdown="1">
 <summary>The same model, as math</summary>
 
 #### Sets

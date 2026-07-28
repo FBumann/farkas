@@ -5,7 +5,7 @@ The dispatch model plus a macro and a named expression — the one used to print
 ## The model
 
 <!-- math:begin -->
-<details>
+<details markdown="1">
 <summary>The same model, as math</summary>
 
 #### Sets

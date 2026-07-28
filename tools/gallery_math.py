@@ -26,12 +26,24 @@ Notation comes from ``examples/symbols/<model>.yaml`` where one exists, so a
 page keeps the symbols its prose already uses; models without a table get the
 derived symbols, which are plain but never ambiguous.
 
-The toggle is ``<details>``, not tabs: GitHub's Markdown sanitiser strips
-``<style>``, ``class``, ``onclick`` and bare ``<input>``, so the CSS-only tab
-trick cannot survive it — ``<details>`` and math inside it both do. If the
-docs ever grow a site generator, real tabs are a change to `_block` here and
-to nothing else, which is the reason to generate this rather than hand-write
-it even once.
+The toggle is ``<details markdown="1">``, and every part of that is load
+bearing, because these pages are read in two renderers.
+
+On **GitHub**: the sanitiser strips ``<style>``, ``class``, ``onclick`` and a
+bare ``<input>``, so the CSS-only tab trick cannot survive it — ``<details>``
+and math inside it both do. Unknown attributes are dropped, so ``markdown="1"``
+costs nothing there.
+
+On the **site**: ``md_in_html`` is enabled, and without ``markdown="1"`` it
+treats everything inside the element as raw HTML — the tables and the ``$$``
+blocks render as literal text. The strict build does not catch that, because
+literal text is valid; ``tests/test_docs_site.py`` does.
+
+``pymdownx.tabbed`` is enabled, so real tabs are now available — but a
+``=== "Math"`` marker is literal text on GitHub, and mkdocs.yml is explicit
+that these pages are meant to render in both places. If that ever stops being
+true, tabs are a change to :func:`_block` and to nothing else, which is the
+reason to generate this rather than hand-write it even once.
 """
 
 from __future__ import annotations
@@ -53,7 +65,7 @@ def _block(name: str, path: Path) -> str:
     """The generated section for one model: a disclosure holding its math."""
     table = SYMBOLS / f'{name}.yaml'
     math = to_markdown(path, symbols=table if table.exists() else None, legend=True)
-    return f'<details>\n<summary>The same model, as math</summary>\n\n{math}\n</details>'
+    return f'<details markdown="1">\n<summary>The same model, as math</summary>\n\n{math}\n</details>'
 
 
 def rendered(page: str, name: str, path: Path) -> str:

@@ -17,7 +17,7 @@ commitment at all — see [the ledger](../ports.md#ledger--what-a-port-could-not
 ## The model
 
 <!-- math:begin -->
-<details>
+<details markdown="1">
 <summary>The same model, as math</summary>
 
 #### Sets

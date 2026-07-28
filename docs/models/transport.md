@@ -14,7 +14,7 @@ $\ell$ is already the line index.
 ## The model
 
 <!-- math:begin -->
-<details>
+<details markdown="1">
 <summary>The same model, as math</summary>
 
 #### Sets

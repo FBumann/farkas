@@ -14,7 +14,7 @@ $$\min \sum_{i,j} c_{ij} x_{ij}
 ## The model
 
 <!-- math:begin -->
-<details>
+<details markdown="1">
 <summary>The same model, as math</summary>
 
 #### Sets

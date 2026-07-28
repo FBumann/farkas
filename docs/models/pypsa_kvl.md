@@ -22,7 +22,7 @@ the whole difference between a line and a link.
 ## The model
 
 <!-- math:begin -->
-<details>
+<details markdown="1">
 <summary>The same model, as math</summary>
 
 #### Sets

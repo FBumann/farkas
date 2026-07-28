@@ -14,7 +14,7 @@ $$\min \sum_{s,g} c_g \, p_{s,g}
 ## The model
 
 <!-- math:begin -->
-<details>
+<details markdown="1">
 <summary>The same model, as math</summary>
 
 #### Sets

@@ -83,6 +83,24 @@ def test_every_page_with_a_model_carries_a_math_block() -> None:
     )
 
 
+def test_every_math_block_opts_into_markdown_inside_html() -> None:
+    """`<details>` without `markdown="1"` renders its contents as literal text
+    on the site, and the strict build does not notice — literal text is valid.
+
+    The two renderers disagree here and only one of them complains. GitHub
+    processes Markdown inside `<details>` regardless and drops the unknown
+    attribute; mkdocs has `md_in_html`, which needs it. So the attribute is
+    free on one side and load-bearing on the other, which is exactly the kind
+    of thing that ships broken.
+    """
+    for name, _ in constructs.models():
+        page = (GALLERY / f'{name}.md').read_text()
+        assert '<details markdown="1">' in page, (
+            f'docs/models/{name}.md has a math block whose <details> does not carry '
+            f'markdown="1" — its tables and $$ blocks will be literal text on the site'
+        )
+
+
 def test_the_construct_matrix_is_current() -> None:
     """Generated from the resolved plan, so a model that gains a construct and
     a table that does not mention it cannot both be committed."""

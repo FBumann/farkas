@@ -19,7 +19,7 @@ opening a warehouse costs money whether or not it ends up busy.
 ## The model
 
 <!-- math:begin -->
-<details>
+<details markdown="1">
 <summary>The same model, as math</summary>
 
 #### Sets

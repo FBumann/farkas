@@ -15,7 +15,7 @@ third, which is what a free end-of-horizon buys you.
 ## The model
 
 <!-- math:begin -->
-<details>
+<details markdown="1">
 <summary>The same model, as math</summary>
 
 #### Sets

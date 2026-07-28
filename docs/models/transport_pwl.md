@@ -30,7 +30,7 @@ The [instance](https://github.com/FBumann/farkas/blob/main/examples/ports/data/t
 ## The model
 
 <!-- math:begin -->
-<details>
+<details markdown="1">
 <summary>The same model, as math</summary>
 
 #### Sets

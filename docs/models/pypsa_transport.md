@@ -7,7 +7,7 @@ PyPSA linear optimal power flow, first rung: transport model, linear marginal co
 ## The model
 
 <!-- math:begin -->
-<details>
+<details markdown="1">
 <summary>The same model, as math</summary>
 
 #### Sets
