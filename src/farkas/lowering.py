@@ -20,7 +20,12 @@ Semantics mirror the eager builder exactly:
 - a single-equation constraint keeps the constraint name, multiple equations
   get ``_{i}`` suffixes;
 - constraint-level and equation-level where strings are ANDed;
-- a file declares one objective, and only its ``equations[0]`` is used.
+- a file declares one objective with one ``equations:`` entry — validation
+  refuses the rest, so this module reads ``equations[0]`` knowing it is all
+  there is;
+- an objective sums each term over the dims that term carries, which is what
+  term fragments do for free and what the eager lane has to distribute for
+  (``builder._objective_expression``).
 """
 
 from __future__ import annotations

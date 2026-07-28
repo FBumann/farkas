@@ -226,10 +226,68 @@ def _build_objectives(ctx: EvaluationContext) -> None:
                 msg = f'Expression must not contain a comparison operator. Got: {eq.expression!r}'
                 raise LanguageError(msg)
 
-            expr = _eval_ast(ast, ctx)
+            expr = _objective_expression(ast, ctx)
 
             sense = 'min' if odef.sense == 'minimize' else 'max'
             ctx.model.add_objective(expr, overwrite=True, sense=sense)
+
+
+def _objective_expression(node: ArithmeticNode, ctx: EvaluationContext) -> Any:
+    """*node* as a scalar: each additive term summed over the dims it carries.
+
+    An objective has no ``foreach``, so every dim it names is summed (SPEC §2).
+    *Which* dims are summed is per term, not per objective. In
+    ``x[i] * a[i] + y[j] * b[j]`` the first term has ``|i|`` summands and the
+    second ``|j|``; neither is repeated because its sibling names a dim it does
+    not carry. Adding the two operands first — what linopy's ``+`` does —
+    broadcasts both to ``(i, j)`` and counts each term once per coordinate of
+    the other, so an objective that spans a sparse and a dense variable comes
+    out multiplied rather than summed.
+
+    The relational lane never had the problem: an expression there is a set of
+    term fragments, each keeping its own dims until the objective sums it. This
+    reproduces that by distributing the sum over addition, which is what hard
+    rule 3 requires of the two lanes (#197).
+    """
+    total: Any = None
+    for term in _additive_terms(node, ctx):
+        # `.sum()` with no dim argument reduces everything the term carries;
+        # a bare constant has nothing to reduce and no `.sum` to call.
+        scalar = term.sum() if hasattr(term, 'sum') else term
+        total = scalar if total is None else total + scalar
+    return total
+
+
+def _additive_terms(node: ArithmeticNode, ctx: EvaluationContext) -> list[Any]:
+    """*node* as a list of terms to be summed, multiplication distributed.
+
+    Only the operators that distribute are walked. Everything else is one
+    opaque term evaluated the ordinary way — a helper call has already reduced
+    whatever it reduces, and its result broadcasts like any other operand.
+    Distribution is what keeps ``(x[i] * a[i] + y[j] * b[j]) * c[k]`` two terms
+    rather than one broadcast to ``(i, j, k)``.
+    """
+    if isinstance(node, UnaryOperatorNode) and node.op in {'+', '-'}:
+        terms = _additive_terms(node.operand, ctx)
+        return [-t for t in terms] if node.op == '-' else terms
+
+    if isinstance(node, BinaryOperatorNode):
+        if node.op == '+':
+            return _additive_terms(node.left, ctx) + _additive_terms(node.right, ctx)
+        if node.op == '-':
+            return _additive_terms(node.left, ctx) + [-t for t in _additive_terms(node.right, ctx)]
+        if node.op == '*':
+            # degree stays whatever it was: a product of two variable-carrying
+            # terms still fails in linopy, exactly as it does through _eval_ast
+            return [
+                left * right for left in _additive_terms(node.left, ctx) for right in _additive_terms(node.right, ctx)
+            ]
+        if node.op == '/':
+            # the divisor carries no variables (degree 1), so it is one value
+            divisor = _eval_ast(node.right, ctx)
+            return [term / divisor for term in _additive_terms(node.left, ctx)]
+
+    return [_eval_ast(node, ctx)]
 
 
 # ---------------------------------------------------------------------------
