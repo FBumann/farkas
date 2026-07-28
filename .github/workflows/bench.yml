@@ -1,21 +1,31 @@
 name: Bench
 
-# Cost, in the same terms as ci.yml: this is a second billed job, so it only
-# runs when a PR touches the engine or the harness. Most PRs pay nothing. When
-# it does run it is ~4 billed minutes — two suite passes plus the install — and
-# that is the floor for a *comparison*: a benchmark against no baseline is a
-# number without a claim.
+# Cost, in the same terms as ci.yml: a second billed job at ~4 billed minutes —
+# two suite passes plus the install. That is the floor for a *comparison*: a
+# benchmark against no baseline is a number without a claim.
+#
+# **Asked for, never guessed.** Label a PR `bench` and it runs. This is
+# `workflow_dispatch` in spirit, with the one thing dispatch cannot give: a pull
+# request to report into. The numbers are a comparison against *this* PR's base,
+# so they only mean anything somewhere a base exists.
+#
+# The label is removed when the run finishes, which makes it a button rather
+# than a state — re-label to re-run, after a flaky result or a new push. It also
+# keeps the label from reading as "this PR was benchmarked" long after the
+# commit it measured.
+#
+# A `paths:` filter was the alternative and is deliberately not used. It runs
+# unasked on anything touching the engine, which sounds safer until it drifts:
+# it is an allowlist, so code moving out from under it makes the job stop
+# running, and a job that does not run looks exactly like one that passed.
+# Asking is explicit and cannot fail that way.
 #
 # Not a required check. It gates on memory, which is deterministic, and reports
 # time without gating, which is not (see the job comments).
 
 on:
   pull_request:
-    paths:
-      - 'src/farkas/relational/**'
-      - 'bench/**'
-      - 'pyproject.toml'
-      - '.github/workflows/bench.yml'
+    types: [labeled]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -23,9 +33,12 @@ concurrency:
 
 permissions:
   contents: read
+  # to take the label off again when the run is done
+  pull-requests: write
 
 jobs:
   bench:
+    if: github.event.label.name == 'bench'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -96,3 +109,19 @@ jobs:
         run: |
           uv run --no-sync benchmem compare .benchmarks/*/0001_*.json .benchmarks/*/0002_*.json \
             --columns peak --fail-on peak:20%
+
+
+      # `always()`, so a failed gate still clears the label: leaving it on would
+      # mean the next push re-runs the job unasked, which is the automatic
+      # behaviour this trigger exists to avoid. The run's own conclusion is the
+      # record of what happened; the label is only the request.
+      #
+      # Best-effort by design. A PR from a fork gets a read-only token whatever
+      # the permissions block says, so this cannot remove the label there — and
+      # a housekeeping step must not turn a green run red, hence `|| true`.
+      - name: hand the label back
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr edit ${{ github.event.pull_request.number }} --remove-label bench || true
