@@ -326,9 +326,9 @@ def main(argv: list[str] | None = None) -> int:
         nargs='+',
         default=['none', '1GB'],
         help="budgets to run the duckdb arm at. `none` passes duckdb's own unlimited "
-        "(-1), which is the only setting comparable with a lane that has no such knob; "
+        '(-1), which is the only setting comparable with a lane that has no such knob; '
         'a size runs it as its architecture intends, spilling to stay under. Both are '
-        "reported, because a single number would be whichever one the reader assumed.",
+        'reported, because a single number would be whichever one the reader assumed.',
     )
     ap.add_argument(
         '--duckdb-root',
