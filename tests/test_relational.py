@@ -331,6 +331,73 @@ def test_a_variable_appearing_twice_in_a_row_is_summed_not_duplicated():
     assert result.objective == pytest.approx(5.0)  # 6/3 + 9/3
 
 
+def test_a_factored_mask_labels_exactly_like_the_counted_path():
+    """The fast path has to be indistinguishable from the one it replaces.
+
+    A mask that reads none of the leading dims removes the same coordinates
+    under every one of their values, so the survivors are a rectangle and the
+    label is arithmetic. That is only a speedup if it lands on the *same*
+    numbers the counted path would have assigned — a label is the solver's own
+    column index, so an off-by-one here is a different model, not a slower one.
+
+    Both paths are run over the same model and compared outright. The mask
+    reads `tech` only, so it factors; forcing it through the counted path is a
+    matter of asking for the labels the sort produces.
+    """
+    import polars as pl_
+
+    from farkas.relational.compiler import _ordinal
+
+    model = {
+        'dimensions': {
+            'snapshot': {'dtype': 'int', 'values': list(range(5))},
+            'node': {'dtype': 'str', 'values': ['a', 'b', 'c']},
+            'tech': {'dtype': 'str', 'values': ['wind', 'gas', 'coal', 'hydro']},
+        },
+        'parameters': {'cap': {'dims': ['node', 'tech']}, 'load': {'dims': ['snapshot']}},
+        'variables': {
+            'p': {'foreach': ['snapshot', 'node', 'tech'], 'where': 'cap > 0', 'bounds': {'lower': 0, 'upper': 'cap'}}
+        },
+        'constraints': {
+            'balance': {
+                'foreach': ['snapshot', 'node'],
+                'equations': [{'expression': 'sum(p, over=tech) >= load'}],
+            }
+        },
+        'objectives': {
+            'o': {
+                'sense': 'minimize',
+                'equations': [{'expression': 'sum(sum(sum(p, over=tech), over=node), over=snapshot)'}],
+            }
+        },
+    }
+    caps = [
+        {'node': n, 'tech': t, 'value': 0.0 if (n, t) in {('a', 'gas'), ('c', 'coal'), ('b', 'hydro')} else 10.0}
+        for n in ['a', 'b', 'c']
+        for t in ['wind', 'gas', 'coal', 'hydro']
+    ]
+    sources = {
+        'cap': pl.DataFrame(caps),
+        'load': pl.DataFrame({'snapshot': list(range(5)), 'value': [1.0] * 5}),
+    }
+
+    with fk.build(model, sources) as ex:
+        fast = ex._variables['p'].collect().sort('var_label')
+        dims = ('snapshot', 'node', 'tech')
+        counted = (
+            ex._q.frame(dims, ex._program.variables[0].where)
+            .sort([_ordinal(d) for d in dims])
+            .select(*dims)
+            .with_row_index('var_label', offset=0)
+            .select(*dims, pl_.col('var_label').cast(pl_.Int64))
+            .collect()
+        )
+
+    assert fast.height == counted.height, 'the two paths disagree about how many coordinates survive'
+    assert fast.equals(counted.sort('var_label')), 'the factored labels are not the counted labels'
+    assert fast['var_label'].to_list() == list(range(fast.height)), 'labels must stay dense from 0'
+
+
 def test_an_objective_naming_a_variable_twice_sums_its_coefficients():
     """Same argument, one dimension down: the objective is a column vector."""
     model = {
