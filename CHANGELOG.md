@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.6](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.5...v0.0.1-alpha.6) (2026-07-28)
+
+
+### Documentation
+
+* say what examples/ is, and point it at the explained version ([#263](https://github.com/FBumann/farkas/issues/263)) ([aab7617](https://github.com/FBumann/farkas/commit/aab7617b137b9b88f72084142fa5ad558074d6e2))
+
 ## [0.0.1-alpha.5](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.4...v0.0.1-alpha.5) (2026-07-28)
 
 
