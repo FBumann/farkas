@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>farkas — engine scaling</title>
+<style>*{box-sizing:border-box}body{margin:0}</style>
+</head>
+<body>
+
+<div class="viz-root">
+
+<header>
+  <h1>polars, duckdb, linopy — how each one scales</h1>
+  <p class="lede">
+    Build a model and hand it to HiGHS, with <code>run()</code> never called. Every
+    point is one process, best of three, on an idle machine. The parity gate passed on
+    all six models: the three engines agree on the objective to <code>0.0e+00</code>
+    relative (<code>fleet</code> to 4.6e-16).
+  </p>
+</header>
+
+<section>
+  <h2>Is the ordering robust to model shape?</h2>
+  <p class="note">
+    Each engine against <b>linopy on the same model and rung</b>, so linopy is the flat
+    1.0 line. The line is the median across the six benchmark models; the band is the
+    full min–max envelope. Below 1.0 is faster (left) or lighter (right). <b>Where the
+    bands do not overlap, the ordering does not depend on which model you picked.</b>
+  </p>
+  <div class="grid2">
+    <figure><figcaption>Wall time ÷ linopy</figcaption><div id="band-wall" class="plot"></div></figure>
+    <figure><figcaption>Peak RSS ÷ linopy</figcaption><div id="band-peak" class="plot"></div></figure>
+  </div>
+  <p class="note">
+    <b>On time the answer is robust.</b> The two bands do not overlap at any rung:
+    polars' worst model is faster than duckdb's best one at <code>xs</code>
+    (0.15 against 0.21), <code>s</code> (0.18 / 0.32), <code>m</code> (0.50 / 0.72)
+    and <code>l</code> (1.09 / 1.12). Whichever of the six you picked, the ordering
+    would be the same. polars is also below linopy everywhere except
+    <code>profiled/l</code>; duckdb crosses above linopy from <code>m</code> up.
+  </p>
+  <p class="note">
+    <b>On memory it is not.</b> Against linopy the two bands overlap at every rung, so
+    by that reference neither engine is decisively lighter. It only resolves engine to
+    engine: at <code>l</code>, duckdb is lighter on all six models, by 1.29x
+    (<code>profiled</code>, <code>transport</code>) to 1.49x (<code>dispatch</code>).
+    That is the gap the choice actually costs, and it is a range rather than a number
+    because the polars band is genuinely wide — <code>sector</code> is 0.32x of
+    linopy's peak and <code>dispatch</code> 0.95x, on the same rung.
+  </p>
+</section>
+
+<section>
+  <h2>Past the ladder — <code>dispatch</code> out to 120M variables</h2>
+  <p class="note">
+    Log–log, so a straight line is a power law and its slope is the exponent. The 40M
+    and 120M rungs are past anything the ladder covers. duckdb is drawn twice, at its
+    1 GB default and unbounded — <b>the two lie on top of each other on time</b>, which
+    answers whether the budget was costing it speed.
+  </p>
+  <div class="grid2">
+    <figure><figcaption>Wall time (s)</figcaption><div id="scale-wall" class="plot"></div></figure>
+    <figure><figcaption>Peak RSS (GB)</figcaption><div id="scale-peak" class="plot"></div></figure>
+  </div>
+  <p class="note">
+    At 120M variables polars builds and loads in <b>35 s against linopy's 106 s and
+    duckdb's 75 s</b>, and the gap widens with size rather than closing: linopy's curve
+    steepens above 10M, duckdb's above 40M, polars' does not. The right panel is where
+    duckdb earns its keep — at 120M it holds <b>2.1 GB</b> against polars' 8.3 GB, and
+    that 2.1 GB is a number you <i>set</i> rather than one you measure. Unbounded, the
+    same run takes 5.3 GB: the budget is doing real work, and it is not costing time.
+  </p>
+</section>
+
+<section>
+  <h2>Every model, on its own axes</h2>
+  <div class="controls">
+    <span class="ctl-label">Show</span>
+    <button class="ctl on" data-metric="wall">wall time</button>
+    <button class="ctl" data-metric="peak">peak RSS</button>
+  </div>
+  <div class="legend" id="facet-legend"></div>
+  <div id="facets" class="grid3"></div>
+  <p class="note">
+    The detail the band flattens. <code>profiled</code> is the one model where linopy
+    finishes ahead at the top rung — 2.61 s against 2.84 s — and it is why the polars
+    wall band reaches 1.09 at <code>l</code> instead of staying under 1. It has the
+    most distinct variables and the most per-variable arithmetic of the six, which is
+    the shape a dense array suits best and a frame least; it is also the noisiest case
+    here, reading 2.33 s to 2.84 s across repeats at ~4 GB resident. <code>sector</code>
+    is the opposite end: sparse, and the one model where the peak gap against linopy is
+    threefold.
+  </p>
+</section>
+
+<section>
+  <h2>The numbers</h2>
+  <div class="controls">
+    <span class="ctl-label">Rung</span>
+    <button class="ctl2 on" data-rung="3">l</button>
+    <button class="ctl2" data-rung="2">m</button>
+    <button class="ctl2" data-rung="1">s</button>
+    <button class="ctl2" data-rung="0">xs</button>
+  </div>
+  <div class="scroller"><table id="numbers"></table></div>
+  <p class="note">Bold is the best of the three on that model and metric.</p>
+</section>
+
+<footer>
+  <p class="note">
+    Harness <code>bench/run.py</code>; the six models live in <code>bench/models/</code>.
+    The duckdb arm is the <code>v0.0.0-alpha.26</code> checkout, run under its own
+    interpreter but driven by this same harness, so the two engines are measured by one
+    stopwatch. Full method, the LP-file sink, and the marginal-cost pass are in
+    <code>docs/benchmarks.md</code>.
+  </p>
+</footer>
+
+</div>
+
+<style>
+.viz-root {
+  --surface-1: #fcfcfb; --surface-2: #f4f3ef;
+  --text-primary: #1a1a19; --text-secondary: #55534a; --text-muted: #8a887c;
+  --hairline: #dedcd3;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
+  color-scheme: light;
+  background: var(--surface-1); color: var(--text-primary);
+  font: 15px/1.55 ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
+  max-width: 1120px; margin: 0 auto; padding: 2.2rem 1.2rem 4rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .viz-root {
+    color-scheme: dark;
+    --surface-1: #1a1a19; --surface-2: #232320;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #8a887c;
+    --hairline: #3a3934;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+  }
+}
+:root[data-theme="dark"] .viz-root {
+  color-scheme: dark;
+  --surface-1: #1a1a19; --surface-2: #232320;
+  --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #8a887c;
+  --hairline: #3a3934;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+}
+.viz-root h1 { font-size: 1.7rem; font-weight: 620; letter-spacing: -.02em; margin: 0 0 .5rem; }
+.viz-root h2 { font-size: 1.12rem; font-weight: 600; letter-spacing: -.01em; margin: 0 0 .55rem; }
+.viz-root section { margin-top: 3rem; }
+.viz-root .lede { color: var(--text-secondary); max-width: 64ch; margin: 0; }
+.viz-root .note { color: var(--text-secondary); font-size: .875rem; max-width: 76ch; margin: .9rem 0 0; }
+.viz-root code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em;
+  background: var(--surface-2); padding: .06em .34em; border-radius: 4px; }
+.viz-root figure { margin: 0; min-width: 0; }
+.viz-root figcaption { font-size: .8rem; font-weight: 600; color: var(--text-secondary);
+  margin: 0 0 .3rem; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.8rem; margin-top: 1rem; }
+.grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(255px, 1fr)); gap: 1.4rem; margin-top: 1rem; }
+.plot { position: relative; }
+.plot svg { display: block; width: 100%; height: auto; overflow: visible; }
+.controls { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; margin: .2rem 0; }
+.ctl-label { font-size: .78rem; color: var(--text-muted); text-transform: uppercase;
+  letter-spacing: .06em; margin-right: .3rem; }
+.viz-root button { font: inherit; font-size: .82rem; color: var(--text-secondary);
+  background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 6px;
+  padding: .28rem .68rem; cursor: pointer; }
+.viz-root button.on { background: var(--text-primary); color: var(--surface-1);
+  border-color: var(--text-primary); }
+.legend { display: flex; gap: .95rem; flex-wrap: wrap; margin: 0 0 .45rem; font-size: .8rem; }
+.legend > span { display: inline-flex; align-items: center; gap: .35rem; }
+.swatch { width: 15px; height: 3px; border-radius: 2px; display: inline-block; }
+.swatch.dash { background: none !important; border-top: 3px dashed currentColor;
+  height: 0; border-radius: 0; }
+.tip { position: absolute; pointer-events: none; z-index: 5; opacity: 0; transition: opacity .09s;
+  background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 7px;
+  padding: .42rem .6rem; font-size: .78rem; line-height: 1.5; white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0,0,0,.13); color: var(--text-primary); }
+.tip b { font-weight: 600; }
+.tip .row { display: flex; align-items: center; gap: .4rem; }
+.tip .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.tip .val { margin-left: auto; padding-left: 1.1rem; font-variant-numeric: tabular-nums;
+  font-weight: 600; }
+.scroller { overflow-x: auto; margin-top: .8rem; }
+.viz-root table { border-collapse: collapse; font-size: .85rem; font-variant-numeric: tabular-nums;
+  min-width: 100%; }
+.viz-root th, .viz-root td { text-align: right; padding: .42rem .7rem;
+  border-bottom: 1px solid var(--hairline); white-space: nowrap; }
+.viz-root th:first-child, .viz-root td:first-child { text-align: left; }
+.viz-root thead th { font-weight: 600; color: var(--text-secondary); font-size: .78rem;
+  text-transform: uppercase; letter-spacing: .04em; }
+.viz-root thead tr:first-child th { border-bottom: none; padding-bottom: 0;
+  text-align: center; }
+.viz-root td.best { font-weight: 660; color: var(--text-primary); }
+.viz-root footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--hairline); }
+</style>
+
+<script>
+const DATA = {"scaling": {"vars": [10000, 100000, 1000000, 10000000, 40000000, 120000000], "wall": {"polars": [0.015, 0.027, 0.128, 1.123, 5.989, 35.358], "linopy": [0.21, 0.218, 0.34, 1.538, 8.805, 106.226], "duckdb": [0.051, 0.136, 0.424, 2.872, 22.967, 74.569], "duckdb@1GB": [0.052, 0.137, 0.404, 2.833, 20.405, 80.846]}, "peak": {"polars": [0.17, 0.212, 0.468, 2.04, 5.978, 8.301], "linopy": [0.214, 0.261, 0.564, 2.134, 7.922, 7.775], "duckdb": [0.156, 0.181, 0.296, 0.76, 2.0, 5.278], "duckdb@1GB": [0.156, 0.179, 0.314, 0.739, 1.383, 2.112]}}, "cases": {"dispatch": {"vars": [10000, 100000, 1000000, 10000000], "wall": {"polars": [0.017, 0.022, 0.084, 0.687], "linopy": [0.207, 0.219, 0.374, 1.93], "duckdb": [0.053, 0.105, 0.405, 2.771]}, "peak": {"polars": [0.168, 0.208, 0.52, 3.127], "linopy": [0.201, 0.229, 0.495, 3.304], "duckdb": [0.161, 0.192, 0.458, 2.101]}}, "fleet": {"vars": [12000, 120000, 1200000, 12000000], "wall": {"polars": [0.044, 0.057, 0.177, 1.481], "linopy": [0.288, 0.322, 0.578, 3.404], "duckdb": [0.09, 0.182, 0.946, 5.857]}, "peak": {"polars": [0.174, 0.231, 0.653, 3.764], "linopy": [0.203, 0.246, 0.703, 4.871], "duckdb": [0.172, 0.221, 0.633, 2.656]}}, "nodal": {"vars": [3000, 30000, 300000, 3000000], "wall": {"polars": [0.017, 0.02, 0.048, 0.491], "linopy": [0.213, 0.232, 0.298, 1.339], "duckdb": [0.052, 0.078, 0.28, 2.577]}, "peak": {"polars": [0.167, 0.186, 0.333, 1.42], "linopy": [0.202, 0.213, 0.352, 1.709], "duckdb": [0.162, 0.175, 0.276, 0.964]}}, "profiled": {"vars": [12000, 120000, 1200000, 12000000], "wall": {"polars": [0.022, 0.044, 0.228, 2.843], "linopy": [0.286, 0.281, 0.459, 2.613], "duckdb": [0.061, 0.191, 1.028, 8.095]}, "peak": {"polars": [0.174, 0.261, 0.836, 4.114], "linopy": [0.205, 0.247, 0.642, 4.73], "duckdb": [0.165, 0.213, 0.584, 3.189]}}, "sector": {"vars": [1000, 10000, 100000, 1000000], "wall": {"polars": [0.02, 0.025, 0.049, 0.38], "linopy": [0.225, 0.232, 0.333, 1.248], "duckdb": [0.054, 0.074, 0.241, 1.399]}, "peak": {"polars": [0.168, 0.19, 0.342, 0.946], "linopy": [0.203, 0.22, 0.493, 2.978], "duckdb": [0.162, 0.169, 0.218, 0.675]}}, "transport": {"vars": [9800, 98000, 980000, 9800000], "wall": {"polars": [0.024, 0.035, 0.142, 1.552], "linopy": [0.243, 0.26, 0.469, 2.61], "duckdb": [0.067, 0.132, 0.585, 4.093]}, "peak": {"polars": [0.174, 0.221, 0.596, 3.089], "linopy": [0.204, 0.234, 0.565, 3.952], "duckdb": [0.171, 0.205, 0.528, 2.394]}}}, "caseNames": ["dispatch", "fleet", "nodal", "profiled", "sector", "transport"], "rungs": ["xs", "s", "m", "l"]};
+
+/* Three categorical slots, validated all-pairs in both modes (worst CVD dE 9.2
+   light / 9.4 dark, worst normal-vision 24.0 / 20.9). duckdb's two budget
+   settings share slot 3 and separate by dash, so a fourth hue is never needed. */
+const COLOR = { polars: 'var(--s1)', linopy: 'var(--s2)', duckdb: 'var(--s3)', 'duckdb@1GB': 'var(--s3)' };
+const NS = 'http://www.w3.org/2000/svg';
+const el = (n, a = {}) => { const e = document.createElementNS(NS, n);
+  for (const k in a) e.setAttribute(k, a[k]); return e; };
+const fmtS = v => v >= 10 ? v.toFixed(1) + ' s' : v >= 1 ? v.toFixed(2) + ' s' : (v * 1000).toFixed(0) + ' ms';
+const fmtG = v => v.toFixed(2) + ' GB';
+const fmtX = v => v >= 1e6 ? +(v / 1e6).toFixed(1) + 'M' : v >= 1e3 ? +(v / 1e3).toFixed(1) + 'k' : '' + v;
+
+/* Log ticks on the 1–2–5 sequence rather than decades. Whole decades would put
+   the peak-ratio band — which lives inside half a decade — on a two-decade axis,
+   flattening the one comparison the band exists to make. */
+function logTicks(lo, hi) {
+  const cand = [];
+  for (let e = Math.floor(Math.log10(lo)) - 1; e <= Math.ceil(Math.log10(hi)) + 1; e++)
+    for (const mant of [1, 2, 5]) cand.push(+(mant * Math.pow(10, e)).toPrecision(12));
+  cand.sort((a, b) => a - b);
+  let i0 = 0, i1 = cand.length - 1;
+  cand.forEach((v, i) => { if (v <= lo) i0 = i; });
+  for (let i = cand.length - 1; i >= 0; i--) if (cand[i] >= hi) i1 = i;
+  const full = cand.slice(i0, i1 + 1);
+  const step = Math.ceil(full.length / 6);
+  if (step < 2) return full;
+  const out = full.filter((_, i) => i % step === 0);
+  if (out[out.length - 1] !== full[full.length - 1]) out.push(full[full.length - 1]);
+  return out;
+}
+
+/* One renderer for all four shapes. `series` carries lines; `bands` carries
+   min-max envelopes drawn beneath them. Both share the scales, so a band and
+   its median line can never drift apart. */
+function chart(host, cfg) {
+  /* A facet renders into a third of the width, so it gets its own smaller
+     viewBox: the type is specified in user units and scales with the box, and
+     one size for both would be ~6px on screen in the small panels. */
+  const F = cfg.font || 10.5;
+  const W = cfg.W || 470, H = cfg.H || 300;
+  const m = { t: F * 1.2, r: cfg.directLabels === false ? F * 1.4 : F * 6, b: F * 4, l: F * 5.2 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const logY = cfg.logY !== false, logX = !!cfg.logX;
+
+  const all = [];
+  for (const s of cfg.series) for (const p of s.pts) all.push(p[1]);
+  for (const b of (cfg.bands || [])) for (const p of b.pts) { all.push(p[1]); all.push(p[2]); }
+  let y0 = Math.min(...all), y1 = Math.max(...all), yticks;
+  if (logY) { yticks = logTicks(y0, y1); y0 = yticks[0]; y1 = yticks[yticks.length - 1]; }
+  else { const pad = (y1 - y0) * 0.12 || 0.1; y0 -= pad; y1 += pad;
+    yticks = [0, 1, 2, 3, 4].map(i => y0 + (y1 - y0) * i / 4); }
+
+  const xs = cfg.series[0].pts.map(p => p[0]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const sx = v => logX
+    ? m.l + iw * (Math.log10(v) - Math.log10(x0)) / (Math.log10(x1) - Math.log10(x0) || 1)
+    : m.l + iw * (v - x0) / ((x1 - x0) || 1);
+  const sy = v => logY
+    ? m.t + ih * (1 - (Math.log10(Math.max(v, y0)) - Math.log10(y0)) / (Math.log10(y1) - Math.log10(y0)))
+    : m.t + ih * (1 - (v - y0) / (y1 - y0));
+
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': cfg.aria });
+
+  for (const t of yticks) {
+    svg.appendChild(el('line', { x1: m.l, x2: m.l + iw, y1: sy(t), y2: sy(t),
+      stroke: 'var(--hairline)', 'stroke-width': 1 }));
+    const lab = el('text', { x: m.l - F * 0.76, y: sy(t) + F * 0.36, 'text-anchor': 'end',
+      fill: 'var(--text-muted)', 'font-size': F });
+    lab.textContent = cfg.fmtY(t); svg.appendChild(lab);
+  }
+  if (cfg.refLine !== undefined) {
+    svg.appendChild(el('line', { x1: m.l, x2: m.l + iw, y1: sy(cfg.refLine), y2: sy(cfg.refLine),
+      stroke: 'var(--text-muted)', 'stroke-width': 1.5, 'stroke-dasharray': '4 3' }));
+  }
+  cfg.series[0].pts.forEach((p, i) => {
+    const lab = el('text', { x: sx(p[0]), y: H - m.b + F * 1.6, 'text-anchor': 'middle',
+      fill: 'var(--text-muted)', 'font-size': F });
+    lab.textContent = cfg.xTicks ? cfg.xTicks[i] : fmtX(p[0]); svg.appendChild(lab);
+  });
+  const ax = el('text', { x: m.l + iw / 2, y: H - F * 0.4, 'text-anchor': 'middle',
+    fill: 'var(--text-muted)', 'font-size': F });
+  ax.textContent = cfg.xLabel; svg.appendChild(ax);
+
+  for (const b of (cfg.bands || [])) {
+    const up = b.pts.map(p => `${sx(p[0])},${sy(p[2])}`);
+    const dn = b.pts.slice().reverse().map(p => `${sx(p[0])},${sy(p[1])}`);
+    svg.appendChild(el('polygon', { points: [...up, ...dn].join(' '),
+      fill: COLOR[b.name], opacity: 0.16 }));
+  }
+
+  for (const s of cfg.series) {
+    const d = s.pts.map((p, i) => `${i ? 'L' : 'M'}${sx(p[0])},${sy(p[1])}`).join('');
+    const a = { d, fill: 'none', stroke: COLOR[s.name], 'stroke-width': F * 0.19,
+      'stroke-linecap': 'round', 'stroke-linejoin': 'round' };
+    if (s.dash) a['stroke-dasharray'] = '5 4';
+    svg.appendChild(el('path', a));
+    /* a 2px surface ring keeps overlapping marks legible */
+    for (const p of s.pts) {
+      svg.appendChild(el('circle', { cx: sx(p[0]), cy: sy(p[1]), r: F * 0.4,
+        fill: s.dash ? 'var(--surface-1)' : COLOR[s.name], stroke: s.dash ? COLOR[s.name] : 'var(--surface-1)',
+        'stroke-width': 2 }));
+    }
+    /* direct label at the right end — identity is never carried by color alone */
+    if (cfg.directLabels !== false) {
+      const last = s.pts[s.pts.length - 1];
+      const t = el('text', { x: sx(last[0]) + F * 0.86, y: sy(last[1]) + F * 0.33 + (s.dy || 0),
+        fill: 'var(--text-secondary)', 'font-size': F, 'font-weight': 600 });
+      t.textContent = s.label || s.name; svg.appendChild(t);
+    }
+  }
+
+  const cross = el('line', { y1: m.t, y2: m.t + ih, stroke: 'var(--text-muted)',
+    'stroke-width': 1, 'stroke-dasharray': '3 3', opacity: 0 });
+  svg.appendChild(cross);
+  const hit = el('rect', { x: m.l, y: m.t, width: iw, height: ih, fill: 'transparent' });
+  svg.appendChild(hit);
+  host.appendChild(svg);
+
+  const tip = document.createElement('div');
+  tip.className = 'tip'; host.appendChild(tip);
+  const show = ev => {
+    const bx = svg.getBoundingClientRect(), k = bx.width / W;
+    const vx = (ev.clientX - bx.left) / k;
+    let i = 0, bd = Infinity;
+    cfg.series[0].pts.forEach((p, j) => { const d = Math.abs(sx(p[0]) - vx); if (d < bd) { bd = d; i = j; } });
+    const px = sx(cfg.series[0].pts[i][0]);
+    cross.setAttribute('x1', px); cross.setAttribute('x2', px); cross.setAttribute('opacity', 1);
+    let html = `<b>${cfg.tipTitle(i)}</b>`;
+    for (const s of cfg.series) {
+      html += `<div class="row"><span class="dot" style="background:${COLOR[s.name]}"></span>` +
+        `${s.label || s.name}<span class="val">${cfg.fmtTip(s.pts[i][1])}</span></div>`;
+    }
+    tip.innerHTML = html; tip.style.opacity = 1;
+    tip.style.left = Math.min(Math.max(px * k + 14, 0), Math.max(bx.width - tip.offsetWidth - 2, 0)) + 'px';
+    tip.style.top = (m.t * k + 4) + 'px';
+  };
+  hit.addEventListener('pointermove', show);
+  hit.addEventListener('pointerdown', show);
+  hit.addEventListener('pointerleave', () => { tip.style.opacity = 0; cross.setAttribute('opacity', 0); });
+}
+
+function legendHTML(entries) {
+  return entries.map(e =>
+    `<span style="color:${COLOR[e.name]}"><i class="swatch${e.dash ? ' dash' : ''}"` +
+    ` style="background:${COLOR[e.name]}"></i>` +
+    `<span style="color:var(--text-secondary)">${e.label}</span></span>`).join('');
+}
+
+function legend(host, entries) {
+  const d = document.createElement('div');
+  d.className = 'legend';
+  d.innerHTML = legendHTML(entries);
+  host.parentNode.insertBefore(d, host);
+}
+
+const ENGINES = ['polars', 'duckdb'];
+const med = a => { const s = a.slice().sort((x, y) => x - y);
+  return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2; };
+
+/* Ratio to linopy on the same model and rung, so the size trend divides out and
+   what the band shows is spread across model *shape* rather than across size. */
+function bandChart(host, metric) {
+  const series = [], bands = [], raw = {};
+  for (const eng of ENGINES) {
+    const mid = [], env = [];
+    raw[eng] = [];
+    DATA.rungs.forEach((_, i) => {
+      const r = DATA.caseNames.map(c => DATA.cases[c][metric][eng][i] / DATA.cases[c][metric].linopy[i]);
+      raw[eng].push(r);
+      mid.push([i, med(r)]); env.push([i, Math.min(...r), Math.max(...r)]);
+    });
+    series.push({ name: eng, pts: mid }); bands.push({ name: eng, pts: env });
+  }
+  series.push({ name: 'linopy', label: 'linopy', pts: DATA.rungs.map((_, i) => [i, 1]) });
+  legend(host, [{ name: 'polars', label: 'polars' }, { name: 'duckdb', label: 'duckdb' },
+    { name: 'linopy', label: 'linopy = 1.0' }]);
+  chart(host, {
+    series, bands, logY: true, xTicks: DATA.rungs, xLabel: 'ladder rung',
+    fmtY: v => (v < 1 ? v.toFixed(v < 0.1 ? 2 : 1) : v.toFixed(0)) + 'x',
+    fmtTip: v => v.toFixed(2) + 'x',
+    tipTitle: i => `rung ${DATA.rungs[i]} — median of 6, band = min–max`,
+    aria: `${metric} relative to linopy across six models, min to max band per engine`,
+  });
+}
+
+function scaleChart(host, metric) {
+  const V = DATA.scaling.vars;
+  const mk = (n, label, dash, dy) => ({ name: n, label, dash, dy,
+    pts: V.map((v, i) => [v, DATA.scaling[metric][n][i]]) });
+  legend(host, [{ name: 'polars', label: 'polars' }, { name: 'linopy', label: 'linopy' },
+    { name: 'duckdb', label: 'duckdb @ 1 GB' }, { name: 'duckdb@1GB', label: 'duckdb unbounded', dash: true }]);
+  chart(host, {
+    series: [mk('polars', 'polars'), mk('linopy', 'linopy'),
+      mk('duckdb', 'duckdb @ 1 GB'), mk('duckdb@1GB', 'duckdb unbounded', true)],
+    logX: true, logY: true, xLabel: 'variables', directLabels: false,
+    fmtY: metric === 'wall'
+      ? (v => v < 1 ? (v * 1000).toFixed(0) + ' ms' : v.toFixed(0) + ' s')
+      : (v => v + ' GB'),
+    fmtTip: metric === 'wall' ? fmtS : fmtG,
+    tipTitle: i => `dispatch — ${fmtX(V[i])} variables`,
+    aria: `dispatch ${metric} from 10 thousand to 120 million variables`,
+  });
+}
+
+function facets(metric) {
+  const host = document.getElementById('facets');
+  host.innerHTML = '';
+  for (const c of DATA.caseNames) {
+    /* one legend for the grid, above it — six copies of it would be noise, and
+       a per-panel direct label collides at this width */
+    const fig = document.createElement('figure');
+    fig.innerHTML = `<figcaption>${c}</figcaption>`;
+    const p = document.createElement('div'); p.className = 'plot';
+    fig.appendChild(p); host.appendChild(fig);
+    const d = DATA.cases[c];
+    chart(p, {
+      series: ['polars', 'linopy', 'duckdb'].map(n => ({ name: n,
+        pts: d.vars.map((v, i) => [v, d[metric][n][i]]) })),
+      logX: true, logY: true, xLabel: 'variables',
+      W: 330, H: 235, font: 12, directLabels: false,
+      fmtY: metric === 'wall'
+        ? (v => v < 1 ? (v * 1000).toFixed(0) + ' ms' : v.toFixed(0) + ' s')
+        : (v => v + ' GB'),
+      fmtTip: metric === 'wall' ? fmtS : fmtG,
+      tipTitle: i => `${c} — ${fmtX(d.vars[i])} variables`,
+      aria: `${c}: ${metric} against model size, three engines`,
+    });
+  }
+}
+
+function numbers(rung) {
+  const cols = ['polars', 'linopy', 'duckdb'];
+  let html = '<thead><tr><th></th><th></th><th colspan="3">wall time</th>' +
+    '<th colspan="3">peak RSS</th></tr><tr><th>model</th><th>variables</th>' +
+    cols.concat(cols).map(h => `<th>${h}</th>`).join('') + '</tr></thead><tbody>';
+  for (const c of DATA.caseNames) {
+    const d = DATA.cases[c];
+    const w = cols.map(n => d.wall[n][rung]), p = cols.map(n => d.peak[n][rung]);
+    const bw = Math.min(...w), bp = Math.min(...p);
+    html += `<tr><td>${c}</td><td>${fmtX(d.vars[rung])}</td>` +
+      w.map(v => `<td class="${v === bw ? 'best' : ''}">${fmtS(v)}</td>`).join('') +
+      p.map(v => `<td class="${v === bp ? 'best' : ''}">${fmtG(v)}</td>`).join('') + '</tr>';
+  }
+  document.getElementById('numbers').innerHTML = html + '</tbody>';
+}
+
+document.getElementById('facet-legend').innerHTML = legendHTML(
+  [{ name: 'polars', label: 'polars' }, { name: 'linopy', label: 'linopy' },
+   { name: 'duckdb', label: 'duckdb' }]);
+
+bandChart(document.getElementById('band-wall'), 'wall');
+bandChart(document.getElementById('band-peak'), 'peak');
+scaleChart(document.getElementById('scale-wall'), 'wall');
+scaleChart(document.getElementById('scale-peak'), 'peak');
+facets('wall');
+numbers(3);
+
+for (const b of document.querySelectorAll('.ctl')) b.addEventListener('click', () => {
+  document.querySelectorAll('.ctl').forEach(x => x.classList.toggle('on', x === b));
+  facets(b.dataset.metric);
+});
+for (const b of document.querySelectorAll('.ctl2')) b.addEventListener('click', () => {
+  document.querySelectorAll('.ctl2').forEach(x => x.classList.toggle('on', x === b));
+  numbers(+b.dataset.rung);
+});
+</script>
+</body>
+</html>

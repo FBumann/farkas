@@ -20,6 +20,17 @@ from typing import Any
 
 ARMS = ('farkas', 'linopy', 'duckdb')
 
+
+#: A budgeted arm is `duckdb@1GB`, and how many of them a run has is the run's
+#: choice (`--duckdb-limits`), so the columns are read off the results rather
+#: than listed here. `duckdb` alone is the unbounded engine; a run that measured
+#: both gets both columns, because collapsing them would publish a `duckdb`
+#: number that is neither setting.
+def arms_in(rows: dict[Key, Row]) -> tuple[str, ...]:
+    budgeted = sorted({a for _, _, _, a in rows if '@' in a})
+    return (*ARMS, *budgeted)
+
+
 #: The ratio columns are against linopy, which is the arm both engines are
 #: being judged against. `duckdb` is the engine this branch replaces, so its
 #: column is the one that says whether the replacement was worth making — but
@@ -110,17 +121,24 @@ _SEAM = {
 
 
 def table(case: str, rows: dict[Key, Row], sink: str = 'lp') -> str:
+    cols = arms_in(rows)
+    head = (
+        ['variables', 'live', 'rows']
+        + [f'wall: {a}' for a in cols]
+        + ['wall']
+        + [f'peak: {a}' for a in cols]
+        + ['peak', 'LP']
+    )
     lines = [
         f'### {case} — {sink} sink',
         '',
         _SEAM[sink],
         '',
-        '| variables | live | rows | wall: farkas | wall: linopy | wall: duckdb | wall | peak: farkas '
-        '| peak: linopy | peak: duckdb | peak | LP |',
-        '|---|---|---|---|---|---|---|---|---|---|---|',
+        '| ' + ' | '.join(head) + ' |',
+        '|' + '---|' * len(head),
     ]
     for size in sizes_of(case, rows, sink):
-        arms = {a: rows.get((case, size, sink, a)) for a in ARMS}
+        arms = {a: rows.get((case, size, sink, a)) for a in cols}
         ref = next((r for r in arms.values() if r), None)
         if ref is None:
             continue
@@ -130,9 +148,9 @@ def table(case: str, rows: dict[Key, Row], sink: str = 'lp') -> str:
             _si(ref['counts']['columns']),
             _live(ref),
             _si(ref['counts']['rows']),
-            *(f'{wall[a]:.2f} s' if wall[a] else '—' for a in ARMS),
+            *(f'{wall[a]:.2f} s' if wall[a] else '—' for a in cols),
             _ratio(wall['farkas'], wall[_RATIO_AGAINST]),
-            *(f'{_gb(peak[a])} GB' if peak[a] else '—' for a in ARMS),
+            *(f'{_gb(peak[a])} GB' if peak[a] else '—' for a in cols),
             _ratio(peak['farkas'], peak[_RATIO_AGAINST]),
             f'{ref["lp_bytes"] / 1e6:.0f} MB' if ref.get('lp_bytes') else '—',
         ]
@@ -224,19 +242,26 @@ def density(rows: dict[Key, Row]) -> str:
     cases = [c for c in sorted({c for c, _, _, _ in rows}) if sizes_of(c, rows, 'lp', density=True)]
     if not cases:
         return ''
+    cols = arms_in(rows)
+    head = (
+        ['case', 'live', 'variables']
+        + [f'wall: {a}' for a in cols]
+        + ['wall']
+        + [f'peak: {a}' for a in cols]
+        + ['peak']
+    )
     lines = [
         '### The mask sweep',
         '',
         'One model size, through the `lp` sink. For `nodal`, `live` is how many '
         'of the 12 technologies each node has installed: 12 / 6 / 3 / 1.',
         '',
-        '| case | live | variables | wall: farkas | wall: linopy | wall: duckdb | wall '
-        '| peak: farkas | peak: linopy | peak: duckdb | peak |',
-        '|---|---|---|---|---|---|---|---|---|---|',
+        '| ' + ' | '.join(head) + ' |',
+        '|' + '---|' * len(head),
     ]
     for case in cases:
         for size in reversed(sizes_of(case, rows, 'lp', density=True)):
-            arms = {a: rows.get((case, size, 'lp', a)) for a in ARMS}
+            arms = {a: rows.get((case, size, 'lp', a)) for a in cols}
             ref = next((r for r in arms.values() if r), None)
             if ref is None:
                 continue
@@ -246,9 +271,9 @@ def density(rows: dict[Key, Row]) -> str:
                 case,
                 _live(ref),
                 _si(ref['counts']['columns']),
-                *(f'{wall[a]:.2f} s' if wall[a] else '—' for a in ARMS),
+                *(f'{wall[a]:.2f} s' if wall[a] else '—' for a in cols),
                 _ratio(wall['farkas'], wall[_RATIO_AGAINST]),
-                *(f'{_gb(peak[a])} GB' if peak[a] else '—' for a in ARMS),
+                *(f'{_gb(peak[a])} GB' if peak[a] else '—' for a in cols),
                 _ratio(peak['farkas'], peak[_RATIO_AGAINST]),
             ]
             lines.append('| ' + ' | '.join(cells) + ' |')
