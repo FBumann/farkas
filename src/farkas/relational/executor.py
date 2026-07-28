@@ -3,7 +3,7 @@
 Owns the *data* — sources, dim frames, labels, the four model frames, and the
 join that reads solution values back. Owns neither the query
 (:mod:`farkas.relational.compiler`) nor the exit (:mod:`.sinks`). The lane is
-described in ARCHITECTURE.md.
+described in docs/ARCHITECTURE.md.
 
 **Labels are the one place order is load-bearing.** ``var_label`` *is* the
 solver column index and ``row`` its row index, so both come from

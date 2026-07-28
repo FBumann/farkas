@@ -1,4 +1,4 @@
-"""ARCHITECTURE.md, enforced.
+"""docs/ARCHITECTURE.md, enforced.
 
 Each test encodes one hard rule from the architecture document, so the doc
 cannot silently drift from the code. Static checks parse source with ``ast``
@@ -214,7 +214,7 @@ def test_both_lanes_implement_exactly_the_closed_helper_set():
 
 
 def test_every_module_is_documented_somewhere():
-    """No module is undocumented — but the doc need not be ARCHITECTURE.md.
+    """No module is undocumented — but the doc need not be docs/ARCHITECTURE.md.
 
     A subpackage that grows a member per variant (one sink per module) would
     push its whole membership list into the top-level map, which is the thing
@@ -222,7 +222,7 @@ def test_every_module_is_documented_somewhere():
     instead: it is what you read when you open the directory, and it stays
     next to the thing it describes.
     """
-    architecture = (REPO / 'ARCHITECTURE.md').read_text()
+    architecture = (REPO / 'docs/ARCHITECTURE.md').read_text()
     missing = []
     for path in _all_modules():
         name = path.name
@@ -235,7 +235,7 @@ def test_every_module_is_documented_somewhere():
         if not documented:
             missing.append(str(path.relative_to(PKG)))
     assert not missing, (
-        f'undocumented modules: {missing} — add each to ARCHITECTURE.md, or to a '
+        f'undocumented modules: {missing} — add each to docs/ARCHITECTURE.md, or to a '
         f'README.md in its own directory if it is one member of a family'
     )
 

@@ -92,4 +92,4 @@ model: examples/walkthrough.yaml
     caught by check() as LanguageError
       objective 'total_cost': both factors of a product contain variables, which is degree 2. Multiply the variable by a parameter instead, or model the curve with a piecewise: block — see ROADMAP, "The degree axis".
 
-ARCHITECTURE.md has the rules these stages enforce.
+docs/ARCHITECTURE.md has the rules these stages enforce.

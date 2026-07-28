@@ -155,11 +155,12 @@ naming its rewrite.
 
 ## Docs
 
-[SPEC.md](SPEC.md) is the language reference · [ARCHITECTURE.md](ARCHITECTURE.md)
-for how it fits together · [ROADMAP.md](ROADMAP.md) for what is planned and what
-is refused · [docs/models/](docs/models/index.md) for every model in the repo,
-with the two checked against somebody else's optimum marked ✔ ·
-[CONTRIBUTING.md](CONTRIBUTING.md) to work on it.
+Everything is in [**docs/**](docs/README.md):
+[SPEC](docs/SPEC.md) is the language reference · [ARCHITECTURE](docs/ARCHITECTURE.md)
+for how it fits together · [ROADMAP](docs/ROADMAP.md) for what is planned and
+what is refused · [models](docs/models/index.md) for every model in the repo,
+with the two checked against somebody else's optimum marked ✔. To work on it:
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 To see it rather than read it, `python examples/walkthrough.py` runs one small model through every stage — YAML → schema → core AST → logical plan → model frames → LP text → solution — printing the artifact each stage produces, plus two models the language refuses and why. Its output is committed as [examples/walkthrough.out](examples/walkthrough.out) if you would rather just read that.
 

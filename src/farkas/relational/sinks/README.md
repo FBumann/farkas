@@ -1,7 +1,7 @@
 # Sinks
 
 How a built model leaves the engine. These are the two boxes downstream of the
-executor in [ARCHITECTURE.md](../../../ARCHITECTURE.md)'s pipeline.
+executor in [docs/ARCHITECTURE.md](../../../../docs/ARCHITECTURE.md)'s pipeline.
 
 | Module | Sink | Needs |
 |---|---|---|
@@ -49,7 +49,7 @@ guess about a sink that does not exist.
 
 ## When Track 4 lands
 
-[Track 4](../../../ROADMAP.md#track-4--sink-capabilities) gives each sink a
+[Track 4](../../../../docs/ROADMAP.md#track-4--sink-capabilities) gives each sink a
 declared capability table so `check(model, sink=...)` can answer "will this
 sink take it". Two notes for whoever writes it:
 

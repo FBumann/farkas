@@ -36,7 +36,7 @@ PAGE = ROOT / 'docs' / 'models' / 'index.md'
 REFERENCES = json.loads((ROOT / 'examples' / 'ports' / 'references.json').read_text())
 BEGIN, END = '<!-- constructs:begin -->', '<!-- constructs:end -->'
 
-#: Column order is the order a reader meets these in SPEC.md, not alphabetical
+#: Column order is the order a reader meets these in docs/SPEC.md, not alphabetical
 #: and not by how many models happen to use them.
 COLUMNS = ('sum', 'group_sum', 'roll / shift', 'where', 'bounds', 'piecewise', 'MILP')
 
