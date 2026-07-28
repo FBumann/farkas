@@ -51,10 +51,10 @@ Both arms end holding a populated `highspy.Highs` with `run()` never called: far
 
 | variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
 |---|---|---|---|---|---|---|---|---|---|
-| 10k | 100% | 100 | 0.02 s | 0.21 s | 0.08x | 0.17 GB | 0.20 GB | 0.84x | — |
+| 10k | 100% | 100 | 0.02 s | 0.20 s | 0.08x | 0.17 GB | 0.20 GB | 0.83x | — |
 | 100k | 100% | 1k | 0.02 s | 0.22 s | 0.11x | 0.21 GB | 0.23 GB | 0.91x | — |
-| 1M | 100% | 10k | 0.09 s | 0.39 s | 0.23x | 0.52 GB | 0.49 GB | 1.05x | — |
-| 10M | 100% | 100k | 0.70 s | 1.96 s | 0.36x | 3.13 GB | 3.31 GB | 0.95x | — |
+| 1M | 100% | 10k | 0.09 s | 0.38 s | 0.24x | 0.52 GB | 0.49 GB | 1.05x | — |
+| 10M | 100% | 100k | 0.71 s | 1.99 s | 0.36x | 3.14 GB | 3.30 GB | 0.95x | — |
 
 ### dispatch — lp sink
 
@@ -62,10 +62,10 @@ farkas writes the LP file, linopy through its `lp-polars` writer.
 
 | variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
 |---|---|---|---|---|---|---|---|---|---|
-| 10k | 100% | 100 | 0.02 s | 0.21 s | 0.07x | 0.17 GB | 0.21 GB | 0.79x | 1 MB |
-| 100k | 100% | 1k | 0.03 s | 0.22 s | 0.12x | 0.21 GB | 0.26 GB | 0.81x | 7 MB |
-| 1M | 100% | 10k | 0.13 s | 0.35 s | 0.38x | 0.47 GB | 0.61 GB | 0.77x | 76 MB |
-| 10M | 100% | 100k | 1.11 s | 1.54 s | 0.72x | 2.23 GB | 2.17 GB | 1.03x | 796 MB |
+| 10k | 100% | 100 | 0.01 s | 0.20 s | 0.07x | 0.17 GB | 0.21 GB | 0.79x | 1 MB |
+| 100k | 100% | 1k | 0.03 s | 0.23 s | 0.12x | 0.21 GB | 0.26 GB | 0.81x | 7 MB |
+| 1M | 100% | 10k | 0.13 s | 0.37 s | 0.34x | 0.47 GB | 0.59 GB | 0.80x | 76 MB |
+| 10M | 100% | 100k | 1.20 s | 1.58 s | 0.76x | 2.26 GB | 2.24 GB | 1.01x | 796 MB |
 
 ### nodal — highs sink
 
@@ -73,10 +73,10 @@ Both arms end holding a populated `highspy.Highs` with `run()` never called: far
 
 | variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
 |---|---|---|---|---|---|---|---|---|---|
-| 3k | 25% | 1k | 0.02 s | 0.22 s | 0.08x | 0.17 GB | 0.20 GB | 0.83x | — |
+| 3k | 25% | 1k | 0.02 s | 0.21 s | 0.09x | 0.17 GB | 0.20 GB | 0.83x | — |
 | 30k | 25% | 10k | 0.02 s | 0.22 s | 0.10x | 0.19 GB | 0.21 GB | 0.87x | — |
-| 300k | 25% | 100k | 0.05 s | 0.31 s | 0.17x | 0.33 GB | 0.36 GB | 0.94x | — |
-| 3M | 25% | 1M | 0.35 s | 1.10 s | 0.32x | 1.43 GB | 1.78 GB | 0.80x | — |
+| 300k | 25% | 100k | 0.05 s | 0.29 s | 0.16x | 0.34 GB | 0.36 GB | 0.95x | — |
+| 3M | 25% | 1M | 0.36 s | 1.11 s | 0.32x | 1.43 GB | 1.78 GB | 0.81x | — |
 
 ### nodal — lp sink
 
@@ -85,9 +85,9 @@ farkas writes the LP file, linopy through its `lp-polars` writer.
 | variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
 |---|---|---|---|---|---|---|---|---|---|
 | 3k | 25% | 1k | 0.02 s | 0.21 s | 0.08x | 0.17 GB | 0.21 GB | 0.79x | 0 MB |
-| 30k | 25% | 10k | 0.02 s | 0.23 s | 0.10x | 0.19 GB | 0.24 GB | 0.81x | 2 MB |
-| 300k | 25% | 100k | 0.07 s | 0.28 s | 0.24x | 0.32 GB | 0.45 GB | 0.72x | 25 MB |
-| 3M | 25% | 1M | 0.51 s | 0.80 s | 0.63x | 1.28 GB | 1.55 GB | 0.83x | 264 MB |
+| 30k | 25% | 10k | 0.02 s | 0.22 s | 0.09x | 0.19 GB | 0.24 GB | 0.81x | 2 MB |
+| 300k | 25% | 100k | 0.07 s | 0.26 s | 0.26x | 0.32 GB | 0.45 GB | 0.71x | 25 MB |
+| 3M | 25% | 1M | 0.50 s | 0.81 s | 0.61x | 1.29 GB | 1.57 GB | 0.82x | 264 MB |
 
 ### profiled — highs sink
 
@@ -95,10 +95,10 @@ Both arms end holding a populated `highspy.Highs` with `run()` never called: far
 
 | variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
 |---|---|---|---|---|---|---|---|---|---|
-| 12k | 100% | 1k | 0.02 s | 0.21 s | 0.09x | 0.17 GB | 0.20 GB | 0.85x | — |
-| 120k | 100% | 10k | 0.04 s | 0.23 s | 0.16x | 0.27 GB | 0.25 GB | 1.11x | — |
-| 1.2M | 100% | 100k | 0.26 s | 0.43 s | 0.61x | 0.89 GB | 0.64 GB | 1.40x | — |
-| 12M | 100% | 1M | 2.82 s | 2.50 s | 1.13x | 4.43 GB | 4.72 GB | 0.94x | — |
+| 12k | 100% | 1k | 0.02 s | 0.21 s | 0.09x | 0.18 GB | 0.20 GB | 0.86x | — |
+| 120k | 100% | 10k | 0.04 s | 0.23 s | 0.17x | 0.27 GB | 0.25 GB | 1.10x | — |
+| 1.2M | 100% | 100k | 0.27 s | 0.43 s | 0.63x | 0.91 GB | 0.64 GB | 1.42x | — |
+| 12M | 100% | 1M | 2.91 s | 2.58 s | 1.13x | 4.37 GB | 4.47 GB | 0.98x | — |
 
 ### profiled — lp sink
 
@@ -106,10 +106,10 @@ farkas writes the LP file, linopy through its `lp-polars` writer.
 
 | variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
 |---|---|---|---|---|---|---|---|---|---|
-| 12k | 100% | 1k | 0.02 s | 0.21 s | 0.09x | 0.18 GB | 0.22 GB | 0.81x | 1 MB |
-| 120k | 100% | 10k | 0.04 s | 0.23 s | 0.19x | 0.29 GB | 0.29 GB | 1.00x | 9 MB |
-| 1.2M | 100% | 100k | 0.32 s | 0.38 s | 0.85x | 0.90 GB | 0.69 GB | 1.30x | 95 MB |
-| 12M | 100% | 1M | 3.37 s | 1.94 s | 1.74x | 3.69 GB | 3.25 GB | 1.14x | 986 MB |
+| 12k | 100% | 1k | 0.02 s | 0.21 s | 0.09x | 0.18 GB | 0.22 GB | 0.80x | 1 MB |
+| 120k | 100% | 10k | 0.04 s | 0.23 s | 0.19x | 0.27 GB | 0.30 GB | 0.89x | 9 MB |
+| 1.2M | 100% | 100k | 0.32 s | 0.38 s | 0.83x | 0.77 GB | 0.72 GB | 1.07x | 95 MB |
+| 12M | 100% | 1M | 3.43 s | 1.93 s | 1.78x | 3.62 GB | 3.19 GB | 1.14x | 986 MB |
 
 ### sector — highs sink
 
@@ -117,10 +117,10 @@ Both arms end holding a populated `highspy.Highs` with `run()` never called: far
 
 | variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
 |---|---|---|---|---|---|---|---|---|---|
-| 1k | 6% | 1k | 0.02 s | 0.22 s | 0.09x | 0.17 GB | 0.20 GB | 0.83x | — |
-| 10k | 6% | 10k | 0.02 s | 0.23 s | 0.10x | 0.19 GB | 0.22 GB | 0.86x | — |
-| 100k | 6% | 100k | 0.05 s | 0.31 s | 0.15x | 0.34 GB | 0.50 GB | 0.69x | — |
-| 1M | 6% | 1M | 0.31 s | 1.21 s | 0.25x | 0.96 GB | 3.01 GB | 0.32x | — |
+| 1k | 6% | 1k | 0.02 s | 0.23 s | 0.09x | 0.17 GB | 0.20 GB | 0.83x | — |
+| 10k | 6% | 10k | 0.02 s | 0.23 s | 0.10x | 0.19 GB | 0.22 GB | 0.87x | — |
+| 100k | 6% | 100k | 0.05 s | 0.32 s | 0.15x | 0.34 GB | 0.50 GB | 0.69x | — |
+| 1M | 6% | 1M | 0.31 s | 1.22 s | 0.26x | 0.94 GB | 3.01 GB | 0.31x | — |
 
 ### sector — lp sink
 
@@ -129,9 +129,9 @@ farkas writes the LP file, linopy through its `lp-polars` writer.
 | variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
 |---|---|---|---|---|---|---|---|---|---|
 | 1k | 6% | 1k | 0.02 s | 0.22 s | 0.08x | 0.17 GB | 0.21 GB | 0.79x | 0 MB |
-| 10k | 6% | 10k | 0.02 s | 0.22 s | 0.10x | 0.19 GB | 0.24 GB | 0.79x | 1 MB |
-| 100k | 6% | 100k | 0.06 s | 0.30 s | 0.19x | 0.34 GB | 0.52 GB | 0.66x | 12 MB |
-| 1M | 6% | 1M | 0.39 s | 1.04 s | 0.37x | 0.93 GB | 2.96 GB | 0.32x | 120 MB |
+| 10k | 6% | 10k | 0.02 s | 0.23 s | 0.10x | 0.19 GB | 0.24 GB | 0.79x | 1 MB |
+| 100k | 6% | 100k | 0.06 s | 0.31 s | 0.18x | 0.34 GB | 0.53 GB | 0.65x | 12 MB |
+| 1M | 6% | 1M | 0.39 s | 1.05 s | 0.37x | 0.92 GB | 2.97 GB | 0.31x | 120 MB |
 
 ### transport — highs sink
 
@@ -139,10 +139,10 @@ Both arms end holding a populated `highspy.Highs` with `run()` never called: far
 
 | variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
 |---|---|---|---|---|---|---|---|---|---|
-| 9.8k | 100% | 1.4k | 0.02 s | 0.23 s | 0.10x | 0.17 GB | 0.20 GB | 0.85x | — |
-| 98k | 100% | 14k | 0.03 s | 0.25 s | 0.14x | 0.22 GB | 0.23 GB | 0.95x | — |
-| 980k | 100% | 140k | 0.13 s | 0.43 s | 0.29x | 0.60 GB | 0.56 GB | 1.06x | — |
-| 9.8M | 100% | 1.4M | 1.13 s | 2.49 s | 0.46x | 3.04 GB | 3.91 GB | 0.78x | — |
+| 9.8k | 100% | 1.4k | 0.02 s | 0.23 s | 0.11x | 0.17 GB | 0.20 GB | 0.85x | — |
+| 98k | 100% | 14k | 0.03 s | 0.25 s | 0.13x | 0.22 GB | 0.23 GB | 0.95x | — |
+| 980k | 100% | 140k | 0.15 s | 0.47 s | 0.32x | 0.60 GB | 0.56 GB | 1.08x | — |
+| 9.8M | 100% | 1.4M | 1.33 s | 2.57 s | 0.52x | 3.14 GB | 3.89 GB | 0.81x | — |
 
 ### transport — lp sink
 
@@ -150,10 +150,10 @@ farkas writes the LP file, linopy through its `lp-polars` writer.
 
 | variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
 |---|---|---|---|---|---|---|---|---|---|
-| 9.8k | 100% | 1.4k | 0.02 s | 0.23 s | 0.10x | 0.18 GB | 0.22 GB | 0.80x | 1 MB |
-| 98k | 100% | 14k | 0.04 s | 0.24 s | 0.16x | 0.23 GB | 0.29 GB | 0.81x | 8 MB |
-| 980k | 100% | 140k | 0.18 s | 0.39 s | 0.46x | 0.55 GB | 0.67 GB | 0.83x | 79 MB |
-| 9.8M | 100% | 1.4M | 1.66 s | 1.93 s | 0.86x | 3.11 GB | 1.92 GB | 1.62x | 820 MB |
+| 9.8k | 100% | 1.4k | 0.02 s | 0.23 s | 0.11x | 0.18 GB | 0.22 GB | 0.81x | 1 MB |
+| 98k | 100% | 14k | 0.04 s | 0.25 s | 0.15x | 0.23 GB | 0.29 GB | 0.81x | 8 MB |
+| 980k | 100% | 140k | 0.21 s | 0.42 s | 0.48x | 0.55 GB | 0.66 GB | 0.83x | 79 MB |
+| 9.8M | 100% | 1.4M | 2.04 s | 2.07 s | 0.99x | 3.02 GB | 1.90 GB | 1.59x | 820 MB |
 
 ## What this says
 
@@ -162,9 +162,9 @@ range declarative modelling is actually used in, and the range a rolling horizon
 lives in entirely.
 
 **The sink decides the answer, and `transport`'s peak is the clearest case.**
-Through the LP writer it is 1.62x — the number this file has called the one
+Through the LP writer it is 1.59x — the number this file has called the one
 open problem at scale. Through the hand-off, the sink most callers actually
-use, the same model at the same rung is **0.78x**. Nothing about the build
+use, the same model at the same rung is **0.81x**. Nothing about the build
 changed between those two columns: the LP path spends its peak turning doubles
 into text, while HiGHS's own dense model is resident in both arms and dwarfs
 the difference between the lanes that filled it.
@@ -173,11 +173,11 @@ So the honest reading is per sink. At the `l` rung, wall and peak:
 
 | | lp | highs |
 |---|---|---|
-| dispatch | 0.72x / 1.03x | **0.36x** / **0.95x** |
-| nodal | 0.63x / 0.83x | **0.32x** / **0.80x** |
-| sector | 0.37x / 0.32x | **0.25x** / 0.32x |
-| transport | 0.86x / **1.62x** | **0.46x** / **0.78x** |
-| profiled | 1.74x / 1.14x | 1.13x / **0.94x** |
+| dispatch | 0.76x / 1.01x | **0.36x** / **0.95x** |
+| nodal | 0.61x / 0.82x | **0.32x** / **0.81x** |
+| sector | 0.37x / 0.31x | **0.26x** / 0.31x |
+| transport | 0.99x / **1.59x** | **0.52x** / **0.81x** |
+| profiled | 1.78x / 1.14x | 1.13x / **0.98x** |
 
 **We are ahead on both axes on four of five cases through the hand-off**, and
 the one we are not is `profiled`.
@@ -207,7 +207,7 @@ neither. The label frames are droppable on a write-only path and worth about
 quoted as its cause** — that is the mistake this paragraph replaced.
 
 It also matters less than it looked. That accounting was taken on the LP path,
-where the 1.62x lives; through the hand-off the same build reads 0.78x. The
+where the 1.59x lives; through the hand-off the same build reads 0.81x. The
 gigabyte is worth finding, but it is not what stands between this lane and the
 sink most callers use.
 
@@ -215,8 +215,8 @@ sink most callers use.
 `availability` parameter is dense over the whole variable product — a 12M-row
 table against a 12M coordinate product — which is exactly the array xarray
 wants, needing neither broadcast nor alignment, while we join a full-size frame
-against a full-size product. 1.74x on wall through the LP writer, 1.13x through
-the hand-off, and peak better than linopy's on the hand-off (0.94x) despite it.
+against a full-size product. 1.78x on wall through the LP writer, 1.13x through
+the hand-off, and peak better than linopy's on the hand-off (0.98x) despite it.
 A ladder holding only shapes that suit one engine proves nothing, which is why
 this one is here.
 
@@ -274,10 +274,10 @@ as density falls.
 
 | case | live | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
 |---|---|---|---|---|---|---|---|---|
-| nodal | 100% | 1.2M | 0.17 s | 0.38 s | 0.45x | 0.58 GB | 0.67 GB | 0.87x |
-| nodal | 50% | 600k | 0.10 s | 0.31 s | 0.34x | 0.42 GB | 0.60 GB | 0.70x |
-| nodal | 25% | 300k | 0.07 s | 0.27 s | 0.24x | 0.32 GB | 0.45 GB | 0.71x |
-| nodal | 8% | 100k | 0.04 s | 0.25 s | 0.17x | 0.26 GB | 0.35 GB | 0.74x |
+| nodal | 100% | 1.2M | 0.17 s | 0.38 s | 0.45x | 0.58 GB | 0.64 GB | 0.90x |
+| nodal | 50% | 600k | 0.10 s | 0.32 s | 0.32x | 0.41 GB | 0.60 GB | 0.69x |
+| nodal | 25% | 300k | 0.06 s | 0.27 s | 0.24x | 0.32 GB | 0.45 GB | 0.71x |
+| nodal | 8% | 100k | 0.04 s | 0.26 s | 0.17x | 0.26 GB | 0.35 GB | 0.74x |
 
 **It now does, and it did not before.** Wall time falls from 0.45x to 0.17x as
 density drops, and peak improves at every rung — 0.87x, 0.70x, 0.71x, 0.74x.
@@ -295,8 +295,8 @@ The remaining caveat on the *memory* half stands, and it is the size this sweep
 is run at rather than the prediction. It holds the
 coordinate product fixed at 1.2M, where a dense array over it is ~10 MB and the
 interpreter and libraries dominate everything. `sector` runs the same 8%
-sparsity at a 12M product, and there the effect is unmistakable: 1.01 GB against
-2.96 GB.
+sparsity at a 12M product, and there the effect is unmistakable: 0.92 GB against
+2.97 GB.
 
 So the claim needs both halves — **low density and a product large enough for it
 to cost anything**. This sweep varies one at a size that cannot show it; `sector`
@@ -346,7 +346,7 @@ flatters linopy by the same amount.
 xarray + pandas — a fixed cost of the lane, not of the model.
 
 **Measured to here we are 2-4x faster on four of five cases** — 0.36x, 0.32x,
-0.25x, 0.46x, with `profiled` at 1.13x — against a narrower spread on the LP
+0.26x, 0.52x, with `profiled` at 1.13x — against a narrower spread on the LP
 path. Nothing about the engine changes between the two sinks; the difference is
 that the LP route spends most of its clock turning doubles into text and
 writing them, which is work neither lane can avoid and which therefore
@@ -354,7 +354,7 @@ compresses the ratio toward
 1.00 however fast the build was.
 
 **Peak is the weaker half of this claim, and it is the half that moved.** On
-the hand-off we are now ahead on all five — 0.95x, 0.80x, 0.32x, 0.78x, 0.94x —
+the hand-off we are now ahead on all five — 0.95x, 0.81x, 0.31x, 0.81x, 0.98x —
 where the previous measurement read *level* on two of three. HiGHS's own copy
 dominates once the model is loaded and neither lane can shrink it, so these
 margins are narrower than the wall ones and will stay that way: `dispatch` at
