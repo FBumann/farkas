@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 import farkas as fk
-from farkas.latex import to_latex
+from farkas.latex import SymbolTable, _derive_name_symbol, to_latex
 
 DISPATCH = {
     'dimensions': {'snapshot': {'dtype': 'int'}, 'generator': {'dtype': 'str'}},
@@ -219,9 +219,8 @@ def test_piecewise_prints_the_formulation_it_expands_to():
     assert 'cost\\_curve\\_convexity' in tex
     # Subscript order is not asserted: `piecewise._validate_block` builds the
     # emitted frame by iterating a frozenset, so the generated variable's dim
-    # order varies with PYTHONHASHSEED. That is a bug in the expansion, not in
-    # the rendering — pin the order here once it is fixed.
-    assert r'\mathit{cost}^{\mathrm{curve,lam}}_{' in tex
+    # order varies with PYTHONHASHSEED (#267). Pin the order here once fixed.
+    assert r'\mathit{cost\_curve\_lam}_{' in tex
     assert r'\sum_{b \in \mathcal{B}}' in tex
 
 
@@ -305,3 +304,96 @@ def test_an_invalid_model_fails_the_same_way_check_does():
 
 def test_exported_from_the_package():
     assert fk.to_latex is to_latex
+
+
+# ---------------------------------------------------------------------------
+# derivation: unambiguous by default
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ('name', 'expected'),
+    [
+        ('p_max', r'p^{\mathrm{max}}'),  # single-letter head: a qualifier
+        ('soc_max', r'\mathit{soc}^{\mathrm{max}}'),  # declared head: a qualifier
+        ('marginal_cost', r'\mathit{marginal\_cost}'),  # neither: one word
+        ('shut_down', r'\mathit{shut\_down}'),
+    ],
+)
+def test_an_underscore_is_only_a_qualifier_when_its_head_is_a_symbol(name: str, expected: str):
+    """`marginal_cost` is not *marginal* raised to *cost*. Splitting every
+    underscore turned a third of real names into nonsense."""
+    declared = frozenset({'p', 'soc'})
+    assert _derive_name_symbol(name, declared) == expected
+
+
+def test_a_dimension_index_never_steals_a_letter_a_variable_owns():
+    """With `plant` -> `p` and a variable `p`, the old output was `p_{t,p}`."""
+    model = {
+        'dimensions': {'plant': {'dtype': 'str'}, 'snapshot': {'dtype': 'int'}},
+        'parameters': {'cost': {'dims': ['plant']}},
+        'variables': {'p': {'foreach': ['snapshot', 'plant'], 'bounds': {'lower': 0}}},
+        'objectives': {'o': {'equations': [{'expression': 'p * cost'}]}},
+    }
+    tex = to_latex(model, legend=False)
+    assert 'p_{t,p}' not in tex
+    assert r'p_{t,l}' in tex  # `plant` fell through to its next free letter
+
+
+# ---------------------------------------------------------------------------
+# the symbol table
+# ---------------------------------------------------------------------------
+
+SYMBOLS = {
+    'dimensions': {'generator': {'index': 'u', 'set': r'\mathcal{U}'}},
+    'names': {'p': r'\pi', 'marginal_cost': r'c^{\mathrm{marg}}'},
+    'descriptions': {'generator': 'dispatchable units'},
+}
+
+
+def _with_marginal_cost() -> dict[str, object]:
+    return {
+        **DISPATCH,
+        'parameters': {**DISPATCH['parameters'], 'marginal_cost': {'dims': ['generator']}},
+        'objectives': {'total_cost': {'equations': [{'expression': 'p * marginal_cost'}]}},
+    }
+
+
+def test_the_table_overrides_and_the_rest_is_still_derived():
+    tex = to_latex(_with_marginal_cost(), symbols=SYMBOLS, legend=False)
+    assert r'\pi_{t,u}' in tex  # both overridden
+    assert r'c^{\mathrm{marg}}_{u}' in tex
+    assert r'\mathit{load}_{t}' in tex  # untouched: still derived
+    assert r'u \in \mathcal{U}' in tex
+
+
+def test_a_description_reaches_the_legend_without_hiding_the_name():
+    tex = to_latex(_with_marginal_cost(), symbols=SYMBOLS)
+    assert r'\texttt{generator} --- dispatchable units' in tex
+
+
+def test_an_entry_naming_nothing_is_an_error_with_the_near_miss():
+    """A silent typo means a symbol that never applies and a reader who never
+    finds out — so it fails, and says what it probably meant."""
+    with pytest.raises(fk.SchemaError, match="Did you mean 'p_max'"):
+        to_latex(DISPATCH, symbols={'names': {'p_maxx': 'x'}})
+    with pytest.raises(fk.SchemaError, match="Did you mean 'generator'"):
+        to_latex(DISPATCH, symbols={'dimensions': {'generatr': {'index': 'g'}}})
+
+
+def test_unknown_sections_and_keys_are_rejected():
+    with pytest.raises(fk.SchemaError, match='unknown section'):
+        to_latex(DISPATCH, symbols={'symbols': {'p': 'x'}})
+    with pytest.raises(fk.SchemaError, match='unknown key'):
+        to_latex(DISPATCH, symbols={'dimensions': {'generator': {'letter': 'g'}}})
+
+
+def test_the_table_loads_from_a_file_and_the_committed_one_applies():
+    tex = to_latex('examples/piecewise.yaml', symbols='examples/symbols/piecewise.yaml')
+    assert r'\lambda_{' in tex
+    assert r'k \in \mathcal{K}' in tex
+    assert 'breakpoints of the cost curve' in tex
+
+
+def test_a_model_renders_identically_with_an_empty_table():
+    assert to_latex(DISPATCH) == to_latex(DISPATCH, symbols=SymbolTable())

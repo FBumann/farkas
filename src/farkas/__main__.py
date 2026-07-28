@@ -21,6 +21,7 @@ def main(argv: list[str] | None = None) -> int:
     latex = verbs.add_parser('latex', help='render a model as LaTeX')
     latex.add_argument('model', help='path to a farkas YAML model')
     latex.add_argument('-o', '--out', help='write here instead of stdout')
+    latex.add_argument('--symbols', help='sidecar YAML saying how names should print')
     latex.add_argument('--standalone', action='store_true', help='emit a compilable document')
     latex.add_argument('--no-legend', action='store_true', help='omit the sets/parameters/variables table')
     latex.add_argument('--no-numbers', action='store_true', help='use align* instead of align')
@@ -28,6 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     text = to_latex(
         args.model,
+        symbols=args.symbols,
         standalone=args.standalone,
         legend=not args.no_legend,
         numbered=not args.no_numbers,

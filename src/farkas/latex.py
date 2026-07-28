@@ -11,6 +11,12 @@ resolve names to typed nodes, then walk. Because expansion runs first, a
 ``piecewise:`` block prints as the λ-formulation it *is* rather than as the
 sugar it was written as — which is the honest rendering, if a verbose one.
 
+Symbols are **derived** by default, so it prints with no setup at all — and
+derivation aims at unambiguous rather than beautiful. A :class:`SymbolTable`
+(a sidecar YAML, ``--symbols``) is what makes it conventional: it is
+presentation, so it stays out of ``MathSchema``, which is the versioned
+contract every lane sees.
+
 What it does not do: line-breaking (a wide equation runs off the page), and it
 never renders a ``where`` as anything but a set-builder condition, because that
 is what a mask means here.
@@ -21,20 +27,26 @@ Usage::
 
     print(fk.to_latex('model.yaml'))
     print(fk.to_latex('model.yaml', standalone=True))  # compilable document
+    print(fk.to_latex('model.yaml', symbols='model.symbols.yaml'))
 
 or from a shell::
 
-    python -m farkas latex model.yaml --standalone -o model.tex
+    python -m farkas latex model.yaml --symbols model.symbols.yaml --standalone -o model.tex
 """
 
 from __future__ import annotations
 
+import difflib
 import string
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, assert_never
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, assert_never
 
+from farkas._yaml import read_yaml
 from farkas.api import load_schema
 from farkas.dimensions import dims_of
+from farkas.errors import SchemaError
 from farkas.expression_parser import (
     ArithmeticNode,
     BinaryOperatorNode,
@@ -66,12 +78,9 @@ from farkas.where_parser import (
 )
 
 if TYPE_CHECKING:
-    from pathlib import Path
-    from typing import Any
-
     from farkas.schema import MathSchema
 
-__all__ = ['to_latex']
+__all__ = ['SymbolTable', 'to_latex']
 
 # ---------------------------------------------------------------------------
 # vocabulary
@@ -120,41 +129,72 @@ def _number(value: float) -> str:
     return repr(value)
 
 
-def _name_symbol(name: str) -> str:
+def _word(name: str) -> str:
+    """One name as one symbol: a letter stays a letter, a word is upright-italic."""
+    if not name:
+        return r'\square'
+    escaped = name.replace('_', r'\_')
+    return name if len(name) == 1 else rf'\mathit{{{escaped}}}'
+
+
+def _derive_name_symbol(name: str, declared: frozenset[str]) -> str:
     """``p`` → ``p``; ``load`` → ``\\mathit{load}``; ``p_max`` → ``p^{\\mathrm{max}}``.
 
-    The tail after the first underscore becomes a superscript rather than a
-    subscript, because subscripts are spoken for: they carry the dimensions,
-    and a symbol that puts a qualifier there collides with its own indices.
+    An underscore is a **qualifier** only when what precedes it is a symbol in
+    its own right — a single letter (``p_max``), or another declared name
+    (``soc_max``, ``bp_x``). Everywhere else it is word separation, and
+    splitting there produced nonsense: ``marginal_cost`` is not *marginal*
+    raised to *cost*, and ``shut_down`` is one word with a down-arrow's worth
+    of meaning in it.
+
+    So the fallback prints the name as written, underscore and all. That is
+    plain rather than beautiful, and deliberately: a derived symbol has to be
+    *unambiguous*, and a symbol table (``--symbols``) is what makes it pretty.
+    A qualifier lands in the superscript because the subscript slot is spoken
+    for — it carries the dimensions.
     """
     head, _, tail = name.partition('_')
-    base = head if len(head) == 1 else rf'\mathit{{{head}}}' if head else r'\square'
-    if not tail:
-        return base
-    return rf'{base}^{{\mathrm{{{tail.replace("_", ",")}}}}}'
+    if tail and (len(head) == 1 or head in declared):
+        return rf'{_word(head)}^{{\mathrm{{{tail.replace("_", ",")}}}}}'
+    return _word(name)
 
 
 class Symbols:
-    """Index and set letters for the declared dimensions, assigned once.
+    """How every declared name prints: overrides first, derivation for the rest.
 
-    Both are derived, not configured: a spike that asks for a symbol table
-    before it will print anything is a spike nobody runs. Collisions resolve
-    by walking further into the name and then through the alphabet, so the
-    assignment is deterministic given the declaration order.
+    Assignment order is load-bearing. Name symbols are settled *before*
+    dimension indices, so an index can be kept off a letter a variable already
+    owns — without that, a model with a dimension ``plant`` and a variable
+    ``p`` renders ``p_{t,p}`` and no reader can tell which ``p`` is which.
+    Deriving the two independently is exactly how that got through.
     """
 
-    def __init__(self, schema: MathSchema) -> None:
+    def __init__(self, schema: MathSchema, table: SymbolTable | None = None) -> None:
+        table = table or SymbolTable()
+        declared = frozenset({*schema.dimensions, *schema.parameters, *schema.variables})
+
+        self.name: dict[str, str] = {
+            name: table.names.get(name) or _derive_name_symbol(name, declared)
+            for name in (*schema.parameters, *schema.variables)
+        }
+        # Only single-letter symbols can be mistaken for an index; a
+        # `\mathit{load}` never collides with a `t`.
+        spoken_for = {s for s in self.name.values() if len(s) == 1}
+
         self.index: dict[str, str] = {}
         self.set: dict[str, str] = {}
-        taken_index: set[str] = set()
-        taken_set: set[str] = set()
+        taken_index, taken_set = set(spoken_for), set()
         for dim in schema.dimensions:
-            letter = _first_free(_index_candidates(dim), taken_index)
+            override = table.indices.get(dim)
+            letter = override or _first_free(_index_candidates(dim), taken_index)
             taken_index.add(letter)
-            self.index[dim] = letter if len(letter) == 1 else rf'\mathrm{{{letter}}}'
+            self.index[dim] = letter if len(letter) <= 1 or override else rf'\mathrm{{{letter}}}'
+            given = table.sets.get(dim)
             upper = _first_free(_set_candidates(dim, letter), taken_set)
             taken_set.add(upper)
-            self.set[dim] = rf'\mathcal{{{upper}}}'
+            self.set[dim] = given or rf'\mathcal{{{upper}}}'
+
+        self.description: dict[str, str] = dict(table.descriptions)
 
 
 def _index_candidates(dim: str) -> list[str]:
@@ -164,12 +204,97 @@ def _index_candidates(dim: str) -> list[str]:
 
 
 def _set_candidates(dim: str, index_letter: str) -> list[str]:
+    first = next((c for c in index_letter if c.isalpha()), '')
     letters = [c.upper() for c in dim if c.isalpha()]
-    return [index_letter[0].upper(), *letters, *string.ascii_uppercase]
+    return [*([first.upper()] if first else []), *letters, *string.ascii_uppercase]
 
 
 def _first_free(candidates: list[str], taken: set[str]) -> str:
     return next((c for c in candidates if c not in taken), candidates[-1])
+
+
+# ---------------------------------------------------------------------------
+# the symbol table (a sidecar file, not the model)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SymbolTable:
+    """How a *reader* wants the model to print — kept out of the model.
+
+    This is presentation, and presentation is not language: nothing here
+    changes what the file means, no lane reads it, and a model with no table
+    still renders. So it lives in its own file rather than as keys on
+    ``MathSchema``, which is the versioned contract every consumer sees.
+
+    Its own format, deliberately strict: a name it does not recognise is an
+    error naming the near miss, because the failure mode of a silent typo is a
+    symbol that simply never applies and a reader who never finds out::
+
+        dimensions:
+          snapshot: {index: t, set: "\\\\mathcal{T}"}
+          plant:    {index: n}
+        names:
+          marginal_cost: "c^{\\\\mathrm{marg}}"
+        descriptions:
+          snapshot: hourly, over one year
+    """
+
+    indices: dict[str, str] = field(default_factory=dict)
+    sets: dict[str, str] = field(default_factory=dict)
+    names: dict[str, str] = field(default_factory=dict)
+    descriptions: dict[str, str] = field(default_factory=dict)
+
+    @classmethod
+    def load(cls, source: str | Path | Mapping[str, Any]) -> SymbolTable:
+        raw = dict(source) if isinstance(source, Mapping) else read_yaml(Path(source))
+        unknown = set(raw) - {'dimensions', 'names', 'descriptions'}
+        if unknown:
+            msg = (
+                f'symbol table: unknown section(s) {sorted(unknown)}. Valid sections: dimensions, names, descriptions.'
+            )
+            raise SchemaError(msg)
+
+        indices: dict[str, str] = {}
+        sets: dict[str, str] = {}
+        for dim, spec in (raw.get('dimensions') or {}).items():
+            if not isinstance(spec, Mapping):
+                msg = f"symbol table: dimension '{dim}' must be a mapping like {{index: t, set: '\\\\mathcal{{T}}'}}"
+                raise SchemaError(msg)
+            extra = set(spec) - {'index', 'set'}
+            if extra:
+                msg = f"symbol table: dimension '{dim}' has unknown key(s) {sorted(extra)}. Valid keys: index, set."
+                raise SchemaError(msg)
+            if 'index' in spec:
+                indices[dim] = str(spec['index'])
+            if 'set' in spec:
+                sets[dim] = str(spec['set'])
+
+        return cls(
+            indices=indices,
+            sets=sets,
+            names={k: str(v) for k, v in (raw.get('names') or {}).items()},
+            descriptions={k: str(v) for k, v in (raw.get('descriptions') or {}).items()},
+        )
+
+    def checked_against(self, schema: MathSchema) -> SymbolTable:
+        """Reject entries naming nothing in *schema*, with the near miss."""
+        dims = set(schema.dimensions)
+        everything = dims | set(schema.parameters) | set(schema.variables)
+        errors = [
+            *(_unknown_entry(d, 'dimensions', dims) for d in {*self.indices, *self.sets} - dims),
+            *(_unknown_entry(n, 'names', everything - dims) for n in set(self.names) - everything),
+            *(_unknown_entry(n, 'descriptions', everything) for n in set(self.descriptions) - everything),
+        ]
+        if errors:
+            raise SchemaError('\n'.join(sorted(errors)))
+        return self
+
+
+def _unknown_entry(name: str, section: str, known: set[str]) -> str:
+    near = difflib.get_close_matches(name, sorted(known), n=1, cutoff=0.6)
+    fix = f"Did you mean '{near[0]}'?" if near else f'Declared: {", ".join(sorted(known)) or "nothing"}.'
+    return f"symbol table: '{name}' under {section}: is not declared by the model. {fix}"
 
 
 # ---------------------------------------------------------------------------
@@ -236,10 +361,10 @@ class _Renderer:
             return _number(node.value), _ATOM if node.value >= 0 else 1
 
         if isinstance(node, ParameterNode):
-            return ctx.indexed(_name_symbol(node.name), list(self.schema.parameters[node.name].dims)), _ATOM
+            return ctx.indexed(ctx.symbols.name[node.name], list(self.schema.parameters[node.name].dims)), _ATOM
 
         if isinstance(node, VariableNode):
-            return ctx.indexed(_name_symbol(node.name), list(self.schema.variables[node.name].foreach)), _ATOM
+            return ctx.indexed(ctx.symbols.name[node.name], list(self.schema.variables[node.name].foreach)), _ATOM
 
         if isinstance(node, UnaryOperatorNode):
             operand = self.arithmetic(node.operand, ctx, need=2)
@@ -325,15 +450,15 @@ class _Renderer:
 
         if isinstance(node, ParameterDefinedNode):
             dims = list(self.schema.parameters[node.name].dims)
-            return rf'{ctx.indexed(_name_symbol(node.name), dims)} \text{{ is defined}}', 2
+            return rf'{ctx.indexed(ctx.symbols.name[node.name], dims)} \text{{ is defined}}', 2
 
         if isinstance(node, VariableDefinedNode):
             dims = list(self.schema.variables[node.name].foreach)
-            return rf'{ctx.indexed(_name_symbol(node.name), dims)} \text{{ exists}}', 2
+            return rf'{ctx.indexed(ctx.symbols.name[node.name], dims)} \text{{ exists}}', 2
 
         if isinstance(node, ParameterComparisonNode):
             dims = list(self.schema.parameters[node.name].dims)
-            left = ctx.indexed(_name_symbol(node.name), dims)
+            left = ctx.indexed(ctx.symbols.name[node.name], dims)
             return f'{left} {_PREDICATE[node.op]} {_literal(node.value)}', 2
 
         if isinstance(node, DimensionComparisonNode):
@@ -393,7 +518,7 @@ def _sorted_dims(schema: MathSchema, dims: frozenset[str]) -> list[str]:
 
 def _bound(renderer: _Renderer, ctx: _Context, value: float | str) -> str:
     if isinstance(value, str):
-        return ctx.indexed(_name_symbol(value), list(renderer.schema.parameters[value].dims))
+        return ctx.indexed(ctx.symbols.name[value], list(renderer.schema.parameters[value].dims))
     return _number(value)
 
 
@@ -401,7 +526,7 @@ def _variable_rows(renderer: _Renderer, schema: MathSchema, ns: Namespace) -> li
     rows = []
     for name, block in schema.variables.items():
         ctx = renderer.context()
-        symbol = ctx.indexed(_name_symbol(name), list(block.foreach))
+        symbol = ctx.indexed(ctx.symbols.name[name], list(block.foreach))
         where = where_of(block.where, ns, f"variable '{name}'", self_variable=name)
         quantifier = _quantifier(renderer.symbols, list(block.foreach), _conjoin(renderer, ctx, where))
         lower, upper = block.bounds.lower, block.bounds.upper
@@ -487,19 +612,21 @@ def _legend(renderer: _Renderer, schema: MathSchema) -> str:
     if schema.dimensions:
         entries = [
             rf'\item[${renderer.symbols.set[d]}$] index ${renderer.symbols.index[d]}$ '
-            rf'--- \texttt{{{_text(d)}}}' + _coords_note(renderer, schema, d)
+            rf'--- \texttt{{{_text(d)}}}' + _coords_note(renderer, schema, d) + _gloss(renderer, d)
             for d in schema.dimensions
         ]
         lines.append(_description('Sets', entries))
     if schema.parameters:
         entries = [
-            rf'\item[${_name_symbol(p)}$] \texttt{{{_text(p)}}}{_dims_note(renderer, list(block.dims))}'
+            rf'\item[${renderer.symbols.name[p]}$] \texttt{{{_text(p)}}}'
+            rf'{_dims_note(renderer, list(block.dims))}{_gloss(renderer, p)}'
             for p, block in schema.parameters.items()
         ]
         lines.append(_description('Parameters', entries))
     if schema.variables:
         entries = [
-            rf'\item[${_name_symbol(v)}$] \texttt{{{_text(v)}}}{_dims_note(renderer, list(block.foreach))}'
+            rf'\item[${renderer.symbols.name[v]}$] \texttt{{{_text(v)}}}'
+            rf'{_dims_note(renderer, list(block.foreach))}{_gloss(renderer, v)}'
             for v, block in schema.variables.items()
         ]
         lines.append(_description('Variables', entries))
@@ -511,6 +638,18 @@ def _legend(renderer: _Renderer, schema: MathSchema) -> str:
             r'edge are simply absent.'
         )
     return '\n\n'.join(lines)
+
+
+def _gloss(renderer: _Renderer, name: str) -> str:
+    """The legend's trailing prose for one name, when the table supplies it.
+
+    It goes *after* the name and its dims, never instead of them: the YAML
+    name is what a reader types to find the declaration, and a legend that
+    replaces it with prose makes the symbol table the only way back to the
+    model.
+    """
+    described = renderer.symbols.description.get(name)
+    return f' --- {described}' if described else ''
 
 
 def _description(title: str, entries: list[str]) -> str:
@@ -551,24 +690,31 @@ _PREAMBLE = r"""\documentclass[11pt]{article}
 def to_latex(
     model: str | Path | dict[str, Any] | MathSchema,
     *,
+    symbols: str | Path | Mapping[str, Any] | SymbolTable | None = None,
     standalone: bool = False,
     legend: bool = True,
     numbered: bool = True,
 ) -> str:
     """Render *model* as LaTeX (amsmath ``align`` environments).
 
-    Accepts anything :func:`farkas.load_schema` accepts. ``standalone`` wraps
-    the result in a compilable document; ``legend`` prepends the sets /
-    parameters / variables table; ``numbered`` chooses ``align`` over
-    ``align*``.
+    Accepts anything :func:`farkas.load_schema` accepts. ``symbols`` is an
+    optional :class:`SymbolTable` — a path, a mapping, or the object — saying
+    how names should print; everything it does not name is derived.
+    ``standalone`` wraps the result in a compilable document; ``legend``
+    prepends the sets / parameters / variables table; ``numbered`` chooses
+    ``align`` over ``align*``.
 
     The model is validated on the way in, so a file that does not compile does
     not print either — the error is the same one :func:`farkas.check` raises.
+    A symbol table is checked against it too: an entry naming nothing in the
+    model is an error, since the alternative is a symbol that silently never
+    applies.
     """
     schema = expand_piecewise(load_schema(model))
     ns = Namespace.of(schema)
-    symbols = Symbols(schema)
-    renderer = _Renderer(schema, symbols)
+    table = symbols if isinstance(symbols, SymbolTable) else SymbolTable.load(symbols or {})
+    symbol_map = Symbols(schema, table.checked_against(schema))
+    renderer = _Renderer(schema, symbol_map)
 
     # Rendering runs before the legend: `saw_wraparound` is something the walk
     # discovers, and the legend has to explain what the walk actually emitted.

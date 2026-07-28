@@ -130,7 +130,10 @@ format is one function in `relational/sinks/`. `latex.py` is that claim cashed:
 a **spike** that typesets any model the lanes can build, in one walk of the
 resolved AST, holding no opinion the lanes do not already hold — including a
 `piecewise:` block, which prints as the λ-formulation it expands to rather than
-as the sugar it was written as. Two properties carry it: **data
+as the sugar it was written as. How names *print* is the one thing it does not
+read off the model: a symbol table is presentation, so it is a sidecar file
+(`examples/symbols/`) rather than keys on `MathSchema`, and a model with no
+table still renders. Two properties carry it: **data
 enters at exactly one place**, which is why checking a model costs seconds and
 needs nothing but the file; and the waist is **closed**, which is what the
 ceiling in [Two tiers](#two-tiers-and-the-ceiling) protects — a new consumer is
@@ -405,7 +408,7 @@ native schema merge (#30) is what would force the question.
 | `validation.py` | load-time: parse, expand, resolve, check everything |
 | `piecewise.py` | `piecewise:` → λ-formulation declarations + curvature guard |
 | `api.py` | native entry point: `check` / `solve` / `write`, linopy-free |
-| `latex.py` | **spike** — resolved AST → LaTeX. A reader, not a lane: no model, no data, no plan |
+| `latex.py` | **spike** — resolved AST → LaTeX, with an optional sidecar symbol table. A reader, not a lane: no model, no data, no plan |
 | `sources.py` | bind runtime data (parquet paths / in-memory tables) to a validated schema |
 | `lowering.py` | core AST → logical plan (defines the relational subset) |
 | `helpers.py` | the closed set of built-in operators: their *names* and *call shapes* — no registry |

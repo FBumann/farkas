@@ -1,0 +1,40 @@
+# How piecewise.yaml should print, for a paper or a review.
+#
+#   python -m farkas latex examples/piecewise.yaml \
+#       --symbols examples/symbols/piecewise.yaml --standalone -o model.tex
+#
+# It lives in examples/symbols/ rather than beside the model because
+# `examples/*.yaml` is globbed as "every example model" in four places.
+#
+# Nothing here changes what the model means — no lane reads this file, and
+# piecewise.yaml renders without it. What the renderer derives on its own is
+# unambiguous but plain; this is where it gets to be conventional. Every
+# entry must name something the model declares, so a typo is an error rather
+# than a symbol that silently never applies.
+
+dimensions:
+  snapshot: {index: t, set: "\\mathcal{T}"}
+  generator: {index: g, set: "\\mathcal{G}"}
+  # `bp` derives to `b`, which reads as a bus to anyone from power systems.
+  bp: {index: k, set: "\\mathcal{K}"}
+
+names:
+  # The λ-formulation's own weights, emitted by the `piecewise:` block. The
+  # renderer cannot know these are convex-combination weights — it sees a
+  # variable named `cost_curve_lam` — but a reader expects a lambda.
+  cost_curve_lam: "\\lambda"
+  op_cost: "c^{\\mathrm{op}}"
+  bp_x: "\\hat{p}"
+  bp_y: "\\hat{c}"
+
+descriptions:
+  snapshot: dispatch periods
+  generator: dispatchable units
+  bp: breakpoints of the cost curve
+  p: dispatched power
+  op_cost: operating cost, piecewise-linear in dispatch
+  cost_curve_lam: convex-combination weight on breakpoint $k$
+  bp_x: breakpoint dispatch levels
+  bp_y: cost at each breakpoint
+  p_max: maximum dispatch
+  load: demand to be met

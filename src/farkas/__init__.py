@@ -27,7 +27,7 @@ from farkas.errors import (
     PiecewiseExpansionError,
     SchemaError,
 )
-from farkas.latex import to_latex
+from farkas.latex import SymbolTable, to_latex
 from farkas.schema import MathSchema
 
 __all__ = [
@@ -38,6 +38,7 @@ __all__ = [
     'MathSchema',
     'PiecewiseExpansionError',
     'SchemaError',
+    'SymbolTable',
     'build',
     'check',
     'load_schema',
