@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.7](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.6...v0.0.1-alpha.7) (2026-07-28)
+
+
+### Documentation
+
+* the AST as a narrow waist — one contract, many consumers ([#266](https://github.com/FBumann/farkas/issues/266)) ([688c6df](https://github.com/FBumann/farkas/commit/688c6df1f3d35bcc5487b3910dfa06fdcd191f22))
+
 ## [0.0.1-alpha.6](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.5...v0.0.1-alpha.6) (2026-07-28)
 
 
