@@ -206,7 +206,7 @@ class PolarsExecutor:
         # PROTOTYPE (not for merge): defer the matrix instead of materialising
         # it, so the whole model is never resident. See matrix_blocks().
         self._partitioned = partitioned
-        self._deferred: list[tuple[Any, Any, list[Any]]] = []
+        self._deferred: list[tuple[Any, Any]] = []
         self._program: plan.Program | None = None
         self._compiler: PolarsCompiler | None = None
         self._parameters: dict[str, pl.LazyFrame] = {}
@@ -627,7 +627,7 @@ class PolarsExecutor:
         if self._partitioned:
             # the whole point: `row` is the leading group key, so blocks are
             # independent and nothing has to hold the matrix whole
-            self._deferred.append((frame, terms, rows.height))
+            self._deferred.append((frame, terms))
             return rows, None
         stacked = pl.concat(pieces)
         if _needs_aggregate([fragment for fragment, _ in terms]):
@@ -674,7 +674,7 @@ class PolarsExecutor:
         """
         import polars as pl
 
-        for frame, terms, _height in self._deferred:
+        for frame, terms in self._deferred:
             bounds = frame.select(pl.col('row').min().alias('lo'), pl.col('row').max().alias('hi')).collect()
             if bounds.height == 0 or bounds['lo'][0] is None:
                 continue
