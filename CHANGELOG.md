@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.2](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.1...v0.0.1-alpha.2) (2026-07-28)
+
+
+### Refactoring
+
+* **bench:** retire the duckdb arm, and the docs it was holding up ([#253](https://github.com/FBumann/farkas/issues/253)) ([6eaef1e](https://github.com/FBumann/farkas/commit/6eaef1e86999bb4047e1215a6c617d641f143dbe))
+
 ## [0.0.1-alpha.1](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.33...v0.0.1-alpha.1) (2026-07-28)
 
 
