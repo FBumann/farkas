@@ -23,6 +23,7 @@ from farkas.relational import (
 from farkas.relational.plan import (
     Constant,
     ConstraintDeclaration,
+    DimensionComparison,
     DimensionDeclaration,
     GroupSum,
     ObjectiveDeclaration,
@@ -257,6 +258,104 @@ def test_a_mask_that_removes_nothing_labels_exactly_like_no_mask(dispatch_data):
 
     assert len(labelled['unmasked']) == len(gens) * len(load)
     pd.testing.assert_frame_equal(labelled['masked'], labelled['unmasked'])
+
+
+def _label_program(where):
+    """One variable over three dims of distinct cardinality, masked or not."""
+    return Program(
+        parameters=(ParameterDeclaration('cap', ('line',)),),
+        variables=(
+            VariableDeclaration(
+                'f', ('snapshot', 'bus', 'line'), where=where, lower=Constant(0.0), upper=Constant(1.0)
+            ),
+        ),
+        constraints=(
+            ConstraintDeclaration(
+                'cap_row',
+                ('snapshot',),
+                lhs=Sum(Variable('f'), over=('bus', 'line')),
+                sense='<=',
+                rhs=Constant(1e6),
+            ),
+        ),
+        objective=ObjectiveDeclaration('min', Sum(Variable('f'), over=('snapshot', 'bus', 'line'))),
+    )
+
+
+def _label_sources(n_snapshot=5, n_bus=3, n_line=4, zero_caps=()):
+    lines = [f'l{i}' for i in range(n_line)]
+    caps = [0.0 if i in zero_caps else 10.0 + i for i in range(n_line)]
+    return {
+        'cap': pd.DataFrame({'line': lines, 'value': caps}),
+        'snapshot': pd.DataFrame({'snapshot': np.arange(n_snapshot)}),
+        'bus': pd.DataFrame({'bus': [f'b{i}' for i in range(n_bus)]}),
+        'line': pd.DataFrame({'line': lines}),
+    }
+
+
+@pytest.mark.parametrize('chunk_rows', [12, 1_000_000], ids=['chunked', 'single-chunk'])
+def test_unmasked_labels_are_the_ones_the_window_would_assign(chunk_rows):
+    """The arithmetic path must emit the labels the sort it replaces did.
+
+    Unmasked frames skip ``ROW_NUMBER`` for a closed form
+    (``SqlCompiler.positional_label``). Labels *are* the solver's column
+    indices, so "dense and valid" is not the bar — they have to be the same
+    integers, or the LP section order, ``solver_direct``'s batching and the
+    walkthrough golden all shift underneath us for no stated reason.
+
+    Three dims of distinct cardinality, so a swapped stride cannot pass. The
+    expectation is spelled out rather than computed, so it cannot agree with
+    the implementation by sharing its arithmetic.
+    """
+    with DuckdbExecutor(memory_limit='256MB', chunk_rows=chunk_rows) as ex:
+        ex.build(_label_program(where=None), _label_sources())
+        got = ex._con.execute('SELECT snapshot, bus, line, var_label FROM var_f ORDER BY var_label').fetchall()
+
+    # what ROW_NUMBER() OVER (ORDER BY ord, ord, ord) means, spelled out
+    expected = [
+        (s, f'b{b}', f'l{ln}', i)
+        for i, (s, b, ln) in enumerate((s, b, ln) for s in range(5) for b in range(3) for ln in range(4))
+    ]
+    assert got == expected
+
+
+@pytest.mark.parametrize('chunk_rows', [12, 1_000_000], ids=['chunked', 'single-chunk'])
+def test_masked_labels_stay_dense(chunk_rows):
+    """The counted path stays a dense bijection, across chunk boundaries.
+
+    A mask that reads the *leading* dim cannot factor, so this is the general
+    ``ROW_NUMBER`` path — the one whose density comes from the running offset
+    stitching the per-chunk windows into one range, rather than from
+    arithmetic. Both chunk regimes, since that offset is what a single chunk
+    never exercises.
+    """
+    where = DimensionComparison('snapshot', '>', 0)
+    with DuckdbExecutor(memory_limit='256MB', chunk_rows=chunk_rows) as ex:
+        ex.build(_label_program(where), _label_sources())
+        labels = [r[0] for r in ex._con.execute('SELECT var_label FROM var_f ORDER BY var_label').fetchall()]
+
+    assert labels == list(range(4 * 3 * 4))  # one snapshot of five masked out everywhere
+
+
+def test_a_mask_on_the_trailing_dims_labels_like_the_window_would():
+    """The factoring path and the counted path must agree integer for integer.
+
+    When the mask does not read the leading dim, ``_label_frame`` ranks the
+    surviving trailing coordinates once and multiplies out. That is a third
+    way to reach a label, so it is pinned against the same spelled-out
+    row-major expectation: a mask removing line ``l1`` leaves the remaining
+    three lines in order within each ``(snapshot, bus)`` block.
+    """
+    where = ParameterComparison('cap', '>', 0)
+    with DuckdbExecutor(memory_limit='256MB', chunk_rows=12) as ex:
+        ex.build(_label_program(where), _label_sources(zero_caps=(1,)))
+        got = ex._con.execute('SELECT snapshot, bus, line, var_label FROM var_f ORDER BY var_label').fetchall()
+
+    expected = [
+        (s, f'b{b}', f'l{ln}', i)
+        for i, (s, b, ln) in enumerate((s, b, ln) for s in range(5) for b in range(3) for ln in (0, 2, 3))
+    ]
+    assert got == expected
 
 
 # ---------------------------------------------------------------------------
