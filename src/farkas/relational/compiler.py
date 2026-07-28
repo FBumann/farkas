@@ -213,6 +213,21 @@ class PolarsCompiler:
                 if p.parameter in self.boolean_parameters:
                     return col.is_not_null() & col.cast(pl.Boolean)
                 return col.is_not_null() & col.is_finite()
+            if isinstance(p, plan.VariableDefined):
+                # Not a column test: existence lives in the variable's own frame,
+                # so it is marked by a semi-join and then read as a flag. The join
+                # is on the variable's dims, which the dim rule has already
+                # checked are inside this frame.
+                nonlocal carrier
+                flag = f'__where defined {p.variable}__'
+                if flag not in joined:
+                    on = list(self.program.variable(p.variable).dims)
+                    marked = (
+                        self.variables[p.variable].select(*on).unique().with_columns(pl.lit(value=True).alias(flag))
+                    )
+                    carrier = carrier.join(marked, on=on, how='left')
+                    joined.add(flag)
+                return pl.col(flag).fill_null(value=False)
             if isinstance(p, plan.BooleanConstant):
                 return pl.lit(value=p.value)
             if isinstance(p, plan.And):

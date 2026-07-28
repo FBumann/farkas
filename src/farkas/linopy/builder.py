@@ -44,6 +44,7 @@ from farkas.where_parser import (
     ParameterDefinedNode,
     UnresolvedComparisonNode,
     UnresolvedNameNode,
+    VariableDefinedNode,
     WhereNode,
 )
 
@@ -134,8 +135,8 @@ def _build_variables(ctx: EvaluationContext) -> None:
             lower = _resolve_bound(vdef.bounds.lower, ctx.dataset)
             upper = _resolve_bound(vdef.bounds.upper, ctx.dataset)
 
-            where = where_of(vdef.where, ctx.ns, f"variable '{vname}'")
-            mask = evaluate_where(where, ctx.dataset, ctx.master_coords)
+            where = where_of(vdef.where, ctx.ns, f"variable '{vname}'", self_variable=vname)
+            mask = evaluate_where(where, ctx.dataset, ctx.master_coords, ctx.model)
 
             ctx.model.add_variables(
                 lower=lower,
@@ -184,7 +185,7 @@ def _build_constraints(ctx: EvaluationContext) -> None:
     for cname, cdef in ctx.schema.constraints.items():
         with note(f"while building constraint '{cname}'"):
             c_where = where_of(cdef.where, ctx.ns, f"constraint '{cname}'")
-            constraint_mask = evaluate_where(c_where, ctx.dataset, ctx.master_coords)
+            constraint_mask = evaluate_where(c_where, ctx.dataset, ctx.master_coords, ctx.model)
 
             n_eqs = len(cdef.equations)
 
@@ -192,7 +193,7 @@ def _build_constraints(ctx: EvaluationContext) -> None:
                 eq_name = equation_name(cname, i, n_eqs)
                 # Per-equation where mask (ANDed with constraint mask)
                 eq_where = where_of(eq.where, ctx.ns, f"constraint '{eq_name}'")
-                eq_mask = evaluate_where(eq_where, ctx.dataset, ctx.master_coords)
+                eq_mask = evaluate_where(eq_where, ctx.dataset, ctx.master_coords, ctx.model)
                 mask = constraint_mask & eq_mask
 
                 ast = expression_of(eq.expression, ctx.schema, ctx.ns, f"constraint '{eq_name}'")
@@ -509,6 +510,7 @@ def evaluate_where(
     node: WhereNode | None,
     dataset: xr.Dataset,
     master_coords: dict[str, pd.Index],
+    model: linopy.Model | None = None,
 ) -> xr.DataArray:
     """Evaluate a **resolved** where AST against a parameter dataset.
 
@@ -523,13 +525,14 @@ def evaluate_where(
     if node is None:
         return xr.DataArray(True)
 
-    return _eval_node(node, dataset, master_coords)
+    return _eval_node(node, dataset, master_coords, model)
 
 
 def _eval_node(
     node: WhereNode,
     dataset: xr.Dataset,
     master_coords: dict[str, pd.Index],
+    model: linopy.Model | None = None,
 ) -> xr.DataArray:
     if isinstance(node, BooleanLiteralNode):
         return xr.DataArray(node.value)
@@ -547,6 +550,17 @@ def _eval_node(
             return arr
         return arr.notnull() & np.isfinite(arr)
 
+    if isinstance(node, VariableDefinedNode):
+        if model is None:
+            msg = (
+                f"where references variable '{node.name}', but no model was passed to the "
+                f'evaluator — a variable mask can only be read off the model that holds it.'
+            )
+            raise AssertionError(msg)
+        # A masked-out coordinate carries label -1 (linopy's own marker for an
+        # absent slot), which is exactly the question being asked.
+        return model.variables[node.name].labels != -1
+
     if isinstance(node, (ParameterComparisonNode, DimensionComparisonNode)):
         if isinstance(node, ParameterComparisonNode):
             arr = dataset[node.name]
@@ -563,16 +577,16 @@ def _eval_node(
         return result.fillna(False).astype(bool)
 
     if isinstance(node, NotNode):
-        return ~_eval_node(node.operand, dataset, master_coords)
+        return ~_eval_node(node.operand, dataset, master_coords, model)
 
     if isinstance(node, AndNode):
-        left = _eval_node(node.left, dataset, master_coords)
-        right = _eval_node(node.right, dataset, master_coords)
+        left = _eval_node(node.left, dataset, master_coords, model)
+        right = _eval_node(node.right, dataset, master_coords, model)
         return left & right
 
     if isinstance(node, OrNode):
-        left = _eval_node(node.left, dataset, master_coords)
-        right = _eval_node(node.right, dataset, master_coords)
+        left = _eval_node(node.left, dataset, master_coords, model)
+        right = _eval_node(node.right, dataset, master_coords, model)
         return left | right
 
     assert_never(node)

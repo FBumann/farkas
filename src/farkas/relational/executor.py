@@ -547,9 +547,17 @@ class PolarsExecutor:
         return materialised, start + materialised.height
 
     def _param_dims(self) -> dict[str, tuple[str, ...]]:
-        """Each parameter's dims, which is what a predicate reads through."""
+        """The dims each name in a where is read through.
+
+        Parameters by their ``dims`` and variables by their ``foreach``: a bare
+        name in a where may be either, and the label planner only asks "which
+        dims does this mask touch". One flat mapping, because the language has
+        one flat namespace and the two cannot collide.
+        """
         assert self._program is not None, 'build() has not run'
-        return {p.name: p.dims for p in self._program.parameters}
+        dims = {p.name: p.dims for p in self._program.parameters}
+        dims.update({v.name: v.dims for v in self._program.variables})
+        return dims
 
     def _factored(
         self,
@@ -979,6 +987,11 @@ def _predicate_dims(where: plan.Predicate, param_dims: Mapping[str, tuple[str, .
         if isinstance(value, str) and value in param_dims:
             dims |= frozenset(param_dims[value])
         return dims
+    if isinstance(where, plan.VariableDefined):
+        # Read through the variable's own foreach, exactly as a parameter is
+        # read through its dims. `_free_prefix` then keeps its arithmetic path
+        # for the leading dims this mask cannot see, as for any other predicate.
+        return frozenset(param_dims.get(where.variable, ()))
     if isinstance(where, (plan.And, plan.Or)):
         return _predicate_dims(where.left, param_dims) | _predicate_dims(where.right, param_dims)
     if isinstance(where, plan.Not):

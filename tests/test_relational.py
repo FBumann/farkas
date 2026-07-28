@@ -747,3 +747,47 @@ def test_a_term_whose_variable_is_absent_drops_the_row_on_both_lanes():
         x = dict(zip(solved['f'], solved['value'], strict=True))
         assert x['a'] == pytest.approx(25.0, rel=RTOL), 'sized: x <= 0.5 * size, size <= 50'
         assert x['b'] == pytest.approx(100.0, rel=RTOL), 'unsized: the row is gone, so only the bound holds'
+
+
+DEFINED_MODEL = {
+    'dimensions': {'f': {'values': ['a', 'b']}},
+    'parameters': {'gate': {'dims': ['f'], 'dtype': 'bool'}, 'relmax': {'dims': ['f']}, 'cost': {'dims': ['f']}},
+    'variables': {
+        'x': {'foreach': ['f'], 'bounds': {'lower': 0, 'upper': 100}},
+        'size': {'foreach': ['f'], 'where': 'gate', 'bounds': {'lower': 0, 'upper': 50}},
+    },
+    'constraints': {
+        'envelope': {
+            'foreach': ['f'],
+            'equations': [
+                {'expression': 'x - relmax * size <= 0', 'where': 'size'},
+                {'expression': 'x <= 0', 'where': 'NOT size'},
+            ],
+        }
+    },
+    'objectives': {'total': {'sense': 'maximize', 'equations': [{'expression': 'sum(x * cost, over=f)'}]}},
+}
+
+
+def test_a_bare_variable_name_in_a_where_asks_whether_it_exists():
+    """The escape hatch for a language where absence drops the row.
+
+    Since a term whose variable is absent takes the row with it, a model that
+    wanted the *other* reading — keep the row, treat the term as zero — needs a
+    way to say which coordinates those are. A bare parameter name in a ``where``
+    already asks "does this have a value here"; a bare variable name asks "does
+    this exist here", and the two complementary clauses spell out both cases.
+
+    Without it the only way to write this is a parameter mirroring the
+    variable's own mask, which is two sources for one fact and drifts.
+    """
+    data = {
+        'gate': pd.Series({'a': True}),
+        'relmax': pd.Series({'a': 0.5, 'b': 0.5}),
+        'cost': pd.Series({'a': 1.0, 'b': 1.0}),
+    }
+    with differential(DEFINED_MODEL, data, lp=True) as run:
+        solved = run.result.primal('x')
+        x = dict(zip(solved['f'], solved['value'], strict=True))
+        assert x['a'] == pytest.approx(25.0, rel=RTOL), 'sized: the envelope binds'
+        assert x['b'] == pytest.approx(0.0, abs=1e-9), 'unsized: the complementary clause pins it'

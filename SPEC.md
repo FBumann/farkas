@@ -277,6 +277,7 @@ value      ::= NUMBER | NAME_OR_STRING
 | Surface | Names a… | Meaning |
 |---|---|---|
 | `name` (bare) | parameter | defined: non-null **and** finite |
+| `name` (bare) | variable | defined: the variable exists at this coordinate. The counterpart of the parameter row, and the way to say which coordinates the row-dropping rule above applies to |
 | `name` (bare) | dimension | load error — true everywhere, so it reads as a condition and is not one; compare it instead |
 | `name OP value` | parameter | element-wise, NaN → False. RHS is a literal number or a bare name read as a string coordinate |
 | `name OP value` | dimension | filter on the frame's own coordinate column |
