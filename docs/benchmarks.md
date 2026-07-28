@@ -329,54 +329,65 @@ why it took two cases to find.
 
 ## Absurd sizes, and the trade at them
 
-**Read the duckdb column knowing what it is.** That engine takes a
-`memory_limit` and its default is **1 GB**; it spills to disk to honour it. So
-its peak here is not an emergent property that happens to be small — it is a
-*configured ceiling*, which was the whole point of that architecture. polars
-has no such knob: its peak tracks the model. The comparison below is
-"unbounded against a 1 GB budget", and that is the honest way to read every
-duckdb number in this file.
+**duckdb takes a `memory_limit` and its default is 1 GB.** That is not an
+emergent property of the engine, it is a ceiling it was told to hold and
+spills to disk to honour — which was the whole point of that architecture. A
+lane with no such knob cannot be compared against it without saying which
+setting was used, so the arm runs at both: `duckdb` passes duckdb's own
+unlimited (`-1`), and `duckdb@1GB` is the engine plus a promise.
 
-The ladder above stops at `l` because that is where the published tables are
-comparable across cases. This is the other question — does an engine that
-keeps the model resident hold together where one that spills would. Six rungs
-spanning 12,000x on `dispatch`, LP sink, all three engines, best of three:
+`dispatch`, LP sink, six rungs spanning 12,000x, best of two:
 
-| variables | polars | linopy | duckdb (1 GB budget) |
-|---|---|---|---|
-| 10k | **0.01 s** / 0.17 GB | 0.20 s / 0.21 GB | 0.05 s / **0.16 GB** |
-| 100k | **0.03 s** / 0.21 GB | 0.28 s / 0.26 GB | 0.14 s / **0.18 GB** |
-| 1M | **0.15 s** / 0.47 GB | 0.39 s / 0.56 GB | 0.40 s / **0.32 GB** |
-| 10M | **1.69 s** / 2.01 GB | 1.73 s / 2.09 GB | 3.09 s / **0.73 GB** |
-| 40M | **5.07 s** / 5.78 GB | 7.43 s / 7.93 GB | 19.5 s / **1.38 GB** |
-| 120M | **20.6 s** / 9.44 GB | 38.5 s / 9.81 GB | 64.3 s / **1.98 GB** |
+| variables | polars | linopy | duckdb | duckdb@1GB |
+|---|---|---|---|---|
+| 10k | **0.02 s** / 0.17 GB | 0.21 s / 0.21 GB | 0.05 s / **0.16 GB** | 0.05 s / 0.16 GB |
+| 100k | **0.03 s** / 0.21 GB | 0.22 s / 0.26 GB | 0.14 s / **0.18 GB** | 0.14 s / 0.18 GB |
+| 1M | **0.13 s** / 0.47 GB | 0.34 s / 0.56 GB | 0.42 s / **0.30 GB** | 0.40 s / 0.31 GB |
+| 10M | **1.12 s** / 2.04 GB | 1.54 s / 2.13 GB | 2.87 s / **0.76 GB** | 2.83 s / 0.74 GB |
+| 40M | **5.99 s** / 5.98 GB | 8.80 s / 7.92 GB | 22.97 s / 2.00 GB | 20.40 s / **1.38 GB** |
+| 120M | **35.4 s** / 8.30 GB | 106.2 s / 7.77 GB | 74.6 s / 5.28 GB | 80.9 s / **2.11 GB** |
 
-Plotted in [benchmarks-scaling.html](benchmarks-scaling.html) — one file, no
-network. Read from `bench/results/scaling.jsonl`, kept beside the ladder
-because it answers a different question and would otherwise be re-run by hand.
+Plotted in [benchmarks-scaling.html](benchmarks-scaling.html). Read from
+`bench/results/scaling.jsonl`.
 
-**Nothing falls over on this case**, and the polars lane is fastest at every
-rung. Across the 12,000x range duckdb's peak grows 12x and polars' 56x —
-because one is holding a budget and the other is holding the model.
+**Nothing falls over on this case, and polars is fastest at every rung** — 2.1
+to 3.8x faster than duckdb unbounded, and the gap against linopy widens at the
+top.
 
-### The budget is a real ceiling, and it can be too low
+**The budget costs duckdb almost no wall time here** — 0.99x, 0.89x, 1.08x at
+the top three rungs — while saving up to 2.5x of peak. On this shape it is
+close to free, which is the case *for* that architecture rather than against
+it.
 
-At the `xl` rung across all six cases, duckdb at its 1 GB default **fails
-outright on `fleet`**:
+**But it is a real ceiling, and it can be too low.** At the `xl` rung on
+`fleet` — twelve variable declarations rather than one — duckdb at 1 GB fails
+outright:
 
 ```
 _duckdb.OutOfMemoryException: failed to pin block of size 256.0 KiB
                               (940.5 MiB/953.6 MiB used)
 ```
 
-Raised to 8 GB the same model builds in 26.4 s and never exceeds 2.40 GB
-resident. So this is not "duckdb cannot do it" — it is the budget being set
-below what the shape needs, and `fleet` is the shape that needs it: twelve
-variable declarations rather than one, so twelve labelled tables live at once.
+Raised to 8 GB the same model builds in 26.4 s inside 2.40 GB resident. The
+budget was below what the shape needed, and no amount of spilling fixes that.
 
-That is the trade stated properly. **duckdb lets you choose a ceiling and pays
-wall time to stay under it; polars does not offer the choice.** Which is
-better depends entirely on whether you have a ceiling you must meet.
+**And unbounded duckdb is not as light as the budgeted column suggests.** At
+120M it holds 5.28 GB against polars' 8.30 — 1.57x, not the 2.5x the budgeted
+run shows. Quoting the budgeted column as "how much memory duckdb needs"
+overstates the engine and understates the knob.
+
+### What the two columns actually say
+
+**duckdb lets you choose a ceiling and mostly gets it for free; polars does not
+offer the choice.** Which is better depends on whether you have a ceiling you
+must meet — and on this evidence the honest gap between the *engines* is 2-4x
+of wall time in polars' favour and ~1.6x of memory in duckdb's, with the rest
+of duckdb's apparent advantage being the budget doing its job.
+
+*The `2xl` rung is noisy between runs* — polars read 20.6 s in one run and
+35.4 s in another, linopy 38.5 s and 106.2 s — because 8-10 GB of peak on a
+25 GB machine is where other things start to matter. Read the ordering there,
+not the seconds.
 
 ## The density sweep, and the claim it used to refuse
 
