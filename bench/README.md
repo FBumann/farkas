@@ -10,6 +10,7 @@ claim nobody can re-run is a claim with a shelf life.
 # REPLACES the results file rather than adding to it
 uv run python -m bench.run --sizes xs s m l d100 d50 d25 d08
 uv run python -m bench.run --cases dispatch --sizes m l     # one case, two rungs
+uv run python -m bench.run --sinks highs                    # skip the LP file
 uv run python -m bench.report bench/results/latest.jsonl    # -> markdown
 ```
 
@@ -22,8 +23,22 @@ and nothing about the file looks wrong afterwards.
 
 **Peak RSS and wall time**, per phase, for the same model built two ways:
 
-- `farkas` — `fk.build(...)` then `ex.write_lp(...)`.
-- `linopy` — `farkas.linopy.build(...)` then `Model.to_file(io_api='lp-polars')`.
+| | `lp` | `highs` |
+|---|---|---|
+| `farkas` | `fk.build(...)` then `ex.write_lp(...)` | `fk.build(...)` then `build_highs(...)` |
+| `linopy` | `farkas.linopy.build(...)` then `Model.to_file(io_api='lp-polars')` | `farkas.linopy.build(...)` then `Model.to_highspy()` |
+
+**The `highs` sink stops at the handoff — `run()` is never called.** That is the
+whole discipline of it. HiGHS's simplex is the same work whoever filled the
+model, so including it would swamp the phase this harness exists to measure and
+publish a number about HiGHS under our name. Both arms end holding a populated
+`highspy.Highs` and neither runs it, which is the only reason the two are
+comparable: `Model.to_highspy()` is the same seam on linopy's side.
+
+`highs` is the sink most callers actually reach for, and it is **not the lp sink
+minus a file** — HiGHS's own dense model is resident in both arms and narrows
+the gap between them. Measuring only the LP path reports the wrong number for
+the common case, which is why both run by default.
 
 Both arms read the same parquet files and produce an LP file, so the comparison
 is one language, one output format, two engines. The linopy arm is the right

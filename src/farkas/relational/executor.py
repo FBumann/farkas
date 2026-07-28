@@ -296,7 +296,7 @@ class PolarsExecutor:
         # `sink_csv`, whose default resolves to streaming — and switching every
         # collect costs 29% on a small join-heavy model to save the same 0.15 GB
         # this one saves alone.
-        frame = frame.select(wanted).collect(engine='streaming').lazy()
+        frame = _plain_strings(frame.select(wanted), p.dims).collect(engine='streaming').lazy()
         self._check_one_row_per_coordinate(p, frame)
         if frame.collect_schema()['value'] == pl.Boolean:
             self._bool_params.add(p.name)
@@ -925,6 +925,25 @@ def _has_repeated_entry(matrix: pl.DataFrame) -> bool:
         return False
     repeated = (pl.col('row') == pl.col('row').shift(1)) & (pl.col('col') == pl.col('col').shift(1))
     return bool(matrix.select(repeated.any()).item())
+
+
+def _plain_strings(frame: pl.LazyFrame, dims: tuple[str, ...]) -> pl.LazyFrame:
+    """Dim columns as plain strings, whatever encoding the source used.
+
+    A dictionary-encoded parquet column reads back as ``Categorical``, which is
+    what pandas writes for any repeated label and what any sane writer produces
+    for a 12M-row table of node names. polars will not join ``Categorical``
+    against ``String`` — the dim frames are built from the declared coordinate
+    values and are plain — so the two would have to agree by luck.
+
+    Casting the *source* side rather than the dim side is deliberate: the dim
+    frame is the authority on what a coordinate is, and a source is whatever a
+    caller happened to hand over.
+    """
+    categorical = [d for d, dtype in frame.collect_schema().items() if d in dims and dtype in (pl.Categorical, pl.Enum)]
+    if not categorical:
+        return frame
+    return frame.with_columns(pl.col(d).cast(pl.String) for d in categorical)
 
 
 def _predicate_dims(where: plan.Predicate, param_dims: Mapping[str, tuple[str, ...]]) -> frozenset[str]:

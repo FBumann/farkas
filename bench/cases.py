@@ -421,6 +421,98 @@ def _transport_eager(paths: dict[str, str]) -> tuple[dict[str, Any], dict[str, A
 
 
 # --------------------------------------------------------------------------
+# profiled — the one case whose input is the same order as the model
+
+
+def _profiled_data(shape: Shape, dest: Path) -> dict[str, str]:
+    rng = _seed(shape)
+    n_snap, n_node = shape.sizes['snapshot'], shape.sizes['node']
+    techs = list(TECHNOLOGIES[: shape.sizes['tech']])
+    n_tech = len(techs)
+    nodes = [f'n{i:04d}' for i in range(n_node)]
+
+    capacity = rng.uniform(200.0, 800.0, (n_node, n_tech))
+    # the point of the case: an availability factor per (snapshot, node, tech),
+    # so `availability` has one row per variable rather than per coordinate of
+    # some smaller product. Never zero — this case carries no mask, and a zero
+    # upper bound would be sparsity by the back door.
+    availability = capacity[None, :, :] * (0.2 + 0.8 * rng.random((n_snap, n_node, n_tech)))
+    # half of what is available in *that* snapshot: feasible on every draw
+    # without depending on a profile that happens to be high somewhere
+    demand = availability.sum(axis=2) * 0.5
+
+    return _dump(
+        {
+            'availability': pd.DataFrame(
+                {
+                    'snapshot': np.repeat(np.arange(n_snap), n_node * n_tech),
+                    # categorical, unlike the other generators: at the `l` rung
+                    # this frame is 12M rows, and two object columns of repeated
+                    # labels would cost more to build than the model does. The
+                    # parquet is dictionary-encoded either way, so nothing about
+                    # what the arms *read* changes.
+                    'node': pd.Categorical.from_codes(
+                        np.tile(np.repeat(np.arange(n_node), n_tech), n_snap), categories=pd.Index(nodes)
+                    ),
+                    'tech': pd.Categorical.from_codes(
+                        np.tile(np.arange(n_tech), n_snap * n_node), categories=pd.Index(techs)
+                    ),
+                    'value': availability.reshape(-1),
+                }
+            ),
+            'cost': pd.DataFrame({'tech': techs, 'value': rng.uniform(10.0, 100.0, n_tech)}),
+            'demand': pd.DataFrame(
+                {
+                    'snapshot': np.repeat(np.arange(n_snap), n_node),
+                    'node': nodes * n_snap,
+                    'value': demand.reshape(-1),
+                }
+            ),
+            'node': pd.DataFrame({'node': nodes}),
+            'tech': pd.DataFrame({'tech': techs}),
+            'snapshot': pd.DataFrame({'snapshot': np.arange(n_snap)}),
+        },
+        dest,
+    )
+
+
+def _profiled_eager(paths: dict[str, str]) -> tuple[dict[str, Any], dict[str, Any]]:
+    import xarray as xr
+
+    nodes = pd.read_parquet(paths['node'])['node']
+    techs = pd.read_parquet(paths['tech'])['tech']
+    snapshots = pd.read_parquet(paths['snapshot'])['snapshot']
+    demand = pd.read_parquet(paths['demand'])
+
+    # This is the eager lane at its best, and the case exists to let it be:
+    # the file already carries the layout xarray wants, so it reads and
+    # reshapes rather than aligning. Routing it through `from_series` like the
+    # sparse cases would time a sort the *harness* imposed, not one the shape
+    # requires, and would make the comparison dishonest in our favour. Order is
+    # load-bearing — the generator writes C-order (snapshot, node, tech) — so a
+    # permuted file would change the objective and the parity gate would kill
+    # the run before anything is timed.
+    values = pd.read_parquet(paths['availability'])['value'].to_numpy()
+    availability = xr.DataArray(
+        values.reshape(len(snapshots), len(nodes), len(techs)),
+        coords={'snapshot': snapshots.to_numpy(), 'node': nodes.to_numpy(), 'tech': techs.to_numpy()},
+        dims=['snapshot', 'node', 'tech'],
+    )
+
+    data = {
+        'availability': availability,
+        'cost': pd.read_parquet(paths['cost']).set_index('tech')['value'],
+        'demand': xr.DataArray.from_series(demand.set_index(['snapshot', 'node'])['value']),
+    }
+    coords = {
+        'snapshot': pd.Index(snapshots, name='snapshot'),
+        'node': pd.Index(nodes, name='node'),
+        'tech': pd.Index(techs, name='tech'),
+    }
+    return data, coords
+
+
+# --------------------------------------------------------------------------
 
 
 def _ladder(
@@ -496,6 +588,19 @@ CASES: dict[str, Case] = {
         ),
         write=_sector_data,
         eager_inputs=_sector_eager,
+    ),
+    'profiled': Case(
+        name='profiled',
+        model=MODELS / 'profiled.yaml',
+        # `nodal`'s ladder with no mask: 50 nodes x 12 technologies, all
+        # installed. Held at those cardinalities on purpose — the two cases then
+        # differ in exactly one thing, whether the parameters span the variable
+        # product or a subset of it, so the rungs can be read against each other.
+        # At `l` that is a 12M-row availability table against a 12M coordinate
+        # product, which is where the "I/O is noise" claim gets tested.
+        ladder=_ladder({'node': 50, 'tech': 12}, (20, 200, 2_000, 20_000), per_snapshot=600),
+        write=_profiled_data,
+        eager_inputs=_profiled_eager,
     ),
     'transport': Case(
         name='transport',

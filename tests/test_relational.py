@@ -432,6 +432,35 @@ def test_a_factored_mask_labels_exactly_like_the_counted_path():
     assert fast['var_label'].to_list() == list(range(fast.height)), 'labels must stay dense from 0'
 
 
+def test_a_dictionary_encoded_source_column_binds_like_a_plain_one():
+    """A `Categorical` dim column is a source encoding, not a different model.
+
+    Any writer that sees a 12M-row table of repeated node names will
+    dictionary-encode it, and pandas does it by default for a `Categorical`.
+    polars will not join `Categorical` against `String`, and the dim frames are
+    built from declared coordinate values and are plain — so without a cast the
+    two agree only by luck, and the failure is a schema error from inside a
+    join rather than anything a caller can act on.
+    """
+    model = {
+        'dimensions': {'node': {'dtype': 'str', 'values': ['a', 'b']}},
+        'parameters': {'cap': {'dims': ['node']}},
+        'variables': {'x': {'foreach': ['node'], 'bounds': {'lower': 0, 'upper': 'cap'}}},
+        'constraints': {'c': {'foreach': ['node'], 'equations': [{'expression': 'x >= cap'}]}},
+        'objectives': {'o': {'sense': 'minimize', 'equations': [{'expression': 'sum(x, over=node)'}]}},
+    }
+    encoded = pl.DataFrame({'node': ['a', 'b'], 'value': [3.0, 4.0]}).with_columns(pl.col('node').cast(pl.Categorical))
+    plain = pl.DataFrame({'node': ['a', 'b'], 'value': [3.0, 4.0]})
+
+    with fk.build(model, {'cap': encoded}) as ex:
+        from_encoded = ex.solve().objective
+    with fk.build(model, {'cap': plain}) as ex:
+        from_plain = ex.solve().objective
+
+    assert from_encoded == pytest.approx(7.0)
+    assert from_encoded == pytest.approx(from_plain), 'the encoding changed the model'
+
+
 def test_an_objective_naming_a_variable_twice_sums_its_coefficients():
     """Same argument, one dimension down: the objective is a column vector."""
     model = {
