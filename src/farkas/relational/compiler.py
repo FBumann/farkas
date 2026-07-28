@@ -62,6 +62,20 @@ class TermFragment:
 
     A term's other dims arrived by broadcast. See :meth:`survives_dropping`.
     """
+    presence: pl.LazyFrame | None = None
+    """Where the *variable* under this fragment exists, keyed by :attr:`dims`.
+
+    Not the same question as which rows :attr:`frame` has. A fragment loses rows
+    for two unrelated reasons, and a constraint row must react to only one of
+    them: a **masked variable** is genuinely absent there, while a **sparse
+    parameter** is a compressed dense array whose missing rows mean a zero
+    coefficient (SPEC §8). Once the two are multiplied together the frame cannot
+    tell them apart, so the variable's own coordinates are carried alongside.
+
+    ``None`` means "nothing to report" — a constant fragment has no variable, and
+    a reduction clears it, because ``sum`` skips absent slots rather than
+    propagating them (v1 ``convention.rst`` §13).
+    """
 
     @property
     def value_column(self) -> str:
@@ -299,7 +313,8 @@ class PolarsCompiler:
 
         dims = self.program.variable(name).dims
         frame = self.variables[name].select(*dims, 'var_label', pl.lit(1.0, dtype=pl.Float64).alias('coeff'))
-        return TermFragment(dims, frame, True, label_dims=frozenset(dims))
+        presence = self.variables[name].select(*dims)
+        return TermFragment(dims, frame, True, label_dims=frozenset(dims), presence=presence)
 
     def _product(self, a: CompiledExpression, b: CompiledExpression, context: str) -> CompiledExpression:
         """``a * b``, with the variable-carrying side normalised to the left."""
@@ -348,6 +363,8 @@ class PolarsCompiler:
         frame = p.frame.select(*keep, *p.carried)
         if scale != 1:
             frame = frame.with_columns(pl.col(p.value_column) * scale)
+        # §13: a reduction *skips* absent slots rather than propagating them, so
+        # summing over a partly-masked dim is well defined and reports nothing.
         return TermFragment(keep, frame, p.is_term, p.survives_dropping(dropped), p.label_dims - dropped)
 
     def _group_fragment(self, p: TermFragment, g: plan.GroupSum, context: str) -> TermFragment:
@@ -372,6 +389,7 @@ class PolarsCompiler:
         mapping = self.dimensions[g.over].select(pl.col('val').alias(g.over), pl.col(g.coordinate).alias(g.into))
         frame = p.frame.join(mapping, on=g.over, how='inner').select(*keep, g.into, *p.carried)
         keyed = p.keyed and g.over in p.label_dims
+        # a group is a sum, so §13 applies here as well: absence does not escape it
         return TermFragment((*keep, g.into), frame, p.is_term, keyed, _relabel(p.label_dims, g.over, g.into))
 
     def _translate_fragment(self, p: TermFragment, s: plan.Translate, context: str) -> TermFragment:
@@ -477,7 +495,9 @@ def _map_fragments(
 
 def _negate(p: TermFragment) -> TermFragment:
 
-    return TermFragment(p.dims, p.frame.with_columns(-pl.col(p.value_column)), p.is_term, p.keyed, p.label_dims)
+    return TermFragment(
+        p.dims, p.frame.with_columns(-pl.col(p.value_column)), p.is_term, p.keyed, p.label_dims, p.presence
+    )
 
 
 def _join_mul(a: TermFragment, c: TermFragment, is_term: bool, divide: bool = False) -> TermFragment:
@@ -498,4 +518,6 @@ def _join_mul(a: TermFragment, c: TermFragment, is_term: bool, divide: bool = Fa
     out = 'coeff' if is_term else 'cval'
     carried = ['var_label', out] if is_term else [out]
     frame = joined.with_columns(combined.alias(out)).select(*out_dims, *carried)
-    return TermFragment(out_dims, frame, is_term, a.keyed and c.keyed, a.label_dims)
+    # *c* is variable-free, so it contributes no absence: a sparse coefficient
+    # zeroes a term, it does not unmake the variable underneath it.
+    return TermFragment(out_dims, frame, is_term, a.keyed and c.keyed, a.label_dims, a.presence)
