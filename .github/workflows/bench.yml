@@ -4,7 +4,7 @@ name: Bench
 # two suite passes plus the install. That is the floor for a *comparison*: a
 # benchmark against no baseline is a number without a claim.
 #
-# **Asked for, never guessed.** Label a PR `bench` and it runs. This is
+# **Asked for, never guessed.** Label a PR `trigger:bench` and it runs. This is
 # `workflow_dispatch` in spirit, with the one thing dispatch cannot give: a pull
 # request to report into. The numbers are a comparison against *this* PR's base,
 # so they only mean anything somewhere a base exists.
@@ -38,7 +38,7 @@ permissions:
 
 jobs:
   bench:
-    if: github.event.label.name == 'bench'
+    if: github.event.label.name == 'trigger:bench'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -124,4 +124,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh pr edit ${{ github.event.pull_request.number }} --remove-label bench || true
+          gh pr edit ${{ github.event.pull_request.number }} --remove-label 'trigger:bench' || true
