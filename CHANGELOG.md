@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.0-alpha.27](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.26...v0.0.0-alpha.27) (2026-07-28)
+
+
+### Bug Fixes
+
+* refuse a parameter source that carries a coordinate twice ([#201](https://github.com/FBumann/farkas/issues/201)) ([fffee97](https://github.com/FBumann/farkas/commit/fffee9773f259a9b75cf5014f50a02f40c02a3cb))
+
 ## [0.0.0-alpha.26](https://github.com/FBumann/farkas/compare/v0.0.0-alpha.25...v0.0.0-alpha.26) (2026-07-27)
 
 
