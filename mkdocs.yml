@@ -70,6 +70,12 @@ theme:
   name: material
   language: en
 
+  # `farkas-icon.svg` rather than `farkas-mark.svg`: the bare mark is drawn in
+  # #0f201e, which disappears against the slate header. The icon carries its own
+  # dark tile, so it reads on any header colour and needs no inverse variant.
+  logo: assets/farkas-icon.svg
+  favicon: assets/farkas-favicon.svg
+
   palette:
     # Dark first = default for new visitors (no auto/system-pref entry).
     # Icon represents the CURRENT scheme — moon when active is dark,
