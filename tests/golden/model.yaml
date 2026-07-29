@@ -1,0 +1,57 @@
+# Every rendering path, in one model. See README.md — this is not meant to be
+# a sensible optimisation problem, only an exhaustive one.
+dimensions:
+  snapshot: {dtype: int}
+  generator: {dtype: str, coords: [bus]}
+  bus: {dtype: str}
+
+parameters:
+  p_max: {dims: [generator]}
+  p_min: {dims: [generator]}
+  cost: {dims: [generator]}
+  load: {dims: [snapshot, bus]}
+  is_flexible: {dims: [generator], dtype: bool}
+
+variables:
+  p:            # both bounds, and a where with all three connectives
+    foreach: [snapshot, generator]
+    where: "p_max > 0 AND NOT is_flexible OR p_min > 0"
+    bounds: {lower: p_min, upper: p_max}
+  spill:        # lower only
+    foreach: [snapshot]
+    bounds: {lower: 0}
+  slack:        # upper only
+    foreach: [snapshot]
+    bounds: {upper: 100}
+  theta:        # unbounded
+    foreach: [bus]
+  on:           # binary
+    foreach: [snapshot, generator]
+    binary: true
+  units:        # integer, bounded
+    foreach: [generator]
+    integer: true
+    bounds: {lower: 0, upper: 10}
+
+constraints:
+  balance:      # group_sum over a coordinate map
+    foreach: [snapshot, bus]
+    equations:
+      - expression: group_sum(p, over=generator, by=bus) + spill - slack == load
+  ramp:         # roll (cyclic) and shift (acyclic) in one equation
+    foreach: [snapshot, generator]
+    equations:
+      - expression: p - roll(p, snapshot=1) <= shift(p, snapshot=1) + p_max
+  arithmetic:   # division, unary minus, nested reduction, bracketing
+    # No `**`: the walk renders it, but `lower_program` rejects it, so a model
+    # using it would not be a model. Format.power stays exercised by unit
+    # tests rather than from here.
+    foreach: [snapshot]
+    equations:
+      - expression: sum(p / 2 + -cost, over=generator) >= -sum(p, over=generator) * 3
+
+objectives:
+  total_cost:
+    sense: maximize
+    equations:
+      - expression: p * cost

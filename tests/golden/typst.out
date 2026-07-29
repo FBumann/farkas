@@ -1,0 +1,43 @@
+#set page(margin: 2.5cm)
+#set text(size: 11pt)
+
+== Sets
+/ $cal(T)$: index $t$ --- `snapshot`
+/ $cal(G)$: index $g$ --- `generator` with $upright("bus"): cal(G) arrow.r cal(B)$
+/ $cal(B)$: index $b$ --- `bus`
+
+== Parameters
+/ $p^(upright("max"))$: `p_max` over $cal(G)$
+/ $p^(upright("min"))$: `p_min` over $cal(G)$
+/ $italic("cost")$: `cost` over $cal(G)$
+/ $italic("load")$: `load` over $cal(T) times cal(B)$
+/ $italic("is_flexible")$: `is_flexible` over $cal(G)$
+
+== Variables
+/ $p$: `p` over $cal(T) times cal(G)$
+/ $italic("spill")$: `spill` over $cal(T)$
+/ $italic("slack")$: `slack` over $cal(T)$
+/ $italic("theta")$: `theta` over $cal(B)$
+/ $italic("on")$: `on` over $cal(T) times cal(G)$
+/ $italic("units")$: `units` over $cal(G)$
+
+$t minus.o k$ denotes cyclic translation: index $t-k$ taken modulo the size of the dimension (`roll`). Plain $t-k$ (`shift`) has no wraparound --- terms translated past the edge are simply absent.
+
+== Objective
+#set math.equation(numbering: "(1)")
+$ upright("total_cost") & max & sum_(t in cal(T), g in cal(G)) p_(t,g) dot italic("cost")_(g) $
+
+== Subject to
+#set math.equation(numbering: "(1)")
+$ upright("balance") & sum_(g in cal(G) colon upright("bus")(g) = b) p_(t,g) + italic("spill")_(t) - italic("slack")_(t) & = italic("load")_(t,b) & forall t in cal(T), b in cal(B) \
+  upright("ramp") & p_(t,g) - p_(t minus.o 1,g) & <= p_(t - 1,g) + p^(upright("max"))_(g) & forall t in cal(T), g in cal(G) \
+  upright("arithmetic") & sum_(g in cal(G)) (frac(p_(t,g), 2) + -italic("cost")_(g)) & >= (-(sum_(g in cal(G)) p_(t,g))) dot 3 & forall t in cal(T) $
+
+== Variable domains
+#set math.equation(numbering: "(1)")
+$ upright("p") & p^(upright("min"))_(g) <= p_(t,g) & <= p^(upright("max"))_(g) & forall t in cal(T), g in cal(G) colon (p^(upright("max"))_(g) > 0 and not italic("is_flexible")_(g) upright(" is defined") or p^(upright("min"))_(g) > 0) \
+  upright("spill") & italic("spill")_(t) & >= 0 & forall t in cal(T) \
+  upright("slack") & italic("slack")_(t) & <= 100 & forall t in cal(T) \
+  upright("theta") & italic("theta")_(b) & in RR & forall b in cal(B) \
+  upright("on") & italic("on")_(t,g) & in {0, 1} & forall t in cal(T), g in cal(G) \
+  upright("units") & 0 <= italic("units")_(g) & <= 10, italic("units")_(g) in ZZ & forall g in cal(G) $

@@ -1,0 +1,78 @@
+## The math
+
+#### Sets
+
+| Symbol | Meaning |
+|---|---|
+| $\mathcal{T}$ | index $t$ --- `snapshot` |
+| $\mathcal{G}$ | index $g$ --- `generator` with $\mathrm{bus}: \mathcal{G} \to \mathcal{B}$ |
+| $\mathcal{B}$ | index $b$ --- `bus` |
+
+#### Parameters
+
+| Symbol | Meaning |
+|---|---|
+| $p^{\mathrm{max}}$ | `p_max` over $\mathcal{G}$ |
+| $p^{\mathrm{min}}$ | `p_min` over $\mathcal{G}$ |
+| $\mathit{cost}$ | `cost` over $\mathcal{G}$ |
+| $\mathit{load}$ | `load` over $\mathcal{T} \times \mathcal{B}$ |
+| $\mathit{is\_flexible}$ | `is_flexible` over $\mathcal{G}$ |
+
+#### Variables
+
+| Symbol | Meaning |
+|---|---|
+| $p$ | `p` over $\mathcal{T} \times \mathcal{G}$ |
+| $\mathit{spill}$ | `spill` over $\mathcal{T}$ |
+| $\mathit{slack}$ | `slack` over $\mathcal{T}$ |
+| $\mathit{theta}$ | `theta` over $\mathcal{B}$ |
+| $\mathit{on}$ | `on` over $\mathcal{T} \times \mathcal{G}$ |
+| $\mathit{units}$ | `units` over $\mathcal{G}$ |
+
+$t \ominus k$ denotes cyclic translation: index $t-k$ taken modulo the size of the dimension (`roll`). Plain $t-k$ (`shift`) has no wraparound --- terms translated past the edge are simply absent.
+
+#### Objective
+
+**`total_cost`**
+
+$$\max \sum_{t \in \mathcal{T},\enspace g \in \mathcal{G}} p_{t,g} \cdot \mathit{cost}_{g}$$
+
+#### Subject to
+
+**`balance`**
+
+$$\sum_{g \in \mathcal{G} \thinspace:\thinspace \mathrm{bus}(g) = b} p_{t,g} + \mathit{spill}_{t} - \mathit{slack}_{t} = \mathit{load}_{t,b} \qquad \forall\thinspace t \in \mathcal{T},\enspace b \in \mathcal{B}$$
+
+**`ramp`**
+
+$$p_{t,g} - p_{t \ominus 1,g} \le p_{t - 1,g} + p^{\mathrm{max}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
+
+**`arithmetic`**
+
+$$\sum_{g \in \mathcal{G}} \left( \frac{p_{t,g}}{2} + -\mathit{cost}_{g} \right) \ge \left( -\left( \sum_{g \in \mathcal{G}} p_{t,g} \right) \right) \cdot 3 \qquad \forall\thinspace t \in \mathcal{T}$$
+
+#### Variable domains
+
+**`p`**
+
+$$p^{\mathrm{min}}_{g} \le p_{t,g} \le p^{\mathrm{max}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace \left( p^{\mathrm{max}}_{g} > 0 \wedge \neg \mathit{is\_flexible}_{g} \text{ is defined} \vee p^{\mathrm{min}}_{g} > 0 \right)$$
+
+**`spill`**
+
+$$\mathit{spill}_{t} \ge 0 \qquad \forall\thinspace t \in \mathcal{T}$$
+
+**`slack`**
+
+$$\mathit{slack}_{t} \le 100 \qquad \forall\thinspace t \in \mathcal{T}$$
+
+**`theta`**
+
+$$\mathit{theta}_{b} \in \mathbb{R} \qquad \forall\thinspace b \in \mathcal{B}$$
+
+**`on`**
+
+$$\mathit{on}_{t,g} \in \{0, 1\} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
+
+**`units`**
+
+$$0 \le \mathit{units}_{g} \le 10, \mathit{units}_{g} \in \mathbb{Z} \qquad \forall\thinspace g \in \mathcal{G}$$

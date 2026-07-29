@@ -23,6 +23,7 @@ import farkas as fk
 from farkas.typeset import FORMATS, SymbolTable, to_latex, to_markdown, to_typst, typeset
 from farkas.typeset.format import OPERATOR_NAMES
 from farkas.typeset.symbols import _derive_name_symbol
+from tests import golden
 from tools import constructs
 
 if TYPE_CHECKING:
@@ -424,6 +425,33 @@ def test_every_typst_operator_compiles(tmp_path: Path):
     probe = tmp_path / 'operators.typ'
     probe.write_text('\n'.join(f'$ a {TYPST.operators[name]} b $' for name in sorted(OPERATOR_NAMES)))
     typst.compile(str(probe), output=str(tmp_path / 'operators.pdf'))
+
+
+# ---------------------------------------------------------------------------
+# golden output — the only test that notices a change nobody pinned
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize('name', list(FORMATS), ids=list(FORMATS))
+def test_the_output_matches_the_committed_golden_file(name: str):
+    """One model, every format, byte for byte.
+
+    Fragment assertions pin the constructs someone thought to pin, and survive
+    anything leaving those substrings intact — a stray prefix, a lost space, a
+    changed separator. Perturbing `TypstFormat.summation` to emit `~sum_(...)`
+    failed *no test* before this existed, because every Typst assertion was a
+    substring check and a `~` compiles fine.
+
+    The same trade `examples/walkthrough.out` makes: the committed file is the
+    output, so a format that starts saying something different shows up as a
+    diff instead of as nothing at all.
+    """
+    expected = golden.path_for(name)
+    actual = typeset(golden.MODEL, FORMATS[name], standalone=True)
+    assert actual == expected.read_text(), (
+        f'{expected.relative_to(Path.cwd())} is stale.\n'
+        f'If the change was intended: `uv run python -m tests.golden`, then read the diff.'
+    )
 
 
 # ---------------------------------------------------------------------------

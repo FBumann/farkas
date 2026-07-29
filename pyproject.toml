@@ -164,6 +164,7 @@ extend-fixable = ["B", "SIM", "RUF", "C4", "UP"]
 "examples/**/*.py" = ["T20"]  # the walkthrough's whole output is its point
 "bench/**/*.py" = ["T20"]  # a harness reports by printing; stdout is its interface
 "tools/**/*.py" = ["T20"]  # same: a generator says what it wrote
+"tests/golden/__main__.py" = ["T20"]  # likewise a generator, and only reachable as a command
 "src/farkas/where_parser.py" = ["N806"]  # grammar tokens (NOT/AND/OR) are named after keywords
 
 [tool.ruff.format]
