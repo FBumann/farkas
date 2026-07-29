@@ -61,25 +61,21 @@ def coefficient(parameter: Any) -> Any:
     return parameter.fillna(0.0)
 
 
-def vacated(expression: Any) -> Any:
-    """A shifted expression with its vacated edge positions at **zero**.
+def vacated(expression: Any, fill: float) -> Any:
+    """A shifted expression with its vacated edge positions filled.
 
     ``shift`` is acyclic: it moves values along a dimension and leaves the
-    positions at the edge with nothing to move in. SPEC §7 fixes what those
-    contribute — "vacated positions contribute **zero**" — which is also the
-    ``fill_value=0`` the DataArray branch of the same helper passes, so the rule
-    is one rule whatever the operand is.
+    positions at the edge with nothing to move in. linopy v1 counts ``.shift()``
+    among the operations that *create* absence (§4), so those slots propagate
+    (§6) and drop the row (§12) — and that is now the language's answer too
+    (SPEC §7, #289). This helper is the **opt-out**, reached only from
+    ``shift(..., fill=0)``.
 
-    linopy's v1 convention counts ``.shift()`` among the operations that *create*
-    absence (§4), so without this the vacated slots would propagate (§6) and drop
-    the row (§12) — an acyclic storage balance would silently lose its first
-    timestep instead of starting from an empty store.
-
-    Whether SPEC §7 should keep saying zero is a live question: zero on a
-    constraint's right-hand side *pins* rather than relaxes, so
-    ``x <= shift(dt, t=1)`` forces ``x <= 0`` at the first position unless it is
-    masked. Until that is decided, this keeps the documented rule true by
-    construction rather than by the legacy convention's accident.
+    It is deliberately the same escape v1 itself prescribes for code that wants
+    the older reading — *"wrap with .fillna(0)"* — rather than a rule of ours
+    layered on top. Before #289 it ran unconditionally, which held both lanes
+    off v1 and made the differential oracle blind to the difference, since we
+    caused it on both sides.
 
     ``to_linexpr()`` first when the operand is still a bare ``Variable``:
     ``Variable.fillna`` means two different things across the versions we
@@ -88,4 +84,4 @@ def vacated(expression: Any) -> Any:
     """
     if hasattr(expression, 'to_linexpr'):
         expression = expression.to_linexpr()
-    return expression.fillna(0)
+    return expression.fillna(fill)

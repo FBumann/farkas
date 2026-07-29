@@ -54,6 +54,7 @@ from farkas.expression_parser import (
     UnaryOperatorNode,
     VariableNode,
 )
+from farkas.helpers import split_dimension_key
 from farkas.resolution import Namespace, expression_of, where_of
 from farkas.where_parser import (
     AndNode,
@@ -175,7 +176,7 @@ def _dims_call(
 
     if node.name in ('roll', 'shift'):
         inner = _dims(node.args[0], schema, context, external)
-        ((dim, _),) = node.kwargs.items()
+        dim, _, _ = split_dimension_key(node.name, node.kwargs)
         if dim not in inner:
             raise DimensionError(f"{context}: {node.name}() along '{dim}' but the expression has dims {sorted(inner)}.")
         return inner

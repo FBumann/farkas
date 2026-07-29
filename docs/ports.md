@@ -78,7 +78,9 @@ Feeds [docs/ROADMAP.md](ROADMAP.md), with the verdict
 `min_up_time` is the more interesting row, because the answer depends on
 something the language cares about. The constraint is
 `sum(start_up over the last T snapshots) <= status`. For a *single T fixed in
-the file* that is `start_up + shift(start_up, 1) + …` — a **macro**, free. For
+the file* that is `start_up + shift(start_up, 1, fill=0) + …` — a **macro**,
+free, and `fill=0` because a window reaching before the horizon is short a term
+rather than undefined (§7). For
 PyPSA's actual signature, where `T` is a column and each generator may have its
 own, the number of terms is read from data, and
 [data-dependent structure inside an expression](ARCHITECTURE.md#two-tiers-and-the-ceiling)

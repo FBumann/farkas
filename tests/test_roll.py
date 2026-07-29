@@ -70,12 +70,20 @@ def test_roll_is_cyclic_on_both_lanes(storage_inputs):
         assert np.allclose(soc, np.roll(soc, 1) + 0.9 * charge - discharge, atol=1e-6)
 
 
-def test_shift_is_acyclic_on_both_lanes(storage_inputs):
-    """shift() = acyclic recurrence: soc starts empty instead of wrapping.
+def test_shift_drops_the_row_it_has_no_predecessor_for_on_both_lanes(storage_inputs):
+    """shift() = acyclic recurrence, and the first snapshot has *no* recurrence.
 
-    The load is scaled down vs the cyclic test: starting empty, the battery
-    can only pre-charge from t=0, so the first peak must be shallower (with
-    the original data both backends agree the model is infeasible).
+    ``soc[0]`` has no predecessor, so under #289 the vacated slot is absent, it
+    propagates through the equation, and the ``t=0`` row is not built at all —
+    linopy v1's own reading of ``.shift()``. It used to start from zero, which
+    was a constraint the model never wrote: an initial condition invented by
+    the language on the modeller's behalf.
+
+    A model that wants one now says so, which is what SPEC §2's storage example
+    already did with a complementary ``where``. Both lanes are asserted because
+    they reach the drop differently — the eager lane from linopy's absence
+    propagation, the relational one from the vacated coordinates leaving the
+    presence set.
     """
     data, coords = storage_inputs
     data = {**data, 'load': (data['load'] * 0.93).round(3)}
@@ -85,9 +93,14 @@ def test_shift_is_acyclic_on_both_lanes(storage_inputs):
     acyclic = original.replace('roll(soc, snapshot=1)', 'shift(soc, snapshot=1)')
 
     with differential(acyclic, data, coords) as run:
-        # acyclic recurrence: soc[0] has no predecessor (starts from zero)
         soc, charge, discharge = _soc_trace(run.result)
-        assert np.allclose(soc, np.concatenate([[0.0], soc[:-1]]) + 0.9 * charge - discharge, atol=1e-6)
+        # the recurrence holds from the second snapshot on ...
+        assert np.allclose(soc[1:], soc[:-1] + 0.9 * charge[1:] - discharge[1:], atol=1e-6)
+        # ... and t=0 is governed by its own bounds alone. Asserted as the
+        # *absence of a constraint*: the old zero-start would have forced
+        # soc[0] == 0.9*charge[0] - discharge[0], and the solver is free to
+        # violate that now because no such row exists.
+        assert run.model.constraints['soc_balance'].labels.values[0] == -1, 't=0 row should not be built'
 
 
 def test_shift_semantics_are_positional_not_lexicographic():
@@ -197,6 +210,36 @@ def test_translation_lowers_to_a_bounded_halo(expression, expected):
     ],
 )
 def test_translation_along_a_dim_the_expression_lacks_is_refused(expression, match):
+    schema = schema_of(STORAGE_YAML)
+    with pytest.raises(LanguageError, match=match):
+        _lower_expr(resolved(expression, schema), schema, 't')
+
+
+def test_fill_lowers_to_the_escape_hatch_and_a_bare_shift_does_not():
+    """``fill=`` is the only difference between the two readings of ``shift``.
+
+    Kept as a lowering assertion rather than a solve, because ``fill`` is the
+    field both lanes branch on: ``None`` is absence, ``0.0`` is the zero.
+    """
+    schema = schema_of(STORAGE_YAML)
+    bare = _lower_expr(resolved('shift(soc, snapshot=1)', schema), schema, 't')
+    filled = _lower_expr(resolved('shift(soc, snapshot=1, fill=0)', schema), schema, 't')
+    assert bare == Translate(Variable('soc'), 'snapshot', 1, wrap=False, fill=None)
+    assert filled == Translate(Variable('soc'), 'snapshot', 1, wrap=False, fill=0.0)
+
+
+@pytest.mark.parametrize(
+    ('expression', 'match'),
+    [
+        # roll vacates nothing, so a fill would be a no-op the reader has to
+        # puzzle over — and the refusal says why rather than only that it fits no shape
+        ('roll(soc, snapshot=1, fill=0)', 'roll is cyclic, so no position is ever vacated'),
+        # a nonzero fill is a constant contributed at the vacated coordinate,
+        # which is a fragment kind the relational lane does not synthesise
+        ('shift(soc, snapshot=1, fill=1)', r'shift\(fill=\.\.\.\) takes the literal 0'),
+    ],
+)
+def test_fill_is_refused_where_neither_lane_can_honour_it(expression, match):
     schema = schema_of(STORAGE_YAML)
     with pytest.raises(LanguageError, match=match):
         _lower_expr(resolved(expression, schema), schema, 't')

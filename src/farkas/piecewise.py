@@ -24,7 +24,7 @@ with F = the union of the links' dims, it emits:
     constraints:
       curve_convexity(F):     sum(curve_lam, over=bp) == 1
       curve_pick(F):          sum(curve_seg, over=bp) == 1        (when not convex)
-      curve_adjacency(F, bp): curve_lam <= curve_seg + shift(curve_seg, bp=1)
+      curve_adjacency(F, bp): curve_lam <= curve_seg + shift(curve_seg, bp=1, fill=0)
       curve_link0(F):         (power) == sum(curve_lam * power_bp, over=bp)
       curve_link1(F):         (fuel * eff) <= sum(curve_lam * fuel_bp, over=bp)
 
@@ -92,7 +92,12 @@ def expand_piecewise(schema: MathSchema) -> MathSchema:
             }
             raw['constraints'][f'{name}_adjacency'] = {
                 'foreach': [*frame, pw.over],
-                'equations': [{'expression': f'{lam} <= {seg} + shift({seg}, {pw.over}=1)'}],
+                # fill=0 rather than a bare shift: at the first breakpoint the
+                # vacated term must contribute zero, giving `lam <= seg`. Left
+                # absent it would propagate and drop that row, leaving the first
+                # lambda unconstrained by segment selection — a wrong MILP with
+                # no error, which is why #289 kept the escape hatch.
+                'equations': [{'expression': f'{lam} <= {seg} + shift({seg}, {pw.over}=1, fill=0)'}],
             }
 
     raw['piecewise'].clear()  # every block is now expanded away

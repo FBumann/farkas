@@ -446,10 +446,11 @@ def _translation(helper: str, kwargs: dict[str, float]) -> Mapping[Hashable, int
     Only the signature is shared: how far to move is one rule, and whether the
     edge wraps is what makes roll and shift different operators.
     """
-    if len(kwargs) != 1:
-        msg = f'{helper}() expects exactly one keyword argument (dim=n), got {len(kwargs)}: {kwargs}'
+    named = {k: v for k, v in kwargs.items() if k != 'fill'}
+    if len(named) != 1:
+        msg = f'{helper}() expects exactly one keyword argument (dim=n), got {len(named)}: {named}'
         raise TypeError(msg)
-    dim, amount = next(iter(kwargs.items()))
+    dim, amount = next(iter(named.items()))
     if int(amount) != amount:
         msg = f'{helper}() amount must be an integer, got {amount!r}'
         raise TypeError(msg)
@@ -457,16 +458,25 @@ def _translation(helper: str, kwargs: dict[str, float]) -> Mapping[Hashable, int
 
 
 def _helper_shift(array: Any, **kwargs: float) -> Any:
-    """Non-cyclic shift along a dimension; vacated positions contribute zero.
+    """Non-cyclic shift along a dimension.
 
-    Usage in YAML: ``shift(soc, snapshot=1)`` — the value at *t-1*, with the
-    first position empty (an acyclic recurrence, e.g. storage starting empty).
+    Usage in YAML: ``shift(soc, snapshot=1)`` — the value at *t-1*. The vacated
+    first position is **absent**, which propagates and drops the row, and is
+    what linopy's own v1 convention means by ``.shift()``; ``fill=0`` asks for
+    the zero instead (SPEC §7). Nothing is done to the result in the default
+    case on purpose: the whole point of #289 was to stop holding linopy off its
+    own answer.
     """
     by = _translation('shift', kwargs)
+    fill = kwargs.get('fill')
     if isinstance(array, xr.DataArray):
-        return array.shift(by, fill_value=0)
+        # A DataArray shift always fills — absence is not representable in
+        # data, so lowering refuses a bare shift over a variable-free operand
+        # and this branch is only ever reached under `fill=`.
+        return array.shift(by, fill_value=fill if fill is not None else np.nan)
     if hasattr(array, 'shift'):
-        return semantics.vacated(array.shift(by))
+        shifted = array.shift(by)
+        return shifted if fill is None else semantics.vacated(shifted, fill)
     msg = f"shift() does not support type '{type(array).__name__}'."
     raise TypeError(msg)
 

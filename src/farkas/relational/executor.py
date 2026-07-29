@@ -1101,5 +1101,7 @@ def _absence_restrictions(terms: Sequence[TermFragment]) -> list[tuple[tuple[str
     for p in terms:
         if p.presence is None or not p.dims:
             continue
-        out.append((p.dims, p.presence))
+        # `presence_dims` is narrower than `dims` for an acyclic shift, whose
+        # vacated edge lies along one dimension and is silent about the rest.
+        out.append((p.presence_dims or p.dims, p.presence))
     return out

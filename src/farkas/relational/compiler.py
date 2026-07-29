@@ -76,6 +76,15 @@ class TermFragment:
     a reduction clears it, because ``sum`` skips absent slots rather than
     propagating them (v1 ``convention.rst`` §13).
     """
+    presence_dims: tuple[str, ...] | None = None
+    """The columns :attr:`presence` is keyed by; ``None`` means :attr:`dims`.
+
+    Only an acyclic ``shift`` sets it. The coordinates it vacates are an edge
+    along *one* dimension and say nothing about the others, so the restriction
+    it introduces is one column wide however many dims the fragment carries —
+    where keying it by :attr:`dims` would mean materialising the whole
+    coordinate product just to name an edge.
+    """
 
     @property
     def value_column(self) -> str:
@@ -445,22 +454,44 @@ class PolarsCompiler:
             )
 
         frame = remap(p.frame, p.carried)
-        presence = None
+        presence, presence_dims = None, None
         if p.presence is not None:
-            # Presence is a coordinate set, so it travels through the same map.
+            # Presence is a coordinate set, so it travels through the same map,
+            # and the inner join already drops whatever the edge vacated.
             presence = remap(p.presence, [])
-            if not s.wrap:
+            if not s.wrap and s.fill is not None:
                 presence = pl.concat([presence, self._vacated(p, s, card, others)], how='vertical_relaxed').unique()
-        return TermFragment(p.dims, frame, p.is_term, p.keyed, p.label_dims, presence)
+        elif not s.wrap and s.fill is None:
+            # Nothing was absent before, and the edge now is. `None` here means
+            # "present everywhere", so without this the vacated slot would
+            # merely fail to join and the row would survive with the term
+            # quietly gone — a different constraint, which is the shape #239
+            # removed from masks and #289 removes from shift.
+            presence, presence_dims = self._survivors(s, card), (s.dimension,)
+        return TermFragment(p.dims, frame, p.is_term, p.keyed, p.label_dims, presence, presence_dims)
+
+    def _survivors(self, s: plan.Translate, card: int) -> pl.LazyFrame:
+        """The coordinates of ``s.dimension`` an acyclic shift leaves populated.
+
+        The complement of :meth:`_vacated`, and one column wide: an edge along
+        this dimension is vacated for *every* combination of the others, so
+        naming the others would only repeat the same statement.
+        """
+        table = self.dimensions[s.dimension]
+        return table.filter(((pl.col('ord') - s.by) >= 0) & ((pl.col('ord') - s.by) < card)).select(
+            pl.col('val').alias(s.dimension)
+        )
 
     def _vacated(self, p: TermFragment, s: plan.Translate, card: int, others: list[str]) -> pl.LazyFrame:
         """The edge positions ``shift`` leaves with nothing to move in.
 
-        They are *not* absent. SPEC §7 fixes what they contribute — "vacated
-        positions contribute **zero**" — which is a declared rule of the
-        language, so they stay present and the row survives. That is the same
-        answer the eager lane gives them (``semantics.vacated``), and it is why
-        the two lanes agree about an acyclic recurrence's first step.
+        Reached only under ``fill=0``, and that is the whole of what ``fill``
+        does here: putting the edge coordinates back into the presence set
+        makes them present-with-no-term, which is a zero contribution and a
+        surviving row. Without it they stay out of the set, so absence
+        propagates and the row drops — linopy v1's reading of ``.shift()``,
+        which the eager lane now gets from linopy itself rather than from a
+        ``fillna`` we apply on top of it.
 
         Only the ``shift`` edge qualifies. A coordinate the variable's own mask
         removed is genuinely absent, and remapping already dropped it above.
@@ -548,7 +579,13 @@ def _map_fragments(
 def _negate(p: TermFragment) -> TermFragment:
 
     return TermFragment(
-        p.dims, p.frame.with_columns(-pl.col(p.value_column)), p.is_term, p.keyed, p.label_dims, p.presence
+        p.dims,
+        p.frame.with_columns(-pl.col(p.value_column)),
+        p.is_term,
+        p.keyed,
+        p.label_dims,
+        p.presence,
+        p.presence_dims,
     )
 
 
@@ -572,4 +609,4 @@ def _join_mul(a: TermFragment, c: TermFragment, is_term: bool, divide: bool = Fa
     frame = joined.with_columns(combined.alias(out)).select(*out_dims, *carried)
     # *c* is variable-free, so it contributes no absence: a sparse coefficient
     # zeroes a term, it does not unmake the variable underneath it.
-    return TermFragment(out_dims, frame, is_term, a.keyed and c.keyed, a.label_dims, a.presence)
+    return TermFragment(out_dims, frame, is_term, a.keyed and c.keyed, a.label_dims, a.presence, a.presence_dims)

@@ -47,7 +47,7 @@ from farkas.expression_parser import (
     UnaryOperatorNode,
     VariableNode,
 )
-from farkas.helpers import BUILTIN_NAMES, call_shape_error
+from farkas.helpers import BUILTIN_NAMES, call_shape_error, split_dimension_key
 from farkas.relational import plan
 from farkas.resolution import Namespace, expression_of, where_of
 from farkas.schema import equation_name
@@ -264,18 +264,23 @@ def _lower_expr(node: ArithmeticNode, schema: MathSchema, context: str) -> plan.
             )
 
         if node.name in ('roll', 'shift'):
-            ((dim, shift_node),) = node.kwargs.items()
+            dim, shift_node, values = split_dimension_key(node.name, node.kwargs)
             sign = 1
             if isinstance(shift_node, UnaryOperatorNode) and shift_node.op == '-':
                 sign, shift_node = -1, shift_node.operand
             if not isinstance(shift_node, NumberNode) or int(shift_node.value) != shift_node.value:
                 raise LanguageError(f'{context}: {node.name}() shift must be an integer literal')
             _check_dim_rules(node, schema, context)
+            operand = _lower_expr(node.args[0], schema, context)
+            fill = _translate_fill(values, node.name, context)
+            if fill is None and node.name == 'shift' and not _has_var(operand):
+                raise LanguageError(_shift_over_data_message(context))
             return plan.Translate(
-                _lower_expr(node.args[0], schema, context),
+                operand,
                 dim,
                 by=sign * int(shift_node.value),
                 wrap=node.name == 'roll',
+                fill=fill,
             )
 
         raise LanguageError(f"{context}: built-in '{node.name}' declares no lowering case")
@@ -293,6 +298,38 @@ def _check_dim_rules(node: FunctionCallNode, schema: MathSchema, context: str) -
     one call — the enclosing frame is ``dimensions.check_schema``'s business.
     """
     dims_of(node, schema, context)
+
+
+def _translate_fill(values: dict[str, ArithmeticNode], name: str, context: str) -> float | None:
+    """The ``fill=`` value, or ``None`` for the absence default.
+
+    Only ``0`` is accepted. For a variable operand a nonzero fill is a
+    *constant* contributed at the vacated coordinate, which is a different
+    fragment kind from the term stream the operand produces — the relational
+    lane would have to synthesise it. Zero is what the escape hatch is for
+    (it is linopy's own ``.fillna(0)``), so the rest is refused rather than
+    implemented on one lane and not the other.
+    """
+    node = values.get('fill')
+    if node is None:
+        return None
+    if isinstance(node, NumberNode) and node.value == 0:
+        return 0.0
+    raise LanguageError(
+        f'{context}: {name}(fill=...) takes the literal 0. A nonzero fill contributes a '
+        f'constant at the vacated coordinate, which neither lane represents today; add the '
+        f'constant to the expression instead.'
+    )
+
+
+def _shift_over_data_message(context: str) -> str:
+    return (
+        f'{context}: shift() over a variable-free expression leaves vacated positions with no '
+        f'value, and inventing one is what silently pinned a bound to zero. Say which you mean:\n'
+        f'  shift(x, d=n, fill=0)   the vacated positions contribute zero\n'
+        f'  where: "..."            mask the vacated coordinate out of the row\n'
+        f'  roll(x, d=n)            the dimension really is cyclic'
+    )
 
 
 def _has_var(expr: plan.Expression) -> bool:
