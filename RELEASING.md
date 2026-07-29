@@ -44,15 +44,26 @@ appear is `changelog-sections` in
 [`.release-please-config.json`](.release-please-config.json); `chore`, `test`,
 `ci`, `build` and `style` are hidden.
 
-**Why the version cannot run away.** Three settings interlock, and it takes all
-three: `initial-version: 0.0.0-alpha.1` (without it, `release-type: simple`
-falls back to release-please's default first version, **1.0.0**);
-`versioning: prerelease` + `prerelease-type: alpha` (bumps move the `alpha.N`
-counter — in this strategy a version whose patch is 0 is an absorbing state, so
-patch, minor and major all just increment the counter); and
-`bump-minor-pre-major` (while major is 0, a breaking change is a *minor* bump,
-so `feat!:` cannot reach for a major either). `prerelease: true` also keeps the
-GitHub releases from showing as "Latest".
+**Why the version cannot run away — and the hole that was in this claim.**
+`initial-version: 0.0.0-alpha.1` matters first (without it, `release-type:
+simple` falls back to release-please's default first version, **1.0.0**), and
+`bump-minor-pre-major` keeps a breaking change from reaching for a major while
+major is 0. `prerelease: true` also keeps the GitHub releases from showing as
+"Latest".
+
+The load-bearing one was `versioning: prerelease` + `prerelease-type: alpha`,
+and it is **conditional in a way this file used to state as absolute**: a
+version whose patch is 0 is an absorbing state, so patch, minor and major all
+just increment the counter. `0.0.0-alpha.1 … 0.0.0-alpha.33` were immune for
+exactly that reason. The stream left 0.0.0 at #251, and the immunity went with
+it — on `0.0.1-alpha.12` a `feat!:` produced `0.1.0-alpha.12`, jumping a minor
+by accident and resetting nothing.
+
+So while the patch is nonzero, the pin is enforced socially rather than
+arithmetically, and [`pr-title.yaml`](.github/workflows/pr-title.yaml) refuses a
+`!` or a `BREAKING CHANGE:` footer to make that enforcement real. Returning the
+stream to `0.0.0-alpha.N` would make the config self-enforcing again and retire
+that check.
 
 **The subject that lands on main.** `main` takes squash merges only, so one PR
 is one commit and its subject is what release-please parses — the rule a
