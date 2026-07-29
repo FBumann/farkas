@@ -4,6 +4,29 @@ What a YAML file may contain and what it means. *Why* it is shaped this way:
 [docs/ARCHITECTURE.md](ARCHITECTURE.md). What is planned or refused:
 [docs/ROADMAP.md](ROADMAP.md). A worked example: [README](https://github.com/FBumann/farkas/blob/main/README.md#example).
 
+## 0. The laws
+
+Ten rules the whole language reduces to. Every section below elaborates one,
+and each law names the section that does — so a rule stated here is not
+restated there.
+
+**Nothing is guessed.** Where a file does not determine the answer, loading
+fails and the message names the rewrite. Every law is that one principle,
+applied in a different position.
+
+| # | Law | § |
+|---|---|---|
+| 1 | Eight top-level keys, and the schema is **closed at every level** — an unknown key is an error naming the near miss. Booleans are YAML 1.2, so `no` / `on` / `off` stay labels. | [§1](#1-file-shape) |
+| 2 | Everything decidable without data is **decided without data**. | [§9](#9-errors) |
+| 3 | **One flat namespace, no shadowing** — a collision is a load error naming both declarations. | [§5.1](#51-name-resolution) |
+| 4 | **Position decides which kinds of name are legal**, and a name's kind is fixed at load time. A dimension is never legal in a value position: it is a coordinate space, not data. | [§5.1](#51-name-resolution) |
+| 5 | **Dim sets compose by union.** A constraint must *equal* its `foreach`; a `where` or a bound must not *exceed* its frame. | [§5.2](#52-dim-algebra) |
+| 6 | **Absence is a property of variables.** Four constructs create it; nothing else does. | [§6](#6-absence) |
+| 7 | Through arithmetic absence **spreads, taking the row with it**. Out of a reduction it does not — so a reduction does not distribute over `+`, and `sum(x + y)` and `sum(x) + sum(y)` are different questions. | [§6](#6-absence) |
+| 8 | **Identity of the position.** A missing value reads as whatever makes it contribute nothing — zero as a coefficient, the identity of a sum; false in a `where`, where the coordinate then does not exist. Where no such reading exists it is refused: a divisor, a bound. `shift(…, fill=)` is the one place a value may be *asked* for, and it takes the identity of its position too. | [§6](#6-absence), [§7](#7-operators) |
+| 9 | **Degree 1, always**: `*` needs a variable-free factor, `/` a variable-free divisor, `**` is refused. Bounds are narrower still — a name or a number, never arithmetic. | [§5](#5-expressions), [§2](#2-declarations) |
+| 10 | **The operator set is closed.** Compositions go in `macros:`. | [§7](#7-operators) |
+
 ## 1. File shape
 
 Eight top-level keys: `dimensions`, `parameters`, `variables`, `constraints`,
@@ -263,45 +286,41 @@ frame.
 
 ## 6. Absence
 
-A coordinate where a **variable does not exist**. Not a value and not a zero —
-a state the language tracks, because the alternative is a model that solves and
-answers a different question than it reads as.
-
-**Four constructs create it.** Nothing else does.
+A coordinate where a **variable does not exist** — not a value and not a zero,
+but a state the language tracks (law 6).
 
 | construct | what is absent |
 |---|---|
 | `where:` on a variable | the variable, at the masked coordinates |
-| `where:` on a constraint block or equation | the row |
+| `where:` on a constraint | the row |
 | `shift(x, d=n)` with no `fill=` | the vacated edge coordinate (§7) |
 | a null value in a dimension's `coords:` | that label's group membership (§2) |
 
 **A sparse parameter table is not one of them.** Missing rows are compressed
-encoding, and *where the name sits* decides what one means:
+encoding, and law 8 says what one reads as: the reading under which the missing
+thing contributes nothing — or a refusal, where no such reading exists.
 
-| position | a missing parameter row means |
-|---|---|
-| coefficient — `w * x` | zero: the term does not participate, the row survives |
-| divisor — `x / d` | **refused** at bind *where the model divides by it* — no fill preserves the row (`0` divides by zero, `1` rescales, dropping rewrites the constraint) |
-| `bounds:` | an error: unbounded is not bounded-at-zero |
-| `where` operand | false |
+| position | a missing parameter row | why that reading |
+|---|---|---|
+| coefficient — `w * x` | zero: the term does not participate, the row survives | `0` is the identity of a sum, so the term contributes nothing |
+| `where` operand | false | a coordinate whose data is missing is not one the model can claim exists |
+| divisor — `x / d` | **refused** at bind *where the model divides by it* | nothing contributes nothing: `0` divides by zero, `1` rescales, dropping rewrites the constraint |
+| `bounds:` | an error | nothing contributes nothing: unbounded is not bounded-at-zero |
 
 ### How absence travels
 
-**Through arithmetic it spreads**, taking the row with it: `x + y >= 10` is *no
-constraint* where `y` is masked, not `x >= 10`. The asymmetry with the table
-above is the whole hazard, in one example: `x - rel_max * size <= 0` **loses the
-row** where the *variable* `size` is masked, and **keeps** it as `x <= 0` where
-the *parameter* `rel_max` has no row — feasible, plausible, no error. A missing
-correction term tightens in the safe direction and is a legitimate idiom; a
-missing coefficient that *is* the bound rewrites what the constraint says.
+**Through arithmetic it spreads** (law 7), taking the row with it: `x + y >= 10`
+is *no constraint* where `y` is masked, not `x >= 10`. Its asymmetry with the
+table above is the whole hazard, in one example: `x - rel_max * size <= 0`
+**loses the row** where the *variable* `size` is masked, and **keeps** it as
+`x <= 0` where the *parameter* `rel_max` has no row — feasible, plausible, no
+error. A missing correction term tightens in the safe direction and is a
+legitimate idiom; a missing coefficient that *is* the bound rewrites what the
+constraint says.
 
-**Out of a reduction it does not.** `sum(x, over=d)` is defined when only some
-of `d` exists and the sum of nothing is zero; otherwise one masked component
-would delete a system-wide accounting row.
-
-**So a reduction does not distribute over addition.** The two spellings are
-different questions, and the language refuses to guess which was meant:
+**Out of a reduction it does not** — `sum(x, over=d)` is defined when only some
+of `d` exists, or one masked component would delete a system-wide accounting
+row. So the two spellings below are different questions:
 
 | spelling | sums over | with `y` absent at `f=b` |
 |---|---|---|
@@ -310,13 +329,11 @@ different questions, and the language refuses to guess which was meant:
 
 *The total of the net where the net is defined*, against *the total in minus the
 total out*. Rewriting the first into the second would read the absent `y[b]` as
-a zero. Reductions are therefore **not linear** over operands of differing
-presence — the honest consequence of `+` being addition on a partial domain.
+a zero — the honest consequence of `+` being addition on a partial domain.
 
 ### Asking for the other reading
 
-Absence is never silently converted into a value, so each rule has a spelling
-for the opposite intent:
+Each rule has a spelling for the opposite intent:
 
 | you want | you write |
 |---|---|
@@ -327,13 +344,11 @@ for the opposite intent:
 | to divide by a parameter you only have some of | mask the row or the variable — `where: "d"`. The divisor is required where the division survives, not everywhere it is indexed |
 | a bound only where the data has one | supply the missing value (`inf` is a value), or mask the variable — the two build **different models**, so neither is inferred |
 
-**Only one of those is a fill, and that is the rule.** `shift(..., fill=0)`
-exists because the vacated coordinate is *created by the operator* — there is no
-row a caller could have supplied. Everywhere else the value is expressible in
-the data, so the language does not offer a default and §11 keeps the fill in
-data prep. A bound with no value is the sharp case: `.fillna(inf)` is one line
-in the caller, and a dense bound table is one row per `foreach` coordinate —
-the same order as the variable it bounds, which is being built anyway.
+**Only one of those is a fill** (law 8): the coordinate `shift` vacates is
+*created by the operator*, so there is no row a caller could have supplied.
+Everywhere else the value is expressible in the data, and §11 keeps it there —
+`.fillna(inf)` for a bound is one line in the caller, over a table that is one
+row per `foreach` coordinate anyway.
 
 This is linopy's v1 arithmetic convention, which both lanes are built against;
 `farkas.linopy.semantics` is where the eager lane answers it.
@@ -368,10 +383,8 @@ RHS name is for names the model does *not* declare, which is how a string
 coordinate is compared; a **declared** name on the RHS (parameter, variable or
 dimension) is a load error naming the near miss, because reading it as text
 would compare a coordinate column against another declaration's name and mask
-everything out. An **undeclared** name is a load error on both lanes; it used to
-evaluate to scalar `False`, which built a model that solved and was silently
-empty. A mask dim outside `foreach` is a load error (§5.2); it was previously
-`any()`-reduced, which fails *open*.
+everything out. An undeclared *bare* name is a load error on both lanes, and a
+mask dim outside `foreach` is one too (§5.2).
 
 ## 7. Operators
 
@@ -393,27 +406,25 @@ a comparison of dialects. Dimension arguments are name-checked at load time:
 snapshot's duration, and saves shipping a pre-shifted copy of a table the model
 already has.
 
-A shift moves values along a dimension and leaves the position at the edge with
-nothing to move in. That position is **absent**, which is the same word §6 uses
-for a masked variable and behaves the same way — so an acyclic recurrence has
-no row at its first coordinate rather than a row asserting the quantity starts
-at zero. An initial condition is then something the model states, next to the
-recurrence and under a complementary `where`, rather than something the
+The position a shift leaves at the edge is **absent** in exactly §6's sense, so
+an acyclic recurrence has no row at its first coordinate rather than a row
+asserting the quantity starts at zero. An initial condition is then something
+the model states, under a complementary `where`, rather than something the
 language supplies unasked.
 
 `fill=` asks for a value back instead, and it takes a **number rather than a
-flag because the right one is positional**: `0` is the identity of a sum, `1` of
-a product. `lam <= seg + shift(seg, bp=1, fill=0)` bounds the first breakpoint
-by the first segment, where dropping the row would leave it unbounded;
-`x * shift(eff, t=1, fill=1)` leaves the first coordinate governed by its own
-bound, where `fill=0` would pin it. This is v1's own reason for refusing to fill
-on a caller's behalf — the library cannot see which position it is in, and the
-model can say.
+flag because the identity is positional** (law 8): `lam <= seg + shift(seg,
+bp=1, fill=0)` bounds the first breakpoint by the first segment, where dropping
+the row would leave it unbounded; `x * shift(eff, t=1, fill=1)` leaves the first
+coordinate governed by its own bound, where `fill=0` would pin it. The library
+cannot see which position it is in and the model can — which is v1's own reason
+for refusing to fill on a caller's behalf.
 
-Over an expression carrying a **variable** the only representable fill is `0`,
-since a vacated slot there contributes no term at all; a nonzero one would be a
-constant standing where a term was, and is refused. `roll` refuses `fill`
-outright, having vacated nothing.
+The same law bounds what `fill` may be. Over an expression carrying a
+**variable** the only representable value is `0`, since a vacated slot there
+contributes no term at all and a nonzero one would be a constant standing where
+a term was. `roll` refuses `fill` outright: it vacates nothing, so there is no
+position to take an identity of.
 
 **A bare `shift` over a variable-free expression is a load error.** Absence is a
 property of variables (§6); a parameter's missing row is a zero coefficient, so
