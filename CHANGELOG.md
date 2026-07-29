@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.23](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.22...v0.0.1-alpha.23) (2026-07-29)
+
+
+### Bug Fixes
+
+* **api:** read-back by an unknown name says what the model actually built ([#327](https://github.com/FBumann/farkas/issues/327)) ([018b1ff](https://github.com/FBumann/farkas/commit/018b1ff83a706fe4875d1693fdbab612d36d2cb8))
+
 ## [0.0.1-alpha.22](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.21...v0.0.1-alpha.22) (2026-07-29)
 
 
