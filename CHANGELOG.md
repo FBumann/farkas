@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.20](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.19...v0.0.1-alpha.20) (2026-07-29)
+
+
+### Bug Fixes
+
+* **linopy:** refuse a missing bound at build, with the native lane's message ([#319](https://github.com/FBumann/farkas/issues/319)) ([0e75754](https://github.com/FBumann/farkas/commit/0e75754d21a3092160423364ae2ed64fbd6a5d92))
+
 ## [0.0.1-alpha.19](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.18...v0.0.1-alpha.19) (2026-07-29)
 
 
