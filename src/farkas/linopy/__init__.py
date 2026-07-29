@@ -53,7 +53,6 @@ from farkas.linopy.builder import build_model
 from farkas.linopy.loader import (
     build_dim_coords,
     build_master_coords,
-    check_divisors_are_dense,
     dim_index_of,
     load_parameters,
 )
@@ -125,7 +124,6 @@ def build(
         dim_coords = build_dim_coords(schema, coords, master_coords)
         dataset = load_parameters(schema, data, master_coords)
         validate_piecewise_data(original, dataset)
-        check_divisors_are_dense(schema, dataset)
 
         model = linopy.Model()
         build_model(model, schema, dataset, master_coords, dim_coords)
@@ -192,7 +190,6 @@ def extend(
         dim_coords = build_dim_coords(schema, coords, master_coords)
         dataset = load_parameters(schema, data, master_coords)
         validate_piecewise_data(original, dataset)
-        check_divisors_are_dense(schema, dataset)
 
         build_model(model, schema, dataset, master_coords, dim_coords)
 

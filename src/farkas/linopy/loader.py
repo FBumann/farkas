@@ -9,12 +9,12 @@ import pandas as pd
 import xarray as xr
 
 from farkas.errors import DataError, sparse_divisor_message
-from farkas.expansion import parse_and_expand
 from farkas.expression_parser import (
     BinaryOperatorNode,
     ComparisonNode,
     FunctionCallNode,
     NameNode,
+    ParameterNode,
     UnaryOperatorNode,
 )
 
@@ -322,52 +322,53 @@ def _validate_coords(
             raise DataError(msg)
 
 
-def check_divisors_are_dense(schema: MathSchema, dataset: Any) -> None:
-    """Refuse a divisor with uncovered coordinates, as the native lane does.
+def check_divisors_cover(name: str, node: Any, schema: MathSchema, dataset: Any, mask: Any) -> None:
+    """A divisor must have a value wherever this declaration builds a row.
 
-    Reached after the reindex, which is the only point where the gap is still
-    visible: ``semantics.coefficient`` fills an uncovered slot with 0.0 at the
-    use site, so by the time the division happens the divisor reads zero and the
-    term silently drops. Both lanes did that, agreed about it, and were wrong
-    together — which is why this is a check rather than a fill.
+    Checked against *mask* rather than the whole array: supplying a divisor only
+    where the rows exist is the ordinary idiom, and a check that ignores the
+    mask refuses it — the gap sits at coordinates the model already decided not
+    to build. The relational lane makes the same check against its own surviving
+    frame.
 
-    Walks the expanded AST rather than the plan: the eager lane never lowers,
-    and lowering here to answer one question would make it refuse models this
-    lane otherwise accepts.
+    Reached before ``_eval_ast``, which is the last moment the gap is visible:
+    ``semantics.coefficient`` fills an uncovered slot with 0.0 at the parameter
+    leaf, and from there the division yields an infinity and the row is masked
+    out — silently, and identically on both lanes until #312.
     """
-    for name in sorted(_divisor_parameters(schema)):
-        missing = int(dataset[name].isnull().sum())
+    for param in sorted(_divisor_parameters_in(node, schema)):
+        gaps = dataset[param].isnull()
+        if mask is not None:
+            gaps = gaps & mask
+        missing = int(gaps.sum())
         if missing:
-            raise DataError(sparse_divisor_message(name, missing))
+            raise DataError(f'{name}: {sparse_divisor_message(param, missing)}')
 
 
-def _divisor_parameters(schema: MathSchema) -> set[str]:
-    """Parameter names appearing anywhere in a divisor position."""
+def _divisor_parameters_in(node: Any, schema: MathSchema) -> set[str]:
+    """Parameter names in a divisor position anywhere under *node*."""
     found: set[str] = set()
 
-    def names(node: Any) -> None:
-        if isinstance(node, NameNode) and node.name in schema.parameters:
-            found.add(node.name)
-        for child in _children(node):
+    def names(n: Any) -> None:
+        # resolved AST carries ParameterNode; an unresolved one carries NameNode,
+        # and this runs on both sides of resolution depending on the caller
+        if isinstance(n, (NameNode, ParameterNode)) and n.name in schema.parameters:
+            found.add(n.name)
+        for child in _children(n):
             names(child)
 
-    def walk(node: Any) -> None:
-        if isinstance(node, BinaryOperatorNode) and node.op == '/':
-            names(node.right)
-        for child in _children(node):
+    def walk(n: Any) -> None:
+        if isinstance(n, BinaryOperatorNode) and n.op == '/':
+            names(n.right)
+        for child in _children(n):
             walk(child)
 
-    for block in (*schema.constraints.values(), *schema.objectives.values()):
-        for i, eq in enumerate(block.equations):
-            node = parse_and_expand(eq.expression, schema, f'{type(block).__name__} equation {i}')
-            walk(node)
+    walk(node)
     return found
 
 
 def _children(node: Any) -> tuple[Any, ...]:
-    if isinstance(node, ComparisonNode):
-        return (node.left, node.right)
-    if isinstance(node, BinaryOperatorNode):
+    if isinstance(node, (ComparisonNode, BinaryOperatorNode)):
         return (node.left, node.right)
     if isinstance(node, UnaryOperatorNode):
         return (node.operand,)

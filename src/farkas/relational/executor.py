@@ -270,7 +270,6 @@ class PolarsExecutor:
         for p in program.parameters:
             self._create_param_frame(p, sources)
         self._create_dim_frames(program, sources)
-        self._check_divisors_are_dense(program)
 
         self._compiler = PolarsCompiler(
             program,
@@ -327,26 +326,40 @@ class PolarsExecutor:
             self._bool_params.add(p.name)
         self._parameters[p.name] = frame
 
-    def _check_divisors_are_dense(self, program: plan.Program) -> None:
-        """A divisor may not be sparse, because zero is not a divisor.
+    def _check_divisors_cover(self, name: str, frame: pl.LazyFrame, *expressions: plan.Expression) -> None:
+        """A divisor must have a value at every coordinate this declaration builds.
 
-        Counted rather than anti-joined: ``_check_one_row_per_coordinate`` has
-        already refused a duplicated coordinate, so for these parameters row
-        count and coordinate count are the same number, and the comparison is a
-        metadata read instead of a join per parameter.
+        Checked against *frame* — the rows that survived ``where`` and absence —
+        rather than against the whole coordinate product. Supplying a divisor
+        only where the rows exist is the ordinary idiom, and a check keyed to
+        the product refuses it: the gap is at coordinates the model already
+        decided not to build.
 
-        After the dim frames, since the expected count is the product of the
-        dimension cardinalities — which is also why a scalar divisor needs no
-        check: it covers its one coordinate by existing.
+        An anti-join rather than a row count for the same reason. The count is
+        cheaper and answers a different question.
         """
-        for name in plan.divisor_parameters(program):
-            declared = program.parameter(name).dims
-            if not declared:
+        for param in plan.divisor_parameters(*expressions):
+            dims = self._program.parameter(param).dims if self._program else ()
+            if not dims:
                 continue
-            expected = math.prod(self._dim_card[d] for d in declared)
-            actual = self._parameters[name].select(pl.len()).collect(engine='streaming').item()
-            if actual < expected:
-                raise DataError(sparse_divisor_message(name, expected - actual))
+            # A dim the reduction collapsed is not in the frame, and the frame
+            # cannot speak for it: `sum(x / w, over=f)` needs `w` at every `f`,
+            # whatever the rows are keyed by. Those dims come from their own
+            # tables; the rest come from the surviving rows.
+            present = [d for d in dims if d in frame.collect_schema().names()]
+            required = frame.select(present).unique() if present else None
+            for d in (d for d in dims if d not in present):
+                table = self._dimensions[d].select(pl.col('val').alias(d))
+                required = table if required is None else required.join(table, how='cross')
+            assert required is not None, 'a parameter with dims always contributes at least one'
+            missing = (
+                required.join(self._parameters[param].select(list(dims)), on=list(dims), how='anti')
+                .select(pl.len())
+                .collect(engine='streaming')
+                .item()
+            )
+            if missing:
+                raise DataError(f'{name}: {sparse_divisor_message(param, missing)}')
 
     def _check_one_row_per_coordinate(self, p: plan.ParameterDeclaration, frame: pl.LazyFrame) -> None:
         """A parameter is a function of its dims: one row per coordinate.
@@ -751,6 +764,7 @@ class PolarsExecutor:
         restrictions = _absence_restrictions([p for p, _ in terms])
         labelled, self._n_rows = self._label_frame(c.dims, c.where, 'row', self._n_rows, restrictions)
         frame = labelled.lazy()
+        self._check_divisors_cover(f"constraint '{c.name}'", frame, c.lhs, c.rhs)
         self._constraints[c.name] = frame  # kept for the dual read-back
 
         accumulated = pl.lit(0.0, dtype=pl.Float64)

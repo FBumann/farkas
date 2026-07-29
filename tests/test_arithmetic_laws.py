@@ -410,3 +410,28 @@ def test_a_sparse_divisor_is_refused_rather_than_read_as_zero():
     dense = {'d': pd.Series([2.0, 5.0], index=pd.Index(['a', 'b'], name='f'))}
     with differential(model, dense, lp=True) as run:
         assert float(run.result.objective) == pytest.approx(70.0, rel=RTOL)
+
+
+def test_a_divisor_may_be_sparse_where_the_row_is_masked_out():
+    """The check is keyed to the rows built, not the coordinate product.
+
+    Supplying a divisor only where the constraint exists is the ordinary idiom,
+    and the first cut of this check refused it — the gap sits at coordinates the
+    model already decided not to build. Kept as its own case because a check
+    that ignores the mask still passes every test above: it only ever refuses
+    *more*, and nothing else here asks it to accept something.
+    """
+    model = {
+        'dimensions': {'f': {'values': ['a', 'b']}},
+        'parameters': {'d': {'dims': ['f']}, 'active': {'dims': ['f'], 'dtype': 'bool'}},
+        'variables': {'x': {'foreach': ['f'], 'bounds': {'lower': 0, 'upper': 100}}},
+        'constraints': {'c': {'foreach': ['f'], 'where': 'active', 'equations': [{'expression': 'x / d <= 10'}]}},
+        'objectives': {'o': {'sense': 'maximize', 'equations': [{'expression': 'sum(x, over=f)'}]}},
+    }
+    data = {
+        'd': pd.Series([2.0], index=pd.Index(['a'], name='f')),
+        'active': pd.Series([True], index=pd.Index(['a'], name='f')),
+    }
+    with differential(model, data, lp=True) as run:
+        # f=a: the row binds at x <= 20. f=b: masked out, so x runs to its bound
+        assert float(run.result.objective) == pytest.approx(120.0, rel=RTOL)

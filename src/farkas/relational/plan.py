@@ -335,14 +335,14 @@ class Program:
         raise KeyError(f"unknown constraint '{name}'")
 
 
-def divisor_parameters(program: Program) -> frozenset[str]:
+def divisor_parameters(*expressions: Expression) -> frozenset[str]:
     """Parameters appearing anywhere in a divisor position.
 
     Static, like every other question this module answers: which names *can*
-    reach a divisor is decided by the plan, and whether they cover their
-    coordinates is decided by the data. Splitting it that way keeps the
-    expensive half — a coverage check per parameter — off the parameters that
-    can never need it.
+    reach a divisor is decided by the plan, and *where* they must have values is
+    decided by the rows a declaration actually builds. Splitting it that way
+    keeps the coverage check off parameters that can never need it, and off the
+    coordinates a ``where`` already removed.
     """
 
     found: set[str] = set()
@@ -374,8 +374,6 @@ def divisor_parameters(program: Program) -> frozenset[str]:
         elif isinstance(e, (Sum, GroupSum, Translate)):
             walk(e.operand)
 
-    for c in program.constraints:
-        walk(c.lhs)
-        walk(c.rhs)
-    walk(program.objective.expression)
+    for e in expressions:
+        walk(e)
     return frozenset(found)
