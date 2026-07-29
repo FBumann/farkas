@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.1-alpha.21](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.20...v0.0.1-alpha.21) (2026-07-29)
+
+
+### Documentation
+
+* the home page shows the model it sets, as math ([#317](https://github.com/FBumann/farkas/issues/317)) ([4094fb9](https://github.com/FBumann/farkas/commit/4094fb91f30cd9595acbca131882d34e54b301ee))
+* **typeset:** say that `symbols=` takes a dict, not only a path ([#323](https://github.com/FBumann/farkas/issues/323)) ([e9f2102](https://github.com/FBumann/farkas/commit/e9f210258732b7bf249e6465b27b0e6c32a6087f))
+
 ## [0.0.1-alpha.20](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.19...v0.0.1-alpha.20) (2026-07-29)
 
 
