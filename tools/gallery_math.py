@@ -145,7 +145,15 @@ fk.to_markdown('dispatch.yaml')  # renders as-is on GitHub
 `symbols` is optional — drop it and the same model prints as
 $\\mathit{{load}}_t$, $p^{{\\mathrm{{max}}}}_g$. A dict, a YAML path or a
 `SymbolTable`; a key naming nothing in the model is an error, not a symbol that
-silently never applies."""
+silently never applies.
+
+Or from a shell, where the table is that same YAML on disk and `--standalone`
+emits a document that compiles rather than a fragment to `\\input`:
+
+```bash
+python -m farkas latex dispatch.yaml --symbols dispatch.symbols.yaml
+python -m farkas typst dispatch.yaml --standalone -o dispatch.typ
+```"""
 
 
 def rendered(page: str, name: str, path: Path) -> str:
@@ -181,8 +189,22 @@ def main(argv: list[str] | None = None) -> int:
     opts = ap.parse_args(argv)
 
     work = [(name, page_path, rendered(page_path.read_text(), name, path)) for name, path, page_path in pages()]
-    if HOME_BEGIN in HOME.read_text():
-        work.append(('index', HOME, rendered_home(HOME.read_text())))
+
+    # Neither marker is a skip, as it is for a gallery page — the block is a
+    # deliberate edit, and `tests/test_docs_site.py` is what asserts the home
+    # page still has one. Anything between the two is malformed rather than
+    # absent: half a pair reaches `str.index` and raises `substring not found`,
+    # and a duplicated pair silently rewrites the first span and leaves the
+    # second stale. Both are worth a sentence rather than a traceback.
+    home = HOME.read_text()
+    found = (home.count(HOME_BEGIN), home.count(HOME_END))
+    if found == (1, 1):
+        work.append(('index', HOME, rendered_home(home)))
+    elif found != (0, 0):
+        ap.error(
+            f'{HOME.relative_to(ROOT)}: found {found[0]}x {HOME_BEGIN} and {found[1]}x {HOME_END}; '
+            f'expected exactly one of each, or neither. Restore both markers around the tabs.'
+        )
 
     stale = []
     for name, page_path, updated in work:

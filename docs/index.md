@@ -210,6 +210,14 @@ Only the notation is a choice, and **How** shows the one that was made here.
     $\mathit{load}_t$, $p^{\mathrm{max}}_g$. A dict, a YAML path or a
     `SymbolTable`; a key naming nothing in the model is an error, not a symbol that
     silently never applies.
+
+    Or from a shell, where the table is that same YAML on disk and `--standalone`
+    emits a document that compiles rather than a fragment to `\input`:
+
+    ```bash
+    python -m farkas latex dispatch.yaml --symbols dispatch.symbols.yaml
+    python -m farkas typst dispatch.yaml --standalone -o dispatch.typ
+    ```
 <!-- home-math:end -->
 
 ### Then you solve it
