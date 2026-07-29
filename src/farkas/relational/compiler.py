@@ -315,9 +315,11 @@ class PolarsCompiler:
             if isinstance(e, plan.Divide):
                 return self._quotient(ev(e.numerator), ev(e.divisor), context)
             if isinstance(e, plan.Sum):
-                return _map_fragments(ev(e.operand), lambda p: self._sum_fragment(p, e.over, context))
+                inner = _propagate_absence(ev(e.operand))
+                return _map_fragments(inner, lambda p: self._sum_fragment(p, e.over, context))
             if isinstance(e, plan.GroupSum):
-                return _map_fragments(ev(e.operand), lambda p: self._group_fragment(p, e, context))
+                inner = _propagate_absence(ev(e.operand))
+                return _map_fragments(inner, lambda p: self._group_fragment(p, e, context))
             if isinstance(e, plan.Translate):
                 return _map_fragments(ev(e.operand), lambda p: self._translate_fragment(p, e, context))
             raise LanguageError(f'unsupported expression node {type(e).__name__} in {context}')
@@ -583,6 +585,43 @@ def _compare(column: pl.Expr, op: plan.ComparisonOperator, value: float | str) -
             return column > literal
         case '>=':
             return column >= literal
+
+
+def _propagate_absence(compiled: CompiledExpression) -> CompiledExpression:
+    """Restrict every fragment to where the *whole* expression exists.
+
+    Addition is fragment concatenation here, so ``x + size`` is two independent
+    streams and each one's absence says nothing about the other. That is right
+    at row level — the executor intersects the presences when it assembles the
+    row — but a **reduction** consumes the expression before any row exists, and
+    without this each stream would be summed over its own coordinates.
+
+    That is the difference between ``sum(x + size, over=f)`` and
+    ``sum(x, over=f) + sum(size, over=f)``, and under absence they are not the
+    same question: the first sums where the summand exists, the second sums each
+    operand over its own domain. Distributing one into the other would mean
+    reading the absent ``size`` as a zero, which is the reading v1 exists to
+    remove (SPEC §6, §7).
+
+    Applied only where the key columns are dims the fragment carries. A
+    restriction naming a dim a fragment does not have cannot speak about it, and
+    a constant part lacking the summed dims is refused by ``_sum_fragment``
+    before it gets here.
+    """
+    restrictions = [
+        (p.presence_dims or p.dims, p.presence) for p in (*compiled.terms, *compiled.consts) if p.presence is not None
+    ]
+    if not restrictions:
+        return compiled
+
+    def restrict(p: TermFragment) -> TermFragment:
+        frame = p.frame
+        for on, presence in restrictions:
+            if all(d in p.dims for d in on):
+                frame = frame.join(presence.select(list(on)).unique(), on=list(on), how='semi')
+        return TermFragment(p.dims, frame, p.is_term, p.keyed, p.label_dims, p.presence, p.presence_dims)
+
+    return _map_fragments(compiled, restrict)
 
 
 def _map_fragments(

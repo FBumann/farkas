@@ -280,6 +280,28 @@ coordinates is sparse *encoding*, not absence: its missing rows mean a zero
 coefficient (§8), which is why a coefficient table may hold live entries only.
 Absence is a property of variables.
 
+**A reduction skips absent slots; it does not distribute over addition.** Those
+two rules compose, and the composition is the part worth reading twice, because
+the two spellings below are the same expression in ordinary algebra and are
+*different questions* here:
+
+| spelling | sums over | with `y` absent at `f=b` |
+|---|---|---|
+| `sum(x + y, over=f)` | the coordinates where the **summand** exists | `x[a] + y[a]` — `x[b]` goes with the absent `y[b]` |
+| `sum(x, over=f) + sum(y, over=f)` | each operand over **its own** domain | `x[a] + x[b] + y[a]` |
+
+The first is *the total of the net, where the net is defined*; the second is
+*the total in, minus the total out*. Both are legitimate and the language
+refuses to guess: rewriting the first into the second would read the absent
+`y[b]` as a zero, which is the reading §6 exists to remove. So write the one you
+mean — and if a term of an accounting row must survive a masked sibling, sum the
+operands separately.
+
+Reductions are therefore **not linear** over operands of differing presence.
+That is the honest consequence of absence being a state rather than a value:
+`+` is addition on a partial domain, and a sum over that domain is only defined
+where the domain is.
+
 That asymmetry is the example above read the other way round, and it is where
 the remaining hazard lives: `x - rel_max * size <= 0` **loses the row** where the
 variable `size` is masked, and **keeps** it as `x <= 0` where the parameter
