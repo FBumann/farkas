@@ -18,6 +18,51 @@ the same engine.
 
 ## The model
 
+<!-- math:begin -->
+<details markdown="1">
+<summary>The same model, as math</summary>
+
+#### Sets
+
+| Symbol | Meaning |
+|---|---|
+| $\mathcal{F}$ | index $f$ --- `food` |
+| $\mathcal{N}$ | index $n$ --- `nutrient` |
+
+#### Parameters
+
+| Symbol | Meaning |
+|---|---|
+| $\mathit{nutrient}^{\mathrm{per,dollar}}$ | `nutrient_per_dollar` over $\mathcal{F} \times \mathcal{N}$ |
+| $\mathit{daily\_minimum}$ | `daily_minimum` over $\mathcal{N}$ |
+
+#### Variables
+
+| Symbol | Meaning |
+|---|---|
+| $\mathit{spend}$ | `spend` over $\mathcal{F}$ |
+
+#### Objective
+
+**`total_cost`**
+
+$$\min \sum_{f \in \mathcal{F}} \mathit{spend}_{f}$$
+
+#### Subject to
+
+**`meet_requirement`**
+
+$$\sum_{f \in \mathcal{F}} \mathit{spend}_{f} \cdot \mathit{nutrient}^{\mathrm{per,dollar}}_{f,n} \ge \mathit{daily\_minimum}_{n} \qquad \forall\thinspace n \in \mathcal{N}$$
+
+#### Variable domains
+
+**`spend`**
+
+$$\mathit{spend}_{f} \ge 0 \qquad \forall\thinspace f \in \mathcal{F}$$
+
+</details>
+<!-- math:end -->
+
 ```yaml
 # Stigler's diet problem (1945): the cheapest set of foods meeting a year's
 # nutritional minimums. Laderman solved it in 1947 on desk calculators as the

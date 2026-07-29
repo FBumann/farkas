@@ -6,6 +6,61 @@ PyPSA linear optimal power flow, first rung: transport model, linear marginal co
 
 ## The model
 
+<!-- math:begin -->
+<details markdown="1">
+<summary>The same model, as math</summary>
+
+#### Sets
+
+| Symbol | Meaning |
+|---|---|
+| $\mathcal{T}$ | index $t$ --- `snapshot` |
+| $\mathcal{B}$ | index $b$ --- `bus` |
+| $\mathcal{G}$ | index $g$ --- `generator` with $\mathrm{bus}: \mathcal{G} \to \mathcal{B}$ |
+| $\mathcal{L}$ | index $l$ --- `link` with $\mathrm{from}: \mathcal{L} \to \mathcal{B},\enspace \mathrm{to}: \mathcal{L} \to \mathcal{B}$ |
+
+#### Parameters
+
+| Symbol | Meaning |
+|---|---|
+| $p^{\mathrm{nom}}$ | `p_nom` over $\mathcal{G}$ |
+| $\mathit{marginal\_cost}$ | `marginal_cost` over $\mathcal{G}$ |
+| $\mathit{rating}$ | `rating` over $\mathcal{L}$ |
+| $\mathit{neg\_rating}$ | `neg_rating` over $\mathcal{L}$ |
+| $\mathit{load}$ | `load` over $\mathcal{T} \times \mathcal{B}$ |
+
+#### Variables
+
+| Symbol | Meaning |
+|---|---|
+| $p$ | `p` over $\mathcal{T} \times \mathcal{G}$ |
+| $f$ | `f` over $\mathcal{T} \times \mathcal{L}$ |
+
+#### Objective
+
+**`total_cost`**
+
+$$\min \sum_{t \in \mathcal{T},\enspace g \in \mathcal{G}} p_{t,g} \cdot \mathit{marginal\_cost}_{g}$$
+
+#### Subject to
+
+**`nodal_balance`**
+
+$$\sum_{g \in \mathcal{G} \thinspace:\thinspace \mathrm{bus}(g) = b} p_{t,g} + \sum_{l \in \mathcal{L} \thinspace:\thinspace \mathrm{to}(l) = b} f_{t,l} - \left( \sum_{l \in \mathcal{L} \thinspace:\thinspace \mathrm{from}(l) = b} f_{t,l} \right) = \mathit{load}_{t,b} \qquad \forall\thinspace t \in \mathcal{T},\enspace b \in \mathcal{B}$$
+
+#### Variable domains
+
+**`p`**
+
+$$0 \le p_{t,g} \le p^{\mathrm{nom}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
+
+**`f`**
+
+$$\mathit{neg\_rating}_{l} \le f_{t,l} \le \mathit{rating}_{l} \qquad \forall\thinspace t \in \mathcal{T},\enspace l \in \mathcal{L}$$
+
+</details>
+<!-- math:end -->
+
 ```yaml
 # PyPSA linear optimal power flow, rung 1: transport model, linear marginal
 # cost, no KVL. Optimum 22000.0, from PyPSA itself. See docs/ports.md.

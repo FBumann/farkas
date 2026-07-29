@@ -1,0 +1,32 @@
+# Dantzig's transportation problem in its textbook notation, which
+# docs/models/transport_dantzig.md already states:
+#
+#   min sum_ij c_ij x_ij   s.t.   sum_j x_ij <= a_i,   sum_i x_ij >= b_j,   x >= 0
+#
+# Plants are $i$ and markets $j$, as they have been since 1963 — not $p$ and
+# $m$, which is what the initials would derive. That is exactly the case a
+# symbol table exists for: the model's names are the good ones for a data
+# engineer and the wrong ones for a reader who knows this problem.
+
+dimensions:
+  plant: {index: i, set: "\\mathcal{I}"}
+  market: {index: j, set: "\\mathcal{J}"}
+
+names:
+  shipment: "x"
+  capacity: "a"
+  demand: "b"
+  # `c_ij` in the textbook is the delivered cost. Here it is still built from
+  # distance and freight rate, so the two keep their own symbols rather than
+  # pretending to be a `c` the model does not declare.
+  distance: "d"
+  freight: "f"
+
+descriptions:
+  plant: canning plants, with limited capacity
+  market: markets, with demand to be met
+  shipment: cases shipped from plant $i$ to market $j$
+  capacity: capacity of each plant
+  demand: demand at each market
+  distance: distance from plant to market
+  freight: freight rate per case per unit distance

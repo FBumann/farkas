@@ -13,6 +13,76 @@ $$p_g = \sum_k \lambda_{g,k}\, x_{g,k}, \quad
 
 ## The model
 
+<!-- math:begin -->
+<details markdown="1">
+<summary>The same model, as math</summary>
+
+#### Sets
+
+| Symbol | Meaning |
+|---|---|
+| $\mathcal{T}$ | index $t$ --- `snapshot` --- dispatch periods |
+| $\mathcal{G}$ | index $g$ --- `generator` --- dispatchable units |
+| $\mathcal{K}$ | index $k$ --- `bp` --- breakpoints of the cost curve |
+
+#### Parameters
+
+| Symbol | Meaning |
+|---|---|
+| $p^{\mathrm{max}}$ | `p_max` over $\mathcal{G}$ --- maximum dispatch |
+| $\mathit{load}$ | `load` over $\mathcal{T}$ --- demand to be met |
+| $x$ | `bp_x` over $\mathcal{G} \times \mathcal{K}$ --- breakpoint dispatch levels |
+| $y$ | `bp_y` over $\mathcal{G} \times \mathcal{K}$ --- cost at each breakpoint |
+
+#### Variables
+
+| Symbol | Meaning |
+|---|---|
+| $p$ | `p` over $\mathcal{T} \times \mathcal{G}$ --- dispatched power |
+| $\mathrm{cost}$ | `op_cost` over $\mathcal{T} \times \mathcal{G}$ --- operating cost, piecewise-linear in dispatch |
+| $\lambda$ | `cost_curve_lam` over $\mathcal{T} \times \mathcal{G} \times \mathcal{K}$ --- convex-combination weight on breakpoint $k$ |
+
+#### Objective
+
+**`total_cost`**
+
+$$\min \sum_{t \in \mathcal{T},\enspace g \in \mathcal{G}} \mathrm{cost}_{t,g}$$
+
+#### Subject to
+
+**`balance`**
+
+$$\sum_{g \in \mathcal{G}} p_{t,g} = \mathit{load}_{t} \qquad \forall\thinspace t \in \mathcal{T}$$
+
+**`cost_curve_convexity`**
+
+$$\sum_{k \in \mathcal{K}} \lambda_{t,g,k} = 1 \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
+
+**`cost_curve_link0`**
+
+$$p_{t,g} = \sum_{k \in \mathcal{K}} \lambda_{t,g,k} \cdot x_{g,k} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
+
+**`cost_curve_link1`**
+
+$$\mathrm{cost}_{t,g} = \sum_{k \in \mathcal{K}} \lambda_{t,g,k} \cdot y_{g,k} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
+
+#### Variable domains
+
+**`p`**
+
+$$0 \le p_{t,g} \le p^{\mathrm{max}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
+
+**`op_cost`**
+
+$$\mathrm{cost}_{t,g} \ge 0 \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
+
+**`cost_curve_lam`**
+
+$$0 \le \lambda_{t,g,k} \le 1 \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G},\enspace k \in \mathcal{K}$$
+
+</details>
+<!-- math:end -->
+
 ```yaml
 # Dispatch with piecewise-linear generation costs via the piecewise: block.
 #

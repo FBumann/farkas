@@ -4,6 +4,52 @@ The dispatch model plus a macro and a named expression — the one used to print
 
 ## The model
 
+<!-- math:begin -->
+<details markdown="1">
+<summary>The same model, as math</summary>
+
+#### Sets
+
+| Symbol | Meaning |
+|---|---|
+| $\mathcal{S}$ | index $s$ --- `snapshot` --- dispatch periods |
+| $\mathcal{G}$ | index $g$ --- `generator` --- generating units, including the retired one |
+
+#### Parameters
+
+| Symbol | Meaning |
+|---|---|
+| $\bar p$ | `p_max` over $\mathcal{G}$ --- installed capacity, zero for a retired unit |
+| $\ell$ | `load` over $\mathcal{S}$ --- demand to be met |
+| $c$ | `cost` over $\mathcal{G}$ --- marginal cost |
+
+#### Variables
+
+| Symbol | Meaning |
+|---|---|
+| $p$ | `p` over $\mathcal{S} \times \mathcal{G}$ --- output of generator $g$ in snapshot $s$ |
+
+#### Objective
+
+**`total_cost`**
+
+$$\min \sum_{s \in \mathcal{S}} \sum_{g \in \mathcal{G}} p_{s,g} \cdot c_{g}$$
+
+#### Subject to
+
+**`power_balance`**
+
+$$\sum_{g \in \mathcal{G}} p_{s,g} = \ell_{s} \qquad \forall\thinspace s \in \mathcal{S}$$
+
+#### Variable domains
+
+**`p`**
+
+$$0 \le p_{s,g} \le \bar p_{g} \qquad \forall\thinspace s \in \mathcal{S},\enspace g \in \mathcal{G} \thinspace:\thinspace \bar p_{g} > 0$$
+
+</details>
+<!-- math:end -->
+
 ```yaml
 # The dispatch model of README.md, plus one macro and one named expression —
 # small enough to print in full, complete enough that every pipeline stage in

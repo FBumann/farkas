@@ -45,6 +45,65 @@ Inside the language, and it always was.
 
 ## The model
 
+<!-- math:begin -->
+<details markdown="1">
+<summary>The same model, as math</summary>
+
+#### Sets
+
+| Symbol | Meaning |
+|---|---|
+| $\mathcal{C}$ | index $c$ --- `city` with $\mathrm{as\_from}: \mathcal{C} \to \mathcal{F},\enspace \mathrm{as\_to}: \mathcal{C} \to \mathcal{T}$ |
+| $\mathcal{F}$ | index $f$ --- `from_city` |
+| $\mathcal{T}$ | index $t$ --- `to_city` |
+
+#### Parameters
+
+| Symbol | Meaning |
+|---|---|
+| $\mathit{distance}$ | `distance` over $\mathcal{F} \times \mathcal{T}$ |
+| $n$ | `n` (scalar) |
+
+#### Variables
+
+| Symbol | Meaning |
+|---|---|
+| $\mathit{travel}$ | `travel` over $\mathcal{F} \times \mathcal{T}$ |
+| $u$ | `u` over $\mathcal{C}$ |
+
+#### Objective
+
+**`tour_length`**
+
+$$\min \sum_{f \in \mathcal{F},\enspace t \in \mathcal{T}} \mathit{travel}_{f,t} \cdot \mathit{distance}_{f,t}$$
+
+#### Subject to
+
+**`leave_each_city_once`**
+
+$$\sum_{t \in \mathcal{T}} \mathit{travel}_{f,t} = 1 \qquad \forall\thinspace f \in \mathcal{F}$$
+
+**`enter_each_city_once`**
+
+$$\sum_{f \in \mathcal{F}} \mathit{travel}_{f,t} = 1 \qquad \forall\thinspace t \in \mathcal{T}$$
+
+**`ordering`**
+
+$$\sum_{c \in \mathcal{C} \thinspace:\thinspace \mathrm{as\_from}(c) = f} u_{c} - \left( \sum_{c \in \mathcal{C} \thinspace:\thinspace \mathrm{as\_to}(c) = t} u_{c} \right) + n \cdot \mathit{travel}_{f,t} \le n - 1 \qquad \forall\thinspace f \in \mathcal{F},\enspace t \in \mathcal{T} \thinspace:\thinspace f \neq \text{c01} \wedge t \neq \text{c01}$$
+
+#### Variable domains
+
+**`travel`**
+
+$$\mathit{travel}_{f,t} \in \{0, 1\} \qquad \forall\thinspace f \in \mathcal{F},\enspace t \in \mathcal{T} \thinspace:\thinspace \mathit{distance}_{f,t} \text{ is defined}$$
+
+**`u`**
+
+$$1 \le u_{c} \le 17 \qquad \forall\thinspace c \in \mathcal{C}$$
+
+</details>
+<!-- math:end -->
+
 ```yaml
 # The travelling salesman problem, MTZ formulation. TSPLIB instance `gr17`:
 # 17 cities, explicit distance matrix, published optimum 2085.
