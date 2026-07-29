@@ -56,6 +56,14 @@ dependencies = [
 # and reports a 0.8 dev version. `[tool.uv.sources]` below is what actually
 # resolves it for development and CI. When v1 ships, this becomes an ordinary
 # floor on the release that carries it and the source pin goes away.
+#
+# **That last sentence is a release step, not a tidy-up.** `farkas/linopy/
+# __init__.py` sets `options['semantics'] = 'v1'` on import and does not guard,
+# on the grounds that this floor guarantees the option — so a linopy released
+# without v1 would satisfy `>=0.8.0.post1.dev0` (0.9 > 0.8.0.post1.dev0) and
+# turn the import into a bare `KeyError: semantics is not a valid setting`.
+# Raise the floor to the release that carries v1 in the same change that drops
+# the source pin.
 linopy = [
     "linopy>=0.8.0.post1.dev0",
     "xarray>=2024.2.0",

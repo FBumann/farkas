@@ -272,8 +272,9 @@ def _lower_expr(node: ArithmeticNode, schema: MathSchema, context: str) -> plan.
                 raise LanguageError(f'{context}: {node.name}() shift must be an integer literal')
             _check_dim_rules(node, schema, context)
             operand = _lower_expr(node.args[0], schema, context)
-            fill = _translate_fill(values, node.name, context)
-            if fill is None and node.name == 'shift' and not _has_var(operand):
+            has_var = _has_var(operand)
+            fill = _translate_fill(values, node.name, context, has_var=has_var)
+            if fill is None and node.name == 'shift' and not has_var:
                 raise LanguageError(_shift_over_data_message(context))
             return plan.Translate(
                 operand,
@@ -300,26 +301,39 @@ def _check_dim_rules(node: FunctionCallNode, schema: MathSchema, context: str) -
     dims_of(node, schema, context)
 
 
-def _translate_fill(values: dict[str, ArithmeticNode], name: str, context: str) -> float | None:
+def _translate_fill(values: dict[str, ArithmeticNode], name: str, context: str, *, has_var: bool) -> float | None:
     """The ``fill=`` value, or ``None`` for the absence default.
 
-    Only ``0`` is accepted. For a variable operand a nonzero fill is a
-    *constant* contributed at the vacated coordinate, which is a different
-    fragment kind from the term stream the operand produces — the relational
-    lane would have to synthesise it. Zero is what the escape hatch is for
-    (it is linopy's own ``.fillna(0)``), so the rest is refused rather than
+    **The right fill is positional**, which is linopy v1's own reason for
+    refusing to pick one (``convention.rst`` §7): 0 is the identity of a sum and
+    1 the identity of a product, so ``x * shift(eff, t=1, fill=1)`` wants a
+    different number from ``lam <= seg + shift(seg, bp=1, fill=0)``. Over data
+    any number is therefore accepted — it is a data fill, and both lanes do it
+    natively.
+
+    Over an operand that carries a **variable** the only representable fill is
+    0, because there the vacated slot contributes no term at all. A nonzero one
+    would be a *constant* standing where a term was, a different fragment kind
+    from the stream the operand produces, and is refused rather than
     implemented on one lane and not the other.
     """
     node = values.get('fill')
     if node is None:
         return None
-    if isinstance(node, NumberNode) and node.value == 0:
-        return 0.0
-    raise LanguageError(
-        f'{context}: {name}(fill=...) takes the literal 0. A nonzero fill contributes a '
-        f'constant at the vacated coordinate, which neither lane represents today; add the '
-        f'constant to the expression instead.'
-    )
+    sign = 1.0
+    if isinstance(node, UnaryOperatorNode) and node.op in ('-', '+'):
+        sign, node = (-1.0 if node.op == '-' else 1.0), node.operand
+    if not isinstance(node, NumberNode):
+        raise LanguageError(f'{context}: {name}(fill=...) takes a number literal.')
+    fill = sign * float(node.value)
+    if has_var and fill != 0:
+        raise LanguageError(
+            f'{context}: {name}(fill={fill:g}) over an expression containing a variable — only '
+            f'fill=0 is representable there, since a vacated slot contributes no term. A nonzero '
+            f'fill would be a constant standing where a term was; add that constant to the '
+            f'expression instead.'
+        )
+    return fill
 
 
 def _shift_over_data_message(context: str) -> str:

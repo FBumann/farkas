@@ -338,7 +338,7 @@ a comparison of dialects. Dimension arguments are name-checked at load time:
 | `group_sum(array, over=dim, by=coord)` | `over` → the dimension `coord` targets | `coord` is declared on `over` (§2); its values are the group labels, checked against the target dimension at bind time. The membership sum that makes topology data rather than structure; groups with no members contribute nothing |
 | `roll(array, dim=n)` | value at *t−n*, cyclic | coordinates fixed, values wrap |
 | `shift(array, dim=n)` | value at *t−n*, acyclic | vacated positions are **absent**: they propagate and drop the row (§6) |
-| `shift(array, dim=n, fill=0)` | as above | vacated positions contribute **zero** instead, and the row survives |
+| `shift(array, dim=n, fill=v)` | as above | vacated positions contribute **`v`** instead, and the row survives (`0` for a sum, `1` for a product) |
 
 `array` is any node of the right dim set, so `roll` and `shift` re-index a
 **parameter** as readily as a variable: `shift(dt, t=1, fill=0)` is the previous
@@ -353,13 +353,19 @@ at zero. An initial condition is then something the model states, next to the
 recurrence and under a complementary `where`, rather than something the
 language supplies unasked.
 
-`fill=0` asks for the zero back, for the case where the vacated position really
-does contribute nothing to a *sum*: `lam <= seg + shift(seg, bp=1, fill=0)`
-bounds the first breakpoint by the first segment, where dropping the row would
-leave it unbounded. It takes the literal `0` — a nonzero fill is a constant
-contributed at the vacated coordinate, which is a different thing from a
-translated term and is refused rather than half-implemented — and `roll` refuses
-it outright, having vacated nothing.
+`fill=` asks for a value back instead, and it takes a **number rather than a
+flag because the right one is positional**: `0` is the identity of a sum, `1` of
+a product. `lam <= seg + shift(seg, bp=1, fill=0)` bounds the first breakpoint
+by the first segment, where dropping the row would leave it unbounded;
+`x * shift(eff, t=1, fill=1)` leaves the first coordinate governed by its own
+bound, where `fill=0` would pin it. This is v1's own reason for refusing to fill
+on a caller's behalf — the library cannot see which position it is in, and the
+model can say.
+
+Over an expression carrying a **variable** the only representable fill is `0`,
+since a vacated slot there contributes no term at all; a nonzero one would be a
+constant standing where a term was, and is refused. `roll` refuses `fill`
+outright, having vacated nothing.
 
 **A bare `shift` over a variable-free expression is a load error.** Absence is a
 property of variables (§6); a parameter's missing row is a zero coefficient, so
