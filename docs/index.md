@@ -94,12 +94,32 @@ Write the math in YAML, bind data at runtime, solve.
 
 ### And that file says, exactly this
 
-Nothing was added here. The math below is *generated from the YAML above* —
-which is what "self-documenting" has to mean if it is to mean anything: read
-the statement, not the syntax, and see whether it is the one you meant.
+Generated from the YAML above — no data, no solver, no second source of truth.
+Only the notation is a choice, and **How** shows the one that was made here.
 
 <!-- home-math:begin -->
 === "The math"
+
+    #### Sets
+
+    | Symbol | Meaning |
+    |---|---|
+    | $\mathcal{S}$ | index $s$ --- `snapshot` --- dispatch periods |
+    | $\mathcal{G}$ | index $g$ --- `generator` --- generating units |
+
+    #### Parameters
+
+    | Symbol | Meaning |
+    |---|---|
+    | $\bar p$ | `p_max` over $\mathcal{G}$ --- installed capacity |
+    | $\ell$ | `load` over $\mathcal{S}$ --- demand to be met |
+    | $c$ | `cost` over $\mathcal{G}$ --- marginal cost |
+
+    #### Variables
+
+    | Symbol | Meaning |
+    |---|---|
+    | $p$ | `p` over $\mathcal{S} \times \mathcal{G}$ --- output of generator $g$ in snapshot $s$ |
 
     #### Objective
 
@@ -122,6 +142,24 @@ the statement, not the syntax, and see whether it is the one you meant.
 === "LaTeX"
 
     ```latex
+    \paragraph{Sets}
+    \begin{description}
+    \item[$\mathcal{S}$] index $s$ --- \texttt{snapshot} --- dispatch periods
+    \item[$\mathcal{G}$] index $g$ --- \texttt{generator} --- generating units
+    \end{description}
+
+    \paragraph{Parameters}
+    \begin{description}
+    \item[$\bar p$] \texttt{p\_max} over $\mathcal{G}$ --- installed capacity
+    \item[$\ell$] \texttt{load} over $\mathcal{S}$ --- demand to be met
+    \item[$c$] \texttt{cost} over $\mathcal{G}$ --- marginal cost
+    \end{description}
+
+    \paragraph{Variables}
+    \begin{description}
+    \item[$p$] \texttt{p} over $\mathcal{S} \times \mathcal{G}$ --- output of generator $g$ in snapshot $s$
+    \end{description}
+
     \paragraph{Objective}
     \begin{align}
     \text{total\_cost} && \min & \sum_{s \in \mathcal{S},\ g \in \mathcal{G}} p_{s,g} \cdot c_{g}
@@ -143,20 +181,35 @@ the statement, not the syntax, and see whether it is the one you meant.
     ```python
     import farkas as fk
 
-    fk.to_latex('dispatch.yaml')  # amsmath align
+    symbols = {
+        'dimensions': {
+            'snapshot': {'index': 's', 'set': '\\mathcal{S}'},
+            'generator': {'index': 'g', 'set': '\\mathcal{G}'},
+        },
+        'names': {
+            'cost': 'c',
+            'load': '\\ell',
+            'p_max': '\\bar p',
+        },
+        'descriptions': {
+            'snapshot': 'dispatch periods',
+            'generator': 'generating units',
+            'p': 'output of generator $g$ in snapshot $s$',
+            'cost': 'marginal cost',
+            'load': 'demand to be met',
+            'p_max': 'installed capacity',
+        },
+    }
+
+    fk.to_latex('dispatch.yaml', symbols=symbols)  # amsmath align
     fk.to_typst('dispatch.yaml')  # compiles without a TeX toolchain
     fk.to_markdown('dispatch.yaml')  # renders as-is on GitHub
     ```
 
-    No data, no solver, no lane: it reads the same validated model both lanes read,
-    so a `piecewise:` block prints as the formulation it expands to rather than the
-    sugar it was written as. `--symbols` points at a sidecar table when the derived
-    symbols are not the ones your paper uses, and `--standalone` emits a document
-    that compiles.
-
-    ```bash
-    python -m farkas latex dispatch.yaml --standalone -o dispatch.tex
-    ```
+    `symbols` is optional — drop it and the same model prints as
+    $\mathit{load}_t$, $p^{\mathrm{max}}_g$. A dict, a YAML path or a
+    `SymbolTable`; a key naming nothing in the model is an error, not a symbol that
+    silently never applies.
 <!-- home-math:end -->
 
 ### Then you solve it

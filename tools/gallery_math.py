@@ -58,6 +58,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from farkas._yaml import read_yaml
 from farkas.typeset import to_latex, to_markdown
 from tools.constructs import models
 
@@ -84,12 +85,34 @@ def _indent(text: str) -> str:
     return '\n'.join(f'    {line}' if line else '' for line in text.splitlines())
 
 
-def _home_block() -> str:
-    """The home page's tabs: the same math set, and the source that sets it.
+def _literal(table: Path) -> str:
+    """*table* as the Python dict literal that `symbols=` accepts.
 
-    Notation comes from the symbol table, so both tabs read in the symbols the
-    gallery's dispatch page already uses — and the LaTeX tab is the literal
-    string ``fk.to_latex`` returns, not a retyping of it.
+    Rendered from the YAML rather than typed out, so the call in the "How" tab
+    is provably the one that produced the math beside it — the reason the tab
+    exists is that $\\ell$ appearing where the model says ``load`` is otherwise
+    unexplained, and an explanation that can drift is not one.
+
+    `ruff format` reaches into ```python fences in Markdown, so this emits what
+    ruff would: single quotes, a magic trailing comma on every dict it expands.
+    """
+    raw = read_yaml(table)
+    lines = ['symbols = {']
+    for section, entries in raw.items():
+        lines.append(f'    {section!r}: {{')
+        lines += [f'        {key!r}: {value!r},' for key, value in entries.items()]
+        lines.append('    },')
+    lines.append('}')
+    return '\n'.join(lines)
+
+
+def _home_block() -> str:
+    """The home page's tabs: the math, and the call that printed it.
+
+    The legend stays on and the "How" tab carries the symbol table inline,
+    because between them they answer the question the section otherwise begs.
+    A reader who sees ``load`` in the YAML and $\\ell$ in the math, with
+    neither in front of them, has to take the page on faith.
 
     Typst is deliberately absent: :class:`~farkas.typeset.symbols.SymbolTable`
     entries are LaTeX strings, and ``to_typst`` passes them through verbatim,
@@ -98,36 +121,31 @@ def _home_block() -> str:
     quietly showing derived symbols instead.
     """
     table = SYMBOLS / 'dispatch.yaml'
-    options = {'symbols': table, 'legend': False}
-    tabs = {
-        'The math': to_markdown(HOME_MODEL, **options),
-        'LaTeX': f'```latex\n{to_latex(HOME_MODEL, **options).rstrip()}\n```',
-        'How': _HOW,
-    }
-    return '\n'.join(f'=== "{title}"\n\n{_indent(body)}\n' for title, body in tabs.items())
+    options = {'symbols': table, 'legend': True}
+    return '\n'.join(
+        f'=== "{title}"\n\n{_indent(body)}\n'
+        for title, body in {
+            'The math': to_markdown(HOME_MODEL, **options),
+            'LaTeX': f'```latex\n{to_latex(HOME_MODEL, **options).rstrip()}\n```',
+            'How': _HOW.format(symbols=_literal(table)),
+        }.items()
+    )
 
 
-#: The third tab, which is prose rather than generated. `ruff format` reaches
-#: into ```python fences in Markdown, so what is written here has to be what
-#: ruff would write — two spaces before a trailing comment, not aligned ones,
-#: or the generated page fails `ruff format --check` and the fix is here.
 _HOW = """```python
 import farkas as fk
 
-fk.to_latex('dispatch.yaml')  # amsmath align
+{symbols}
+
+fk.to_latex('dispatch.yaml', symbols=symbols)  # amsmath align
 fk.to_typst('dispatch.yaml')  # compiles without a TeX toolchain
 fk.to_markdown('dispatch.yaml')  # renders as-is on GitHub
 ```
 
-No data, no solver, no lane: it reads the same validated model both lanes read,
-so a `piecewise:` block prints as the formulation it expands to rather than the
-sugar it was written as. `--symbols` points at a sidecar table when the derived
-symbols are not the ones your paper uses, and `--standalone` emits a document
-that compiles.
-
-```bash
-python -m farkas latex dispatch.yaml --standalone -o dispatch.tex
-```"""
+`symbols` is optional — drop it and the same model prints as
+$\\mathit{{load}}_t$, $p^{{\\mathrm{{max}}}}_g$. A dict, a YAML path or a
+`SymbolTable`; a key naming nothing in the model is an error, not a symbol that
+silently never applies."""
 
 
 def rendered(page: str, name: str, path: Path) -> str:
