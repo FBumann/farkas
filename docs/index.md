@@ -92,6 +92,73 @@ Write the math in YAML, bind data at runtime, solve.
    end="<!--quickstart-end-->"
 %}
 
+## The same file, as math
+
+A declared model can be *printed* — the way a paper prints it, from the file
+above and nothing else. Which makes it the cheapest review tool here: read the
+math, not the YAML, and see whether it says what you meant.
+
+<!-- home-math:begin -->
+=== "The math"
+
+    #### Objective
+
+    **`total_cost`**
+
+    $$\min \sum_{s \in \mathcal{S},\enspace g \in \mathcal{G}} p_{s,g} \cdot c_{g}$$
+
+    #### Subject to
+
+    **`power_balance`**
+
+    $$\sum_{g \in \mathcal{G}} p_{s,g} = \ell_{s} \qquad \forall\thinspace s \in \mathcal{S}$$
+
+    #### Variable domains
+
+    **`p`**
+
+    $$0 \le p_{s,g} \le \bar p_{g} \qquad \forall\thinspace s \in \mathcal{S},\enspace g \in \mathcal{G} \thinspace:\thinspace \bar p_{g} > 0$$
+
+=== "LaTeX"
+
+    ```latex
+    \paragraph{Objective}
+    \begin{align}
+    \text{total\_cost} && \min & \sum_{s \in \mathcal{S},\ g \in \mathcal{G}} p_{s,g} \cdot c_{g}
+    \end{align}
+
+    \paragraph{Subject to}
+    \begin{align}
+    \text{power\_balance} && \sum_{g \in \mathcal{G}} p_{s,g} & = \ell_{s} && \forall\, s \in \mathcal{S}
+    \end{align}
+
+    \paragraph{Variable domains}
+    \begin{align}
+    \text{p} && 0 \le p_{s,g} & \le \bar p_{g} && \forall\, s \in \mathcal{S},\ g \in \mathcal{G} \,:\, \bar p_{g} > 0
+    \end{align}
+    ```
+
+=== "How"
+
+    ```python
+    import farkas as fk
+
+    fk.to_latex('dispatch.yaml')  # amsmath align
+    fk.to_typst('dispatch.yaml')  # compiles without a TeX toolchain
+    fk.to_markdown('dispatch.yaml')  # renders as-is on GitHub
+    ```
+
+    No data, no solver, no lane: it reads the same validated model both lanes read,
+    so a `piecewise:` block prints as the formulation it expands to rather than the
+    sugar it was written as. `--symbols` points at a sidecar table when the derived
+    symbols are not the ones your paper uses, and `--standalone` emits a document
+    that compiles.
+
+    ```bash
+    python -m farkas latex dispatch.yaml --standalone -o dispatch.tex
+    ```
+<!-- home-math:end -->
+
 ## Where to next
 
 <div class="grid cards" markdown>

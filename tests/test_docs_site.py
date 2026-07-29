@@ -112,3 +112,20 @@ def test_the_convention_is_actually_in_use():
     """
     urls = [t for page in _pages() for t in _targets(page) if t.startswith(BLOB)]
     assert len(urls) >= 15, f'expected the docs to link out to the repo; found {len(urls)}'
+
+
+def test_the_home_page_still_carries_its_math_block():
+    """`tools.gallery_math --check` also fills the tabs on `docs/index.md`, and
+    it fills what it finds — a page whose markers were dropped in an edit stops
+    being checked without anything failing. Pin that they are there.
+
+    The content itself is not asserted here; that is the generator's job, and
+    `test_the_gallery_math_is_current` runs it.
+    """
+    from tools import gallery_math
+
+    page = (DOCS / 'index.md').read_text()
+    assert gallery_math.HOME_BEGIN in page and gallery_math.HOME_END in page, (
+        f'docs/index.md lost its {gallery_math.HOME_BEGIN}/{gallery_math.HOME_END} markers — '
+        f'the LaTeX tabs are generated, and an unmarked page silently opts out'
+    )
