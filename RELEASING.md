@@ -3,7 +3,7 @@
 > **Temporary, alpha only — overrides "Normal release" below.** Until the first
 > official version, nobody merges the release PR:
 > [`release.yaml`](.github/workflows/release.yaml) puts it on auto-merge, so
-> every merge to `main` cuts a `0.0.0aN` and a tester always has a version to
+> every merge to `main` cuts a `0.0.1aN` and a tester always has a version to
 > quote. It ends by construction — the step declines any version that is not a
 > prerelease — so from the first official release everything below reads as
 > written. Needs "Allow auto-merge" on the repo; pause with the repo variable
@@ -19,15 +19,15 @@ produces a tag; [`publish.yaml`](.github/workflows/publish.yaml) does the rest
 
 ## Where this project is
 
-**Alpha only, pinned there deliberately.** The project stays on the `0.0.0aN`
-stream until someone edits the config; no commit, however worded, can graduate
-it.
+**Alpha only, pinned there deliberately.** The project stays on the `0.0.1aN`
+stream until someone edits the config: only the counter moves, and the base
+version is held there until the first official release.
 
 | you want | you do | version you get |
 | --- | --- | --- |
 | day-to-day development | nothing | `0.0.1.dev22+ged5056087` — hatch-vcs numbers every commit |
-| a build someone can pin | merge the release PR | `0.0.0a1`, `0.0.0a2`, … |
-| a cut from another branch | run **Prerelease** | `0.0.0a3`, or a named stream like `0.2.0rc1` |
+| a build someone can pin | merge the release PR | `0.0.1a14`, `0.0.1a15`, … |
+| a cut from another branch | run **Prerelease** | `0.0.1a16`, or a named stream like `0.2.0rc1` |
 | to leave alpha | edit the config on purpose (below) | `0.1.0` |
 
 Untagged commits are already uniquely versioned and installable, so there is no
@@ -39,31 +39,46 @@ alphas without `--prerelease`, so they cannot be picked up by accident.
 Land conventional commits on `main`.
 [`release.yaml`](.github/workflows/release.yaml) keeps a release PR open with
 the computed version and changelog. Merge it → release-please tags
-`v0.0.0-alpha.N` → publish runs → dist version `0.0.0aN`. Which commit types
+`v0.0.1-alpha.N` → publish runs → dist version `0.0.1aN`. Which commit types
 appear is `changelog-sections` in
 [`.release-please-config.json`](.release-please-config.json); `chore`, `test`,
 `ci`, `build` and `style` are hidden.
 
-**Why the version cannot run away — and the hole that was in this claim.**
-`initial-version: 0.0.0-alpha.1` matters first (without it, `release-type:
-simple` falls back to release-please's default first version, **1.0.0**), and
-`bump-minor-pre-major` keeps a breaking change from reaching for a major while
-major is 0. `prerelease: true` also keeps the GitHub releases from showing as
-"Latest".
+**Why the version cannot run away.** `initial-version: 0.0.0-alpha.1` matters
+first (without it, `release-type: simple` falls back to release-please's default
+first version, **1.0.0**). `prerelease: true` also keeps the GitHub releases from
+showing as "Latest".
 
-The load-bearing one was `versioning: prerelease` + `prerelease-type: alpha`,
-and it is **conditional in a way this file used to state as absolute**: a
-version whose patch is 0 is an absorbing state, so patch, minor and major all
-just increment the counter. `0.0.0-alpha.1 … 0.0.0-alpha.33` were immune for
-exactly that reason. The stream left 0.0.0 at #251, and the immunity went with
-it — on `0.0.1-alpha.12` a `feat!:` produced `0.1.0-alpha.12`, jumping a minor
-by accident and resetting nothing.
+The rest is `versioning: prerelease`, whose absorb rule is **conditional on the
+version it is applied to** — a bump lands on the counter only when the digits
+below it are already zero:
 
-So while the patch is nonzero, the pin is enforced socially rather than
-arithmetically, and [`pr-title.yaml`](.github/workflows/pr-title.yaml) refuses a
-`!` or a `BREAKING CHANGE:` footer to make that enforcement real. Returning the
-stream to `0.0.0-alpha.N` would make the config self-enforcing again and retire
-that check.
+| a bump routed to | lands on the counter when |
+| --- | --- |
+| patch | always, once a prerelease exists |
+| minor | `patch == 0` |
+| major | `minor == 0` **and** `patch == 0` |
+
+Two keys decide which row a commit takes. `bump-patch-for-minor-pre-major` sends
+a `feat:` down the *patch* row while major is 0, and `bump-minor-pre-major` sends
+a breaking change down the *minor* row rather than reaching for 1.0.0. Both are
+load-bearing on this stream; neither is decoration.
+
+On `0.0.1-alpha.N` that leaves exactly one leak. `fix:`, `feat:` and every hidden
+type take the patch row and land on the counter, but a **breaking marker** takes
+the minor row, and `patch` is 1 — so it bumps for real. That is the whole of the
+accident at #251: `0.0.0-alpha.1 … 0.0.0-alpha.33` were immune because both
+digits were zero, and on `0.0.1-alpha.12` a `feat!:` produced `0.1.0-alpha.12`.
+
+No release-please setting closes that leak — `bump-minor-pre-major: false` sends
+the same commit to 1.0.0 instead, which is worse. So the pin is held by
+[`pr-title.yaml`](.github/workflows/pr-title.yaml), which refuses a `!` or a
+`BREAKING CHANGE:` footer while the manifest sits on a `0.x` version. That check
+is required (below), so refusing is the same as blocking.
+
+Staying on `0.0.1-alpha.N` until the first official release is the intent, not an
+accident of history. A `0.x.0` stream would absorb breaking markers arithmetically
+and retire the check — it is not worth a version that sorts backwards to get it.
 
 **The subject that lands on main.** `main` takes squash merges only, so one PR
 is one commit and its subject is what release-please parses — the rule a
@@ -96,7 +111,7 @@ review count of 0 still forces the PR, the squash and the checks.
 ### Relaxed while in early development
 
 Actions bills per job, rounded up to the minute, and the suite takes ~5s. So CI
-cost is job count, and while the project is on the `0.0.0-alpha.N` stream — no
+cost is job count, and while the project is on the `0.0.1-alpha.N` stream — no
 downstream users to break, runner minutes the scarcer resource — it is one job
 that deliberately trades coverage for cost. What that gives up:
 
@@ -133,7 +148,7 @@ Three levers, ascending force:
 
 Run the **Prerelease** workflow from any branch (Actions → Prerelease → Run
 workflow). It computes the next counter, runs lint and the suite, and pushes the
-tag; `dry-run` prints it without pushing. The defaults (`0.0.0` / `alpha`) give
+tag; `dry-run` prints it without pushing. The defaults (`0.0.1` / `alpha`) give
 the same stream release-please cuts on `main`. Once a real release is in sight,
 name the version it leads to (`0.2.0`) and pick `rc`; counters are tracked per
 version and channel.
@@ -143,7 +158,7 @@ version `0.2.0rc1`. Do **not** hand-tag `v0.2.0rc1` — without the dash, publis
 marks the GitHub release as a full release.
 
 **On `main`, prefer the release PR.** Both routes write into the
-`0.0.0-alpha.N` namespace and count independently: this workflow takes the next
+`0.0.1-alpha.N` namespace and count independently: this workflow takes the next
 free number off existing tags, while release-please counts from
 [`.release-please-manifest.json`](.release-please-manifest.json), so cutting by
 hand on `main` makes release-please's next number collide. Use **Prerelease**
