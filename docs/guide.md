@@ -38,9 +38,11 @@ variables:
 there at all**. A retired generator with `p_max = 0` costs nothing to carry in
 the data, and the built model is smaller than the coordinate product.
 
-The same idea runs through data binding: a parameter row that does not exist is
-absent, not zero, and a constraint whose terms are all absent is dropped rather
-than emitted empty. → [dispatch](models/dispatch.md), [SPEC §6](SPEC.md#6-where-strings)
+The same idea runs through data binding, with one distinction worth learning
+early: a **variable** the mask removed is *absent*, and a term carrying it takes
+its whole row with it — while a **parameter** row that is simply missing is a
+zero coefficient, and the row survives without it. Absence is a property of
+variables. → [dispatch](models/dispatch.md), [SPEC §6](SPEC.md#6-absence)
 
 ## 3. A dimension can carry coordinates, and that is your topology
 

@@ -258,73 +258,78 @@ them, either way building a different model than the file reads as), while a
 **where** predicate's dims and a **bound** parameter's dims must not exceed the
 frame.
 
-## 6. Where strings
+## 6. Absence
+
+A coordinate where a **variable does not exist**. Not a value and not a zero —
+a state the language tracks, because the alternative is a model that solves and
+answers a different question than it reads as.
+
+**Four constructs create it.** Nothing else does.
+
+| construct | what is absent |
+|---|---|
+| `where:` on a variable | the variable, at the masked coordinates |
+| `where:` on a constraint block or equation | the row |
+| `shift(x, d=n)` with no `fill=` | the vacated edge coordinate (§7) |
+| a null value in a dimension's `coords:` | that label's group membership (§2) |
+
+**A sparse parameter table is not one of them.** Missing rows are compressed
+encoding, and *where the name sits* decides what one means:
+
+| position | a missing parameter row means |
+|---|---|
+| coefficient — `w * x` | zero: the term does not participate, the row survives |
+| divisor — `x / d` | **refused** at bind — no fill preserves the row (`0` divides by zero, `1` rescales, dropping rewrites the constraint) |
+| `bounds:` | an error: unbounded is not bounded-at-zero |
+| `where` operand | false |
+
+### How absence travels
+
+**Through arithmetic it spreads**, taking the row with it: `x + y >= 10` is *no
+constraint* where `y` is masked, not `x >= 10`. The asymmetry with the table
+above is the whole hazard, in one example: `x - rel_max * size <= 0` **loses the
+row** where the *variable* `size` is masked, and **keeps** it as `x <= 0` where
+the *parameter* `rel_max` has no row — feasible, plausible, no error. A missing
+correction term tightens in the safe direction and is a legitimate idiom; a
+missing coefficient that *is* the bound rewrites what the constraint says.
+
+**Out of a reduction it does not.** `sum(x, over=d)` is defined when only some
+of `d` exists and the sum of nothing is zero; otherwise one masked component
+would delete a system-wide accounting row.
+
+**So a reduction does not distribute over addition.** The two spellings are
+different questions, and the language refuses to guess which was meant:
+
+| spelling | sums over | with `y` absent at `f=b` |
+|---|---|---|
+| `sum(x + y, over=f)` | where the **summand** exists | `x[a] + y[a]` — `x[b]` goes with the absent `y[b]` |
+| `sum(x, over=f) + sum(y, over=f)` | each operand over **its own** domain | `x[a] + x[b] + y[a]` |
+
+*The total of the net where the net is defined*, against *the total in minus the
+total out*. Rewriting the first into the second would read the absent `y[b]` as
+a zero. Reductions are therefore **not linear** over operands of differing
+presence — the honest consequence of `+` being addition on a partial domain.
+
+### Asking for the other reading
+
+Absence is never silently converted into a value, so each rule has a spelling
+for the opposite intent:
+
+| you want | you write |
+|---|---|
+| the row kept, the missing term read as zero | two equations under complementary `where` clauses |
+| a vacated shift position to contribute | `shift(x, d=n, fill=0)` — the identity of *its* position (§7) |
+| to test whether a variable exists here | its bare name in a `where` |
+| a sparse coefficient to remove the row rather than zero the term | mask on it — `where: "rel_max"` |
+
+This is linopy's v1 arithmetic convention, which both lanes are built against;
+`farkas.linopy.semantics` is where the eager lane answers it.
+
+### 6.1 Where strings
 
 A boolean mask; true means "this coordinate exists". Semantics are **row
 absence**, not zero-fill: a masked-out variable is not created, a masked-out
 constraint row is not built.
-
-**Absence spreads.** A term whose variable does not exist at a coordinate does
-not contribute zero there — it makes the whole row absent, so `x + y >= 10` is
-*no constraint* where `y` is masked, not `x >= 10`. Zero-filling instead is how
-`x - rel_max * size <= 0` silently becomes `x <= 0` on an unsized component: a
-feasible model, a plausible answer, no error. To keep the row and treat the
-missing term as zero, say so — write the two cases as separate equations with
-complementary `where` clauses.
-
-Two things deliberately do **not** spread. A **reduction** skips what is absent
-rather than propagating it, so `sum(x, over=d)` is defined when only some of `d`
-exists and the sum of nothing is zero — without that, one masked component would
-delete a system-wide accounting row. And a **parameter** covering only some
-coordinates is sparse *encoding*, not absence: its missing rows mean a zero
-coefficient (§8), which is why a coefficient table may hold live entries only.
-Absence is a property of variables.
-
-**A divisor is the exception, and is refused.** Zero is a fill that keeps a
-product meaningful — a zeroed term is a term that does not participate, and the
-row survives saying something. Division has no such identity: `0` divides by
-zero, `1` silently rescales, and dropping the term rewrites what the row
-asserts. So a parameter used in divisor position must cover every coordinate it
-is indexed over, and a gap is a load-time-shaped `DataError` at bind rather than
-a constraint that quietly stops constraining.
-
-**A reduction skips absent slots; it does not distribute over addition.** Those
-two rules compose, and the composition is the part worth reading twice, because
-the two spellings below are the same expression in ordinary algebra and are
-*different questions* here:
-
-| spelling | sums over | with `y` absent at `f=b` |
-|---|---|---|
-| `sum(x + y, over=f)` | the coordinates where the **summand** exists | `x[a] + y[a]` — `x[b]` goes with the absent `y[b]` |
-| `sum(x, over=f) + sum(y, over=f)` | each operand over **its own** domain | `x[a] + x[b] + y[a]` |
-
-The first is *the total of the net, where the net is defined*; the second is
-*the total in, minus the total out*. Both are legitimate and the language
-refuses to guess: rewriting the first into the second would read the absent
-`y[b]` as a zero, which is the reading §6 exists to remove. So write the one you
-mean — and if a term of an accounting row must survive a masked sibling, sum the
-operands separately.
-
-Reductions are therefore **not linear** over operands of differing presence.
-That is the honest consequence of absence being a state rather than a value:
-`+` is addition on a partial domain, and a sum over that domain is only defined
-where the domain is.
-
-That asymmetry is the example above read the other way round, and it is where
-the remaining hazard lives: `x - rel_max * size <= 0` **loses the row** where the
-variable `size` is masked, and **keeps** it as `x <= 0` where the parameter
-`rel_max` has no row. A missing *correction* term — a big-M relaxation, a
-start-up term — tightens in the safe direction and is a legitimate idiom; a
-missing coefficient that *is* the bound rewrites what the constraint says, with
-no error and no absent row to notice. So a coefficient table may be sparse
-because the coefficient is zero; where it is sparse because the *component* is
-not there, mask the row (`where: "rel_max"`) and let the row go with it.
-
-This matches linopy's v1 arithmetic convention, which both lanes are built
-against; `farkas.linopy.semantics` is where the eager lane answers it. `shift`
-creates absence there too (§7), so the four ways to say "not here" — a `where`
-mask, a bare variable name, an absent operand, and an acyclic shift — are one
-rule and not four.
 
 ```text
 where_expr ::= atom | "NOT" where_expr | where_expr ("AND"|"OR") where_expr
