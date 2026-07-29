@@ -18,15 +18,9 @@ updates:
         patterns:
           - "*"
 
-  # The hook revs in .pre-commit-config.yaml. Its own ecosystem, so its own PR:
-  # dependabot groups *within* an ecosystem, never across. That matters for
-  # ruff, which is pinned twice — `ruff==` in the dev group and the
-  # `ruff-pre-commit` rev here — and the two must move together. Merging one
-  # PR without the other runs a different ruff in the hook than in CI, which is
-  # how a locally clean commit fails the gate.
-  #
-  # `tests/test_tooling_pins.py` fails when they disagree, so a half-landed
-  # bump is caught by CI on the merge rather than by whoever commits next.
+  # ruff is pinned here and in pyproject.toml, and each gets its own PR —
+  # dependabot never groups across ecosystems. tests/test_tooling_pins.py fails
+  # when the two disagree.
   - package-ecosystem: "pre-commit"
     directory: "/"
     schedule:

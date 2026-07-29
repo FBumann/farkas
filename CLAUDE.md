@@ -51,26 +51,10 @@ uv sync --group docs && uv run mkdocs serve
 
 ## Package Structure
 
-See `docs/ARCHITECTURE.md` for the authoritative module map. In brief:
-
-```
-src/farkas/
-├── api.py  # native entry point: check / build / solve / write — linopy-free
-├── schema.py  # pydantic schema (incl. expressions:, macros:, piecewise:)
-├── expression_parser.py  # pyparsing grammar for math expressions
-├── where_parser.py  # pyparsing grammar for where strings
-├── expansion.py  # macro / named-expression substitution (pre-dispatch)
-├── resolution.py  # one flat namespace; NameNode → typed Variable/Parameter/Dimension
-├── dimensions.py  # static dim-set checking over the resolved AST
-├── validation.py  # load-time: parse, expand, resolve, name-check everything
-├── piecewise.py  # piecewise: → λ-formulation declarations
-├── helpers.py  # built-in helpers — a CLOSED set, no registry
-├── lowering.py  # core AST → logical plan (defines the relational subset)
-├── sources.py  # bind runtime data to a validated schema
-├── errors.py  # the exception hierarchy (LinopyYamlError root)
-├── relational/  # the engine, on polars; linopy-free — plan, frames, compiler, executor, sinks
-└── linopy/  # opt-in linopy lane ([linopy] extra); the ONLY code importing linopy or xarray
-```
+`docs/ARCHITECTURE.md` carries the authoritative module map, and every module's
+own docstring says what it is for. Both are checked —
+`tests/test_architecture.py` fails on a module that neither documents — so this
+file keeps no third copy to go stale.
 
 ## API
 
