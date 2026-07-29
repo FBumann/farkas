@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.18](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.17...v0.0.1-alpha.18) (2026-07-29)
+
+
+### Documentation
+
+* typeset every model page from the model it shows ([#280](https://github.com/FBumann/farkas/issues/280)) ([d6eda33](https://github.com/FBumann/farkas/commit/d6eda33eafe5540c2a68cd73a4a050e150c4833d))
+
 ## [0.0.1-alpha.17](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.16...v0.0.1-alpha.17) (2026-07-29)
 
 
