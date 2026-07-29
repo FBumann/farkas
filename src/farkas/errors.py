@@ -27,6 +27,13 @@ nothing else from the package (docs/ARCHITECTURE.md, hard rule 2).
 
 from __future__ import annotations
 
+import difflib
+import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
 
 class LinopyYamlError(ValueError):
     """Base class for every error this package raises on purpose."""
@@ -124,3 +131,34 @@ def null_bounds_message(name: str, rows: int) -> str:
         f'  supply the value           the variable exists there, bounded (`inf` is a value)\n'
         f'  where: "<the parameter>"   the variable does not exist there at all'
     )
+
+
+def unknown_name_message(kind: str, name: str, known: Iterable[str]) -> str:
+    """``unknown <kind> '<name>'``, plus the near miss or the declared set.
+
+    The same shape as the loader's unknown-key error, deliberately: a reader who
+    has met one has met both, and there were already two copies of this idiom in
+    the tree before this one.
+
+    Single-line on purpose. These are raised as ``KeyError``, whose ``str`` is
+    the *repr* of its argument, so a newline arrives at the reader as a literal
+    ``\\n``. The list is not truncated for the same reason the loader does not
+    truncate: the answer is usually in it, and a caller reading a solution back
+    by name has no other way to discover what the model actually built.
+    """
+    candidates = sorted(known)
+
+    # A constraint block with several equations names them by position, so the
+    # block's own name resolves to nothing and the caller is asking for a name
+    # that was never built (#298). Nearest-match is actively unhelpful there: it
+    # picks one sibling and implies the others do not exist. List them instead.
+    positional = [c for c in candidates if re.fullmatch(rf'{re.escape(name)}_\d+', c)]
+    if positional:
+        return (
+            f"unknown {kind} '{name}': it is a block of {len(positional)} equations, which are "
+            f'named by position — {", ".join(positional)}.'
+        )
+
+    near = difflib.get_close_matches(name, candidates, n=1, cutoff=0.6)
+    fix = f"Did you mean '{near[0]}'?" if near else f'Declared: {", ".join(candidates) or "nothing"}.'
+    return f"unknown {kind} '{name}'. {fix}"
