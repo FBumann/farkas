@@ -20,7 +20,14 @@ from typing import TYPE_CHECKING, Any, Literal, get_args
 
 import polars as pl
 
-from farkas.errors import DataError, LanguageError, LinopyYamlError, NoSolutionError, sparse_divisor_message
+from farkas.errors import (
+    DataError,
+    LanguageError,
+    LinopyYamlError,
+    NoSolutionError,
+    null_bounds_message,
+    sparse_divisor_message,
+)
 from farkas.relational import plan, sinks
 from farkas.relational.compiler import PolarsCompiler, TermFragment, _ordinal
 from farkas.relational.frames import as_frame
@@ -715,10 +722,7 @@ class PolarsExecutor:
 
         bad = cols.filter(pl.col('lb').is_null() | pl.col('ub').is_null()).height
         if bad:
-            raise DataError(
-                f"variable '{v.name}': {bad} rows have NULL bounds — a bound parameter "
-                f'is missing values for some coordinates'
-            )
+            raise DataError(null_bounds_message(v.name, bad))
         return cols
 
     def _build_constraint(self, c: plan.ConstraintDeclaration) -> tuple[pl.DataFrame, pl.DataFrame | None]:

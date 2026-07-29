@@ -18,7 +18,7 @@ import textwrap
 
 import pytest
 
-from farkas.errors import LanguageError
+from farkas.errors import DataError, LanguageError
 from farkas.schema import MathSchema
 from tests.oracle import builder, farkas_linopy, linopy, loader, pd, xr
 
@@ -460,3 +460,53 @@ def test_the_two_lanes_agree_about_a_masked_variable_without_the_harness(tmp_pat
     eager, native = (float(v) for v in out.stdout.split())
     assert eager == pytest.approx(native), f'lanes disagree outside the harness: {eager} vs {native}'
     assert native == pytest.approx(125.0), 'the masked row should be dropped, leaving x[b] at its bound'
+
+
+def test_a_missing_bound_is_refused_at_build_with_the_native_lane_s_message(yaml_file):
+    """It used to surface two phases later, from inside linopy.
+
+    ``build()`` returned a model whose bounds carried NaN, and the failure came
+    at solve or write as ``ValueError: Continuous Variable x contains nan's in
+    field(s) ['upper']`` — linopy's own message, naming an internal rather than
+    the YAML, the declaration or the fix. The native lane had raised a
+    ``DataError`` at build the whole time, so the two lanes agreed on the
+    verdict and disagreed on everything a reader needs (#313).
+
+    The mask is the other half. A coordinate the variable does not occupy needs
+    no bound, and supplying data only where the variable exists is the ordinary
+    idiom — so this must refuse the gap and accept the masked one, which is what
+    the second half asserts.
+    """
+    model = yaml_file("""
+        dimensions:
+          f: {values: [a, b]}
+        parameters:
+          ub: {dims: [f]}
+          live: {dims: [f], dtype: bool}
+        variables:
+          x: {foreach: [f], bounds: {lower: 0, upper: ub}}
+        constraints:
+          c:
+            foreach: [f]
+            equations:
+              - expression: x <= 100
+        objectives:
+          o:
+            sense: maximize
+            equations:
+              - expression: sum(x, over=f)
+        """)
+    data = {
+        'ub': pd.Series([10.0], index=pd.Index(['a'], name='f')),
+        'live': pd.Series([True], index=pd.Index(['a'], name='f')),
+    }
+
+    with pytest.raises(DataError, match='NULL bounds'):
+        farkas_linopy.build(model, data=data)
+
+    masked = yaml_file(
+        model.read_text().replace('{foreach: [f], bounds:', '{foreach: [f], where: live, bounds:'),
+        'masked.yaml',
+    )
+    built = farkas_linopy.build(masked, data=data)  # must not raise
+    assert 'x' in built.variables

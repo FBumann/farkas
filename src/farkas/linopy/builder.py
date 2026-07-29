@@ -16,7 +16,7 @@ import numpy as np
 import xarray as xr
 
 from farkas._notes import note
-from farkas.errors import DataError, LanguageError
+from farkas.errors import DataError, LanguageError, null_bounds_message
 from farkas.expression_parser import (
     ArithmeticNode,
     BinaryOperatorNode,
@@ -139,6 +139,8 @@ def _build_variables(ctx: EvaluationContext) -> None:
             where = where_of(vdef.where, ctx.ns, f"variable '{vname}'", self_variable=vname)
             mask = evaluate_where(where, ctx.dataset, ctx.master_coords, ctx.model)
 
+            _check_bounds_are_defined(vname, vdef, ctx.dataset, mask)
+
             ctx.model.add_variables(
                 lower=lower,
                 upper=upper,
@@ -148,6 +150,30 @@ def _build_variables(ctx: EvaluationContext) -> None:
                 binary=vdef.binary,
                 integer=vdef.integer,
             )
+
+
+def _check_bounds_are_defined(name: str, vdef: Any, dataset: xr.Dataset, mask: Any) -> None:
+    """Refuse a bound with no value, at build, as the native lane does.
+
+    Without it the NaN travels into linopy and surfaces two phases later, from
+    inside its IO layer: ``ValueError: Continuous Variable x contains nan's in
+    field(s) ['upper']``, raised at solve or write, naming neither the YAML nor
+    the fix. ``build()`` had already returned a model that could not be used.
+
+    Checked against the variable's own mask for the reason every other absence
+    check is: a coordinate the variable does not occupy needs no bound, and
+    supplying data only where the variable exists is the ordinary idiom.
+    """
+    missing = 0
+    for bound in (vdef.bounds.lower, vdef.bounds.upper):
+        if not isinstance(bound, str):
+            continue
+        gaps = dataset[bound].isnull()
+        if mask is not None:
+            gaps = gaps & mask
+        missing += int(gaps.sum())
+    if missing:
+        raise DataError(null_bounds_message(name, missing))
 
 
 def _resolve_bound(
