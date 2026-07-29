@@ -7,7 +7,7 @@ should be readable in one sitting and go stale only when a command changes.
 ## Setup
 
 ```bash
-uv sync                  # dev group is the default: tools + the linopy oracle
+uv sync  # dev group is the default: tools + the linopy oracle
 uv run pre-commit install  # once per clone
 ```
 
@@ -18,7 +18,7 @@ linopy, xarray or pandas — see *the bare install* below.
 ## The loop
 
 ```bash
-uv run pytest -q                 # ~20 s
+uv run pytest -q  # ~20 s
 uv run ruff check --fix . && uv run ruff format .
 uv run pyrefly check
 ```
@@ -28,7 +28,7 @@ Narrower runs while working:
 ```bash
 uv run pytest tests/test_relational.py -q
 uv run pytest -k piecewise -q
-uv run pytest --lf                # last failures only
+uv run pytest --lf  # last failures only
 ```
 
 ## What each CI gate means
@@ -64,8 +64,8 @@ relative links, no site-only syntax — and the build handles the difference.
 
 ```bash
 uv sync --group docs
-uv run mkdocs serve      # http://127.0.0.1:8000, live-reloading
-uv run mkdocs build --strict   # what CI runs
+uv run mkdocs serve  # http://127.0.0.1:8000, live-reloading
+uv run mkdocs build --strict  # what CI runs
 ```
 
 Three rules, each enforced, so none has to be remembered:

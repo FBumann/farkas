@@ -45,9 +45,9 @@ list when the two names coincide, or as a mapping when they do not:
 dimensions:
   bus: {dtype: str}
   generator:
-    coords: [bus]                  # same as {bus: bus}
+    coords: [bus]  # same as {bus: bus}
   line:
-    coords: {from: bus, to: bus}   # two coordinates onto one dimension
+    coords: {from: bus, to: bus}  # two coordinates onto one dimension
 ```
 
 The target must be a declared dimension, must not be the dimension carrying
@@ -125,8 +125,8 @@ expressions:
   total_generation: sum(p, over=generator)
 macros:
   weighted_sum:
-    args: [array, weights]   # positional formals, default []
-    kwargs: [over]           # keyword formals, default []
+    args: [array, weights]  # positional formals, default []
+    kwargs: [over]  # keyword formals, default []
     template: sum(array * weights, over=over)
 ```
 
@@ -145,13 +145,13 @@ mirroring `linopy.Model.add_piecewise_formulation`.
 ```yaml
 piecewise:
   chp:
-    over: bp                  # breakpoint dimension
+    over: bp  # breakpoint dimension
     links:
-      - [power, power_bp]     # [expression, values-parameter]
+      - [power, power_bp]  # [expression, values-parameter]
       - [fuel, fuel_bp]
       - [heat, heat_bp]
-    convex: false             # true: pure-LP convex hull, no binaries
-    active: null              # optional gating expression: formulation pinned to 0
+    convex: false  # true: pure-LP convex hull, no binaries
+    active: null  # optional gating expression: formulation pinned to 0
 
   # a two-link block may bound one side instead of pinning it
   fuel_cap:

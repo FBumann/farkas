@@ -41,13 +41,13 @@ dimensions:
     dtype: str
   generator:
     dtype: str
-    coords: [bus]                  # every generator sits on a bus
+    coords: [bus]  # every generator sits on a bus
   link:
     dtype: str
-    coords: {from: bus, to: bus}   # both endpoints are buses
+    coords: {from: bus, to: bus}  # both endpoints are buses
   storage:
     dtype: str
-    coords: [bus]                  # a storage unit sits on a bus too
+    coords: [bus]  # a storage unit sits on a bus too
 
 parameters:
   p_nom:

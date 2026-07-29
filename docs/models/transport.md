@@ -14,12 +14,12 @@ dimensions:
     dtype: int
   generator:
     dtype: str
-    coords: [bus]           # every generator sits on a bus
+    coords: [bus]  # every generator sits on a bus
   bus:
     dtype: str
   line:
     dtype: str
-    coords: {from: bus, to: bus}   # both endpoints are buses
+    coords: {from: bus, to: bus}  # both endpoints are buses
 
 parameters:
   p_max:

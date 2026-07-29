@@ -38,9 +38,9 @@ parameters:
   load:
     dims: [snapshot]
   bp_x:
-    dims: [generator, bp]   # per-generator breakpoint positions
+    dims: [generator, bp]  # per-generator breakpoint positions
   bp_y:
-    dims: [generator, bp]   # per-generator cost at each breakpoint
+    dims: [generator, bp]  # per-generator cost at each breakpoint
 
 variables:
   p:

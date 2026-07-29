@@ -168,7 +168,7 @@ refused. All of it is indexed in [docs/](docs/README.md); to work on it,
 To see it rather than read it, `python examples/walkthrough.py` runs one small model through every stage — YAML → schema → core AST → logical plan → model frames → LP text → solution — printing the artifact each stage produces, plus two models the language refuses and why. Its output is committed as [examples/walkthrough.out](examples/walkthrough.out) if you would rather just read that.
 
 ```bash
-pip install farkas            # the relational engine (polars, highspy)
+pip install farkas  # the relational engine (polars, highspy)
 pip install "farkas[linopy]"  # adds linopy + xarray + pandas: the shim, the
                               # oracle, and to_pandas / to_dataarray
 ```

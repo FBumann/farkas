@@ -12,8 +12,8 @@ plan → frames → LP text → solution — for one small model.
 
 ```yaml
 dimensions:
-  snapshot: {dtype: int}                    # coordinates come from the data
-  generator: {values: [wind, solar, gas]}   # coordinates are given here
+  snapshot: {dtype: int}  # coordinates come from the data
+  generator: {values: [wind, solar, gas]}  # coordinates are given here
 ```
 
 A dimension is an axis. You either list its coordinates in the file, or leave
@@ -46,7 +46,7 @@ than emitted empty. → [dispatch](models/dispatch.md), [SPEC §6](SPEC.md#6-whe
 
 ```yaml
 dimensions:
-  generator: {dtype: str, coords: [bus]}          # each generator sits on a bus
+  generator: {dtype: str, coords: [bus]}  # each generator sits on a bus
   line: {dtype: str, coords: {from: bus, to: bus}}  # both endpoints are buses
 ```
 
