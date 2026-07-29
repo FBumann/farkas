@@ -45,6 +45,7 @@ except ModuleNotFoundError as exc:  # linopy / xarray absent
     msg = 'The linopy compatibility layer requires the [linopy] extra: pip install "farkas[linopy]"'
     raise ModuleNotFoundError(msg) from exc
 
+
 from farkas._notes import note
 from farkas._yaml import read_yaml
 from farkas.errors import LanguageError
@@ -53,6 +54,33 @@ from farkas.linopy.loader import build_dim_coords, build_master_coords, dim_inde
 from farkas.piecewise import expand_piecewise, validate_piecewise_data
 from farkas.schema import MathSchema
 from farkas.validation import validate_expressions
+
+# **This lane speaks v1, and the option is global, so importing sets it.**
+#
+# linopy's default is `legacy`, which fills every absent slot with 0 — so a
+# masked variable contributes zero instead of taking its row with it, and a
+# shift's vacated position does the same. The relational lane drops the row in
+# both cases (SPEC §6, §7). Left alone, the two lanes therefore answer the same
+# YAML differently: measured at 25.0 against 125.0 on a masked-variable model,
+# which is a wrong answer rather than a wrong error.
+#
+# `tests/oracle.py` has always set this, which is exactly why nothing caught it:
+# the suite proved the lanes agree under a configuration the package never
+# shipped. The setting belongs here, where users get it, and the test harness's
+# copy is now the redundant one.
+#
+# It is global state we are writing on import, and that is a real cost — a
+# process importing this module has its own linopy arithmetic changed too. The
+# alternative was scoping it per call, which linopy's own context manager cannot
+# do (`__exit__` calls `reset()`, restoring *all* options to their defaults
+# rather than to their prior values, so it would silently discard a caller's
+# `display_max_rows`). Given a choice between a documented global and a
+# hand-rolled save/restore around every entry point, the global is the one a
+# reader can find.
+#
+# Unguarded: the declared linopy floor is a version that has the option, because
+# this package does not publish ahead of the convention it is written against.
+linopy.options['semantics'] = 'v1'
 
 __all__ = ['build', 'extend']
 

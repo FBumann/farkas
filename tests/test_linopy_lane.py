@@ -12,6 +12,8 @@ the model. A file's meaning must not depend on what was loaded before it
 
 from __future__ import annotations
 
+import subprocess
+import sys
 import textwrap
 
 import pytest
@@ -387,3 +389,74 @@ def test_a_failure_inside_extend_names_the_extension_file(yaml_file, model_with)
         farkas_linopy.extend(m, ext)
 
     assert _has_note(ei.value, f"while extending with YAML '{ext}'")
+
+
+# --------------------------------------------------------------------------
+# the convention this lane speaks
+# --------------------------------------------------------------------------
+
+
+def test_importing_the_lane_selects_the_v1_convention():
+    """In a *fresh* process, because the harness would otherwise answer for it.
+
+    ``tests/oracle.py`` sets ``semantics = 'v1'`` at import, so an in-process
+    assertion here would pass whether or not the package sets it — which is
+    precisely how the package shipped without setting it: the suite proved the
+    two lanes agree under a configuration no user ran. linopy's default is
+    ``legacy``, which fills an absent slot with 0 rather than dropping the row,
+    so under it this lane answered 25.0 where the native engine answered 125.0.
+
+    A subprocess is the only place the claim is falsifiable, so it is the only
+    place worth making it.
+    """
+    probe = 'import linopy, farkas.linopy; print(linopy.options["semantics"])'
+    out = subprocess.run([sys.executable, '-c', probe], capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == 'v1', f'the lane must select v1 on import, got {out.stdout.strip()!r}'
+
+
+def test_the_two_lanes_agree_about_a_masked_variable_without_the_harness(tmp_path):
+    """The divergence the missing opt-in caused, pinned end to end.
+
+    Not a ``differential()`` case on purpose: that helper runs inside the suite,
+    where the convention is already set. This one drives both lanes from a
+    subprocess with nothing but the package imported, which is the user's
+    situation.
+    """
+    model = tmp_path / 'masked.yaml'
+    model.write_text(
+        textwrap.dedent("""
+            dimensions: {f: {values: [a, b]}}
+            parameters:
+              gate: {dims: [f], dtype: bool}
+              relmax: {dims: [f]}
+            variables:
+              x: {foreach: [f], bounds: {lower: 0, upper: 100}}
+              size: {foreach: [f], where: gate, bounds: {lower: 0, upper: 50}}
+            constraints:
+              env:
+                foreach: [f]
+                equations: [{expression: "x - relmax * size <= 0"}]
+            objectives:
+              o:
+                sense: maximize
+                equations: [{expression: "sum(x, over=f)"}]
+        """).lstrip()
+    )
+    probe = textwrap.dedent(f"""
+        import warnings; warnings.simplefilter('ignore')
+        import pandas as pd, polars as pl
+        import farkas as fk
+        from farkas import linopy as fkl
+        data = {{'gate': pd.Series({{'a': True}}), 'relmax': pd.Series({{'a': 0.5, 'b': 0.5}})}}
+        m = fkl.build({str(model)!r}, data=data)
+        m.solve(solver_name='highs', output_flag=False)
+        native = fk.solve({str(model)!r}, {{
+            'gate': pl.DataFrame({{'f': ['a'], 'value': [True]}}),
+            'relmax': pl.DataFrame({{'f': ['a', 'b'], 'value': [0.5, 0.5]}}),
+        }})
+        print(float(m.objective.value), native.objective)
+    """)
+    out = subprocess.run([sys.executable, '-c', probe], capture_output=True, text=True, check=True)
+    eager, native = (float(v) for v in out.stdout.split())
+    assert eager == pytest.approx(native), f'lanes disagree outside the harness: {eager} vs {native}'
+    assert native == pytest.approx(125.0), 'the masked row should be dropped, leaving x[b] at its bound'

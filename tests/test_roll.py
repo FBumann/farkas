@@ -234,12 +234,48 @@ def test_fill_lowers_to_the_escape_hatch_and_a_bare_shift_does_not():
         # roll vacates nothing, so a fill would be a no-op the reader has to
         # puzzle over — and the refusal says why rather than only that it fits no shape
         ('roll(soc, snapshot=1, fill=0)', 'roll is cyclic, so no position is ever vacated'),
-        # a nonzero fill is a constant contributed at the vacated coordinate,
-        # which is a fragment kind the relational lane does not synthesise
-        ('shift(soc, snapshot=1, fill=1)', r'shift\(fill=\.\.\.\) takes the literal 0'),
+        # over a *variable* a vacated slot contributes no term, so a nonzero
+        # fill would be a constant standing where a term was
+        ('shift(soc, snapshot=1, fill=1)', 'only fill=0 is representable there'),
     ],
 )
 def test_fill_is_refused_where_neither_lane_can_honour_it(expression, match):
     schema = schema_of(STORAGE_YAML)
     with pytest.raises(LanguageError, match=match):
         _lower_expr(resolved(expression, schema), schema, 't')
+
+
+FILL_IDENTITY_MODEL = """
+dimensions: {t: {dtype: int, values: [0, 1, 2]}}
+parameters:
+  eff: {dims: [t]}
+variables:
+  x: {foreach: [t], bounds: {lower: 0, upper: 100}}
+constraints:
+  c:
+    foreach: [t]
+    equations: [{expression: "x * shift(eff, t=1, fill=1) <= 10"}]
+objectives:
+  o: {sense: maximize, equations: [{expression: "sum(x, over=t)"}]}
+"""
+
+
+def test_the_fill_a_product_wants_is_one_not_zero():
+    """``fill=`` takes the identity of the *position*, which is why it takes a number.
+
+    linopy v1 refuses to fill on the caller's behalf precisely because the right
+    value is positional (``convention.rst`` §7): 0 is the identity of a sum, 1 of
+    a product. ``x * shift(eff, t=1, fill=0)`` would force ``x`` to zero at the
+    first coordinate — the pin again, wearing the coefficient's hat — where
+    ``fill=1`` leaves it governed by its own bound.
+
+    Over data any number is allowed, since it is a data fill. The relational
+    lane has to *write* the rows for a nonzero one: a const fragment reads a
+    missing row as zero, so `fill=1` exists only if something puts it there.
+    """
+    with differential(FILL_IDENTITY_MODEL, {'eff': pd.Series({0: 2.0, 1: 4.0, 2: 5.0})}, lp=True) as run:
+        solved = run.result.primal('x')
+        x = dict(zip(solved['t'], solved['value'], strict=True))
+        assert x[0] == pytest.approx(10.0), 't=0: the fill is 1, so the bound is 10/1'
+        assert x[1] == pytest.approx(5.0), 't=1: eff[0] = 2, so 10/2'
+        assert x[2] == pytest.approx(2.5), 't=2: eff[1] = 4, so 10/4'

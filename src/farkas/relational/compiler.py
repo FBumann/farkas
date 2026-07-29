@@ -454,6 +454,13 @@ class PolarsCompiler:
             )
 
         frame = remap(p.frame, p.carried)
+        if not s.wrap and s.fill:
+            # A const fragment reads a missing row as zero, so `fill=0` needs no
+            # rows at all — but `fill=1`, the identity a *product* wants, is only
+            # there if it is written. Lowering guarantees a nonzero fill reaches
+            # here only over a variable-free operand, so this is always the
+            # const branch and never has a `var_label` to invent.
+            frame = pl.concat([frame, self._filled_edge(s, card, others, s.fill)], how='vertical_relaxed')
         presence, presence_dims = None, None
         if p.presence is not None:
             # Presence is a coordinate set, so it travels through the same map,
@@ -469,6 +476,24 @@ class PolarsCompiler:
             # removed from masks and #289 removes from shift.
             presence, presence_dims = self._survivors(s, card), (s.dimension,)
         return TermFragment(p.dims, frame, p.is_term, p.keyed, p.label_dims, presence, presence_dims)
+
+    def _filled_edge(self, s: plan.Translate, card: int, others: list[str], fill: float) -> pl.LazyFrame:
+        """``(dims…, cval=fill)`` at every coordinate the shift vacated.
+
+        Dense over *others* rather than over the rows the operand happened to
+        carry: the eager lane shifts an array already reindexed to the master
+        coordinates, so its fill lands at every combination, and a fill that
+        appeared only where the parameter was non-sparse would be a second
+        answer to the same question.
+        """
+        edge = (
+            self.dimensions[s.dimension]
+            .filter(((pl.col('ord') - s.by) < 0) | ((pl.col('ord') - s.by) >= card))
+            .select(pl.col('val').alias(s.dimension))
+        )
+        for d in others:
+            edge = edge.join(self.dimensions[d].select(pl.col('val').alias(d)), how='cross')
+        return edge.with_columns(pl.lit(fill, dtype=pl.Float64).alias('cval')).select(*others, s.dimension, 'cval')
 
     def _survivors(self, s: plan.Translate, card: int) -> pl.LazyFrame:
         """The coordinates of ``s.dimension`` an acyclic shift leaves populated.
