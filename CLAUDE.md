@@ -83,9 +83,9 @@ import farkas as fk
 # No lifetime to manage: the model is frames this process owns, so `sol` stays
 # readable as long as it is alive. `close()` and `with` release a large one
 # early and nothing breaks without them.
-sol = fk.solve("model.yaml", {"p_max": "p_max.parquet", "load": "load.parquet"})
+sol = fk.solve('model.yaml', {'p_max': 'p_max.parquet', 'load': 'load.parquet'})
 sol.objective
-sol.primal("p")     # a polars.DataFrame; .to_pandas / .to_dataarray are the bridges out
+sol.primal('p')  # a polars.DataFrame; .to_pandas / .to_dataarray are the bridges out
 
 # fk.build(...) hands back the live executor, for driving several sinks off one build.
 ```
@@ -96,8 +96,8 @@ Linopy lane — YAML math on a `linopy.Model` that already exists in memory
 ```python
 from farkas import linopy as farkas_linopy
 
-m = farkas_linopy.build("model.yaml", data={...})            # YAML -> linopy.Model
-farkas_linopy.extend(m, "ramp_constraint.yaml", data={...})  # YAML math onto an existing model
+m = farkas_linopy.build('model.yaml', data={...})  # YAML -> linopy.Model
+farkas_linopy.extend(m, 'ramp_constraint.yaml', data={...})  # YAML math onto an existing model
 ```
 
 ## Development Guidelines

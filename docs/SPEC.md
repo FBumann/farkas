@@ -390,21 +390,21 @@ was bound to it.
 ```python
 import farkas as fk
 
-fk.check("model.yaml")                 # parse → validate → lower, no data bound
-schema = fk.load_schema("model.yaml")  # MathSchema
+fk.check('model.yaml')  # parse → validate → lower, no data bound
+schema = fk.load_schema('model.yaml')  # MathSchema
 
-result = fk.solve("model.yaml", sources, solver_options={"time_limit": 60})
+result = fk.solve('model.yaml', sources, solver_options={'time_limit': 60})
 result.status, result.termination_condition, result.objective
-result.is_ok        # linopy's rollup: not an error, abort or refusal
-result.has_primal   # narrower: are there values to read
-result.primal("p")            # tidy frame (dims…, value) — the native shape
-result.dual("power_balance")  # shadow prices, the same shape and the same join
-result.to_pandas("p")         # the same, as a DataFrame
-result.to_dataarray("p")      # the same, labelled: .sel / resample / plot
-result.to_dataset()           # every variable by default; names for a subset
+result.is_ok  # linopy's rollup: not an error, abort or refusal
+result.has_primal  # narrower: are there values to read
+result.primal('p')  # tidy frame (dims…, value) — the native shape
+result.dual('power_balance')  # shadow prices, the same shape and the same join
+result.to_pandas('p')  # the same, as a DataFrame
+result.to_dataarray('p')  # the same, labelled: .sel / resample / plot
+result.to_dataset()  # every variable by default; names for a subset
 result.to_parquet(directory)  # streamed to disk, never through this process
 
-fk.write("model.yaml", sources, "model.lp")   # sink chosen by the suffix
+fk.write('model.yaml', sources, 'model.lp')  # sink chosen by the suffix
 ```
 
 **Nothing has to be released.** The built model is frames this process owns, so
@@ -414,8 +414,8 @@ early, not because forgetting them breaks anything. `fk.build` returns the
 executor when one build should feed more than one sink:
 
 ```python
-ex = fk.build("model.yaml", sources)
-ex.write_lp("model.lp")
+ex = fk.build('model.yaml', sources)
+ex.write_lp('model.lp')
 result = ex.solve()
 ```
 
@@ -457,8 +457,8 @@ YAML in, model out, nothing retained:
 ```python
 from farkas import linopy as farkas_linopy
 
-m = farkas_linopy.build("model.yaml", data={...}, coords={...})   # -> linopy.Model
-farkas_linopy.extend(m, "ramp.yaml", data={...})                  # mutates m in place
+m = farkas_linopy.build('model.yaml', data={...}, coords={...})  # -> linopy.Model
+farkas_linopy.extend(m, 'ramp.yaml', data={...})  # mutates m in place
 ```
 
 `build` returns a plain `linopy.Model` — no accessor, no attached schema, no

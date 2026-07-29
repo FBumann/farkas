@@ -98,11 +98,11 @@ them; either way you would build a different model than the file reads as.
 ```python
 import farkas as fk
 
-fk.check("model.yaml")                    # compiles? no data needed
-sol = fk.solve("model.yaml", sources)     # to an answer
+fk.check('model.yaml')  # compiles? no data needed
+sol = fk.solve('model.yaml', sources)  # to an answer
 sol.objective
-sol.primal("p")                           # a polars.DataFrame
-sol.dual("power_balance")
+sol.primal('p')  # a polars.DataFrame
+sol.dual('power_balance')
 ```
 
 `fk.check` is the CI verb — it parses, expands, resolves and lowers without
