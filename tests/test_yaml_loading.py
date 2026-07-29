@@ -21,12 +21,10 @@ variables:
 constraints:
   balance:
     foreach: [snapshot]
-    equations:
-      - expression: sum(p, over=generator) == 5
+    expression: sum(p, over=generator) == 5
 objectives:
   total:
-    equations:
-      - expression: sum(p * cost, over=generator)
+    expression: sum(p * cost, over=generator)
 """
 
 

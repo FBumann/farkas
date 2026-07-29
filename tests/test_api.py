@@ -137,7 +137,7 @@ def test_check_and_load_schema_need_no_data(dispatch_yaml):
 def test_check_reports_language_errors_before_any_data_is_bound(
     dispatch_yaml, dispatch_frame_inputs, expression, match
 ):
-    raw = schema_of(dispatch_yaml, **{'objectives.total_cost.equations': [{'expression': expression}]}).model_dump()
+    raw = schema_of(dispatch_yaml, **{'objectives.total_cost.expression': expression}).model_dump()
 
     with pytest.raises(fk.LanguageError, match=match):
         fk.check(raw)
@@ -341,10 +341,10 @@ TWO_VARIABLE_MODEL = {
     'constraints': {
         'balance': {
             'foreach': ['snapshot'],
-            'equations': [{'expression': 'sum(p, over=generator) + shed == load'}],
+            'expression': 'sum(p, over=generator) + shed == load',
         }
     },
-    'objectives': {'total': {'sense': 'minimize', 'equations': [{'expression': 'shed'}]}},
+    'objectives': {'total': {'sense': 'minimize', 'expression': 'shed'}},
 }
 
 

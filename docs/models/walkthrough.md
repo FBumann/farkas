@@ -90,14 +90,12 @@ variables:
 constraints:
   power_balance:
     foreach: [snapshot]
-    equations:
-      - expression: total_supply == load
+    expression: total_supply == load
 
 objectives:
   total_cost:
     sense: minimize
-    equations:
-      - expression: weighted_sum(p, cost, over=generator)
+    expression: weighted_sum(p, cost, over=generator)
 ```
 
 ## What it exercises

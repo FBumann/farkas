@@ -178,8 +178,8 @@ BOOL_MASK_MODEL = {
     'dimensions': {'t': {'dtype': 'int', 'values': [0, 1, 2]}},
     'parameters': {'active': {'dims': ['t'], 'dtype': 'bool'}, 'cap': {'dims': ['t']}},
     'variables': {'x': {'foreach': ['t'], 'bounds': {'lower': 0, 'upper': 'cap'}}},
-    'constraints': {'floor': {'foreach': ['t'], 'equations': [{'expression': 'x >= cap', 'where': 'active'}]}},
-    'objectives': {'total': {'sense': 'minimize', 'equations': [{'expression': 'sum(x, over=t)'}]}},
+    'constraints': {'floor': {'foreach': ['t'], 'expression': 'x >= cap', 'where': 'active'}},
+    'objectives': {'total': {'sense': 'minimize', 'expression': 'sum(x, over=t)'}},
 }
 
 

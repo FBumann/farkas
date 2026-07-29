@@ -86,8 +86,7 @@ This is the only construct whose cost is not obviously linear in model size.
 constraints:
   power_balance:
     foreach: [snapshot]
-    equations:
-      - expression: sum(p, over=generator) == load
+    expression: sum(p, over=generator) == load
 ```
 
 `p` has dims `(snapshot, generator)`; summing over `generator` leaves

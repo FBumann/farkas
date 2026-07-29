@@ -84,11 +84,11 @@ $$\min \sum_{t \in \mathcal{T},\enspace g \in \mathcal{G}} p_{t,g} \cdot \mathit
 
 $$\sum_{g \in \mathcal{G} \thinspace:\thinspace \mathrm{bus}(g) = b} p_{t,g} + \sum_{l \in \mathcal{L} \thinspace:\thinspace \mathrm{to}(l) = b} f_{t,l} - \left( \sum_{l \in \mathcal{L} \thinspace:\thinspace \mathrm{from}(l) = b} f_{t,l} \right) + \sum_{s \in \mathcal{S} \thinspace:\thinspace \mathrm{bus}(s) = b} p^{\mathrm{dispatch}}_{t,s} - \left( \sum_{s \in \mathcal{S} \thinspace:\thinspace \mathrm{bus}(s) = b} p^{\mathrm{store}}_{t,s} \right) = \mathit{load}_{t,b} \qquad \forall\thinspace t \in \mathcal{T},\enspace b \in \mathcal{B}$$
 
-**`ramp_0`**
+**`ramp_up`**
 
 $$p_{t,g} - p_{t \ominus 1,g} \le \mathit{ramp\_limit\_up}_{g} \cdot p^{\mathrm{nom}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t > 0$$
 
-**`ramp_1`**
+**`ramp_down`**
 
 $$p_{t \ominus 1,g} - p_{t,g} \le \mathit{ramp\_limit\_down}_{g} \cdot p^{\mathrm{nom}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t > 0$$
 
@@ -197,21 +197,23 @@ variables:
 constraints:
   nodal_balance:
     foreach: [snapshot, bus]
-    equations:
-      - expression: >-
-          group_sum(p, over=generator, by=bus)
-          + group_sum(f, over=link, by=to)
-          - group_sum(f, over=link, by=from)
-          + group_sum(p_dispatch, over=storage, by=bus)
-          - group_sum(p_store, over=storage, by=bus)
-          == load
+    expression: >-
+      group_sum(p, over=generator, by=bus)
+      + group_sum(f, over=link, by=to)
+      - group_sum(f, over=link, by=from)
+      + group_sum(p_dispatch, over=storage, by=bus)
+      - group_sum(p_store, over=storage, by=bus)
+      == load
 
-  ramp:
+  ramp_up:
     foreach: [snapshot, generator]
     where: "snapshot > 0"
-    equations:
-      - expression: p - roll(p, snapshot=1) <= ramp_limit_up * p_nom
-      - expression: roll(p, snapshot=1) - p <= ramp_limit_down * p_nom
+    expression: p - roll(p, snapshot=1) <= ramp_limit_up * p_nom
+
+  ramp_down:
+    foreach: [snapshot, generator]
+    where: "snapshot > 0"
+    expression: roll(p, snapshot=1) - p <= ramp_limit_down * p_nom
 
   # Rung 3 needed two equations here: one seeding the first snapshot from
   # soc_initial, one rolling every other. Closing the cycle *removes* the
@@ -219,17 +221,15 @@ constraints:
   # what it does unguarded, and dropping the `where` is the whole change.
   energy_balance:
     foreach: [snapshot, storage]
-    equations:
-      - expression: >-
-          soc == roll(soc, snapshot=1) * (1 - standing_loss)
-          + p_store * efficiency_store
-          - p_dispatch / efficiency_dispatch
+    expression: >-
+      soc == roll(soc, snapshot=1) * (1 - standing_loss)
+      + p_store * efficiency_store
+      - p_dispatch / efficiency_dispatch
 
 objectives:
   total_cost:
     sense: minimize
-    equations:
-      - expression: p * marginal_cost
+    expression: p * marginal_cost
 ```
 
 ## Side by side

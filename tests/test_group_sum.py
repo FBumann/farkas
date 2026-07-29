@@ -198,13 +198,11 @@ variables:
 constraints:
   meet:
     foreach: [g]
-    equations:
-      - expression: group_sum(x, over=item, by=grp) >= target
+    expression: group_sum(x, over=item, by=grp) >= target
 objectives:
   obj:
     sense: minimize
-    equations:
-      - expression: sum(x, over=item)
+    expression: sum(x, over=item)
 """
 
 
@@ -261,10 +259,10 @@ BROADCAST_GROUP_SUM = {
     'constraints': {
         'cap': {
             'foreach': ['snapshot', 'bus'],
-            'equations': [{'expression': 'group_sum(x * w, over=generator, by=bus) <= limit'}],
+            'expression': 'group_sum(x * w, over=generator, by=bus) <= limit',
         }
     },
-    'objectives': {'o': {'sense': 'maximize', 'equations': [{'expression': 'x'}]}},
+    'objectives': {'o': {'sense': 'maximize', 'expression': 'x'}},
 }
 
 #: g1 and g2 share a bus, so grouping merges two rows carrying the *same*
@@ -308,7 +306,7 @@ def test_group_sum_over_a_foreach_dim_needs_no_such_collapse():
         BROADCAST_GROUP_SUM,
         **{
             'variables.x.foreach': ['snapshot', 'generator'],
-            'constraints.cap.equations': [{'expression': 'group_sum(x * w, over=generator, by=bus) <= limit'}],
+            'constraints.cap.expression': 'group_sum(x * w, over=generator, by=bus) <= limit',
         },
     )
     sources = dict(
@@ -334,8 +332,8 @@ BROADCAST_OBJECTIVE = {
     'dimensions': {'snapshot': {'dtype': 'int', 'values': [0, 1, 2, 3]}, 'bus': {'dtype': 'str'}},
     'parameters': {'w': {'dims': ['snapshot']}, 'floor': {'dims': ['bus']}},
     'variables': {'y': {'foreach': ['bus'], 'bounds': {'lower': 0, 'upper': 100}}},
-    'constraints': {'atleast': {'foreach': ['bus'], 'equations': [{'expression': 'y >= floor'}]}},
-    'objectives': {'c': {'sense': 'minimize', 'equations': [{'expression': 'y * w'}]}},
+    'constraints': {'atleast': {'foreach': ['bus'], 'expression': 'y >= floor'}},
+    'objectives': {'c': {'sense': 'minimize', 'expression': 'y * w'}},
 }
 
 BROADCAST_OBJECTIVE_SOURCES = {
@@ -384,7 +382,7 @@ def test_an_objective_whose_dims_are_all_the_variables_own_still_skips_it():
     merely *has* dims would be sound and would re-enable the aggregate on every
     model in `bench/`, which is the whole optimisation (#161).
     """
-    model = override(BROADCAST_OBJECTIVE, **{'objectives.c.equations': [{'expression': 'y * floor'}]})
+    model = override(BROADCAST_OBJECTIVE, **{'objectives.c.expression': 'y * floor'})
     with fk.build(model, BROADCAST_OBJECTIVE_SOURCES) as ex:
         obj = ex._tables().obj.sort('col')
         assert obj.height == 3

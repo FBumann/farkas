@@ -264,8 +264,8 @@ SCALAR_MODEL = {
     'dimensions': {'i': {'dtype': 'int', 'values': [0, 1]}},
     'parameters': {'s': {'dims': []}},
     'variables': {'x': {'foreach': ['i'], 'bounds': {'lower': 0, 'upper': 's'}}},
-    'constraints': {'floor': {'foreach': ['i'], 'equations': [{'expression': 'x >= 1'}]}},
-    'objectives': {'total': {'sense': 'minimize', 'equations': [{'expression': 'sum(x * s, over=i)'}]}},
+    'constraints': {'floor': {'foreach': ['i'], 'expression': 'x >= 1'}},
+    'objectives': {'total': {'sense': 'minimize', 'expression': 'sum(x * s, over=i)'}},
 }
 
 
@@ -330,8 +330,8 @@ def test_an_awkward_path_is_a_value_not_syntax(tmp_path):
         'dimensions': {'snapshot': {'dtype': 'int'}},
         'parameters': {'load': {'dims': ['snapshot']}},
         'variables': {'p': {'foreach': ['snapshot'], 'bounds': {'lower': 0}}},
-        'constraints': {'meet': {'foreach': ['snapshot'], 'equations': [{'expression': 'p >= load'}]}},
-        'objectives': {'c': {'sense': 'minimize', 'equations': [{'expression': 'sum(p, over=snapshot)'}]}},
+        'constraints': {'meet': {'foreach': ['snapshot'], 'expression': 'p >= load'}},
+        'objectives': {'c': {'sense': 'minimize', 'expression': 'sum(p, over=snapshot)'}},
     }
     sources = {'load': str(odd / 'load.parquet'), 'snapshot': str(odd / 'index.parquet')}
 
@@ -353,8 +353,8 @@ def test_a_variable_appearing_twice_in_a_row_is_summed_not_duplicated():
         'dimensions': {'i': {'dtype': 'int', 'values': [0, 1]}},
         'parameters': {'rhs': {'dims': ['i']}},
         'variables': {'x': {'foreach': ['i'], 'bounds': {'lower': 0}}},
-        'constraints': {'c': {'foreach': ['i'], 'equations': [{'expression': 'x + 2 * x >= rhs'}]}},
-        'objectives': {'o': {'sense': 'minimize', 'equations': [{'expression': 'sum(x, over=i)'}]}},
+        'constraints': {'c': {'foreach': ['i'], 'expression': 'x + 2 * x >= rhs'}},
+        'objectives': {'o': {'sense': 'minimize', 'expression': 'sum(x, over=i)'}},
     }
     sources = {'rhs': pl.DataFrame({'i': [0, 1], 'value': [6.0, 9.0]})}
     with fk.build(model, sources) as ex:
@@ -395,13 +395,13 @@ def test_a_factored_mask_labels_exactly_like_the_counted_path():
         'constraints': {
             'balance': {
                 'foreach': ['snapshot', 'node'],
-                'equations': [{'expression': 'sum(p, over=tech) >= load'}],
+                'expression': 'sum(p, over=tech) >= load',
             }
         },
         'objectives': {
             'o': {
                 'sense': 'minimize',
-                'equations': [{'expression': 'sum(sum(sum(p, over=tech), over=node), over=snapshot)'}],
+                'expression': 'sum(sum(sum(p, over=tech), over=node), over=snapshot)',
             }
         },
     }
@@ -446,8 +446,8 @@ def test_a_dictionary_encoded_source_column_binds_like_a_plain_one():
         'dimensions': {'node': {'dtype': 'str', 'values': ['a', 'b']}},
         'parameters': {'cap': {'dims': ['node']}},
         'variables': {'x': {'foreach': ['node'], 'bounds': {'lower': 0, 'upper': 'cap'}}},
-        'constraints': {'c': {'foreach': ['node'], 'equations': [{'expression': 'x >= cap'}]}},
-        'objectives': {'o': {'sense': 'minimize', 'equations': [{'expression': 'sum(x, over=node)'}]}},
+        'constraints': {'c': {'foreach': ['node'], 'expression': 'x >= cap'}},
+        'objectives': {'o': {'sense': 'minimize', 'expression': 'sum(x, over=node)'}},
     }
     encoded = pl.DataFrame({'node': ['a', 'b'], 'value': [3.0, 4.0]}).with_columns(pl.col('node').cast(pl.Categorical))
     plain = pl.DataFrame({'node': ['a', 'b'], 'value': [3.0, 4.0]})
@@ -467,8 +467,8 @@ def test_an_objective_naming_a_variable_twice_sums_its_coefficients():
         'dimensions': {'i': {'dtype': 'int', 'values': [0]}},
         'parameters': {'lb': {'dims': ['i']}},
         'variables': {'x': {'foreach': ['i'], 'bounds': {'lower': 'lb'}}},
-        'constraints': {'c': {'foreach': ['i'], 'equations': [{'expression': 'x >= lb'}]}},
-        'objectives': {'o': {'sense': 'minimize', 'equations': [{'expression': 'x + 4 * x'}]}},
+        'constraints': {'c': {'foreach': ['i'], 'expression': 'x >= lb'}},
+        'objectives': {'o': {'sense': 'minimize', 'expression': 'x + 4 * x'}},
     }
     with fk.build(model, {'lb': pl.DataFrame({'i': [0], 'value': [2.0]})}) as ex:
         assert ex._tables().obj.height == 1
@@ -520,17 +520,17 @@ def test_the_matrix_aggregate_runs_on_what_repeats_and_not_on_what_might():
             'x': {'foreach': ['i'], 'bounds': {'lower': 0}},
             'y': {'foreach': ['i'], 'bounds': {'lower': 0}},
         },
-        'objectives': {'o': {'sense': 'minimize', 'equations': [{'expression': 'sum(x, over=i) + sum(y, over=i)'}]}},
+        'objectives': {'o': {'sense': 'minimize', 'expression': 'sum(x, over=i) + sum(y, over=i)'}},
     }
     sources = {'rhs': pl.DataFrame({'i': [0, 1], 'value': [4.0, 6.0]})}
 
-    disjoint = dict(base, constraints={'c': {'foreach': ['i'], 'equations': [{'expression': 'x + y >= rhs'}]}})
+    disjoint = dict(base, constraints={'c': {'foreach': ['i'], 'expression': 'x + y >= rhs'}})
     with fk.build(disjoint, sources) as ex:
         matrix = ex._tables().matrix
         assert matrix.height == 4, 'two variables per row, nothing to collapse'
         assert matrix['coeff'].to_list() == [1.0, 1.0, 1.0, 1.0]
 
-    overlapping = dict(base, constraints={'c': {'foreach': ['i'], 'equations': [{'expression': 'x + 3 * x >= rhs'}]}})
+    overlapping = dict(base, constraints={'c': {'foreach': ['i'], 'expression': 'x + 3 * x >= rhs'}})
     with fk.build(overlapping, sources) as ex:
         matrix = ex._tables().matrix
         assert matrix.height == 2, 'one cell per row after the collapse'
@@ -543,19 +543,15 @@ def test_the_objective_skips_the_aggregate_only_when_a_column_cannot_repeat():
         'dimensions': {'i': {'dtype': 'int', 'values': [0, 1]}},
         'parameters': {'cost': {'dims': ['i']}, 'lb': {'dims': ['i']}},
         'variables': {'p': {'foreach': ['i'], 'bounds': {'lower': 'lb'}}},
-        'constraints': {'c': {'foreach': ['i'], 'equations': [{'expression': 'p >= lb'}]}},
+        'constraints': {'c': {'foreach': ['i'], 'expression': 'p >= lb'}},
     }
     sources = {
         'cost': pl.DataFrame({'i': [0, 1], 'value': [2.0, 3.0]}),
         'lb': pl.DataFrame({'i': [0, 1], 'value': [1.0, 1.0]}),
     }
-    once = lower_program(
-        MathSchema(**dict(base, objectives={'o': {'sense': 'minimize', 'equations': [{'expression': 'p * cost'}]}}))
-    )
+    once = lower_program(MathSchema(**dict(base, objectives={'o': {'sense': 'minimize', 'expression': 'p * cost'}})))
     twice = lower_program(
-        MathSchema(
-            **dict(base, objectives={'o': {'sense': 'minimize', 'equations': [{'expression': 'p * cost + p * cost'}]}})
-        )
+        MathSchema(**dict(base, objectives={'o': {'sense': 'minimize', 'expression': 'p * cost + p * cost'}}))
     )
 
     assert _objective_of(once, sources) == ({0: 2.0, 1: 3.0}, 2)
@@ -579,8 +575,8 @@ def test_the_objective_keeps_the_aggregate_when_a_reduction_hides_extra_rows():
         'dimensions': {'snapshot': {'dtype': 'int', 'values': [0, 1]}, 'generator': {'values': ['g0', 'g1', 'g2']}},
         'parameters': {'price': {'dims': ['snapshot', 'generator']}, 'load': {'dims': ['snapshot']}},
         'variables': {'q': {'foreach': ['snapshot'], 'bounds': {'lower': 0, 'upper': 10}}},
-        'constraints': {'floor': {'foreach': ['snapshot'], 'equations': [{'expression': 'q >= load'}]}},
-        'objectives': {'o': {'sense': 'minimize', 'equations': [{'expression': 'sum(q * price, over=generator)'}]}},
+        'constraints': {'floor': {'foreach': ['snapshot'], 'expression': 'q >= load'}},
+        'objectives': {'o': {'sense': 'minimize', 'expression': 'sum(q * price, over=generator)'}},
     }
     sources = {
         'price': pl.DataFrame(
@@ -674,8 +670,8 @@ SPARSE_COEFFICIENT_MODEL = {
     'dimensions': {'t': {'dtype': 'int', 'values': [0, 1, 2]}},
     'parameters': {'c': {'dims': ['t']}, 'w': {'dims': ['t']}},
     'variables': {'x': {'foreach': ['t'], 'bounds': {'lower': 0, 'upper': 10}}},
-    'constraints': {'cap': {'foreach': ['t'], 'equations': [{'expression': 'w * x <= c'}]}},
-    'objectives': {'o': {'sense': 'maximize', 'equations': [{'expression': 'sum(x, over=t)'}]}},
+    'constraints': {'cap': {'foreach': ['t'], 'expression': 'w * x <= c'}},
+    'objectives': {'o': {'sense': 'maximize', 'expression': 'sum(x, over=t)'}},
 }
 
 
@@ -716,8 +712,8 @@ ABSENT_VARIABLE_MODEL = {
         'x': {'foreach': ['f'], 'bounds': {'lower': 0, 'upper': 100}},
         'size': {'foreach': ['f'], 'where': 'gate', 'bounds': {'lower': 0, 'upper': 50}},
     },
-    'constraints': {'envelope': {'foreach': ['f'], 'equations': [{'expression': 'x - relmax * size <= 0'}]}},
-    'objectives': {'total': {'sense': 'maximize', 'equations': [{'expression': 'sum(x * cost, over=f)'}]}},
+    'constraints': {'envelope': {'foreach': ['f'], 'expression': 'x - relmax * size <= 0'}},
+    'objectives': {'total': {'sense': 'maximize', 'expression': 'sum(x * cost, over=f)'}},
 }
 
 
@@ -757,15 +753,11 @@ DEFINED_MODEL = {
         'size': {'foreach': ['f'], 'where': 'gate', 'bounds': {'lower': 0, 'upper': 50}},
     },
     'constraints': {
-        'envelope': {
-            'foreach': ['f'],
-            'equations': [
-                {'expression': 'x - relmax * size <= 0', 'where': 'size'},
-                {'expression': 'x <= 0', 'where': 'NOT size'},
-            ],
-        }
+        # one rule per block, so the two regimes are two named constraints
+        'envelope_sized': {'foreach': ['f'], 'where': 'size', 'expression': 'x - relmax * size <= 0'},
+        'envelope_unsized': {'foreach': ['f'], 'where': 'NOT size', 'expression': 'x <= 0'},
     },
-    'objectives': {'total': {'sense': 'maximize', 'equations': [{'expression': 'sum(x * cost, over=f)'}]}},
+    'objectives': {'total': {'sense': 'maximize', 'expression': 'sum(x * cost, over=f)'}},
 }
 
 
@@ -800,8 +792,8 @@ ABSENT_COEFFICIENT_MODEL = {
         'x': {'foreach': ['f'], 'bounds': {'lower': 0, 'upper': 100}},
         'size': {'foreach': ['f'], 'bounds': {'lower': 0, 'upper': 50}},
     },
-    'constraints': {'envelope': {'foreach': ['f'], 'equations': [{'expression': 'x - relmax * size <= 0'}]}},
-    'objectives': {'total': {'sense': 'maximize', 'equations': [{'expression': 'sum(x * cost, over=f)'}]}},
+    'constraints': {'envelope': {'foreach': ['f'], 'expression': 'x - relmax * size <= 0'}},
+    'objectives': {'total': {'sense': 'maximize', 'expression': 'sum(x * cost, over=f)'}},
 }
 
 
@@ -838,8 +830,8 @@ def _reindexed_parameter_model(op: str) -> dict:
         'dimensions': {'t': {'dtype': 'int', 'values': [0, 1, 2]}},
         'parameters': {'dt': {'dims': ['t']}},
         'variables': {'x': {'foreach': ['t'], 'bounds': {'lower': 0, 'upper': 100}}},
-        'constraints': {'r': {'foreach': ['t'], 'equations': [{'expression': f'x <= {op}'}]}},
-        'objectives': {'o': {'sense': 'maximize', 'equations': [{'expression': 'sum(x, over=t)'}]}},
+        'constraints': {'r': {'foreach': ['t'], 'expression': f'x <= {op}'}},
+        'objectives': {'o': {'sense': 'maximize', 'expression': 'sum(x, over=t)'}},
     }
 
 
@@ -898,8 +890,8 @@ PINNED_MODEL = {
         'rate': {'foreach': ['f'], 'bounds': {'lower': 0, 'upper': 1000}},
         'size': {'foreach': ['f'], 'bounds': {'lower': 'size_lb', 'upper': 'size_ub'}},
     },
-    'constraints': {'envelope': {'foreach': ['f'], 'equations': [{'expression': 'rate - relmax * size <= 0'}]}},
-    'objectives': {'total': {'sense': 'maximize', 'equations': [{'expression': 'sum(rate, over=f)'}]}},
+    'constraints': {'envelope': {'foreach': ['f'], 'expression': 'rate - relmax * size <= 0'}},
+    'objectives': {'total': {'sense': 'maximize', 'expression': 'sum(rate, over=f)'}},
 }
 
 

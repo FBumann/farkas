@@ -97,14 +97,12 @@ variables:
 constraints:
   meet_requirement:
     foreach: [nutrient]
-    equations:
-      - expression: sum(spend * nutrient_per_dollar, over=food) >= daily_minimum
+    expression: sum(spend * nutrient_per_dollar, over=food) >= daily_minimum
 
 objectives:
   total_cost:
     sense: minimize
-    equations:
-      - expression: spend
+    expression: spend
 ```
 
 Stigler's table is normalised **per dollar spent**, so a variable is *money on

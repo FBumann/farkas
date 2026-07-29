@@ -17,12 +17,9 @@ lanes accept the same language, and a rejection here is a language gap
 Semantics mirror the eager builder exactly:
 - a reduction over a dim the operand does not carry is an error, not a silent
   identity — ``dimensions.py`` owns that rule and this module asks it;
-- a single-equation constraint keeps the constraint name, multiple equations
-  get ``_{i}`` suffixes;
-- constraint-level and equation-level where strings are ANDed;
-- a file declares one objective with one ``equations:`` entry — validation
-  refuses the rest, so this module reads ``equations[0]`` knowing it is all
-  there is;
+- a constraint is **one rule** and carries its own name, so a row is read back
+  by the name the file writes — there is no positional suffix to guess (#298);
+- a file declares one objective, which is likewise one expression;
 - an objective sums each term over the dims that term carries, which is what
   term fragments do for free and what the eager lane has to distribute for
   (``builder._objective_expression``).
@@ -50,7 +47,6 @@ from farkas.expression_parser import (
 from farkas.helpers import BUILTIN_NAMES, call_shape_error, split_dimension_key
 from farkas.relational import plan
 from farkas.resolution import Namespace, expression_of, where_of
-from farkas.schema import equation_name
 from farkas.where_parser import (
     AndNode,
     BooleanLiteralNode,
@@ -101,36 +97,30 @@ def lower_program(schema: MathSchema) -> plan.Program:
 
     constraints = []
     for cname, cdef in schema.constraints.items():
-        c_where = _lower_where(cdef.where, ns, f"constraint '{cname}'")
-        n_eqs = len(cdef.equations)
-        for i, eq in enumerate(cdef.equations):
-            eq_name = equation_name(cname, i, n_eqs)
-            eq_where = _lower_where(eq.where, ns, f"constraint '{eq_name}'")
-            where = _and_preds(c_where, eq_where)
-
-            ast = expression_of(eq.expression, schema, ns, f"constraint '{eq_name}'")
-            if not isinstance(ast, ComparisonNode):
-                raise LanguageError(
-                    f"constraint '{eq_name}': expression must contain exactly one "
-                    f'comparison operator (<=, >=, ==). Got: {eq.expression!r}'
-                )
-            if ast.op not in _SENSES:
-                raise LanguageError(f"constraint '{eq_name}': unsupported sense '{ast.op}'")
-            constraints.append(
-                plan.ConstraintDeclaration(
-                    eq_name,
-                    tuple(cdef.foreach),
-                    lhs=_lower_expr(ast.left, schema, f"constraint '{eq_name}'"),
-                    sense=ast.op,
-                    rhs=_lower_expr(ast.right, schema, f"constraint '{eq_name}'"),
-                    where=where,
-                )
+        where = _lower_where(cdef.where, ns, f"constraint '{cname}'")
+        ast = expression_of(cdef.expression, schema, ns, f"constraint '{cname}'")
+        if not isinstance(ast, ComparisonNode):
+            raise LanguageError(
+                f"constraint '{cname}': expression must contain exactly one "
+                f'comparison operator (<=, >=, ==). Got: {cdef.expression!r}'
             )
+        if ast.op not in _SENSES:
+            raise LanguageError(f"constraint '{cname}': unsupported sense '{ast.op}'")
+        constraints.append(
+            plan.ConstraintDeclaration(
+                cname,
+                tuple(cdef.foreach),
+                lhs=_lower_expr(ast.left, schema, f"constraint '{cname}'"),
+                sense=ast.op,
+                rhs=_lower_expr(ast.right, schema, f"constraint '{cname}'"),
+                where=where,
+            )
+        )
 
     if not schema.objectives:
         raise LanguageError('the relational backend requires an objective')
     oname, odef = next(iter(schema.objectives.items()))
-    ast = expression_of(odef.equations[0].expression, schema, ns, f"objective '{oname}'")
+    ast = expression_of(odef.expression, schema, ns, f"objective '{oname}'")
     if isinstance(ast, ComparisonNode):
         raise LanguageError(f"objective '{oname}': expression must not contain a comparison operator")
     objective = plan.ObjectiveDeclaration(

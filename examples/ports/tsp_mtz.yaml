@@ -48,13 +48,11 @@ variables:
 constraints:
   leave_each_city_once:
     foreach: [from_city]
-    equations:
-      - expression: sum(travel, over=to_city) == 1
+    expression: sum(travel, over=to_city) == 1
 
   enter_each_city_once:
     foreach: [to_city]
-    equations:
-      - expression: sum(travel, over=from_city) == 1
+    expression: sum(travel, over=from_city) == 1
 
   # Miller-Tucker-Zemlin: if the tour goes i -> j then j is later than i, and
   # the big-M is slack enough to say nothing when it does not. Written for
@@ -68,15 +66,13 @@ constraints:
   ordering:
     foreach: [from_city, to_city]
     where: "from_city != c01 AND to_city != c01"
-    equations:
-      - expression: >-
-          group_sum(u, over=city, by=as_from)
-          - group_sum(u, over=city, by=as_to)
-          + n * travel
-          <= n - 1
+    expression: >-
+      group_sum(u, over=city, by=as_from)
+      - group_sum(u, over=city, by=as_to)
+      + n * travel
+      <= n - 1
 
 objectives:
   tour_length:
     sense: minimize
-    equations:
-      - expression: travel * distance
+    expression: travel * distance

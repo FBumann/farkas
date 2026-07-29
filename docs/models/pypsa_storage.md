@@ -70,19 +70,19 @@ $$\min \sum_{t \in \mathcal{T},\enspace g \in \mathcal{G}} p_{t,g} \cdot \mathit
 
 $$\sum_{g \in \mathcal{G} \thinspace:\thinspace \mathrm{bus}(g) = b} p_{t,g} + \sum_{l \in \mathcal{L} \thinspace:\thinspace \mathrm{to}(l) = b} f_{t,l} - \left( \sum_{l \in \mathcal{L} \thinspace:\thinspace \mathrm{from}(l) = b} f_{t,l} \right) + \sum_{s \in \mathcal{S} \thinspace:\thinspace \mathrm{bus}(s) = b} p^{\mathrm{dispatch}}_{t,s} - \left( \sum_{s \in \mathcal{S} \thinspace:\thinspace \mathrm{bus}(s) = b} p^{\mathrm{store}}_{t,s} \right) = \mathit{load}_{t,b} \qquad \forall\thinspace t \in \mathcal{T},\enspace b \in \mathcal{B}$$
 
-**`ramp_0`**
+**`ramp_up`**
 
 $$p_{t,g} - p_{t \ominus 1,g} \le \mathit{ramp\_limit\_up}_{g} \cdot p^{\mathrm{nom}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t > 0$$
 
-**`ramp_1`**
+**`ramp_down`**
 
 $$p_{t \ominus 1,g} - p_{t,g} \le \mathit{ramp\_limit\_down}_{g} \cdot p^{\mathrm{nom}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t > 0$$
 
-**`energy_balance_0`**
+**`energy_balance_initial`**
 
 $$\mathit{soc}_{t,s} = \mathit{soc}^{\mathrm{initial}}_{s} + p^{\mathrm{store}}_{t,s} \cdot \mathit{efficiency\_store}_{s} - \frac{p^{\mathrm{dispatch}}_{t,s}}{\mathit{efficiency\_dispatch}_{s}} \qquad \forall\thinspace t \in \mathcal{T},\enspace s \in \mathcal{S} \thinspace:\thinspace t = 0$$
 
-**`energy_balance_1`**
+**`energy_balance`**
 
 $$\mathit{soc}_{t,s} = \mathit{soc}_{t \ominus 1,s} \cdot \left( 1 - \mathit{standing\_loss}_{s} \right) + p^{\mathrm{store}}_{t,s} \cdot \mathit{efficiency\_store}_{s} - \frac{p^{\mathrm{dispatch}}_{t,s}}{\mathit{efficiency\_dispatch}_{s}} \qquad \forall\thinspace t \in \mathcal{T},\enspace s \in \mathcal{S} \thinspace:\thinspace t > 0$$
 
@@ -193,46 +193,49 @@ variables:
 constraints:
   nodal_balance:
     foreach: [snapshot, bus]
-    equations:
-      - expression: >-
-          group_sum(p, over=generator, by=bus)
-          + group_sum(f, over=link, by=to)
-          - group_sum(f, over=link, by=from)
-          + group_sum(p_dispatch, over=storage, by=bus)
-          - group_sum(p_store, over=storage, by=bus)
-          == load
+    expression: >-
+      group_sum(p, over=generator, by=bus)
+      + group_sum(f, over=link, by=to)
+      - group_sum(f, over=link, by=from)
+      + group_sum(p_dispatch, over=storage, by=bus)
+      - group_sum(p_store, over=storage, by=bus)
+      == load
 
-  ramp:
+  ramp_up:
     foreach: [snapshot, generator]
     where: "snapshot > 0"
-    equations:
-      - expression: p - roll(p, snapshot=1) <= ramp_limit_up * p_nom
-      - expression: roll(p, snapshot=1) - p <= ramp_limit_down * p_nom
+    expression: p - roll(p, snapshot=1) <= ramp_limit_up * p_nom
+
+  ramp_down:
+    foreach: [snapshot, generator]
+    where: "snapshot > 0"
+    expression: roll(p, snapshot=1) - p <= ramp_limit_down * p_nom
 
   # Charging is derated on the way in and discharging on the way out, so the
   # two efficiencies enter on opposite sides of the division. `standing_loss`
   # decays only what was *carried over* — PyPSA does not apply it to
   # soc_initial, which is why the first snapshot is its own equation rather
   # than a `roll` with a seeded value.
+  energy_balance_initial:
+    foreach: [snapshot, storage]
+    where: "snapshot == 0"
+    expression: >-
+      soc == soc_initial
+      + p_store * efficiency_store
+      - p_dispatch / efficiency_dispatch
+
   energy_balance:
     foreach: [snapshot, storage]
-    equations:
-      - expression: >-
-          soc == soc_initial
-          + p_store * efficiency_store
-          - p_dispatch / efficiency_dispatch
-        where: "snapshot == 0"
-      - expression: >-
-          soc == roll(soc, snapshot=1) * (1 - standing_loss)
-          + p_store * efficiency_store
-          - p_dispatch / efficiency_dispatch
-        where: "snapshot > 0"
+    where: "snapshot > 0"
+    expression: >-
+      soc == roll(soc, snapshot=1) * (1 - standing_loss)
+      + p_store * efficiency_store
+      - p_dispatch / efficiency_dispatch
 
 objectives:
   total_cost:
     sense: minimize
-    equations:
-      - expression: p * marginal_cost
+    expression: p * marginal_cost
 ```
 
 **Two efficiencies, on opposite sides of the division.** PyPSA splits a storage

@@ -43,10 +43,10 @@ DISPATCH = {
     'constraints': {
         'power_balance': {
             'foreach': ['snapshot'],
-            'equations': [{'expression': 'sum(p, over=generator) == load'}],
+            'expression': 'sum(p, over=generator) == load',
         }
     },
-    'objectives': {'total_cost': {'sense': 'minimize', 'equations': [{'expression': 'p * cost'}]}},
+    'objectives': {'total_cost': {'sense': 'minimize', 'expression': 'p * cost'}},
 }
 
 
@@ -90,7 +90,7 @@ def test_a_dimension_index_never_steals_a_letter_a_variable_owns(fmt: Format):
         'dimensions': {'plant': {'dtype': 'str'}, 'snapshot': {'dtype': 'int'}},
         'parameters': {'cost': {'dims': ['plant']}},
         'variables': {'p': {'foreach': ['snapshot', 'plant'], 'bounds': {'lower': 0}}},
-        'objectives': {'o': {'equations': [{'expression': 'p * cost'}]}},
+        'objectives': {'o': {'expression': 'p * cost'}},
     }
     text = typeset(model, fmt)
     assert fmt.subscript('p', ['t', 'p']) not in text
@@ -128,7 +128,7 @@ def test_translation_distinguishes_roll_from_shift(fmt: Format):
             'constraints': {
                 'balance': {
                     'foreach': ['snapshot'],
-                    'equations': [{'expression': f'soc == {helper}(soc, snapshot=1) + load'}],
+                    'expression': f'soc == {helper}(soc, snapshot=1) + load',
                 }
             },
         }
@@ -143,7 +143,7 @@ def test_the_legend_explains_wraparound_only_when_it_is_used(fmt: Format):
     rolled = {
         'dimensions': {'snapshot': {'dtype': 'int'}},
         'variables': {'soc': {'foreach': ['snapshot'], 'bounds': {'lower': 0}}},
-        'constraints': {'b': {'foreach': ['snapshot'], 'equations': [{'expression': 'soc == roll(soc, snapshot=1)'}]}},
+        'constraints': {'b': {'foreach': ['snapshot'], 'expression': 'soc == roll(soc, snapshot=1)'}},
     }
     assert 'cyclic translation' in typeset(rolled, fmt)
     assert 'cyclic translation' not in typeset(DISPATCH, fmt)
@@ -155,14 +155,14 @@ def test_macros_and_named_expressions_are_expanded_away(fmt: Format):
     model = {
         **DISPATCH,
         'expressions': {'supply': 'sum(p, over=generator)'},
-        'constraints': {'power_balance': {'foreach': ['snapshot'], 'equations': [{'expression': 'supply == load'}]}},
+        'constraints': {'power_balance': {'foreach': ['snapshot'], 'expression': 'supply == load'}},
     }
     assert 'supply' not in typeset(model, fmt, legend=False)
 
 
 @EVERY_FORMAT
 def test_an_invalid_model_fails_the_same_way_check_does(fmt: Format):
-    broken = {**DISPATCH, 'objectives': {'total_cost': {'equations': [{'expression': 'p * nonexistent'}]}}}
+    broken = {**DISPATCH, 'objectives': {'total_cost': {'expression': 'p * nonexistent'}}}
     with pytest.raises(fk.LinopyYamlError):
         typeset(broken, fmt)
 
@@ -281,7 +281,7 @@ def test_latex_a_sum_used_as_a_factor_is_bracketed():
         'constraints': {
             'power_balance': {
                 'foreach': ['snapshot'],
-                'equations': [{'expression': 'sum(p, over=generator) * 2 == load'}],
+                'expression': 'sum(p, over=generator) * 2 == load',
             }
         },
     }
@@ -518,7 +518,7 @@ def _with_marginal_cost() -> dict[str, object]:
     return {
         **DISPATCH,
         'parameters': {**DISPATCH['parameters'], 'marginal_cost': {'dims': ['generator']}},
-        'objectives': {'total_cost': {'equations': [{'expression': 'p * marginal_cost'}]}},
+        'objectives': {'total_cost': {'expression': 'p * marginal_cost'}},
     }
 
 

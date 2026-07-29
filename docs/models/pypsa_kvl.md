@@ -135,12 +135,11 @@ variables:
 constraints:
   nodal_balance:
     foreach: [snapshot, bus]
-    equations:
-      - expression: >-
-          group_sum(p, over=generator, by=bus)
-          + group_sum(f, over=line, by=to)
-          - group_sum(f, over=line, by=from)
-          == load
+    expression: >-
+      group_sum(p, over=generator, by=bus)
+      + group_sum(f, over=line, by=to)
+      - group_sum(f, over=line, by=from)
+      == load
 
   # Kirchhoff's voltage law: around each independent cycle, the
   # reactance-weighted flows sum to zero. The incidence table carries both
@@ -148,14 +147,12 @@ constraints:
   # equation rather than a case analysis over the topology.
   kirchhoff_voltage_law:
     foreach: [snapshot, cycle]
-    equations:
-      - expression: sum(f * cycle_incidence, over=line) == 0
+    expression: sum(f * cycle_incidence, over=line) == 0
 
 objectives:
   total_cost:
     sense: minimize
-    equations:
-      - expression: p * marginal_cost
+    expression: p * marginal_cost
 ```
 
 **The cycle basis is a parameter, not a coordinate.** This is the one shape

@@ -93,21 +93,18 @@ variables:
 constraints:
   within_capacity:
     foreach: [plant]
-    equations:
-      - expression: sum(shipment, over=market) <= capacity
+    expression: sum(shipment, over=market) <= capacity
   meet_demand:
     foreach: [market]
-    equations:
-      - expression: sum(shipment, over=plant) >= demand
+    expression: sum(shipment, over=plant) >= demand
 
 objectives:
   total_cost:
     sense: minimize
-    equations:
-      # c(i,j) = f * d(i,j) / 1000 in the source, kept as arithmetic here
-      # rather than precomputed, so the file states the model and not a
-      # derived table.
-      - expression: shipment * distance * freight / 1000
+  # c(i,j) = f * d(i,j) / 1000 in the source, kept as arithmetic here
+  # rather than precomputed, so the file states the model and not a
+  # derived table.
+    expression: shipment * distance * freight / 1000
 ```
 
 ## Side by side

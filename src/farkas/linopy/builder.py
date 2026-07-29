@@ -34,7 +34,6 @@ from farkas.helpers import unknown_helper_message
 from farkas.linopy import semantics
 from farkas.linopy.loader import check_divisors_cover
 from farkas.resolution import Namespace, expression_of, where_of
-from farkas.schema import equation_name
 from farkas.where_parser import (
     AndNode,
     BooleanLiteralNode,
@@ -212,34 +211,20 @@ def _build_constraints(ctx: EvaluationContext) -> None:
     for cname, cdef in ctx.schema.constraints.items():
         with note(f"while building constraint '{cname}'"):
             c_where = where_of(cdef.where, ctx.ns, f"constraint '{cname}'")
-            constraint_mask = evaluate_where(c_where, ctx.dataset, ctx.master_coords, ctx.model)
+            mask = evaluate_where(c_where, ctx.dataset, ctx.master_coords, ctx.model)
 
-            n_eqs = len(cdef.equations)
+            ast = expression_of(cdef.expression, ctx.schema, ctx.ns, f"constraint '{cname}'")
+            if not isinstance(ast, ComparisonNode):
+                msg = f'expression must contain exactly one comparison operator (<=, >=, ==).\nGot: {cdef.expression!r}'
+                raise LanguageError(msg)
 
-            for i, eq in enumerate(cdef.equations):
-                eq_name = equation_name(cname, i, n_eqs)
-                # Per-equation where mask (ANDed with constraint mask)
-                eq_where = where_of(eq.where, ctx.ns, f"constraint '{eq_name}'")
-                eq_mask = evaluate_where(eq_where, ctx.dataset, ctx.master_coords, ctx.model)
-                mask = constraint_mask & eq_mask
+            check_divisors_cover(f"constraint '{cname}'", ast, ctx.schema, ctx.dataset, mask, ctx.model)
 
-                ast = expression_of(eq.expression, ctx.schema, ctx.ns, f"constraint '{eq_name}'")
-                if not isinstance(ast, ComparisonNode):
-                    msg = (
-                        f'Equation {i}: expression must contain exactly one '
-                        f'comparison operator (<=, >=, ==).\n'
-                        f'Got: {eq.expression!r}'
-                    )
-                    raise LanguageError(msg)
+            lhs = _eval_ast(ast.left, ctx)
+            rhs = _eval_ast(ast.right, ctx)
+            sign = _SIGN_MAP[ast.op]
 
-                check_divisors_cover(f"constraint '{eq_name}'", ast, ctx.schema, ctx.dataset, mask, ctx.model)
-
-                # Evaluate both sides
-                lhs = _eval_ast(ast.left, ctx)
-                rhs = _eval_ast(ast.right, ctx)
-                sign = _SIGN_MAP[ast.op]
-
-                ctx.model.add_constraints(lhs, sign, rhs, name=eq_name, mask=_as_linopy_mask(mask))
+            ctx.model.add_constraints(lhs, sign, rhs, name=cname, mask=_as_linopy_mask(mask))
 
 
 # ---------------------------------------------------------------------------
@@ -250,11 +235,10 @@ def _build_constraints(ctx: EvaluationContext) -> None:
 def _build_objectives(ctx: EvaluationContext) -> None:
     for oname, odef in ctx.schema.objectives.items():
         with note(f"while building objective '{oname}'"):
-            eq = odef.equations[0]
-            ast = expression_of(eq.expression, ctx.schema, ctx.ns, f"objective '{oname}'")
+            ast = expression_of(odef.expression, ctx.schema, ctx.ns, f"objective '{oname}'")
 
             if isinstance(ast, ComparisonNode):
-                msg = f'Expression must not contain a comparison operator. Got: {eq.expression!r}'
+                msg = f'Expression must not contain a comparison operator. Got: {odef.expression!r}'
                 raise LanguageError(msg)
 
             expr = _objective_expression(ast, ctx)

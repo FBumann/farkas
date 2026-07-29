@@ -52,22 +52,22 @@ constraints:
       - expression: "sum(p, over=unit) + sum(discharge, over=unit) + sum(import_, over=unit) == demand"
   ramp_up:
     foreach: [snapshot, unit]
-    equations: [{expression: "p_up <= p_max"}]
+    expression: "p_up <= p_max"
   ramp_down:
     foreach: [snapshot, unit]
-    equations: [{expression: "p_down <= p_max"}]
+    expression: "p_down <= p_max"
   reserve:
     foreach: [snapshot, unit]
-    equations: [{expression: "reserve_up + reserve_down <= p_max"}]
+    expression: "reserve_up + reserve_down <= p_max"
   storage:
     foreach: [snapshot, unit]
-    equations: [{expression: "soc + charge - discharge <= p_max"}]
+    expression: "soc + charge - discharge <= p_max"
   spillage:
     foreach: [snapshot, unit]
-    equations: [{expression: "spill + curtail <= p_max"}]
+    expression: "spill + curtail <= p_max"
   exchange:
     foreach: [snapshot, unit]
-    equations: [{expression: "import_ + export_ <= p_max"}]
+    expression: "import_ + export_ <= p_max"
 
 objectives:
   total:

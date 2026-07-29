@@ -176,18 +176,15 @@ piecewise:
 constraints:
   within_capacity:
     foreach: [plant]
-    equations:
-      - expression: sum(shipment, over=market) <= capacity
+    expression: sum(shipment, over=market) <= capacity
   meet_demand:
     foreach: [market]
-    equations:
-      - expression: sum(shipment, over=plant) >= demand
+    expression: sum(shipment, over=plant) >= demand
 
 objectives:
   total_cost:
     sense: minimize
-    equations:
-      - expression: scaled * distance * freight / 1000
+    expression: scaled * distance * freight / 1000
 ```
 
 **`convex: true` would be wrong here, and quietly so.** `sqrt` is concave and

@@ -21,7 +21,7 @@ DISPATCH = Path('examples/dispatch.yaml')
 
 
 def _objective(expression: str) -> dict:
-    return {'objectives.total_cost.equations': [{'expression': expression}]}
+    return {'objectives.total_cost.expression': expression}
 
 
 @pytest.mark.parametrize('path', [p for _, p in constructs.models()], ids=lambda p: p.name)
@@ -54,7 +54,7 @@ def test_inside_the_language(patch):
     ('patch', 'match'),
     [
         pytest.param(
-            {'constraints.power_balance.equations': [{'expression': 'sum(p ** 2, over=generator) == load'}]},
+            {'constraints.power_balance.expression': 'sum(p ** 2, over=generator) == load'},
             r"operator '\*\*'",
             id='power-operator',
         ),
@@ -75,7 +75,7 @@ def test_outside_the_language_is_a_load_error(patch, match):
 def test_an_unknown_helper_names_its_context_and_teaches_the_rewrite():
     """The message is the whole test: an error that pointed at another lane
     would be telling the user to leave the language rather than restate it."""
-    patch = {'constraints.power_balance.equations': [{'expression': 'my_helper(p, over=generator) == load'}]}
+    patch = {'constraints.power_balance.expression': 'my_helper(p, over=generator) == load'}
     with pytest.raises(LanguageError, match='my_helper') as exc:
         lower_program(schema_of(DISPATCH, **patch))
 

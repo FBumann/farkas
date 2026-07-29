@@ -53,18 +53,14 @@ _REFUSED = [
             'constraints': {
                 'cumulative': {
                     'foreach': ['snapshot'],
-                    'equations': [{'expression': 'cumsum(total_supply) <= load'}],
+                    'expression': 'cumsum(total_supply) <= load',
                 }
             }
         },
     ),
     (
         'variable x variable — above the degree-1 ceiling',
-        {
-            'objectives': {
-                'total_cost': {'sense': 'minimize', 'equations': [{'expression': 'sum(p * p, over=generator)'}]}
-            }
-        },
+        {'objectives': {'total_cost': {'sense': 'minimize', 'expression': 'sum(p * p, over=generator)'}}},
     ),
 ]
 
@@ -96,7 +92,7 @@ def main() -> None:
     # Hard rule 1: the core AST is the whole language. Everything above it is
     # pure substitution, which is why a macro costs nothing and cannot make
     # the two lanes disagree — neither lane ever sees one.
-    objective_text = schema.objectives['total_cost'].equations[0].expression
+    objective_text = schema.objectives['total_cost'].expression
     print(f'    written      {objective_text!r}')
     print(f'    parsed       {parse_expression(objective_text)}')
     print(f'    expanded     {parse_and_expand(objective_text, schema)}')
