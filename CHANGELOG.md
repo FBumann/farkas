@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.1-alpha.19](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.18...v0.0.1-alpha.19) (2026-07-29)
+
+
+### Bug Fixes
+
+* a divisor must be defined where the model divides by it ([#318](https://github.com/FBumann/farkas/issues/318)) ([d7ad809](https://github.com/FBumann/farkas/commit/d7ad80903362fa89a91625ec2d781e4dad0f7621))
+* **relational:** absence propagates into a reduction, and laws to hold it there ([#314](https://github.com/FBumann/farkas/issues/314)) ([f4bb63b](https://github.com/FBumann/farkas/commit/f4bb63b7584586d6f87c217216159d600847dc77))
+
 ## [0.0.1-alpha.18](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.17...v0.0.1-alpha.18) (2026-07-29)
 
 
