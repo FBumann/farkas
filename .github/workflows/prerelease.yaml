@@ -3,11 +3,13 @@ name: Prerelease
 # Cut an alpha/beta/rc from any branch. Tests, computes the next counter, pushes
 # the tag — publish.yaml takes it from there. See RELEASING.md.
 #
-# Pre-1.0 the defaults give a plain alpha stream: v0.0.0-alpha.1, -alpha.2, …
-# (dist versions 0.0.0a1, 0.0.0a2). No semantic promise, just a pinnable build.
+# Pre-1.0 the defaults give a plain alpha stream: v0.0.1-alpha.15, -alpha.16, …
+# (dist versions 0.0.1a15, 0.0.1a16). No semantic promise, just a pinnable build.
+# The base must match the stream release-please is on, or a cut from a branch
+# sorts *below* the last release from `main` and is not pinnable at all.
 #
 # release-please owns that stream on `main` (its config is in sticky `prerelease`
-# mode on purpose — the project stays on 0.0.0aN until someone edits it). This
+# mode on purpose — the project stays on 0.0.1aN until someone edits it). This
 # workflow is for the cases that cannot reach: a cut from a branch that is not
 # `main`, or a differently-named stream such as 0.2.0/rc. Running it on `main`
 # with the defaults steals a counter release-please is about to use. See RELEASING.md.
@@ -16,9 +18,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release this prerelease leads to, e.g. 0.2.0 (no leading v). 0.0.0 = the pre-1.0 alpha stream.'
+        description: 'Release this prerelease leads to, e.g. 0.2.0 (no leading v). 0.0.1 = the pre-1.0 alpha stream.'
         required: false
-        default: '0.0.0'
+        default: '0.0.1'
       channel:
         description: 'Prerelease channel'
         type: choice
