@@ -47,13 +47,13 @@ def make_schema(
         'constraints': {
             'balance': {
                 'foreach': ['snapshot'],
-                'equations': [{'expression': 'sum(p, over=generator) == load'}],
+                'expression': 'sum(p, over=generator) == load',
             }
         },
         'objectives': {
             'total': {
                 'sense': 'minimize',
-                'equations': [{'expression': 'sum(p * cost, over=generator)'}],
+                'expression': 'sum(p * cost, over=generator)',
             }
         },
     }
@@ -233,13 +233,11 @@ variables:
 constraints:
   balance:
     foreach: [snapshot]
-    equations:
-      - expression: total_generation == load
+    expression: total_generation == load
 objectives:
   total_cost:
     sense: minimize
-    equations:
-      - expression: weighted_sum(p, cost, over=generator)
+    expression: weighted_sum(p, cost, over=generator)
 """
 
 
@@ -268,7 +266,7 @@ def test_unknown_helper_rejected_at_load_time_with_the_rewrite():
         constraints={
             'c': {
                 'foreach': ['snapshot'],
-                'equations': [{'expression': 'my_python_helper(p) <= load'}],
+                'expression': 'my_python_helper(p) <= load',
             }
         }
     )

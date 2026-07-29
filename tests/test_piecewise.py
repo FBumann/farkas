@@ -58,14 +58,12 @@ piecewise:
 constraints:
   balance:
     foreach: [snapshot]
-    equations:
-      - expression: p == load
+    expression: p == load
 
 objectives:
   total:
     sense: minimize
-    equations:
-      - expression: sum(op_cost, over=snapshot)
+    expression: sum(op_cost, over=snapshot)
 """
 
 
@@ -99,14 +97,12 @@ piecewise:
 constraints:
   balance:
     foreach: [snapshot]
-    equations:
-      - expression: sum(p, over=generator) == load
+    expression: sum(p, over=generator) == load
 
 objectives:
   total:
     sense: minimize
-    equations:
-      - expression: sum(sum(op_cost, over=generator), over=snapshot)
+    expression: sum(sum(op_cost, over=generator), over=snapshot)
 """
 
 
@@ -199,14 +195,12 @@ piecewise:
 constraints:
   balance:
     foreach: [snapshot]
-    equations:
-      - expression: power == load
+    expression: power == load
 
 objectives:
   total:
     sense: minimize
-    equations:
-      - expression: sum(fuel, over=snapshot)
+    expression: sum(fuel, over=snapshot)
 """
 
 
@@ -261,18 +255,15 @@ piecewise:
 constraints:
   commit:
     foreach: [snapshot]
-    equations:
-      - expression: u == on_flag
+    expression: u == on_flag
   balance:
     foreach: [snapshot]
-    equations:
-      - expression: p == load * on_flag
+    expression: p == load * on_flag
 
 objectives:
   total:
     sense: minimize
-    equations:
-      - expression: sum(op_cost, over=snapshot)
+    expression: sum(op_cost, over=snapshot)
 """
 
 
@@ -356,7 +347,7 @@ def test_the_adjacency_row_survives_at_the_first_breakpoint(nonconvex_inputs):
     ``fill``: the escape hatch is only worth having if it reaches the model.
     """
     expanded = expand_piecewise(schema_of(NONCONVEX_YAML))
-    assert 'fill=0' in expanded.constraints['cost_curve_adjacency'].equations[0].expression
+    assert 'fill=0' in expanded.constraints['cost_curve_adjacency'].expression
 
     data, coords = nonconvex_inputs
     with differential(NONCONVEX_YAML, data, coords) as run:
@@ -393,7 +384,7 @@ def test_an_inline_expression_is_a_legal_link():
     raw = raw_of(NONCONVEX_YAML)
     raw['piecewise']['cost_curve']['links'][0] = ['p * 2', 'bp_x']
     expanded = expand_piecewise(schema_of(raw))
-    assert expanded.constraints['cost_curve_link0'].equations[0].expression.startswith('(p * 2) ==')
+    assert expanded.constraints['cost_curve_link0'].expression.startswith('(p * 2) ==')
 
 
 def test_a_link_naming_an_undeclared_parameter_is_refused():
@@ -544,18 +535,15 @@ variables:
 constraints:
   balance:
     foreach: [snapshot]
-    equations:
-      - expression: sum(p, over=generator) == load
+    expression: sum(p, over=generator) == load
   pwl:
     foreach: [snapshot, generator, segment]
-    equations:
-      - expression: gen_cost >= p * seg_slope + seg_intercept
+    expression: gen_cost >= p * seg_slope + seg_intercept
 
 objectives:
   total_cost:
     sense: minimize
-    equations:
-      - expression: sum(gen_cost, over=generator)
+    expression: sum(gen_cost, over=generator)
 """
 
 

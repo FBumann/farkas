@@ -37,10 +37,10 @@ BASE = {
     'constraints': {
         'balance': {
             'foreach': ['snapshot', 'bus'],
-            'equations': [{'expression': 'group_sum(p, over=generator, by=bus) == load'}],
+            'expression': 'group_sum(p, over=generator, by=bus) == load',
         }
     },
-    'objectives': {'total': {'sense': 'minimize', 'equations': [{'expression': 'sum(p * cost, over=generator)'}]}},
+    'objectives': {'total': {'sense': 'minimize', 'expression': 'sum(p * cost, over=generator)'}},
 }
 
 
@@ -135,7 +135,7 @@ def test_broadcast_is_legal_when_one_side_contains_the_other():
 def test_stray_dim_in_a_constraint_is_rejected():
     """The rule that matters most: a dim the foreach does not declare
     multiplies the rows this constraint builds."""
-    schema = _schema(**{'constraints.stray': {'foreach': ['snapshot'], 'equations': [{'expression': 'p <= p_max'}]}})
+    schema = _schema(**{'constraints.stray': {'foreach': ['snapshot'], 'expression': 'p <= p_max'}})
     with pytest.raises(DimensionError, match=r"carries dims \['generator'\] that are not in foreach"):
         check_schema(schema)
 
@@ -145,7 +145,7 @@ def test_foreach_dim_the_equation_never_uses_is_rejected():
         **{
             'constraints.unused': {
                 'foreach': ['snapshot', 'generator', 'bus'],
-                'equations': [{'expression': 'p <= p_max'}],
+                'expression': 'p <= p_max',
             }
         }
     )
@@ -178,9 +178,7 @@ def test_checking_needs_no_data():
     so `fk.check()` catches them in CI with no sources bound."""
     import farkas as fk
 
-    raw = override(
-        BASE, **{'constraints.stray': {'foreach': ['snapshot'], 'equations': [{'expression': 'p <= p_max'}]}}
-    )
+    raw = override(BASE, **{'constraints.stray': {'foreach': ['snapshot'], 'expression': 'p <= p_max'}})
     with pytest.raises(DimensionError):
         fk.check(raw)
 

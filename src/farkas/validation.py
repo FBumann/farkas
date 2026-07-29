@@ -122,20 +122,18 @@ def validate_expressions(
 
     for cname, cdef in schema.constraints.items():
         _check_where(cdef.where, ns, f"Constraint '{cname}'", errors)
-        for i, eq in enumerate(cdef.equations):
-            context = f"Constraint '{cname}', equation {i}"
-            _check_where(eq.where, ns, context, errors)
-            ast = _parse_expand(eq.expression, schema, context, errors)
-            if ast is None:
-                continue
+        context = f"Constraint '{cname}'"
+        _check_where(cdef.where, ns, context, errors)
+        ast = _parse_expand(cdef.expression, schema, context, errors)
+        if ast is not None:
             if not isinstance(ast, ComparisonNode):
                 errors.append(
                     f'{context}: expression must contain exactly one '
                     f'comparison operator (<=, >=, ==).\n'
-                    f'Got: {eq.expression!r}'
+                    f'Got: {cdef.expression!r}'
                 )
-                continue
-            resolve_expression(ast, ns, context, errors)
+            else:
+                resolve_expression(ast, ns, context, errors)
 
     if len(schema.objectives) > 1:
         names = ', '.join(repr(n) for n in schema.objectives)
@@ -146,23 +144,15 @@ def validate_expressions(
         )
 
     for oname, odef in schema.objectives.items():
-        if len(odef.equations) > 1:
-            errors.append(
-                f"Objective '{oname}': {len(odef.equations)} entries under 'equations:', "
-                f'and an objective is one expression — only the first would be used.\n'
-                f'Add the terms together in a single expression instead: '
-                f"'{odef.equations[0].expression} + {odef.equations[1].expression}'."
-            )
-        for i, eq in enumerate(odef.equations):
-            context = f"Objective '{oname}', equation {i}"
-            _check_where(eq.where, ns, context, errors)
-            ast = _parse_expand(eq.expression, schema, context, errors)
-            if ast is None:
-                continue
+        context = f"Objective '{oname}'"
+        ast = _parse_expand(odef.expression, schema, context, errors)
+        if ast is not None:
             if isinstance(ast, ComparisonNode):
-                errors.append(f'{context}: expression must not contain a comparison operator.\nGot: {eq.expression!r}')
-                continue
-            resolve_expression(ast, ns, context, errors)
+                errors.append(
+                    f'{context}: expression must not contain a comparison operator.\nGot: {odef.expression!r}'
+                )
+            else:
+                resolve_expression(ast, ns, context, errors)
 
     if errors:
         raise SchemaError('\n'.join(errors))

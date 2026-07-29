@@ -78,13 +78,11 @@ variables:
 constraints:
   power_balance:
     foreach: [snapshot]
-    equations:
-      - expression: sum(p, over=generator) == load
+    expression: sum(p, over=generator) == load
 objectives:
   total_cost:
     sense: minimize
-    equations:
-      - expression: p * cost
+    expression: p * cost
 ```
 <!--model-end-->
 
@@ -149,8 +147,7 @@ constraints:
   ramp_up:
     foreach: [snapshot, generator]
     where: "snapshot > 0 AND ramp_max"
-    equations:
-      - expression: p - roll(p, snapshot=1) <= ramp_max
+    expression: p - roll(p, snapshot=1) <= ramp_max
 ```
 
 [linopy](https://github.com/PyPSA/linopy) is not a runtime dependency — that shim

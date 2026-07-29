@@ -77,8 +77,7 @@ def test_extend_is_stateless(yaml_file):
         constraints:
           limit:
             foreach: [generator]
-            equations:
-              - expression: q <= cap
+            expression: q <= cap
         """,
         'first.yaml',
     )
@@ -93,8 +92,7 @@ def test_extend_is_stateless(yaml_file):
         constraints:
           limit2:
             foreach: [generator]
-            equations:
-              - expression: q <= cap
+            expression: q <= cap
         """,
         'second.yaml',
     )
@@ -148,8 +146,7 @@ def test_extend_falls_back_to_inferred_coords(yaml_file, model_with):
         constraints:
           limit:
             foreach: [generator]
-            equations:
-              - expression: p <= cap
+            expression: p <= cap
         """
     )
 
@@ -179,8 +176,7 @@ def test_extend_sees_existing_model_variables(yaml_file, model_with):
         constraints:
           cap:
             foreach: [g]
-            equations:
-              - expression: p <= 100
+            expression: p <= 100
         """
     farkas_linopy.extend(model_with(p=('g', ['wind', 'solar'])), yaml_file(text))
 
@@ -347,14 +343,14 @@ def _has_note(exc: BaseException, substring: str) -> bool:
             id='malformed-where',
         ),
         pytest.param(
-            "constraints:\n  c:\n    foreach: [g]\n    equations:\n      - expression: 'p + 1'\n",
+            "constraints:\n  c:\n    foreach: [g]\n    expression: 'p + 1'\n",
             ValueError,
             'exactly one comparison',
             "Constraint 'c'",
             id='constraint-without-comparison',
         ),
         pytest.param(
-            "objectives:\n  obj:\n    equations:\n      - expression: 'p == 1'\n",
+            "objectives:\n  obj:\n    expression: 'p == 1'\n",
             ValueError,
             'must not contain a comparison',
             "Objective 'obj'",
@@ -363,7 +359,7 @@ def _has_note(exc: BaseException, substring: str) -> bool:
         pytest.param(
             # valid syntax and dims, but no variable on the LHS: past what
             # validation can see, so the note has to come from the build phase
-            "constraints:\n  c:\n    foreach: []\n    equations:\n      - expression: '1 <= 2'\n",
+            "constraints:\n  c:\n    foreach: []\n    expression: '1 <= 2'\n",
             TypeError,
             None,
             "while building constraint 'c'",
@@ -435,11 +431,11 @@ def test_the_two_lanes_agree_about_a_masked_variable_without_the_harness(tmp_pat
             constraints:
               env:
                 foreach: [f]
-                equations: [{expression: "x - relmax * size <= 0"}]
+                expression: "x - relmax * size <= 0"
             objectives:
               o:
                 sense: maximize
-                equations: [{expression: "sum(x, over=f)"}]
+                expression: "sum(x, over=f)"
         """).lstrip()
     )
     probe = textwrap.dedent(f"""
@@ -488,13 +484,11 @@ def test_a_missing_bound_is_refused_at_build_with_the_native_lane_s_message(yaml
         constraints:
           c:
             foreach: [f]
-            equations:
-              - expression: x <= 100
+            expression: x <= 100
         objectives:
           o:
             sense: maximize
-            equations:
-              - expression: sum(x, over=f)
+            expression: sum(x, over=f)
         """)
     data = {
         'ub': pd.Series([10.0], index=pd.Index(['a'], name='f')),

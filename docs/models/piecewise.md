@@ -134,14 +134,12 @@ piecewise:
 constraints:
   balance:
     foreach: [snapshot]
-    equations:
-      - expression: sum(p, over=generator) == load
+    expression: sum(p, over=generator) == load
 
 objectives:
   total_cost:
     sense: minimize
-    equations:
-      - expression: op_cost
+    expression: op_cost
 ```
 
 ## What it exercises

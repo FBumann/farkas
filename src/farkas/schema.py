@@ -149,31 +149,19 @@ class VariableBlock(_StrictBlock):
         return self
 
 
-class EquationBlock(_StrictBlock):
-    """A single equation inside a constraint or objective."""
-
-    _label: ClassVar[str] = 'an equation'
-
-    expression: str
-    where: str | None = None
-
-
 class ConstraintBlock(_StrictBlock):
-    """A declared constraint with foreach, where, and equations."""
+    """A declared constraint: one rule, over one frame."""
 
     _label: ClassVar[str] = 'a constraint declaration'
 
     foreach: list[str]
     where: str | None = None
-    equations: list[EquationBlock]
+    expression: str
 
-    @field_validator('equations')
+    @model_validator(mode='before')
     @classmethod
-    def _at_least_one(cls, v: list[EquationBlock]) -> list[EquationBlock]:
-        if not v:
-            msg = 'A constraint must have at least one equation.'
-            raise ValueError(msg)
-        return v
+    def _migrate_equations(cls, data: Any) -> Any:
+        return _refuse_equations(data, 'constraint')
 
 
 class ObjectiveBlock(_StrictBlock):
@@ -182,20 +170,45 @@ class ObjectiveBlock(_StrictBlock):
     _label: ClassVar[str] = 'an objective declaration'
 
     sense: str = 'minimize'
-    equations: list[EquationBlock]
+    expression: str
 
     @field_validator('sense')
     @classmethod
     def _check_sense(cls, v: str) -> str:
         return _one_of(v, {'minimize', 'maximize'}, 'sense')
 
-    @field_validator('equations')
+    @model_validator(mode='before')
     @classmethod
-    def _at_least_one(cls, v: list[EquationBlock]) -> list[EquationBlock]:
-        if not v:
-            msg = 'An objective must have at least one equation.'
-            raise ValueError(msg)
-        return v
+    def _migrate_equations(cls, data: Any) -> Any:
+        return _refuse_equations(data, 'objective')
+
+
+def _refuse_equations(data: Any, kind: str) -> Any:
+    """Name the rewrite for a file written against the old surface.
+
+    ``equations:`` held a *list*, and a list needs names for its entries — which
+    it did not have, so they were numbered by position and the block's own name
+    resolved to nothing (#298). One rule per block removes the list rather than
+    labelling it, so the migration is mechanical in both directions and the
+    error can say exactly what to write.
+
+    Caught here rather than by the closed-schema check, which would only offer
+    "unknown key 'equations'" and a near miss against `expression` — true, and
+    useless for a file with three entries in it.
+    """
+    if not isinstance(data, dict) or 'equations' not in data:
+        return data
+    entries = data.get('equations')
+    n = len(entries) if isinstance(entries, list) else 1
+    if n == 1:
+        fix = f'Move the single entry up: replace `equations:` with `expression:` on the {kind}.'
+    else:
+        fix = (
+            f'Split it into {n} {kind}s, one per rule, each with its own name — the entries were '
+            f'named by position, so the names were never yours to begin with.'
+        )
+    msg = f'`equations:` was removed from {kind} declarations; a {kind} holds exactly one rule. {fix}'
+    raise ValueError(msg)
 
 
 class MacroBlock(_StrictBlock):
@@ -280,17 +293,6 @@ class PiecewiseBlock(_StrictBlock):
             msg = "a non-'==' sign is only supported with exactly two links."
             raise ValueError(msg)
         return v
-
-
-def equation_name(constraint: str, index: int, count: int) -> str:
-    """The model-level name of equation *index* of *count* under *constraint*.
-
-    A single-equation constraint keeps the constraint's own name; the rest get
-    ``_{i}`` suffixes. Both lanes name rows through this function, because a
-    naming rule written out twice is one the two lanes can come to disagree
-    about — and the name is what a solution is read back by.
-    """
-    return constraint if count == 1 else f'{constraint}_{index}'
 
 
 class MathSchema(_StrictBlock):

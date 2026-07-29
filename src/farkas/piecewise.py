@@ -71,14 +71,14 @@ def expand_piecewise(schema: MathSchema) -> MathSchema:
         rhs = f'({pw.active})' if pw.active else '1'
         raw['constraints'][f'{name}_convexity'] = {
             'foreach': list(frame),
-            'equations': [{'expression': f'sum({lam}, over={pw.over}) == {rhs}'}],
+            'expression': f'sum({lam}, over={pw.over}) == {rhs}',
         }
         for i, link in enumerate(pw.links):
             expr, values = link[0], link[1]
             sign = link[2] if len(link) == 3 else '=='
             raw['constraints'][f'{name}_link{i}'] = {
                 'foreach': list(frame),
-                'equations': [{'expression': (f'({expr}) {sign} sum({lam} * {values}, over={pw.over})')}],
+                'expression': (f'({expr}) {sign} sum({lam} * {values}, over={pw.over})'),
             }
         if not pw.convex:
             raw['variables'][seg] = {
@@ -88,7 +88,7 @@ def expand_piecewise(schema: MathSchema) -> MathSchema:
             }
             raw['constraints'][f'{name}_pick'] = {
                 'foreach': list(frame),
-                'equations': [{'expression': f'sum({seg}, over={pw.over}) == {rhs}'}],
+                'expression': f'sum({seg}, over={pw.over}) == {rhs}',
             }
             raw['constraints'][f'{name}_adjacency'] = {
                 'foreach': [*frame, pw.over],
@@ -97,7 +97,7 @@ def expand_piecewise(schema: MathSchema) -> MathSchema:
                 # absent it would propagate and drop that row, leaving the first
                 # lambda unconstrained by segment selection — a wrong MILP with
                 # no error, which is why #289 kept the escape hatch.
-                'equations': [{'expression': f'{lam} <= {seg} + shift({seg}, {pw.over}=1, fill=0)'}],
+                'expression': f'{lam} <= {seg} + shift({seg}, {pw.over}=1, fill=0)',
             }
 
     raw['piecewise'].clear()  # every block is now expanded away

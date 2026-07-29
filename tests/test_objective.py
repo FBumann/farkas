@@ -32,8 +32,8 @@ DISJOINT_MODEL = {
         'x': {'foreach': ['i'], 'bounds': {'lower': 1, 'upper': 1}},
         'y': {'foreach': ['j'], 'bounds': {'lower': 1, 'upper': 1}},
     },
-    'constraints': {'floor': {'foreach': ['i'], 'equations': [{'expression': 'x >= 0'}]}},
-    'objectives': {'o': {'sense': 'minimize', 'equations': [{'expression': 'x * a + y * b'}]}},
+    'constraints': {'floor': {'foreach': ['i'], 'expression': 'x >= 0'}},
+    'objectives': {'o': {'sense': 'minimize', 'expression': 'x * a + y * b'}},
 }
 
 
@@ -67,7 +67,7 @@ def data():
     ],
 )
 def test_a_term_is_summed_over_its_own_dims(data, expression, expected, broadcast_would_give):
-    model = {**DISJOINT_MODEL, 'objectives': {'o': {'sense': 'minimize', 'equations': [{'expression': expression}]}}}
+    model = {**DISJOINT_MODEL, 'objectives': {'o': {'sense': 'minimize', 'expression': expression}}}
     with differential(model, data) as run:
         # `differential` already asserts the two lanes agree; what it cannot
         # know is whether they agree on the right number, and before #197 they

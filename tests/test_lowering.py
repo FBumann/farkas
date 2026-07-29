@@ -139,7 +139,7 @@ NETWORK = {
     'dimensions': {'from_bus': {'values': ['n1', 'n2']}, 'to_bus': {'values': ['n1', 'n2']}},
     'parameters': {'cap': {'dims': ['from_bus', 'to_bus']}},
     'variables': {'f': {'foreach': ['from_bus', 'to_bus'], 'bounds': {'lower': 0, 'upper': 'cap'}}},
-    'objectives': {'c': {'sense': 'maximize', 'equations': [{'expression': 'f'}]}},
+    'objectives': {'c': {'sense': 'maximize', 'expression': 'f'}},
 }
 
 #: Asymmetric, so a transposition changes the answer rather than hiding in it.

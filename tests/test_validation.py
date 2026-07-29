@@ -24,14 +24,14 @@ def _schema(**overrides) -> MathSchema:
 class TestValidateExpressions:
     def test_valid_schema_passes(self):
         schema = _schema(
-            constraints={'cap': {'foreach': ['g'], 'equations': [{'expression': 'p <= p_max'}]}},
-            objectives={'cost': {'equations': [{'expression': 'sum(p, over=g)'}]}},
+            constraints={'cap': {'foreach': ['g'], 'expression': 'p <= p_max'}},
+            objectives={'cost': {'expression': 'sum(p, over=g)'}},
         )
         validate_expressions(schema)
 
     def test_unknown_name_in_constraint(self):
         schema = _schema(
-            constraints={'cap': {'foreach': ['g'], 'equations': [{'expression': 'q <= p_max'}]}},
+            constraints={'cap': {'foreach': ['g'], 'expression': 'q <= p_max'}},
         )
         with pytest.raises(ValueError, match="'q' not found") as exc_info:
             validate_expressions(schema)
@@ -40,39 +40,40 @@ class TestValidateExpressions:
 
     def test_constraint_without_comparison(self):
         schema = _schema(
-            constraints={'cap': {'foreach': ['g'], 'equations': [{'expression': 'p + p_max'}]}},
+            constraints={'cap': {'foreach': ['g'], 'expression': 'p + p_max'}},
         )
         with pytest.raises(ValueError, match='exactly one comparison'):
             validate_expressions(schema)
 
     def test_objective_with_comparison(self):
         schema = _schema(
-            objectives={'cost': {'equations': [{'expression': 'sum(p, over=g) <= 5'}]}},
+            objectives={'cost': {'expression': 'sum(p, over=g) <= 5'}},
         )
         with pytest.raises(ValueError, match='must not contain a comparison'):
             validate_expressions(schema)
 
-    def test_objective_with_a_second_equations_entry(self):
-        """An objective is one expression, and silently using the first is worse.
+    def test_a_file_written_against_the_old_equations_surface_is_told_the_rewrite(self):
+        """``equations:`` is gone, and the refusal names what to write instead.
 
-        ``constraints.<name>.equations`` being a list means "several constraints
-        under one name", so the same key under an objective reads as "several
-        terms in one objective" — and used to drop everything past the first,
-        giving a wrong answer with nothing to see (#198).
+        It held a *list*, and a list needs names for its entries — which it did
+        not have, so they were numbered by position and the block's own name
+        resolved to nothing (#298). The closed-schema check would only manage
+        "unknown key 'equations'" and a near miss against `expression`, which is
+        true and useless for a file with two entries in it.
         """
-        schema = _schema(
-            objectives={
-                'cost': {'equations': [{'expression': 'sum(p, over=g)'}, {'expression': 'sum(p_max, over=g)'}]}
-            },
-        )
-        with pytest.raises(ValueError, match="2 entries under 'equations:'") as exc_info:
-            validate_expressions(schema)
-        # the message names the rewrite, spelled from what was written
-        assert 'sum(p, over=g) + sum(p_max, over=g)' in str(exc_info.value)
+        with pytest.raises(ValueError, match='Split it into 2 objectives, one per rule'):
+            _schema(
+                objectives={
+                    'cost': {'equations': [{'expression': 'sum(p, over=g)'}, {'expression': 'sum(p_max, over=g)'}]}
+                },
+            )
+
+        with pytest.raises(ValueError, match='Move the single entry up'):
+            _schema(objectives={'cost': {'equations': [{'expression': 'sum(p, over=g)'}]}})
 
     def test_unknown_helper(self):
         schema = _schema(
-            objectives={'cost': {'equations': [{'expression': 'frobnicate(p, over=g)'}]}},
+            objectives={'cost': {'expression': 'frobnicate(p, over=g)'}},
         )
         with pytest.raises(ValueError, match="Unknown helper function 'frobnicate'"):
             validate_expressions(schema)
@@ -83,7 +84,7 @@ class TestValidateExpressions:
                 'cap': {
                     'foreach': ['g'],
                     'where': 'p_max >',
-                    'equations': [{'expression': 'p <= p_max'}],
+                    'expression': 'p <= p_max',
                 }
             },
         )
@@ -99,7 +100,7 @@ class TestValidateExpressions:
                 'cap': {
                     'foreach': ['g'],
                     'where': 'not_a_param > 0',
-                    'equations': [{'expression': 'p <= p_max'}],
+                    'expression': 'p <= p_max',
                 }
             },
         )
@@ -109,15 +110,15 @@ class TestValidateExpressions:
     def test_dim_name_kwarg_not_flagged(self):
         """Keyword-arg names are dimension names, not data references."""
         schema = _schema(
-            objectives={'cost': {'equations': [{'expression': 'sum(p, over=g)'}]}},
+            objectives={'cost': {'expression': 'sum(p, over=g)'}},
         )
         validate_expressions(schema)
 
     def test_multiple_errors_collected(self):
         schema = _schema(
             constraints={
-                'a': {'foreach': ['g'], 'equations': [{'expression': 'q <= 1'}]},
-                'b': {'foreach': ['g'], 'equations': [{'expression': 'p + 1'}]},
+                'a': {'foreach': ['g'], 'expression': 'q <= 1'},
+                'b': {'foreach': ['g'], 'expression': 'p + 1'},
             },
         )
         with pytest.raises(ValueError) as exc_info:
@@ -135,7 +136,7 @@ class TestValidateExpressions:
                 'constraints': {
                     'cap': {
                         'foreach': ['g'],
-                        'equations': [{'expression': 'p <= p_max'}],
+                        'expression': 'p <= p_max',
                     }
                 },
             }
@@ -151,7 +152,7 @@ class TestValidateExpressions:
             {
                 'dimensions': {'g': {'values': ['wind', 'solar']}},
                 'parameters': {'cost': {'dims': ['g']}},
-                'objectives': {'total': {'equations': [{'expression': 'sum(p * cost, over=g)'}]}},
+                'objectives': {'total': {'expression': 'sum(p * cost, over=g)'}},
             }
         )
         validate_expressions(schema, known_variables={'p': ['g']})
@@ -171,8 +172,7 @@ class TestLoadTimeIntegration:
             'constraints:\n'
             '  cap:\n'
             '    foreach: [g]\n'
-            '    equations:\n'
-            '      - expression: pp <= 100\n'
+            '    expression: pp <= 100\n'
         )
         with pytest.raises(ValueError, match="'pp' not found"):
             farkas_linopy.build(f)
@@ -190,8 +190,7 @@ class TestLoadTimeIntegration:
             'constraints:\n'
             '  cap:\n'
             '    foreach: [g]\n'
-            '    equations:\n'
-            '      - expression: p <= 100\n'
+            '    expression: p <= 100\n'
         )
         farkas_linopy.extend(model, f)
         assert 'cap' in model.constraints
@@ -206,8 +205,7 @@ class TestLoadTimeIntegration:
             'constraints:\n'
             '  cap:\n'
             '    foreach: [g]\n'
-            '    equations:\n'
-            '      - expression: p <= 100\n'
+            '    expression: p <= 100\n'
         )
         with pytest.raises(ValueError, match="'p' not found"):
             farkas_linopy.extend(model, f)
@@ -236,7 +234,7 @@ class TestDimensionKwargs:
                 },
                 'parameters': {'load': {'dims': ['snapshot']}},
                 'variables': {'p': {'foreach': ['snapshot', 'generator']}},
-                'constraints': {'c': {'foreach': foreach, 'equations': [{'expression': expression}]}},
+                'constraints': {'c': {'foreach': foreach, 'expression': expression}},
             }
         )
 
@@ -281,9 +279,7 @@ class TestDimensionKwargs:
                         'template': 'sum(array * weights, over=over)',
                     }
                 },
-                'objectives': {
-                    'obj': {'sense': 'minimize', 'equations': [{'expression': 'ws(p, cost, over=generator)'}]}
-                },
+                'objectives': {'obj': {'sense': 'minimize', 'expression': 'ws(p, cost, over=generator)'}},
             }
         )
         validate_expressions(schema)
@@ -324,8 +320,8 @@ class TestDimensionKwargs:
         """
         schema = _schema(
             objectives={
-                'cost': {'sense': 'minimize', 'equations': [{'expression': 'sum(p, over=g)'}]},
-                'emissions': {'sense': 'maximize', 'equations': [{'expression': 'sum(p, over=g)'}]},
+                'cost': {'sense': 'minimize', 'expression': 'sum(p, over=g)'},
+                'emissions': {'sense': 'maximize', 'expression': 'sum(p, over=g)'},
             },
         )
         with pytest.raises(ValueError, match='2 objectives declared'):

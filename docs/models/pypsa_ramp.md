@@ -64,11 +64,11 @@ $$\min \sum_{t \in \mathcal{T},\enspace g \in \mathcal{G}} p_{t,g} \cdot \mathit
 
 $$\sum_{g \in \mathcal{G} \thinspace:\thinspace \mathrm{bus}(g) = b} p_{t,g} + \sum_{l \in \mathcal{L} \thinspace:\thinspace \mathrm{to}(l) = b} f_{t,l} - \left( \sum_{l \in \mathcal{L} \thinspace:\thinspace \mathrm{from}(l) = b} f_{t,l} \right) = \mathit{load}_{t,b} \qquad \forall\thinspace t \in \mathcal{T},\enspace b \in \mathcal{B}$$
 
-**`ramp_0`**
+**`ramp_up`**
 
 $$p_{t,g} - p_{t \ominus 1,g} \le \mathit{ramp\_limit\_up}_{g} \cdot p^{\mathrm{nom}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t > 0$$
 
-**`ramp_1`**
+**`ramp_down`**
 
 $$p_{t \ominus 1,g} - p_{t,g} \le \mathit{ramp\_limit\_down}_{g} \cdot p^{\mathrm{nom}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t > 0$$
 
@@ -132,30 +132,31 @@ variables:
 constraints:
   nodal_balance:
     foreach: [snapshot, bus]
-    equations:
-      - expression: >-
-          group_sum(p, over=generator, by=bus)
-          + group_sum(f, over=link, by=to)
-          - group_sum(f, over=link, by=from)
-          == load
+    expression: >-
+      group_sum(p, over=generator, by=bus)
+      + group_sum(f, over=link, by=to)
+      - group_sum(f, over=link, by=from)
+      == load
 
   # PyPSA states a ramp limit as a fraction of p_nom, so the right-hand side is
   # parameter arithmetic rather than a precomputed column. Both directions are
   # written from the *second* snapshot on: there is no dispatch before the
   # first for it to ramp from, which is what `where` says here. That gate is
   # also why `roll` is safe — its wrap lands on the one row that is excluded.
-  ramp:
+  ramp_up:
     foreach: [snapshot, generator]
     where: "snapshot > 0"
-    equations:
-      - expression: p - roll(p, snapshot=1) <= ramp_limit_up * p_nom
-      - expression: roll(p, snapshot=1) - p <= ramp_limit_down * p_nom
+    expression: p - roll(p, snapshot=1) <= ramp_limit_up * p_nom
+
+  ramp_down:
+    foreach: [snapshot, generator]
+    where: "snapshot > 0"
+    expression: roll(p, snapshot=1) - p <= ramp_limit_down * p_nom
 
 objectives:
   total_cost:
     sense: minimize
-    equations:
-      - expression: p * marginal_cost
+    expression: p * marginal_cost
 ```
 
 `roll` is cyclic — it wraps the last snapshot onto the first — and that is safe

@@ -40,18 +40,15 @@ variables:
 constraints:
   commitment:
     foreach: [snapshot, generator]
-    equations:
-      - expression: p <= p_max * u
+    expression: p <= p_max * u
   balance:
     foreach: [snapshot]
-    equations:
-      - expression: sum(p, over=generator) == load
+    expression: sum(p, over=generator) == load
 
 objectives:
   total_cost:
     sense: minimize
-    equations:
-      - expression: sum(p * cost, over=generator) + sum(u * fix_cost, over=generator)
+    expression: sum(p * cost, over=generator) + sum(u * fix_cost, over=generator)
 """
 
 

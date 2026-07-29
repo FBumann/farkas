@@ -107,8 +107,7 @@ variables:
 constraints:
   every_customer_served:
     foreach: [customer]
-    equations:
-      - expression: sum(serve, over=warehouse) == 1
+    expression: sum(serve, over=warehouse) == 1
 
   # A closed warehouse serves nobody. Written per pair — the "strong"
   # formulation — because summing it over customers instead would give a valid
@@ -116,14 +115,12 @@ constraints:
   # solve at all.
   only_from_open_warehouses:
     foreach: [warehouse, customer]
-    equations:
-      - expression: serve - is_open <= 0
+    expression: serve - is_open <= 0
 
 objectives:
   total_cost:
     sense: minimize
-    equations:
-      - expression: is_open * fixed_cost + serve * serve_cost
+    expression: is_open * fixed_cost + serve * serve_cost
 ```
 
 **`serve` is not declared binary, and that is the interesting part.** Only

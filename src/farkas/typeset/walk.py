@@ -32,7 +32,6 @@ from farkas.expression_parser import (
     VariableNode,
 )
 from farkas.resolution import expression_of, where_of
-from farkas.schema import equation_name
 from farkas.typeset.format import Entry, Line
 from farkas.where_parser import (
     AndNode,
@@ -274,53 +273,39 @@ class Walk:
         lines = []
         for name, block in self.schema.objectives.items():
             sense = self.op('minimize' if block.sense == 'minimize' else 'maximize')
-            terms = []
-            for i, equation in enumerate(block.equations):
-                context = f"objective '{name}'"
-                node = expression_of(equation.expression, self.schema, self.namespace, context)
-                assert not isinstance(node, ComparisonNode)
-                ctx = self.context()
-                # An objective sums each term over every dim that term carries
-                # — the reduction is implied by the declaration, so it is
-                # spelled out rather than left for the reader to assume.
-                dims = self._sorted(dims_of(node, self.schema, context))
-                condition = self.conjoined(ctx, where_of(equation.where, self.namespace, context))
-                body = self.reduction_body(node, ctx) if dims else self.arithmetic(node, ctx)
-                if dims:
-                    domain = self.format.joined([self.membership(d) for d in dims], '')
-                    if condition:
-                        domain = f'{domain} {self.op("such_that")} {condition}'
-                    body = self.format.summation(domain, body)
-                elif condition:
-                    body = f'{body} {self.format.prose("where ")} {condition}'
-                terms.append(body if i == 0 else f'{self.op("plus")} {body}')
-            lines.append(Line(label=name, left=sense, right=' '.join(terms)))
+            context = f"objective '{name}'"
+            node = expression_of(block.expression, self.schema, self.namespace, context)
+            assert not isinstance(node, ComparisonNode)
+            ctx = self.context()
+            # An objective sums each term over every dim that term carries
+            # — the reduction is implied by the declaration, so it is
+            # spelled out rather than left for the reader to assume.
+            dims = self._sorted(dims_of(node, self.schema, context))
+            body = self.reduction_body(node, ctx) if dims else self.arithmetic(node, ctx)
+            if dims:
+                domain = self.format.joined([self.membership(d) for d in dims], '')
+                body = self.format.summation(domain, body)
+            lines.append(Line(label=name, left=sense, right=body))
         return lines
 
     def constraints(self) -> list[Line]:
         lines = []
         for name, block in self.schema.constraints.items():
-            for i, equation in enumerate(block.equations):
-                label = equation_name(name, i, len(block.equations))
-                context = f"constraint '{label}'"
-                node = expression_of(equation.expression, self.schema, self.namespace, context)
-                if not isinstance(node, ComparisonNode):
-                    msg = f'{context}: expected a comparison, got {type(node).__name__}'
-                    raise AssertionError(msg)
-                ctx = self.context()
-                condition = self.conjoined(
-                    ctx,
-                    where_of(block.where, self.namespace, context),
-                    where_of(equation.where, self.namespace, context),
+            context = f"constraint '{name}'"
+            node = expression_of(block.expression, self.schema, self.namespace, context)
+            if not isinstance(node, ComparisonNode):
+                msg = f'{context}: expected a comparison, got {type(node).__name__}'
+                raise AssertionError(msg)
+            ctx = self.context()
+            condition = self.conjoined(ctx, where_of(block.where, self.namespace, context))
+            lines.append(
+                Line(
+                    label=name,
+                    left=self.arithmetic(node.left, ctx),
+                    right=f'{self.op(_RELATIONS[node.op])} {self.arithmetic(node.right, ctx)}',
+                    condition=self.quantifier(list(block.foreach), condition),
                 )
-                lines.append(
-                    Line(
-                        label=label,
-                        left=self.arithmetic(node.left, ctx),
-                        right=f'{self.op(_RELATIONS[node.op])} {self.arithmetic(node.right, ctx)}',
-                        condition=self.quantifier(list(block.foreach), condition),
-                    )
-                )
+            )
         return lines
 
     def variables(self) -> list[Line]:

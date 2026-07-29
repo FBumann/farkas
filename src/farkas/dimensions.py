@@ -220,27 +220,24 @@ def check_schema(
     for cname, cdef in schema.constraints.items():
         frame = frozenset(cdef.foreach)
         _check_where_dims(where_of(cdef.where, ns, f"Constraint '{cname}'"), schema, frame, f"Constraint '{cname}'")
-        n_eqs = len(cdef.equations)
-        for i, eq in enumerate(cdef.equations):
-            context = f"Constraint '{cname}'" if n_eqs == 1 else f"Constraint '{cname}', equation {i}"
-            _check_where_dims(where_of(eq.where, ns, context), schema, frame, context)
-            got = dims_of(expression_of(eq.expression, schema, ns, context), schema, context, external)
-            if got != frame:
-                stray, missing = sorted(got - frame), sorted(frame - got)
-                detail = (
-                    f'carries dims {stray} that are not in foreach {sorted(frame)} — every '
-                    f'stray dim multiplies the rows this constraint builds; add it to '
-                    f'foreach if that is intended, or sum it out'
-                    if stray
-                    else f'does not carry {missing}, which foreach declares — the same row '
-                    f'would be repeated across {missing}; drop it from foreach, or use it '
-                    f'in the equation'
-                )
-                raise DimensionError(f'{context}: the expression {detail}.')
+        context = f"Constraint '{cname}'"
+        got = dims_of(expression_of(cdef.expression, schema, ns, context), schema, context, external)
+        if got != frame:
+            stray, missing = sorted(got - frame), sorted(frame - got)
+            detail = (
+                f'carries dims {stray} that are not in foreach {sorted(frame)} — every '
+                f'stray dim multiplies the rows this constraint builds; add it to '
+                f'foreach if that is intended, or sum it out'
+                if stray
+                else f'does not carry {missing}, which foreach declares — the same row '
+                f'would be repeated across {missing}; drop it from foreach, or use it '
+                f'in the expression'
+            )
+            raise DimensionError(f'{context}: the expression {detail}.')
 
     for oname, odef in schema.objectives.items():
         context = f"Objective '{oname}'"
-        dims_of(expression_of(odef.equations[0].expression, schema, ns, context), schema, context, external)
+        dims_of(expression_of(odef.expression, schema, ns, context), schema, context, external)
 
 
 def _check_where_dims(

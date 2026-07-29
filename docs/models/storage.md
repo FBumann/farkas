@@ -122,19 +122,16 @@ variables:
 constraints:
   power_balance:
     foreach: [snapshot]
-    equations:
-      - expression: sum(p, over=generator) + discharge - charge == load
+    expression: sum(p, over=generator) + discharge - charge == load
   soc_balance:
     foreach: [snapshot]
-    equations:
-      # cyclic storage: soc wraps around the snapshot horizon
-      - expression: soc == roll(soc, snapshot=1) + charge * 0.9 - discharge
+  # cyclic storage: soc wraps around the snapshot horizon
+    expression: soc == roll(soc, snapshot=1) + charge * 0.9 - discharge
 
 objectives:
   total_cost:
     sense: minimize
-    equations:
-      - expression: p * cost
+    expression: p * cost
 ```
 
 ## What it exercises

@@ -61,27 +61,27 @@ $$\min \sum_{t \in \mathcal{T},\enspace g \in \mathcal{G}} \left( p_{t,g} \cdot 
 
 $$\sum_{g \in \mathcal{G}} p_{t,g} = \mathit{load}_{t} \qquad \forall\thinspace t \in \mathcal{T}$$
 
-**`commitment_0`**
+**`commitment_max`**
 
 $$p_{t,g} - p^{\mathrm{nom}}_{g} \cdot \mathit{status}_{t,g} \le 0 \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
 
-**`commitment_1`**
+**`commitment_min`**
 
 $$p_{t,g} - p^{\mathrm{min,pu}}_{g} \cdot p^{\mathrm{nom}}_{g} \cdot \mathit{status}_{t,g} \ge 0 \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
 
-**`transition_0`**
+**`start_up_initial`**
 
 $$\mathit{start\_up}_{t,g} - \mathit{status}_{t,g} \ge -1 \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t = 0$$
 
-**`transition_1`**
+**`start_up`**
 
 $$\mathit{start\_up}_{t,g} - \mathit{status}_{t,g} + \mathit{status}_{t \ominus 1,g} \ge 0 \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t > 0$$
 
-**`transition_2`**
+**`shut_down_initial`**
 
 $$\mathit{shut\_down}_{t,g} + \mathit{status}_{t,g} \ge 1 \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t = 0$$
 
-**`transition_3`**
+**`shut_down`**
 
 $$\mathit{shut\_down}_{t,g} + \mathit{status}_{t,g} - \mathit{status}_{t \ominus 1,g} \ge 0 \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t > 0$$
 
@@ -152,17 +152,18 @@ variables:
 constraints:
   power_balance:
     foreach: [snapshot]
-    equations:
-      - expression: sum(p, over=generator) == load
+    expression: sum(p, over=generator) == load
 
   # A committed unit runs between p_min_pu * p_nom and p_nom; an uncommitted
   # one is pinned to zero from both sides. `p_nom * status` is a parameter
   # against a variable, so the product stays degree 1.
-  commitment:
+  commitment_max:
     foreach: [snapshot, generator]
-    equations:
-      - expression: p - p_nom * status <= 0
-      - expression: p - p_min_pu * p_nom * status >= 0
+    expression: p - p_nom * status <= 0
+
+  commitment_min:
+    foreach: [snapshot, generator]
+    expression: p - p_min_pu * p_nom * status >= 0
 
   # start_up must be 1 on a snapshot where status rises, shut_down where it
   # falls. The first snapshot has no predecessor, and PyPSA's default is that
@@ -170,23 +171,30 @@ constraints:
   # slackened to -1 there (never binding) while the shut-down row still
   # charges a unit that begins the horizon off. That asymmetry is PyPSA's, and
   # it is worth 50 on this instance.
-  transition:
+  start_up_initial:
     foreach: [snapshot, generator]
-    equations:
-      - expression: start_up - status >= -1
-        where: "snapshot == 0"
-      - expression: start_up - status + roll(status, snapshot=1) >= 0
-        where: "snapshot > 0"
-      - expression: shut_down + status >= 1
-        where: "snapshot == 0"
-      - expression: shut_down + status - roll(status, snapshot=1) >= 0
-        where: "snapshot > 0"
+    where: "snapshot == 0"
+    expression: start_up - status >= -1
+
+  start_up:
+    foreach: [snapshot, generator]
+    where: "snapshot > 0"
+    expression: start_up - status + roll(status, snapshot=1) >= 0
+
+  shut_down_initial:
+    foreach: [snapshot, generator]
+    where: "snapshot == 0"
+    expression: shut_down + status >= 1
+
+  shut_down:
+    foreach: [snapshot, generator]
+    where: "snapshot > 0"
+    expression: shut_down + status - roll(status, snapshot=1) >= 0
 
 objectives:
   total_cost:
     sense: minimize
-    equations:
-      - expression: p * marginal_cost + start_up * start_up_cost + shut_down * shut_down_cost
+    expression: p * marginal_cost + start_up * start_up_cost + shut_down * shut_down_cost
 ```
 
 **The first snapshot is not like the others.** PyPSA's default is that a unit

@@ -97,21 +97,25 @@ variable is still a variable, so `size * on` remains variable × variable and is
 refused (§5), and it cannot appear in another variable's `bounds`, which take a
 parameter or a number.
 
-**`constraints`** — `foreach` (required) and an optional `where` covering the
-block; `equations[]` each carry an `expression` with exactly one of `<=`, `>=`,
-`==`, plus an optional `where` ANDed with the block's. One equation names the
-constraint after the block; several give `name_0`, `name_1`, … The LHS must
-involve at least one decision variable.
+**`constraints`** — **one rule per block**: `foreach` (required), an optional
+`where`, and one `expression` carrying exactly one of `<=`, `>=`, `==`. The
+block's name *is* the constraint's name, which is what a row is read back by.
+The LHS must involve at least one decision variable.
+
+Two regimes of one rule are two blocks, and each gets a name a reader chose
+rather than a position in a list:
 
 <!-- doctest: wrap=constraints -->
 ```yaml
 storage_balance:
   foreach: [snapshot, storage]
-  equations:
-    - expression: soc == roll(soc, snapshot=1) * (1 - loss) + charge - discharge
-      where: "snapshot > 0"
-    - expression: soc == soc_initial
-      where: "snapshot == 0"
+  where: "snapshot > 0"
+  expression: soc == roll(soc, snapshot=1) * (1 - loss) + charge - discharge
+
+storage_balance_initial:
+  foreach: [snapshot, storage]
+  where: "snapshot == 0"
+  expression: soc == soc_initial
 ```
 
 **`objectives`** — `sense` ∈ {`minimize`, `maximize`}, default `minimize`. An
@@ -121,10 +125,9 @@ the dims **that term** carries, and is not repeated because another term
 carries a dim it does not: in `x * a + y * b` with `x, a` on `i` and `y, b` on
 `j`, the objective has `|i| + |j|` summands, never `|i| · |j|`.
 
-`equations:` takes exactly one entry — unlike a constraint's, where the list
-means several constraints under one name. More than one entry is a load error
-naming the rewrite (`a + b` in one expression), as is declaring more than one
-objective.
+One `expression`, like a constraint — an objective was always one expression,
+and now it says so in its shape. Declaring more than one objective is a load
+error.
 
 ## 3. `expressions` and `macros`
 
@@ -317,7 +320,7 @@ for the opposite intent:
 
 | you want | you write |
 |---|---|
-| the row kept, the missing term read as zero | two equations under complementary `where` clauses |
+| the row kept, the missing term read as zero | two constraints under complementary `where` clauses |
 | a vacated shift position to contribute | `shift(x, d=n, fill=0)` — the identity of *its* position (§7) |
 | to test whether a variable exists here | its bare name in a `where` |
 | a sparse coefficient to remove the row rather than zero the term | mask on it — `where: "rel_max"` |

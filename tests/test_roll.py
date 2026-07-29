@@ -142,18 +142,15 @@ variables:
 constraints:
   balance:
     foreach: [snapshot]
-    equations:
-      - expression: sum(p, over=generator) == load
+    expression: sum(p, over=generator) == load
   ramp_up:
     foreach: [snapshot, generator]
     where: "snapshot > 0"
-    equations:
-      - expression: p - shift(p, snapshot=1) <= ramp_max
+    expression: p - shift(p, snapshot=1) <= ramp_max
 objectives:
   total_cost:
     sense: minimize
-    equations:
-      - expression: sum(p * cost, over=generator)
+    expression: sum(p * cost, over=generator)
 """
 
 
@@ -254,9 +251,9 @@ variables:
 constraints:
   c:
     foreach: [t]
-    equations: [{expression: "x * shift(eff, t=1, fill=1) <= 10"}]
+    expression: "x * shift(eff, t=1, fill=1) <= 10"
 objectives:
-  o: {sense: maximize, equations: [{expression: "sum(x, over=t)"}]}
+  o: {sense: maximize, expression: "sum(x, over=t)"}
 """
 
 

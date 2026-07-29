@@ -45,8 +45,18 @@ DATA = {
 }
 
 
-def _model(equations: str | list[dict], *, objective: str = 'sum(x, over=f)', foreach: list[str] | None = None) -> dict:
-    """A model whose only variable content is *equations*, in a binding row."""
+def _model(
+    expression: str,
+    *,
+    objective: str = 'sum(x, over=f)',
+    foreach: list[str] | None = None,
+    also: dict | None = None,
+) -> dict:
+    """A model whose only variable content is *expression*, in a binding row.
+
+    *also* adds a second named constraint, for the cases that need two rules —
+    which are now two blocks rather than two entries in a list (#298).
+    """
     return {
         'dimensions': dict(DIMS),
         'parameters': {'gate': {'dims': ['f'], 'dtype': 'bool'}, 'w': {'dims': ['f']}},
@@ -55,26 +65,25 @@ def _model(equations: str | list[dict], *, objective: str = 'sum(x, over=f)', fo
             'y': {'foreach': ['f', 't'], 'where': 'gate', 'bounds': {'lower': 0, 'upper': 50}},
         },
         'constraints': {
-            'c': {
-                'foreach': foreach if foreach is not None else ['t'],
-                'equations': [{'expression': equations}] if isinstance(equations, str) else equations,
-            }
+            'c': {'foreach': foreach if foreach is not None else ['t'], 'expression': expression},
+            **(also or {}),
         },
-        'objectives': {'o': {'sense': 'maximize', 'equations': [{'expression': objective}]}},
+        'objectives': {'o': {'sense': 'maximize', 'expression': objective}},
     }
 
 
 def _objective_of(
-    equations: str | list[dict],
+    expression: str,
     objective: str = 'sum(x, over=f)',
     foreach: list[str] | None = None,
+    also: dict | None = None,
 ) -> float:
-    """Solve *equations* on both lanes and the LP file; return the agreed value.
+    """Solve *expression* on both lanes and the LP file; return the agreed value.
 
     ``differential`` raises if the three disagree, so a number coming back out
     of here is already a statement that the lanes concur about this spelling.
     """
-    with differential(_model(equations, objective=objective, foreach=foreach), DATA, lp=True) as run:
+    with differential(_model(expression, objective=objective, foreach=foreach, also=also), DATA, lp=True) as run:
         return float(run.result.objective)
 
 
@@ -171,19 +180,17 @@ def test_a_term_whose_variable_is_absent_is_not_a_term_worth_zero():
     """Row absence, the other half of the same rule.
 
     ``x + y >= k`` is *no constraint* where ``y`` is absent — not ``x >= k``.
-    Compared against the spelling SPEC §6 points at for the other reading (two
-    equations under complementary ``where`` clauses), so the test states the
+    Compared against the spelling SPEC §6 points at for the other reading — two
+    constraints under complementary ``where`` clauses — so the test states the
     *difference between the two intents* rather than the behaviour alone.
     """
     minimise_x = '(-1) * x'
     propagated = _objective_of('x + y >= 60', objective=minimise_x, foreach=['f', 't'])
     zero_filled = _objective_of(
-        [
-            {'expression': 'x + y >= 60', 'where': 'y'},
-            {'expression': 'x >= 60', 'where': 'NOT y'},
-        ],
+        'x + y >= 60',
         objective=minimise_x,
         foreach=['f', 't'],
+        also={'c_unsized': {'foreach': ['f', 't'], 'where': 'NOT y', 'expression': 'x >= 60'}},
     )
 
     # f=a: y covers 50 of the 60, so x is pushed to 10. f=b: no row at all,
@@ -257,8 +264,8 @@ def _wide_objective_of(expression: str, *, foreach: list[str]) -> float:
             'y': {'foreach': ['f', 't'], 'where': 'gate', 'bounds': {'lower': 0, 'upper': 50}},
             'v': {'foreach': ['f', 't'], 'where': 'gate2', 'bounds': {'lower': 0, 'upper': 50}},
         },
-        'constraints': {'c': {'foreach': foreach, 'equations': [{'expression': expression}]}},
-        'objectives': {'o': {'sense': 'maximize', 'equations': [{'expression': 'x'}]}},
+        'constraints': {'c': {'foreach': foreach, 'expression': expression}},
+        'objectives': {'o': {'sense': 'maximize', 'expression': 'x'}},
     }
     with differential(model, WIDE_DATA, WIDE_COORDS if grouped else PLAIN_COORDS, lp=True) as run:
         return float(run.result.objective)
@@ -327,8 +334,8 @@ def test_a_mask_on_a_dim_the_reduction_does_not_touch_still_propagates():
             'x': {'foreach': ['f', 't'], 'bounds': {'lower': 0, 'upper': 100}},
             'y': {'foreach': ['f', 't'], 'where': 'tgate', 'bounds': {'lower': 0, 'upper': 50}},
         },
-        'constraints': {'c': {'foreach': ['t'], 'equations': [{'expression': 'sum(x + y, over=f) <= 120'}]}},
-        'objectives': {'o': {'sense': 'maximize', 'equations': [{'expression': 'x'}]}},
+        'constraints': {'c': {'foreach': ['t'], 'expression': 'sum(x + y, over=f) <= 120'}},
+        'objectives': {'o': {'sense': 'maximize', 'expression': 'x'}},
     }
     data = {'tgate': pd.Series([True], index=pd.Index([0], name='t'))}
     coords = {'f': pd.Index(['a', 'b'], name='f'), 't': pd.Index([0, 1], name='t')}
@@ -365,10 +372,8 @@ def test_shift_created_absence_reaches_a_reduction_like_any_other():
             'x': {'foreach': ['f', 't'], 'bounds': {'lower': 0, 'upper': 100}},
             'v': {'foreach': ['f', 't'], 'bounds': {'lower': 0, 'upper': 100}},
         },
-        'constraints': {
-            'c': {'foreach': ['t'], 'equations': [{'expression': 'sum(x + shift(v, t=1), over=f) <= 120'}]}
-        },
-        'objectives': {'o': {'sense': 'maximize', 'equations': [{'expression': 'x'}]}},
+        'constraints': {'c': {'foreach': ['t'], 'expression': 'sum(x + shift(v, t=1), over=f) <= 120'}},
+        'objectives': {'o': {'sense': 'maximize', 'expression': 'x'}},
     }
     coords = {'f': pd.Index(['a', 'b'], name='f'), 't': pd.Index([0, 1], name='t')}
 
@@ -398,8 +403,8 @@ def test_a_sparse_divisor_is_refused_rather_than_read_as_zero():
         'dimensions': {'f': {'values': ['a', 'b']}},
         'parameters': {'d': {'dims': ['f']}},
         'variables': {'x': {'foreach': ['f'], 'bounds': {'lower': 0, 'upper': 100}}},
-        'constraints': {'c': {'foreach': ['f'], 'equations': [{'expression': 'x / d <= 10'}]}},
-        'objectives': {'o': {'sense': 'maximize', 'equations': [{'expression': 'sum(x, over=f)'}]}},
+        'constraints': {'c': {'foreach': ['f'], 'expression': 'x / d <= 10'}},
+        'objectives': {'o': {'sense': 'maximize', 'expression': 'sum(x, over=f)'}},
     }
     sparse = {'d': pd.Series([2.0], index=pd.Index(['a'], name='f'))}
 
@@ -425,8 +430,8 @@ def test_a_divisor_may_be_sparse_where_the_row_is_masked_out():
         'dimensions': {'f': {'values': ['a', 'b']}},
         'parameters': {'d': {'dims': ['f']}, 'active': {'dims': ['f'], 'dtype': 'bool'}},
         'variables': {'x': {'foreach': ['f'], 'bounds': {'lower': 0, 'upper': 100}}},
-        'constraints': {'c': {'foreach': ['f'], 'where': 'active', 'equations': [{'expression': 'x / d <= 10'}]}},
-        'objectives': {'o': {'sense': 'maximize', 'equations': [{'expression': 'sum(x, over=f)'}]}},
+        'constraints': {'c': {'foreach': ['f'], 'where': 'active', 'expression': 'x / d <= 10'}},
+        'objectives': {'o': {'sense': 'maximize', 'expression': 'sum(x, over=f)'}},
     }
     data = {
         'd': pd.Series([2.0], index=pd.Index(['a'], name='f')),
@@ -443,7 +448,7 @@ def test_a_divisor_may_be_sparse_where_the_row_is_masked_out():
         pytest.param(
             'where on the row',
             {'x': {'foreach': ['f'], 'bounds': {'lower': 0, 'upper': 100}}},
-            {'foreach': ['f'], 'where': 'd', 'equations': [{'expression': 'x / d <= 10'}]},
+            {'foreach': ['f'], 'where': 'd', 'expression': 'x / d <= 10'},
             'sum(x, over=f)',
             120.0,
             id='mask-the-row',
@@ -451,7 +456,7 @@ def test_a_divisor_may_be_sparse_where_the_row_is_masked_out():
         pytest.param(
             'mask the variable',
             {'x': {'foreach': ['f'], 'where': 'd', 'bounds': {'lower': 0, 'upper': 100}}},
-            {'foreach': ['f'], 'equations': [{'expression': 'x / d <= 10'}]},
+            {'foreach': ['f'], 'expression': 'x / d <= 10'},
             'sum(x, over=f)',
             20.0,
             id='mask-the-variable',
@@ -471,7 +476,7 @@ def test_a_sparse_divisor_has_an_escape(label, variables, constraint, objective,
         'parameters': {'d': {'dims': ['f']}},
         'variables': variables,
         'constraints': {'c': constraint},
-        'objectives': {'o': {'sense': 'maximize', 'equations': [{'expression': objective}]}},
+        'objectives': {'o': {'sense': 'maximize', 'expression': objective}},
     }
     data = {'d': pd.Series([2.0], index=pd.Index(['a'], name='f'))}
     with differential(model, data, lp=True) as run:

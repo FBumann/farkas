@@ -44,7 +44,7 @@ def test_minimal_schema():
         pytest.param('variables', {'v': {'foreach': ['y']}}, "undeclared dimension 'y'", id='variable-foreach'),
         pytest.param(
             'constraints',
-            {'c': {'foreach': ['y'], 'equations': [{'expression': 'v == 0'}]}},
+            {'c': {'foreach': ['y'], 'expression': 'v == 0'}},
             "undeclared dimension 'y'",
             id='constraint-foreach',
         ),
@@ -104,7 +104,7 @@ def test_a_contradictory_declaration_is_rejected(body, match):
 
 def test_invalid_sense():
     with pytest.raises(ValidationError, match=r'minimize|maximize'):
-        MathSchema.model_validate({'objectives': {'obj': {'sense': 'unknown', 'equations': [{'expression': 'v'}]}}})
+        MathSchema.model_validate({'objectives': {'obj': {'sense': 'unknown', 'expression': 'v'}}})
 
 
 # ---------------------------------------------------------------------------
@@ -146,10 +146,10 @@ def test_invalid_sense():
             {
                 'dimensions': {'x': {'values': [1]}},
                 'variables': {'v': {'foreach': ['x']}},
-                'constraints': {'c': {'foreach': ['x'], 'equations': [{'expresion': 'v >= 0'}]}},
+                'constraints': {'c': {'foreach': ['x'], 'expresion': 'v >= 0'}},
             },
-            "unknown key 'expresion' in an equation",
-            id='nested-equation',
+            "unknown key 'expresion' in a constraint declaration",
+            id='nested-constraint',
         ),
     ],
 )
