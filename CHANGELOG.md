@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.0.1-alpha.17](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.16...v0.0.1-alpha.17) (2026-07-29)
+
+
+### Features
+
+* typeset a validated model — LaTeX and Typst (spike) ([#269](https://github.com/FBumann/farkas/issues/269)) ([3cbd79a](https://github.com/FBumann/farkas/commit/3cbd79acdd63237f047b548fddc99f834f5f7dcc))
+
+
+### Bug Fixes
+
+* **ci:** the PR-title check must report on every head, or it blocks the merge ([#308](https://github.com/FBumann/farkas/issues/308)) ([ecbdb13](https://github.com/FBumann/farkas/commit/ecbdb133ac5e13df2150b6f018ab92dc5ebadac2))
+
 ## [0.0.1-alpha.16](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.15...v0.0.1-alpha.16) (2026-07-29)
 
 
