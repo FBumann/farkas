@@ -37,6 +37,27 @@ Two rules keep it honest:
   node or a schema. If a format had to look at the model to answer, the
   question belongs in the walk.
 
+## Notation
+
+Symbols are derived by default, so a model prints with no setup at all. A
+`SymbolTable` overrides that, and `symbols=` takes it in whichever form the
+caller already has — the CLI's `--symbols` is the path case:
+
+```python
+fk.to_latex('dispatch.yaml', symbols='dispatch.symbols.yaml')  # a path
+fk.to_latex('dispatch.yaml', symbols={'names': {'load': r'\ell'}})  # a dict
+fk.to_latex('dispatch.yaml', symbols=fk.SymbolTable.load(table))  # the object
+```
+
+The dict is the same three sections as the file (`dimensions`, `names`,
+`descriptions`) — it is what the YAML parses to, not a flat `{name: symbol}`
+map. Whichever form, the table is checked against the model: a key naming
+nothing is an error with the near miss, because a silent typo is a symbol that
+never applies and a reader who never finds out.
+
+The values are LaTeX, including for Typst, which is a bug — see
+[#321](https://github.com/FBumann/farkas/issues/321).
+
 ## Adding a format
 
 1. A module here with a class satisfying `Format` — atoms, structure, document,
