@@ -50,7 +50,12 @@ from farkas._notes import note
 from farkas._yaml import read_yaml
 from farkas.errors import LanguageError
 from farkas.linopy.builder import build_model
-from farkas.linopy.loader import build_dim_coords, build_master_coords, dim_index_of, load_parameters
+from farkas.linopy.loader import (
+    build_dim_coords,
+    build_master_coords,
+    dim_index_of,
+    load_parameters,
+)
 from farkas.piecewise import expand_piecewise, validate_piecewise_data
 from farkas.schema import MathSchema
 from farkas.validation import validate_expressions

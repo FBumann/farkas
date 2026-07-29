@@ -81,3 +81,23 @@ __all__ = [
     'PiecewiseExpansionError',
     'SchemaError',
 ]
+
+
+def sparse_divisor_message(name: str, missing: int) -> str:
+    """Why a divisor may not be sparse — one wording, both lanes.
+
+    Everywhere else a missing parameter row is a zero coefficient (SPEC §6), and
+    a zeroed term is a term that does not participate: the row survives and
+    still says something. In divisor position there is no fill that preserves
+    the constraint — 0 divides by zero, 1 silently rescales, and dropping the
+    term rewrites what the row asserts — so the language refuses rather than
+    picking one. That is v1's own argument for not filling on a caller's behalf,
+    at the one position where it has no identity to fall back on.
+    """
+    return (
+        f"parameter '{name}' is used as a divisor but covers {missing} fewer "
+        f'coordinates than it is indexed over. A missing row means a zero '
+        f'coefficient everywhere else, and zero is not a divisor: the term '
+        f'would drop and the constraint would silently stop constraining.\n'
+        f'  Supply the missing rows, or mask the coordinates out with a where.'
+    )

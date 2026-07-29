@@ -8,7 +8,16 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from farkas.errors import DataError
+from farkas.errors import DataError, sparse_divisor_message
+from farkas.expression_parser import (
+    BinaryOperatorNode,
+    ComparisonNode,
+    FunctionCallNode,
+    NameNode,
+    ParameterNode,
+    UnaryOperatorNode,
+    VariableNode,
+)
 
 if TYPE_CHECKING:
     from farkas.schema import MathSchema
@@ -312,3 +321,75 @@ def _validate_coords(
                 f"Master '{dim}' coords: {list(master_coords[dim])}"
             )
             raise DataError(msg)
+
+
+def check_divisors_cover(name: str, node: Any, schema: MathSchema, dataset: Any, mask: Any, model: Any) -> None:
+    """A divisor must have a value wherever this declaration divides by it.
+
+    Not "wherever it is indexed": sparse data is the ordinary case, and a check
+    keyed to the coordinate product would refuse models that never touch the
+    gap. Two things can already have removed a coordinate — the row's own
+    ``where``, and the mask on a variable in the numerator — and either is
+    enough, so the requirement is their conjunction.
+
+    The relational lane asks the same question from the other end: it left-joins
+    the divisor and looks for a null coefficient in the assembled matrix, which
+    only survives if the row was built and the numerator existed. Same answer,
+    reached by the shape each lane has to hand.
+
+    Reached before ``_eval_ast``, the last moment the gap is visible:
+    ``semantics.coefficient`` fills an uncovered slot with 0.0 at the parameter
+    leaf, and from there the division yields an infinity and the row is masked
+    out — silently, and identically on both lanes until #312.
+    """
+    for quotient in _quotients(node):
+        params = _parameter_names(quotient.right, schema)
+        if not params:
+            continue
+        needed = mask
+        for variable in _variable_names(quotient.left, schema):
+            present = model.variables[variable].labels != -1
+            needed = present if needed is None else (needed & present)
+        for param in sorted(params):
+            gaps = dataset[param].isnull()
+            if needed is not None:
+                gaps = gaps & needed
+            missing = int(gaps.sum())
+            if missing:
+                raise DataError(f'{name}: {sparse_divisor_message(param, missing)}')
+
+
+def _quotients(node: Any) -> list[Any]:
+    """Every division node under *node*."""
+    out = [node] if isinstance(node, BinaryOperatorNode) and node.op == '/' else []
+    for child in _children(node):
+        out.extend(_quotients(child))
+    return out
+
+
+def _parameter_names(node: Any, schema: MathSchema) -> set[str]:
+    return _names_of(node, schema.parameters)
+
+
+def _variable_names(node: Any, schema: MathSchema) -> set[str]:
+    return _names_of(node, schema.variables)
+
+
+def _names_of(node: Any, declared: Any) -> set[str]:
+    """Declared names under *node*, whether the AST is resolved or not."""
+    found: set[str] = set()
+    if isinstance(node, (NameNode, ParameterNode, VariableNode)) and node.name in declared:
+        found.add(node.name)
+    for child in _children(node):
+        found |= _names_of(child, declared)
+    return found
+
+
+def _children(node: Any) -> tuple[Any, ...]:
+    if isinstance(node, (ComparisonNode, BinaryOperatorNode)):
+        return (node.left, node.right)
+    if isinstance(node, UnaryOperatorNode):
+        return (node.operand,)
+    if isinstance(node, FunctionCallNode):
+        return (*node.args, *node.kwargs.values())
+    return ()

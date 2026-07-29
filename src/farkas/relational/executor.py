@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, Literal, get_args
 
 import polars as pl
 
-from farkas.errors import DataError, LanguageError, LinopyYamlError, NoSolutionError
+from farkas.errors import DataError, LanguageError, LinopyYamlError, NoSolutionError, sparse_divisor_message
 from farkas.relational import plan, sinks
 from farkas.relational.compiler import PolarsCompiler, TermFragment, _ordinal
 from farkas.relational.frames import as_frame
@@ -325,6 +325,27 @@ class PolarsExecutor:
         if frame.collect_schema()['value'] == pl.Boolean:
             self._bool_params.add(p.name)
         self._parameters[p.name] = frame
+
+    def _check_no_undefined_divisor(self, name: str, matrix: pl.DataFrame, *expressions: plan.Expression) -> None:
+        """A null coefficient means a divisor had no value where the model divided.
+
+        Read off the assembled matrix rather than reasoned about from
+        coordinates, because only the matrix knows which divisions *survived*.
+        A quotient joins its divisor with a left join (:func:`_join_mul`), so a
+        missing value leaves a null; if the row was masked out, or the numerator
+        variable does not exist there, the term never reaches this frame and
+        there is nothing to report.
+
+        That is what keeps the refusal from becoming a wall. Sparse data is the
+        ordinary case, and the question is not whether a divisor is dense — it
+        is whether it is defined wherever the model actually divides by it.
+        """
+        if 'coeff' not in matrix.columns:
+            return
+        undefined = matrix.get_column('coeff').is_null().sum()
+        if undefined:
+            params = sorted(plan.divisor_parameters(*expressions))
+            raise DataError(f'{name}: {sparse_divisor_message(", ".join(params), int(undefined))}')
 
     def _check_one_row_per_coordinate(self, p: plan.ParameterDeclaration, frame: pl.LazyFrame) -> None:
         """A parameter is a function of its dims: one row per coordinate.
@@ -764,7 +785,9 @@ class PolarsExecutor:
             )
         stacked = pl.concat(pieces)
         if not _needs_aggregate([fragment for fragment, _ in terms]):
-            return rows, stacked.collect(engine='streaming')
+            matrix = stacked.collect(engine='streaming')
+            self._check_no_undefined_divisor(f"constraint '{c.name}'", matrix, c.lhs, c.rhs)
+            return rows, matrix
 
         # The aggregate is reachable, but "reachable" is all the fragments can
         # say. Sorting first turns the question into one pass over adjacent
@@ -772,6 +795,7 @@ class PolarsExecutor:
         # nearly the number of rows, since a repeated cell is the exception —
         # is only built when there is something to collapse.
         matrix = stacked.sort('row', 'col').collect(engine='streaming')
+        self._check_no_undefined_divisor(f"constraint '{c.name}'", matrix, c.lhs, c.rhs)
         if _has_repeated_entry(matrix):
             matrix = matrix.group_by('row', 'col').agg(pl.col('coeff').sum()).sort('row', 'col')
         return rows, matrix

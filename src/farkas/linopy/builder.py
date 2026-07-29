@@ -32,6 +32,7 @@ from farkas.expression_parser import (
 )
 from farkas.helpers import unknown_helper_message
 from farkas.linopy import semantics
+from farkas.linopy.loader import check_divisors_cover
 from farkas.resolution import Namespace, expression_of, where_of
 from farkas.schema import equation_name
 from farkas.where_parser import (
@@ -204,6 +205,8 @@ def _build_constraints(ctx: EvaluationContext) -> None:
                         f'Got: {eq.expression!r}'
                     )
                     raise LanguageError(msg)
+
+                check_divisors_cover(f"constraint '{eq_name}'", ast, ctx.schema, ctx.dataset, mask, ctx.model)
 
                 # Evaluate both sides
                 lhs = _eval_ast(ast.left, ctx)

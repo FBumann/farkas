@@ -664,7 +664,13 @@ def _join_mul(a: TermFragment, c: TermFragment, is_term: bool, divide: bool = Fa
     shared = [d for d in a.dims if d in c.dims]
     out_dims = a.dims + tuple(d for d in c.dims if d not in a.dims)
     right = c.frame.rename({'cval': _RHS})
-    joined = a.frame.join(right, on=shared, how='inner') if shared else a.frame.join(right, how='cross')
+    # Left for a divide, so a coordinate the divisor has no value for yields a
+    # *null* coefficient instead of silently dropping the term. The row it
+    # belongs to may still be masked out downstream, in which case the null goes
+    # with it and nothing is reported — which is the point: the question is not
+    # "is this divisor dense" but "is it defined where the model divides by it".
+    how = 'left' if divide else 'inner'
+    joined = a.frame.join(right, on=shared, how=how) if shared else a.frame.join(right, how='cross')
 
     value, rhs = pl.col(a.value_column), pl.col(_RHS)
     combined = value / rhs if divide else value * rhs
