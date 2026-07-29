@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.14](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.13...v0.0.1-alpha.14) (2026-07-29)
+
+
+### Documentation
+
+* **models:** fold long expressions onto one term per line ([#299](https://github.com/FBumann/farkas/issues/299)) ([826eaaa](https://github.com/FBumann/farkas/commit/826eaaa1958bd6f32967959607af0c9fe7f7d700))
+
 ## [0.0.1-alpha.13](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.12...v0.0.1-alpha.13) (2026-07-29)
 
 
