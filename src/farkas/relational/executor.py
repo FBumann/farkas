@@ -326,40 +326,26 @@ class PolarsExecutor:
             self._bool_params.add(p.name)
         self._parameters[p.name] = frame
 
-    def _check_divisors_cover(self, name: str, frame: pl.LazyFrame, *expressions: plan.Expression) -> None:
-        """A divisor must have a value at every coordinate this declaration builds.
+    def _check_no_undefined_divisor(self, name: str, matrix: pl.DataFrame, *expressions: plan.Expression) -> None:
+        """A null coefficient means a divisor had no value where the model divided.
 
-        Checked against *frame* — the rows that survived ``where`` and absence —
-        rather than against the whole coordinate product. Supplying a divisor
-        only where the rows exist is the ordinary idiom, and a check keyed to
-        the product refuses it: the gap is at coordinates the model already
-        decided not to build.
+        Read off the assembled matrix rather than reasoned about from
+        coordinates, because only the matrix knows which divisions *survived*.
+        A quotient joins its divisor with a left join (:func:`_join_mul`), so a
+        missing value leaves a null; if the row was masked out, or the numerator
+        variable does not exist there, the term never reaches this frame and
+        there is nothing to report.
 
-        An anti-join rather than a row count for the same reason. The count is
-        cheaper and answers a different question.
+        That is what keeps the refusal from becoming a wall. Sparse data is the
+        ordinary case, and the question is not whether a divisor is dense — it
+        is whether it is defined wherever the model actually divides by it.
         """
-        for param in plan.divisor_parameters(*expressions):
-            dims = self._program.parameter(param).dims if self._program else ()
-            if not dims:
-                continue
-            # A dim the reduction collapsed is not in the frame, and the frame
-            # cannot speak for it: `sum(x / w, over=f)` needs `w` at every `f`,
-            # whatever the rows are keyed by. Those dims come from their own
-            # tables; the rest come from the surviving rows.
-            present = [d for d in dims if d in frame.collect_schema().names()]
-            required = frame.select(present).unique() if present else None
-            for d in (d for d in dims if d not in present):
-                table = self._dimensions[d].select(pl.col('val').alias(d))
-                required = table if required is None else required.join(table, how='cross')
-            assert required is not None, 'a parameter with dims always contributes at least one'
-            missing = (
-                required.join(self._parameters[param].select(list(dims)), on=list(dims), how='anti')
-                .select(pl.len())
-                .collect(engine='streaming')
-                .item()
-            )
-            if missing:
-                raise DataError(f'{name}: {sparse_divisor_message(param, missing)}')
+        if 'coeff' not in matrix.columns:
+            return
+        undefined = matrix.get_column('coeff').is_null().sum()
+        if undefined:
+            params = sorted(plan.divisor_parameters(*expressions))
+            raise DataError(f'{name}: {sparse_divisor_message(", ".join(params), int(undefined))}')
 
     def _check_one_row_per_coordinate(self, p: plan.ParameterDeclaration, frame: pl.LazyFrame) -> None:
         """A parameter is a function of its dims: one row per coordinate.
@@ -764,7 +750,6 @@ class PolarsExecutor:
         restrictions = _absence_restrictions([p for p, _ in terms])
         labelled, self._n_rows = self._label_frame(c.dims, c.where, 'row', self._n_rows, restrictions)
         frame = labelled.lazy()
-        self._check_divisors_cover(f"constraint '{c.name}'", frame, c.lhs, c.rhs)
         self._constraints[c.name] = frame  # kept for the dual read-back
 
         accumulated = pl.lit(0.0, dtype=pl.Float64)
@@ -800,7 +785,9 @@ class PolarsExecutor:
             )
         stacked = pl.concat(pieces)
         if not _needs_aggregate([fragment for fragment, _ in terms]):
-            return rows, stacked.collect(engine='streaming')
+            matrix = stacked.collect(engine='streaming')
+            self._check_no_undefined_divisor(f"constraint '{c.name}'", matrix, c.lhs, c.rhs)
+            return rows, matrix
 
         # The aggregate is reachable, but "reachable" is all the fragments can
         # say. Sorting first turns the question into one pass over adjacent
@@ -808,6 +795,7 @@ class PolarsExecutor:
         # nearly the number of rows, since a repeated cell is the exception —
         # is only built when there is something to collapse.
         matrix = stacked.sort('row', 'col').collect(engine='streaming')
+        self._check_no_undefined_divisor(f"constraint '{c.name}'", matrix, c.lhs, c.rhs)
         if _has_repeated_entry(matrix):
             matrix = matrix.group_by('row', 'col').agg(pl.col('coeff').sum()).sort('row', 'col')
         return rows, matrix

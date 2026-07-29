@@ -435,3 +435,44 @@ def test_a_divisor_may_be_sparse_where_the_row_is_masked_out():
     with differential(model, data, lp=True) as run:
         # f=a: the row binds at x <= 20. f=b: masked out, so x runs to its bound
         assert float(run.result.objective) == pytest.approx(120.0, rel=RTOL)
+
+
+@pytest.mark.parametrize(
+    ('label', 'variables', 'constraint', 'objective', 'expected'),
+    [
+        pytest.param(
+            'where on the row',
+            {'x': {'foreach': ['f'], 'bounds': {'lower': 0, 'upper': 100}}},
+            {'foreach': ['f'], 'where': 'd', 'equations': [{'expression': 'x / d <= 10'}]},
+            'sum(x, over=f)',
+            120.0,
+            id='mask-the-row',
+        ),
+        pytest.param(
+            'mask the variable',
+            {'x': {'foreach': ['f'], 'where': 'd', 'bounds': {'lower': 0, 'upper': 100}}},
+            {'foreach': ['f'], 'equations': [{'expression': 'x / d <= 10'}]},
+            'sum(x, over=f)',
+            20.0,
+            id='mask-the-variable',
+        ),
+    ],
+)
+def test_a_sparse_divisor_has_an_escape(label, variables, constraint, objective, expected):
+    """Sparse data is the ordinary case, so the refusal must be escapable.
+
+    Both spellings say the same thing in different places — *this coordinate has
+    no row* — and either is enough, because the check asks where the model
+    actually divides rather than whether the divisor is dense. A refusal with no
+    way out would be worse than the silent answer it replaced.
+    """
+    model = {
+        'dimensions': {'f': {'values': ['a', 'b']}},
+        'parameters': {'d': {'dims': ['f']}},
+        'variables': variables,
+        'constraints': {'c': constraint},
+        'objectives': {'o': {'sense': 'maximize', 'equations': [{'expression': objective}]}},
+    }
+    data = {'d': pd.Series([2.0], index=pd.Index(['a'], name='f'))}
+    with differential(model, data, lp=True) as run:
+        assert float(run.result.objective) == pytest.approx(expected, rel=RTOL), label

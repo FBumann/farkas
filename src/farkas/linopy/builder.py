@@ -206,7 +206,7 @@ def _build_constraints(ctx: EvaluationContext) -> None:
                     )
                     raise LanguageError(msg)
 
-                check_divisors_cover(f"constraint '{eq_name}'", ast, ctx.schema, ctx.dataset, mask)
+                check_divisors_cover(f"constraint '{eq_name}'", ast, ctx.schema, ctx.dataset, mask, ctx.model)
 
                 # Evaluate both sides
                 lhs = _eval_ast(ast.left, ctx)

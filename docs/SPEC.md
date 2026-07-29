@@ -279,7 +279,7 @@ encoding, and *where the name sits* decides what one means:
 | position | a missing parameter row means |
 |---|---|
 | coefficient — `w * x` | zero: the term does not participate, the row survives |
-| divisor — `x / d` | **refused** at bind — no fill preserves the row (`0` divides by zero, `1` rescales, dropping rewrites the constraint) |
+| divisor — `x / d` | **refused** at bind *where the model divides by it* — no fill preserves the row (`0` divides by zero, `1` rescales, dropping rewrites the constraint) |
 | `bounds:` | an error: unbounded is not bounded-at-zero |
 | `where` operand | false |
 
@@ -321,6 +321,7 @@ for the opposite intent:
 | a vacated shift position to contribute | `shift(x, d=n, fill=0)` — the identity of *its* position (§7) |
 | to test whether a variable exists here | its bare name in a `where` |
 | a sparse coefficient to remove the row rather than zero the term | mask on it — `where: "rel_max"` |
+| to divide by a parameter you only have some of | mask the row or the variable — `where: "d"`. The divisor is required where the division survives, not everywhere it is indexed |
 
 This is linopy's v1 arithmetic convention, which both lanes are built against;
 `farkas.linopy.semantics` is where the eager lane answers it.
