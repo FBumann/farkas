@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.0-alpha.13](https://github.com/FBumann/farkas/compare/v0.1.0-alpha.12...v0.1.0-alpha.13) (2026-07-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* **linopy:** importing `farkas.linopy` sets `linopy.options['semantics']` to 'v1' process-wide. Models built through this lane change answer wherever a variable is masked or shifted — that is the point, and it is the answer the native engine has always given.
+
+### Bug Fixes
+
+* **linopy:** the lane selects v1 on import, and fill= takes the identity of its position ([#293](https://github.com/FBumann/farkas/issues/293)) ([451c354](https://github.com/FBumann/farkas/commit/451c3548e6dc88e851d1f51e6c69f9be13a4220e))
+
 ## [0.1.0-alpha.12](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.12...v0.1.0-alpha.12) (2026-07-29)
 
 
