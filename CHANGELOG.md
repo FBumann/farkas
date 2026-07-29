@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.15](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.14...v0.0.1-alpha.15) (2026-07-29)
+
+
+### Bug Fixes
+
+* **ci:** check out the manifest the version guard reads ([#303](https://github.com/FBumann/farkas/issues/303)) ([911b9ed](https://github.com/FBumann/farkas/commit/911b9ed29c0c9c1e358d1d9fc861c52f03b621f4))
+
 ## [0.0.1-alpha.14](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.13...v0.0.1-alpha.14) (2026-07-29)
 
 
