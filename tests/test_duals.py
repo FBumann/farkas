@@ -127,35 +127,31 @@ RAMP_BLOCK = {
     'parameters': {'lim': {'dims': ['t']}},
     'variables': {'p': {'foreach': ['t'], 'bounds': {'lower': 0, 'upper': 100}}},
     'constraints': {
-        'ramp': {
-            'foreach': ['t'],
-            'equations': [
-                {'expression': 'p - roll(p, t=1) <= lim'},
-                {'expression': 'roll(p, t=1) - p <= lim'},
-            ],
-        }
+        'ramp_up': {'foreach': ['t'], 'expression': 'p - roll(p, t=1) <= lim'},
+        'ramp_down': {'foreach': ['t'], 'expression': 'roll(p, t=1) - p <= lim'},
     },
-    'objectives': {'o': {'sense': 'maximize', 'equations': [{'expression': 'sum(p, over=t)'}]}},
+    'objectives': {'o': {'sense': 'maximize', 'expression': 'sum(p, over=t)'}},
 }
 
 
 @pytest.mark.parametrize(
     ('asked', 'expected'),
     [
-        # the block's own name was never built, and nearest-match is actively
-        # unhelpful here: it picks one sibling and implies the other is not there
-        ('ramp', 'named by position — ramp_0, ramp_1'),
-        ('ram_0', "Did you mean 'ramp_0'?"),
-        ('zzz', 'Declared: ramp_0, ramp_1.'),
+        # a family name: nearest-match is actively unhelpful, since it picks one
+        # sibling and implies the other is not there
+        ('ramp', 'but 2 begin with it — ramp_down, ramp_up'),
+        ('ramp_dwn', "Did you mean 'ramp_down'?"),
+        ('zzz', 'Declared: ramp_down, ramp_up.'),
     ],
 )
 def test_reading_back_an_unknown_name_says_what_was_built(asked, expected):
     """SPEC §9 asks a message to name the fix, and this is where it matters most.
 
-    A multi-equation block names its constraints by list position, so the name
-    the file writes resolves to nothing and the correct answer is one the caller
-    never wrote and cannot guess (#298). A bare ``KeyError`` left them to find
-    that out from the source.
+    One name can expand into several — a `piecewise:` block becomes a handful of
+    constraints, and a rule split by regime is conventionally ``x`` and
+    ``x_initial`` — so a caller can reasonably ask for a name that was never
+    built. A bare ``KeyError`` left them to find out from the source which one
+    was.
 
     Single-line on purpose: these raise ``KeyError``, whose ``str`` is the repr
     of its argument, so a newline would reach the reader as a literal ``\\n``.

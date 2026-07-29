@@ -28,7 +28,6 @@ nothing else from the package (docs/ARCHITECTURE.md, hard rule 2).
 from __future__ import annotations
 
 import difflib
-import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -140,6 +139,12 @@ def unknown_name_message(kind: str, name: str, known: Iterable[str]) -> str:
     has met one has met both, and there were already two copies of this idiom in
     the tree before this one.
 
+    Written for #298's positional names (`ramp_0`, `ramp_1`) and kept after they
+    were removed, because the shape outlived the cause: `piecewise:` still
+    expands one block into several constraints, and a rule split by regime is
+    conventionally `x` and `x_initial`. What changed is the wording — "named by
+    position" would now be a claim about a surface that no longer exists.
+
     Single-line on purpose. These are raised as ``KeyError``, whose ``str`` is
     the *repr* of its argument, so a newline arrives at the reader as a literal
     ``\\n``. The list is not truncated for the same reason the loader does not
@@ -148,15 +153,15 @@ def unknown_name_message(kind: str, name: str, known: Iterable[str]) -> str:
     """
     candidates = sorted(known)
 
-    # A constraint block with several equations names them by position, so the
-    # block's own name resolves to nothing and the caller is asking for a name
-    # that was never built (#298). Nearest-match is actively unhelpful there: it
-    # picks one sibling and implies the others do not exist. List them instead.
-    positional = [c for c in candidates if re.fullmatch(rf'{re.escape(name)}_\d+', c)]
-    if positional:
+    # One name can expand into several: a `piecewise:` block becomes a handful
+    # of constraints, and a rule split by regime is conventionally `x` and
+    # `x_initial`. Nearest-match is unhelpful there — it picks one sibling and
+    # implies the others do not exist — so a prefix hit lists them all.
+    family = [c for c in candidates if c.startswith(f'{name}_')]
+    if family:
         return (
-            f"unknown {kind} '{name}': it is a block of {len(positional)} equations, which are "
-            f'named by position — {", ".join(positional)}.'
+            f"unknown {kind} '{name}': no declaration has that name, but "
+            f'{len(family)} begin with it — {", ".join(family)}.'
         )
 
     near = difflib.get_close_matches(name, candidates, n=1, cutoff=0.6)
