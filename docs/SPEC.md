@@ -286,7 +286,11 @@ because the coefficient is zero; where it is sparse because the *component* is
 not there, mask the row (`where: "rel_max"`) and let the row go with it.
 
 This matches linopy's v1 arithmetic convention, which both lanes are built
-against; `farkas.linopy.semantics` is where the eager lane answers it.
+against; `farkas.linopy.semantics` is where the eager lane answers it. `shift`
+is the one place it does not: v1 counts `.shift()` among the operations that
+*create* absence, while §7 fills its vacated positions with zero, so both lanes
+are held to the zero by construction. Whether to adopt v1 there is
+[#289](https://github.com/FBumann/farkas/issues/289).
 
 ```text
 where_expr ::= atom | "NOT" where_expr | where_expr ("AND"|"OR") where_expr
@@ -337,7 +341,9 @@ snapshot's duration, and saves shipping a pre-shifted copy of a table the model
 already has. `shift`'s zero has a sharp edge in RHS position, where it is a bound rather
 than a term — `x <= shift(dt, t=1)` pins the first coordinate to `x <= 0`, not
 "unconstrained". Mask that coordinate out where the pin is not the intent, or
-use `roll` where the horizon really is cyclic.
+use `roll` where the horizon really is cyclic. That the zero is right for a term
+and wrong for a bound is what
+[#289](https://github.com/FBumann/farkas/issues/289) weighs.
 
 Anything composable out of these belongs in `macros:`. Math that is not sayable
 at all goes to a declared `escape:` island
