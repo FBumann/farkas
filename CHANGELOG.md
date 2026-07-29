@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.16](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.15...v0.0.1-alpha.16) (2026-07-29)
+
+
+### Documentation
+
+* **releasing:** the alpha stream is 0.0.1, and say what actually holds it ([#306](https://github.com/FBumann/farkas/issues/306)) ([de597a6](https://github.com/FBumann/farkas/commit/de597a6b369c614e75db4752ba697292478e4155))
+
 ## [0.0.1-alpha.15](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.14...v0.0.1-alpha.15) (2026-07-29)
 
 
