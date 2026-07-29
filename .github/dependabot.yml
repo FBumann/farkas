@@ -18,6 +18,22 @@ updates:
         patterns:
           - "*"
 
+  # ruff is pinned here and in pyproject.toml, and each gets its own PR —
+  # dependabot never groups across ecosystems. tests/test_tooling_pins.py fails
+  # when the two disagree.
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      interval: "quarterly"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore"
+    groups:
+      hooks:
+        patterns:
+          - "*"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

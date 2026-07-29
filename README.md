@@ -89,25 +89,24 @@ objectives:
 ```python
 import farkas as fk, polars as pl
 
-generators = ["wind", "solar", "gas"]
+generators = ['wind', 'solar', 'gas']
 sources = {
-    "p_max": pl.DataFrame({"generator": generators, "value": [100.0, 60.0, 200.0]}),
-    "cost":  pl.DataFrame({"generator": generators, "value": [1.0, 2.0, 50.0]}),
-    "load":  pl.DataFrame({"snapshot": range(6),
-                           "value": [80.0, 120.0, 150.0, 180.0, 140.0, 100.0]}),
+    'p_max': pl.DataFrame({'generator': generators, 'value': [100.0, 60.0, 200.0]}),
+    'cost': pl.DataFrame({'generator': generators, 'value': [1.0, 2.0, 50.0]}),
+    'load': pl.DataFrame({'snapshot': range(6), 'value': [80.0, 120.0, 150.0, 180.0, 140.0, 100.0]}),
 }
 
-result = fk.solve("dispatch.yaml", sources, coords={"snapshot": range(6)})
-print(result.objective)     # 1920.0
-print(result.primal("p"))   # a tidy frame: (snapshot, generator, value)
-print(result.dual("power_balance"))  # the price at each snapshot
+result = fk.solve('dispatch.yaml', sources, coords={'snapshot': range(6)})
+print(result.objective)  # 1920.0
+print(result.primal('p'))  # a tidy frame: (snapshot, generator, value)
+print(result.dual('power_balance'))  # the price at each snapshot
 ```
 
 Sources can also be pandas or pyarrow objects, or parquet paths — anything
 exposing the Arrow PyCapsule protocol is accepted, and the recogniser imports
 none of them. Results come back as frames, so nothing has to be released and
-no dataframe library is a dependency: `result.to_pandas("p")`,
-`.to_dataarray("p")` and `.to_parquet(dir)` are the bridges out, each named for
+no dataframe library is a dependency: `result.to_pandas('p')`,
+`.to_dataarray('p')` and `.to_parquet(dir)` are the bridges out, each named for
 what it costs.
 <!--quickstart-end-->
 
@@ -136,7 +135,7 @@ modification *is just math*, a file fixes all three:
 ```python
 from farkas import linopy as farkas_linopy
 
-farkas_linopy.extend(m, "ramp.yaml", data={"ramp_max": network.generators["ramp_max"]})
+farkas_linopy.extend(m, 'ramp.yaml', data={'ramp_max': network.generators['ramp_max']})
 ```
 ```yaml
 # ramp.yaml — `p` comes from the model; dims are declared here but their
@@ -169,7 +168,7 @@ refused. All of it is indexed in [docs/](docs/README.md); to work on it,
 To see it rather than read it, `python examples/walkthrough.py` runs one small model through every stage — YAML → schema → core AST → logical plan → model frames → LP text → solution — printing the artifact each stage produces, plus two models the language refuses and why. Its output is committed as [examples/walkthrough.out](examples/walkthrough.out) if you would rather just read that.
 
 ```bash
-pip install farkas            # the relational engine (polars, highspy)
+pip install farkas  # the relational engine (polars, highspy)
 pip install "farkas[linopy]"  # adds linopy + xarray + pandas: the shim, the
                               # oracle, and to_pandas / to_dataarray
 ```

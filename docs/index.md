@@ -135,7 +135,7 @@ Write the math in YAML, bind data at runtime, solve.
 </div>
 
 ```bash
-pip install farkas            # the relational engine (polars, highspy)
+pip install farkas  # the relational engine (polars, highspy)
 pip install "farkas[linopy]"  # adds linopy + xarray + pandas: the shim, the
                               # oracle, and to_pandas / to_dataarray
 ```

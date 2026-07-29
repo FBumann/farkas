@@ -45,9 +45,9 @@ list when the two names coincide, or as a mapping when they do not:
 dimensions:
   bus: {dtype: str}
   generator:
-    coords: [bus]                  # same as {bus: bus}
+    coords: [bus]  # same as {bus: bus}
   line:
-    coords: {from: bus, to: bus}   # two coordinates onto one dimension
+    coords: {from: bus, to: bus}  # two coordinates onto one dimension
 ```
 
 The target must be a declared dimension, must not be the dimension carrying
@@ -125,8 +125,8 @@ expressions:
   total_generation: sum(p, over=generator)
 macros:
   weighted_sum:
-    args: [array, weights]   # positional formals, default []
-    kwargs: [over]           # keyword formals, default []
+    args: [array, weights]  # positional formals, default []
+    kwargs: [over]  # keyword formals, default []
     template: sum(array * weights, over=over)
 ```
 
@@ -145,13 +145,13 @@ mirroring `linopy.Model.add_piecewise_formulation`.
 ```yaml
 piecewise:
   chp:
-    over: bp                  # breakpoint dimension
+    over: bp  # breakpoint dimension
     links:
-      - [power, power_bp]     # [expression, values-parameter]
+      - [power, power_bp]  # [expression, values-parameter]
       - [fuel, fuel_bp]
       - [heat, heat_bp]
-    convex: false             # true: pure-LP convex hull, no binaries
-    active: null              # optional gating expression: formulation pinned to 0
+    convex: false  # true: pure-LP convex hull, no binaries
+    active: null  # optional gating expression: formulation pinned to 0
 
   # a two-link block may bound one side instead of pinning it
   fuel_cap:
@@ -390,21 +390,21 @@ was bound to it.
 ```python
 import farkas as fk
 
-fk.check("model.yaml")                 # parse → validate → lower, no data bound
-schema = fk.load_schema("model.yaml")  # MathSchema
+fk.check('model.yaml')  # parse → validate → lower, no data bound
+schema = fk.load_schema('model.yaml')  # MathSchema
 
-result = fk.solve("model.yaml", sources, solver_options={"time_limit": 60})
+result = fk.solve('model.yaml', sources, solver_options={'time_limit': 60})
 result.status, result.termination_condition, result.objective
-result.is_ok        # linopy's rollup: not an error, abort or refusal
-result.has_primal   # narrower: are there values to read
-result.primal("p")            # tidy frame (dims…, value) — the native shape
-result.dual("power_balance")  # shadow prices, the same shape and the same join
-result.to_pandas("p")         # the same, as a DataFrame
-result.to_dataarray("p")      # the same, labelled: .sel / resample / plot
-result.to_dataset()           # every variable by default; names for a subset
+result.is_ok  # linopy's rollup: not an error, abort or refusal
+result.has_primal  # narrower: are there values to read
+result.primal('p')  # tidy frame (dims…, value) — the native shape
+result.dual('power_balance')  # shadow prices, the same shape and the same join
+result.to_pandas('p')  # the same, as a DataFrame
+result.to_dataarray('p')  # the same, labelled: .sel / resample / plot
+result.to_dataset()  # every variable by default; names for a subset
 result.to_parquet(directory)  # streamed to disk, never through this process
 
-fk.write("model.yaml", sources, "model.lp")   # sink chosen by the suffix
+fk.write('model.yaml', sources, 'model.lp')  # sink chosen by the suffix
 ```
 
 **Nothing has to be released.** The built model is frames this process owns, so
@@ -414,8 +414,8 @@ early, not because forgetting them breaks anything. `fk.build` returns the
 executor when one build should feed more than one sink:
 
 ```python
-ex = fk.build("model.yaml", sources)
-ex.write_lp("model.lp")
+ex = fk.build('model.yaml', sources)
+ex.write_lp('model.lp')
 result = ex.solve()
 ```
 
@@ -457,8 +457,8 @@ YAML in, model out, nothing retained:
 ```python
 from farkas import linopy as farkas_linopy
 
-m = farkas_linopy.build("model.yaml", data={...}, coords={...})   # -> linopy.Model
-farkas_linopy.extend(m, "ramp.yaml", data={...})                  # mutates m in place
+m = farkas_linopy.build('model.yaml', data={...}, coords={...})  # -> linopy.Model
+farkas_linopy.extend(m, 'ramp.yaml', data={...})  # mutates m in place
 ```
 
 `build` returns a plain `linopy.Model` — no accessor, no attached schema, no

@@ -12,8 +12,8 @@ plan → frames → LP text → solution — for one small model.
 
 ```yaml
 dimensions:
-  snapshot: {dtype: int}                    # coordinates come from the data
-  generator: {values: [wind, solar, gas]}   # coordinates are given here
+  snapshot: {dtype: int}  # coordinates come from the data
+  generator: {values: [wind, solar, gas]}  # coordinates are given here
 ```
 
 A dimension is an axis. You either list its coordinates in the file, or leave
@@ -46,7 +46,7 @@ than emitted empty. → [dispatch](models/dispatch.md), [SPEC §6](SPEC.md#6-whe
 
 ```yaml
 dimensions:
-  generator: {dtype: str, coords: [bus]}          # each generator sits on a bus
+  generator: {dtype: str, coords: [bus]}  # each generator sits on a bus
   line: {dtype: str, coords: {from: bus, to: bus}}  # both endpoints are buses
 ```
 
@@ -98,11 +98,11 @@ them; either way you would build a different model than the file reads as.
 ```python
 import farkas as fk
 
-fk.check("model.yaml")                    # compiles? no data needed
-sol = fk.solve("model.yaml", sources)     # to an answer
+fk.check('model.yaml')  # compiles? no data needed
+sol = fk.solve('model.yaml', sources)  # to an answer
 sol.objective
-sol.primal("p")                           # a polars.DataFrame
-sol.dual("power_balance")
+sol.primal('p')  # a polars.DataFrame
+sol.dual('power_balance')
 ```
 
 `fk.check` is the CI verb — it parses, expands, resolves and lowers without

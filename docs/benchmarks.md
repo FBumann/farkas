@@ -35,7 +35,7 @@ uv run python -m bench.run --sizes xs s m l --repeat 3
 uv run python -m bench.run --sizes d100 d50 d25 d08 --skip-gate --repeat 3 \
     --out bench/results/density.jsonl
 uv run python -m bench.report bench/results/latest.jsonl bench/results/density.jsonl
-uv run python -m bench.plot          # refreshes the chart page's numbers
+uv run python -m bench.plot  # refreshes the chart page's numbers
 ```
 
 **Measure on an idle machine.** An earlier version of these tables was taken

@@ -41,7 +41,7 @@ dimensions:
   market:
     values: [new-york, chicago, topeka]
   bp:
-    dtype: int          # breakpoints of the discretised sqrt curve
+    dtype: int  # breakpoints of the discretised sqrt curve
 
 parameters:
   capacity:
