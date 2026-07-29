@@ -791,3 +791,116 @@ def test_a_bare_variable_name_in_a_where_asks_whether_it_exists():
         x = dict(zip(solved['f'], solved['value'], strict=True))
         assert x['a'] == pytest.approx(25.0, rel=RTOL), 'sized: the envelope binds'
         assert x['b'] == pytest.approx(0.0, abs=1e-9), 'unsized: the complementary clause pins it'
+
+
+ABSENT_COEFFICIENT_MODEL = {
+    'dimensions': {'f': {'values': ['a', 'b']}},
+    'parameters': {'relmax': {'dims': ['f']}, 'cost': {'dims': ['f']}},
+    'variables': {
+        'x': {'foreach': ['f'], 'bounds': {'lower': 0, 'upper': 100}},
+        'size': {'foreach': ['f'], 'bounds': {'lower': 0, 'upper': 50}},
+    },
+    'constraints': {'envelope': {'foreach': ['f'], 'equations': [{'expression': 'x - relmax * size <= 0'}]}},
+    'objectives': {'total': {'sense': 'maximize', 'equations': [{'expression': 'sum(x * cost, over=f)'}]}},
+}
+
+
+def test_a_sparse_coefficient_on_the_bound_side_still_pins_the_variable():
+    """The half of §6's hazard that survives absence propagation.
+
+    Same expression as ``ABSENT_VARIABLE_MODEL`` above, one operand different:
+    the thing missing at ``f=b`` is the *parameter* ``relmax``, not the variable
+    ``size``. Absence is a property of variables, so nothing propagates — the
+    row is kept, the term is dropped, and ``x <= 0`` is built.
+
+    That is correct and it is the documented reading of a sparse coefficient
+    table, but it is the same silently-wrong shape the v1 convention removed
+    from the variable side, so SPEC §6 now names it and this pins the behaviour
+    the prose describes. The benign case is
+    ``test_a_parameter_covering_a_subset_of_its_dims_means_zero_on_both_lanes``:
+    there the zero lands on a coefficient *and* a right-hand side, so the row
+    constrains nothing. Here the right-hand side is a literal 0 and the missing
+    coefficient was the whole bound.
+    """
+    data = {
+        'relmax': pd.Series({'a': 0.5}),  # no row at 'b'
+        'cost': pd.Series({'a': 1.0, 'b': 1.0}),
+    }
+    with differential(ABSENT_COEFFICIENT_MODEL, data, lp=True) as run:
+        solved = run.result.primal('x')
+        x = dict(zip(solved['f'], solved['value'], strict=True))
+        assert x['a'] == pytest.approx(25.0, rel=RTOL), 'sized: x <= 0.5 * size, size <= 50'
+        assert x['b'] == pytest.approx(0.0, abs=1e-9), 'the row survived the missing coefficient and pins x'
+
+
+def _reindexed_parameter_model(op: str) -> dict:
+    return {
+        'dimensions': {'t': {'dtype': 'int', 'values': [0, 1, 2]}},
+        'parameters': {'dt': {'dims': ['t']}},
+        'variables': {'x': {'foreach': ['t'], 'bounds': {'lower': 0, 'upper': 100}}},
+        'constraints': {'r': {'foreach': ['t'], 'equations': [{'expression': f'x <= {op}(dt, t=1)'}]}},
+        'objectives': {'o': {'sense': 'maximize', 'equations': [{'expression': 'sum(x, over=t)'}]}},
+    }
+
+
+@pytest.mark.parametrize(
+    ('op', 'expected'),
+    [
+        # shift is acyclic: t=0 vacates to zero, which in RHS position is a pin
+        ('shift', {0: 0.0, 1: 5.0, 2: 6.0}),
+        # roll is cyclic: t=0 reads the last value instead
+        ('roll', {0: 7.0, 1: 5.0, 2: 6.0}),
+    ],
+)
+def test_shift_and_roll_re_index_a_parameter_not_only_a_variable(op, expected):
+    """``array`` in §7 is any node, so both operators read a parameter.
+
+    Worth its own test because every example in SPEC took a variable, and a
+    downstream consumer built and shipped a hand-shifted copy of a parameter
+    table before probing revealed this works.
+
+    The parametrisation carries the sharp edge: ``shift``'s vacated position
+    contributes zero, and a zero in *right-hand-side* position is ``x <= 0`` —
+    a pin, not "unconstrained". ``roll`` is the contrast, and the two differ
+    only at ``t=0``.
+    """
+    data = {'dt': pd.Series({0: 5.0, 1: 6.0, 2: 7.0})}
+    with differential(_reindexed_parameter_model(op), data, lp=True) as run:
+        solved = run.result.primal('x')
+        x = dict(zip(solved['t'], solved['value'], strict=True))
+        for t, want in expected.items():
+            assert x[t] == pytest.approx(want, abs=1e-9), f'{op} at t={t}'
+
+
+PINNED_MODEL = {
+    'dimensions': {'f': {'values': ['fixed', 'sized']}},
+    'parameters': {'relmax': {'dims': ['f']}, 'size_lb': {'dims': ['f']}, 'size_ub': {'dims': ['f']}},
+    'variables': {
+        'rate': {'foreach': ['f'], 'bounds': {'lower': 0, 'upper': 1000}},
+        'size': {'foreach': ['f'], 'bounds': {'lower': 'size_lb', 'upper': 'size_ub'}},
+    },
+    'constraints': {'envelope': {'foreach': ['f'], 'equations': [{'expression': 'rate - relmax * size <= 0'}]}},
+    'objectives': {'total': {'sense': 'maximize', 'equations': [{'expression': 'sum(rate, over=f)'}]}},
+}
+
+
+def test_equal_bounds_pin_a_variable_so_one_equation_covers_both_regimes():
+    """A capacity that is data in one model and a decision in another.
+
+    The alternative a consumer reaches for otherwise is a block per regime with
+    pre-multiplied coefficients — ``rate_max_at_size``, ``rate_max_when_on`` —
+    whose names encode which regime they belong to rather than what quantity
+    they are. Pinning with equal bounds writes the row form once and lets
+    presolve substitute the fixed column, so SPEC §2 documents it and this shows
+    both regimes coming out of the single equation.
+    """
+    data = {
+        'relmax': pd.Series({'fixed': 0.8, 'sized': 0.8}),
+        'size_lb': pd.Series({'fixed': 10.0, 'sized': 0.0}),
+        'size_ub': pd.Series({'fixed': 10.0, 'sized': 50.0}),
+    }
+    with differential(PINNED_MODEL, data, lp=True) as run:
+        solved = run.result.primal('rate')
+        rate = dict(zip(solved['f'], solved['value'], strict=True))
+        assert rate['fixed'] == pytest.approx(8.0, rel=RTOL), 'pinned at 10, so the envelope is 0.8 * 10'
+        assert rate['sized'] == pytest.approx(40.0, rel=RTOL), 'free to 50, so the envelope is 0.8 * 50'

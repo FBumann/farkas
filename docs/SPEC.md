@@ -85,6 +85,18 @@ arithmetic) and the error says so rather than reporting a parse failure;
 expressions here are [#31](https://github.com/FBumann/farkas/issues/31). A
 bound parameter's dims must not exceed `foreach`.
 
+**Equal bounds pin a variable**, which is how one declaration covers a quantity
+that is a decision in one model and data in another: declare it as a variable
+always, and bind `lower` and `upper` to the same value where it is fixed.
+`rate - relmax * size <= 0` is then one equation whether `size` is chosen or
+given, instead of a block per regime with pre-multiplied coefficients whose
+names encode the regime rather than the quantity. Presolve fixes and substitutes
+the pinned column, so the solver receives the LP the pre-multiplied form would
+have produced; the cost is the columns before presolve. Two limits: a pinned
+variable is still a variable, so `size * on` remains variable × variable and is
+refused (§5), and it cannot appear in another variable's `bounds`, which take a
+parameter or a number.
+
 **`constraints`** — `foreach` (required) and an optional `where` covering the
 block; `equations[]` each carry an `expression` with exactly one of `<=`, `>=`,
 `==`, plus an optional `where` ANDed with the block's. One equation names the
@@ -263,6 +275,16 @@ coordinates is sparse *encoding*, not absence: its missing rows mean a zero
 coefficient (§8), which is why a coefficient table may hold live entries only.
 Absence is a property of variables.
 
+That asymmetry is the example above read the other way round, and it is where
+the remaining hazard lives: `x - rel_max * size <= 0` **loses the row** where the
+variable `size` is masked, and **keeps** it as `x <= 0` where the parameter
+`rel_max` has no row. A missing *correction* term — a big-M relaxation, a
+start-up term — tightens in the safe direction and is a legitimate idiom; a
+missing coefficient that *is* the bound rewrites what the constraint says, with
+no error and no absent row to notice. So a coefficient table may be sparse
+because the coefficient is zero; where it is sparse because the *component* is
+not there, mask the row (`where: "rel_max"`) and let the row go with it.
+
 This matches linopy's v1 arithmetic convention, which both lanes are built
 against; `farkas.linopy.semantics` is where the eager lane answers it.
 
@@ -308,6 +330,14 @@ a comparison of dialects. Dimension arguments are name-checked at load time:
 | `group_sum(array, over=dim, by=coord)` | `over` → the dimension `coord` targets | `coord` is declared on `over` (§2); its values are the group labels, checked against the target dimension at bind time. The membership sum that makes topology data rather than structure; groups with no members contribute nothing |
 | `roll(array, dim=n)` | value at *t−n*, cyclic | coordinates fixed, values wrap |
 | `shift(array, dim=n)` | value at *t−n*, acyclic | vacated positions contribute **zero** |
+
+`array` is any node of the right dim set, so `roll` and `shift` re-index a
+**parameter** as readily as a variable: `shift(dt, t=1)` is the previous
+snapshot's duration, and saves shipping a pre-shifted copy of a table the model
+already has. `shift`'s zero has a sharp edge in RHS position, where it is a bound rather
+than a term — `x <= shift(dt, t=1)` pins the first coordinate to `x <= 0`, not
+"unconstrained". Mask that coordinate out where the pin is not the intent, or
+use `roll` where the horizon really is cyclic.
 
 Anything composable out of these belongs in `macros:`. Math that is not sayable
 at all goes to a declared `escape:` island
