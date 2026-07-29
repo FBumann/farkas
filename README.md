@@ -60,6 +60,7 @@ flowchart LR
 ## Example
 
 <!--quickstart-start-->
+<!--model-start-->
 ```yaml
 # dispatch.yaml
 dimensions:
@@ -85,7 +86,9 @@ objectives:
     equations:
       - expression: p * cost
 ```
+<!--model-end-->
 
+<!--solve-start-->
 ```python
 import farkas as fk, polars as pl
 

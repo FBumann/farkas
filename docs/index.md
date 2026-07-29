@@ -88,7 +88,143 @@ Write the math in YAML, bind data at runtime, solve.
 
 {%
    include-markdown "../README.md"
-   start="<!--quickstart-start-->"
+   start="<!--model-start-->"
+   end="<!--model-end-->"
+%}
+
+### And that file says, exactly this
+
+Generated from the YAML above — no data, no solver, no second source of truth.
+Only the notation is a choice, and **How** shows the one that was made here.
+
+<!-- home-math:begin -->
+=== "The math"
+
+    #### Sets
+
+    | Symbol | Meaning |
+    |---|---|
+    | $\mathcal{S}$ | index $s$ --- `snapshot` --- dispatch periods |
+    | $\mathcal{G}$ | index $g$ --- `generator` --- generating units |
+
+    #### Parameters
+
+    | Symbol | Meaning |
+    |---|---|
+    | $\bar p$ | `p_max` over $\mathcal{G}$ --- installed capacity |
+    | $\ell$ | `load` over $\mathcal{S}$ --- demand to be met |
+    | $c$ | `cost` over $\mathcal{G}$ --- marginal cost |
+
+    #### Variables
+
+    | Symbol | Meaning |
+    |---|---|
+    | $p$ | `p` over $\mathcal{S} \times \mathcal{G}$ --- output of generator $g$ in snapshot $s$ |
+
+    #### Objective
+
+    **`total_cost`**
+
+    $$\min \sum_{s \in \mathcal{S},\enspace g \in \mathcal{G}} p_{s,g} \cdot c_{g}$$
+
+    #### Subject to
+
+    **`power_balance`**
+
+    $$\sum_{g \in \mathcal{G}} p_{s,g} = \ell_{s} \qquad \forall\thinspace s \in \mathcal{S}$$
+
+    #### Variable domains
+
+    **`p`**
+
+    $$0 \le p_{s,g} \le \bar p_{g} \qquad \forall\thinspace s \in \mathcal{S},\enspace g \in \mathcal{G} \thinspace:\thinspace \bar p_{g} > 0$$
+
+=== "LaTeX"
+
+    ```latex
+    \paragraph{Sets}
+    \begin{description}
+    \item[$\mathcal{S}$] index $s$ --- \texttt{snapshot} --- dispatch periods
+    \item[$\mathcal{G}$] index $g$ --- \texttt{generator} --- generating units
+    \end{description}
+
+    \paragraph{Parameters}
+    \begin{description}
+    \item[$\bar p$] \texttt{p\_max} over $\mathcal{G}$ --- installed capacity
+    \item[$\ell$] \texttt{load} over $\mathcal{S}$ --- demand to be met
+    \item[$c$] \texttt{cost} over $\mathcal{G}$ --- marginal cost
+    \end{description}
+
+    \paragraph{Variables}
+    \begin{description}
+    \item[$p$] \texttt{p} over $\mathcal{S} \times \mathcal{G}$ --- output of generator $g$ in snapshot $s$
+    \end{description}
+
+    \paragraph{Objective}
+    \begin{align}
+    \text{total\_cost} && \min & \sum_{s \in \mathcal{S},\ g \in \mathcal{G}} p_{s,g} \cdot c_{g}
+    \end{align}
+
+    \paragraph{Subject to}
+    \begin{align}
+    \text{power\_balance} && \sum_{g \in \mathcal{G}} p_{s,g} & = \ell_{s} && \forall\, s \in \mathcal{S}
+    \end{align}
+
+    \paragraph{Variable domains}
+    \begin{align}
+    \text{p} && 0 \le p_{s,g} & \le \bar p_{g} && \forall\, s \in \mathcal{S},\ g \in \mathcal{G} \,:\, \bar p_{g} > 0
+    \end{align}
+    ```
+
+=== "How"
+
+    ```python
+    import farkas as fk
+
+    symbols = {
+        'dimensions': {
+            'snapshot': {'index': 's', 'set': '\\mathcal{S}'},
+            'generator': {'index': 'g', 'set': '\\mathcal{G}'},
+        },
+        'names': {
+            'cost': 'c',
+            'load': '\\ell',
+            'p_max': '\\bar p',
+        },
+        'descriptions': {
+            'snapshot': 'dispatch periods',
+            'generator': 'generating units',
+            'p': 'output of generator $g$ in snapshot $s$',
+            'cost': 'marginal cost',
+            'load': 'demand to be met',
+            'p_max': 'installed capacity',
+        },
+    }
+
+    fk.to_latex('dispatch.yaml', symbols=symbols)  # amsmath align
+    fk.to_typst('dispatch.yaml')  # compiles without a TeX toolchain
+    fk.to_markdown('dispatch.yaml')  # renders as-is on GitHub
+    ```
+
+    `symbols` is optional — drop it and the same model prints as
+    $\mathit{load}_t$, $p^{\mathrm{max}}_g$. A dict, a YAML path or a
+    `SymbolTable`; a key naming nothing in the model is an error, not a symbol that
+    silently never applies.
+
+    Or from a shell, where the table is that same YAML on disk and `--standalone`
+    emits a document that compiles rather than a fragment to `\input`:
+
+    ```bash
+    python -m farkas latex dispatch.yaml --symbols dispatch.symbols.yaml
+    python -m farkas typst dispatch.yaml --standalone -o dispatch.typ
+    ```
+<!-- home-math:end -->
+
+### Then you solve it
+
+{%
+   include-markdown "../README.md"
+   start="<!--solve-start-->"
    end="<!--quickstart-end-->"
 %}
 
