@@ -204,3 +204,159 @@ def test_shift_and_a_filled_shift_are_different_operators():
     assert bare != pytest.approx(filled, rel=RTOL), (
         'a bare shift drops the first row; a filled one keeps it, so these cannot agree'
     )
+
+
+# ---------------------------------------------------------------------------
+# the same rules under wider shapes
+#
+# The cases above all reduce over `f` with one mask on `f`, which is the
+# smallest arrangement that shows the rule — and small enough that it could be
+# passing for the wrong reason. These vary one thing at a time: the *reduction*
+# (`group_sum` rather than `sum`), the *number* of masks, where the mask *sits*
+# relative to the dim being reduced, and where the absence *comes from*.
+#
+# `group_sum` is the one that had to be here. #314 routed it through the same
+# propagation as `sum` and nothing covered it, so its behaviour was a claim
+# rather than a result.
+# ---------------------------------------------------------------------------
+
+WIDE_DATA = {
+    # `y` absent at d; `v` absent at b *and* d, so the two masks do not nest
+    'gate': pd.Series([True, True, True], index=pd.Index(['a', 'b', 'c'], name='f')),
+    'gate2': pd.Series([True, True], index=pd.Index(['a', 'c'], name='f')),
+    'w': pd.Series([2.0, 3.0, 4.0, 5.0], index=pd.Index(['a', 'b', 'c', 'd'], name='f')),
+}
+
+WIDE_COORDS = {
+    'f': pd.DataFrame({'f': ['a', 'b', 'c', 'd'], 'grp': ['g0', 'g0', 'g1', 'g1']}),
+    'g': pd.Index(['g0', 'g1'], name='g'),
+    't': pd.Index([0, 1], name='t'),
+}
+
+PLAIN_COORDS = {'f': pd.Index(['a', 'b', 'c', 'd'], name='f'), 't': pd.Index([0, 1], name='t')}
+
+
+def _wide_objective_of(expression: str, *, foreach: list[str]) -> float:
+    # `g` and the coordinate that reaches it exist only for the grouped cases:
+    # a dimension no declaration uses has no coordinate set to check against,
+    # and the executor refuses it rather than carrying a dangling target.
+    grouped = 'g' in foreach
+    dims = (
+        {'g': {}, 'f': {'coords': {'grp': 'g'}}, 't': {'dtype': 'int'}} if grouped else {'f': {}, 't': {'dtype': 'int'}}
+    )
+    model = {
+        'dimensions': dims,
+        'parameters': {
+            'gate': {'dims': ['f'], 'dtype': 'bool'},
+            'gate2': {'dims': ['f'], 'dtype': 'bool'},
+            'w': {'dims': ['f']},
+        },
+        'variables': {
+            'x': {'foreach': ['f', 't'], 'bounds': {'lower': 0, 'upper': 100}},
+            'y': {'foreach': ['f', 't'], 'where': 'gate', 'bounds': {'lower': 0, 'upper': 50}},
+            'v': {'foreach': ['f', 't'], 'where': 'gate2', 'bounds': {'lower': 0, 'upper': 50}},
+        },
+        'constraints': {'c': {'foreach': foreach, 'equations': [{'expression': expression}]}},
+        'objectives': {'o': {'sense': 'maximize', 'equations': [{'expression': 'x'}]}},
+    }
+    with differential(model, WIDE_DATA, WIDE_COORDS if grouped else PLAIN_COORDS, lp=True) as run:
+        return float(run.result.objective)
+
+
+def test_group_sum_does_not_distribute_over_addition_either():
+    """`group_sum` is a reduction, so the non-law applies to it unchanged.
+
+    #314 routed it through the same absence propagation as `sum` on the argument
+    that a group *is* a sum. Nothing tested that, so this is the assertion the
+    change was made on: the two spellings separate, and both lanes agree about
+    where they land.
+    """
+    together = _wide_objective_of('group_sum(x + y, over=f, by=grp) <= 120', foreach=['g', 't'])
+    apart = _wide_objective_of('group_sum(x, over=f, by=grp) + group_sum(y, over=f, by=grp) <= 120', foreach=['g', 't'])
+
+    assert together == pytest.approx(640.0, rel=RTOL)
+    assert apart == pytest.approx(480.0, rel=RTOL)
+    assert together != pytest.approx(apart, rel=RTOL)
+
+
+def test_two_masks_intersect_rather_than_applying_one_at_a_time():
+    """Three operands, two different masks — the summand needs *all* of them.
+
+    `y` is absent at `d`, `v` at `b` and `d`, so the summand exists only at
+    `a` and `c`. Worth its own case because the implementation collects one
+    restriction per fragment and applies every one to every fragment; a version
+    that stopped at the first, or that composed them pairwise down the addition
+    tree, would still pass every single-mask test above.
+    """
+    together = _wide_objective_of('sum(x + y + v, over=f) <= 120', foreach=['t'])
+    apart = _wide_objective_of('sum(x, over=f) + sum(y, over=f) + sum(v, over=f) <= 120', foreach=['t'])
+
+    assert together == pytest.approx(640.0, rel=RTOL)
+    assert apart == pytest.approx(240.0, rel=RTOL)
+
+
+def test_a_broadcast_coefficient_does_not_move_where_the_summand_exists():
+    """A sparse *parameter* is not absence, so it must not restrict anything.
+
+    `w * x` is a term whose coefficient varies over `f`; multiplying by it
+    changes the arithmetic and nothing about presence (SPEC §6: absence is a
+    property of variables). The separation here must therefore come from `y`
+    alone, exactly as in the un-weighted case.
+    """
+    together = _wide_objective_of('sum(w * x + y, over=f) <= 120', foreach=['t'])
+    apart = _wide_objective_of('sum(w * x, over=f) + sum(y, over=f) <= 120', foreach=['t'])
+
+    assert together == pytest.approx(320.0, rel=RTOL)
+    assert apart == pytest.approx(120.0, rel=RTOL)
+
+
+def test_a_mask_on_a_dim_the_reduction_does_not_touch_still_propagates():
+    """Absence does not have to live on the summed dim to reach the summand.
+
+    Here the mask is on `t` and the reduction is over `f`: at `t=1` the whole
+    summand is absent for *every* `f`, so the row sums nothing rather than
+    summing the surviving operand. The restriction is keyed by the dims the
+    presence actually names, which is what makes this work — an implementation
+    keying it by the reduced dim would silently do nothing here.
+    """
+    model = {
+        'dimensions': {'f': {}, 't': {'dtype': 'int'}},
+        'parameters': {'tgate': {'dims': ['t'], 'dtype': 'bool'}},
+        'variables': {
+            'x': {'foreach': ['f', 't'], 'bounds': {'lower': 0, 'upper': 100}},
+            'y': {'foreach': ['f', 't'], 'where': 'tgate', 'bounds': {'lower': 0, 'upper': 50}},
+        },
+        'constraints': {'c': {'foreach': ['t'], 'equations': [{'expression': 'sum(x + y, over=f) <= 120'}]}},
+        'objectives': {'o': {'sense': 'maximize', 'equations': [{'expression': 'x'}]}},
+    }
+    data = {'tgate': pd.Series([True], index=pd.Index([0], name='t'))}
+    coords = {'f': pd.Index(['a', 'b'], name='f'), 't': pd.Index([0, 1], name='t')}
+
+    with differential(model, data, coords, lp=True) as run:
+        # t=0 the row binds; t=1 the summand is absent everywhere, so both x are free
+        assert float(run.result.objective) == pytest.approx(320.0, rel=RTOL)
+
+
+def test_shift_created_absence_reaches_a_reduction_like_any_other():
+    """The two absence sources have to agree, or `shift` is a second rule.
+
+    A bare `shift` vacates its first coordinate into absence (#289/#291), and
+    that absence must behave inside a reduction exactly like a mask's. If it did
+    not, the language would have two kinds of "not here" and SPEC §6 would be
+    describing only one of them.
+    """
+    model = {
+        'dimensions': {'f': {}, 't': {'dtype': 'int'}},
+        'parameters': {},
+        'variables': {'x': {'foreach': ['f', 't'], 'bounds': {'lower': 0, 'upper': 100}}},
+        'constraints': {
+            'c': {'foreach': ['t'], 'equations': [{'expression': 'sum(x + shift(x, t=1), over=f) <= 120'}]}
+        },
+        'objectives': {'o': {'sense': 'maximize', 'equations': [{'expression': 'x'}]}},
+    }
+    coords = {'f': pd.Index(['a', 'b'], name='f'), 't': pd.Index([0, 1], name='t')}
+
+    with differential(model, {}, coords, lp=True) as run:
+        # t=0 vacates, so that row sums nothing and both x[.,0] stay at 100;
+        # t=1 carries the real row
+        assert float(run.result.objective) == pytest.approx(120.0, rel=RTOL)
