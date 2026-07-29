@@ -149,15 +149,22 @@ class Translate(Expression):
 
     One node for both surface spellings, which differ only in ``wrap``:
     ``roll`` is ``wrap=True`` (periodic, matching ``xarray.roll``), ``shift``
-    is ``wrap=False`` (acyclic — positions translated past the edge contribute
-    zero, by row absence). The node is named for the coordinate map rather
-    than for either spelling, so it does not read as one of the two.
+    is ``wrap=False``. The node is named for the coordinate map rather than for
+    either spelling, so it does not read as one of the two.
+
+    ``fill`` decides what an acyclic shift leaves behind. ``None`` — the
+    default and what bare ``shift`` lowers to — means the vacated positions are
+    **absent**, so they propagate and drop the row, which is what linopy v1
+    means by ``.shift()``. A number means they are present and contribute it,
+    which is the ``.fillna(0)`` escape hatch spelled in the language. It is
+    always ``None`` when ``wrap`` is true, since a cyclic map vacates nothing.
     """
 
     operand: Expression
     dimension: str
     by: int
     wrap: bool = True
+    fill: float | None = None
 
 
 # --------------------------------------------------------------------------

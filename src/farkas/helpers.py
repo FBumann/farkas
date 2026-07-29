@@ -21,10 +21,12 @@ are lowering cases and SQL.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping
+
+_T = TypeVar('_T')
 
 
 @dataclass(frozen=True)
@@ -39,6 +41,13 @@ class Builtin:
     ``dimension_is_key`` marks the helpers that instead name the dimension in
     the keyword *key* (``roll(x, snapshot=1)``) and therefore take exactly one,
     whatever it is called. ``usage`` is the one wording every lane quotes back.
+
+    ``value_kwargs`` are the exception to all of that: a fixed keyword whose
+    value is a number and whose key never names a dimension. There is one,
+    ``shift(..., fill=0)``, and it exists so a caller can ask for the vacated
+    positions to be filled rather than absent (§7). ``refusals`` names the
+    keywords a helper deliberately does *not* take, with the reason, so the
+    error can say why rather than only that the shape is wrong.
     """
 
     positional: int
@@ -46,6 +55,8 @@ class Builtin:
     dimension_kwargs: tuple[str, ...] = ()
     coordinate_kwargs: tuple[str, ...] = ()
     dimension_is_key: bool = False
+    value_kwargs: tuple[str, ...] = ()
+    refusals: tuple[tuple[str, str], ...] = ()
 
     @property
     def keywords(self) -> frozenset[str]:
@@ -61,8 +72,18 @@ BUILTINS: dict[str, Builtin] = {
         dimension_kwargs=('over',),
         coordinate_kwargs=('by',),
     ),
-    'roll': Builtin(1, 'roll(<expr>, <dim>=<n>)', dimension_is_key=True),
-    'shift': Builtin(1, 'shift(<expr>, <dim>=<n>)', dimension_is_key=True),
+    'roll': Builtin(
+        1,
+        'roll(<expr>, <dim>=<n>)',
+        dimension_is_key=True,
+        refusals=(('fill', 'roll is cyclic, so no position is ever vacated'),),
+    ),
+    'shift': Builtin(
+        1,
+        'shift(<expr>, <dim>=<n>[, fill=0])',
+        dimension_is_key=True,
+        value_kwargs=('fill',),
+    ),
 }
 
 BUILTIN_NAMES = frozenset(BUILTINS)
@@ -77,10 +98,29 @@ def call_shape_error(name: str, positional: int, kwargs: Iterable[str]) -> str |
     """
     builtin = BUILTINS[name]
     keys = set(kwargs)
+    for refused, reason in builtin.refusals:
+        if refused in keys:
+            return f'{name}() takes no {refused}= — {reason}. Expects {builtin.usage}'
+    named = keys - set(builtin.value_kwargs)
     fits = positional == builtin.positional and (
-        len(keys) == 1 if builtin.dimension_is_key else keys == builtin.keywords
+        len(named) == 1 if builtin.dimension_is_key else named == builtin.keywords
     )
     return None if fits else f'{name}() expects {builtin.usage}'
+
+
+def split_dimension_key(name: str, kwargs: Mapping[str, _T]) -> tuple[str, _T, dict[str, _T]]:
+    """A ``dimension_is_key`` call's dimension, its offset, and its value kwargs.
+
+    Three passes unpack these kwargs (dim algebra, lowering, and the eager
+    builder), and each of them wants "the one that names a dimension" rather
+    than "the only one" — which stopped being the same thing when ``fill=``
+    arrived. Splitting here keeps the three from disagreeing about which
+    keyword is which.
+    """
+    builtin = BUILTINS[name]
+    values = {k: v for k, v in kwargs.items() if k in builtin.value_kwargs}
+    ((dim, by),) = ((k, v) for k, v in kwargs.items() if k not in values)
+    return dim, by, values
 
 
 def unknown_helper_message(name: str) -> str:

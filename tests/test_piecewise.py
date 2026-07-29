@@ -342,6 +342,28 @@ def test_expansion_emits_the_lambda_declarations():
     }
 
 
+def test_the_adjacency_row_survives_at_the_first_breakpoint(nonconvex_inputs):
+    """The reason ``shift`` kept an escape hatch when it started meaning absence.
+
+    Adjacency is ``lam <= seg + shift(seg, bp=1, fill=0)``. At the first
+    breakpoint the shifted term has no predecessor: filled it contributes zero
+    and the row reads ``lam <= seg``, which is correct. Absent it would
+    propagate and drop the row (#289), leaving the first lambda bounded only by
+    ``[0, 1]`` — free to sit on a breakpoint the active segment does not touch,
+    which is a wrong MILP that still solves.
+
+    So this asserts the row *exists*, not just that the expansion mentions
+    ``fill``: the escape hatch is only worth having if it reaches the model.
+    """
+    expanded = expand_piecewise(schema_of(NONCONVEX_YAML))
+    assert 'fill=0' in expanded.constraints['cost_curve_adjacency'].equations[0].expression
+
+    data, coords = nonconvex_inputs
+    with differential(NONCONVEX_YAML, data, coords) as run:
+        first = run.model.constraints['cost_curve_adjacency'].labels.isel({'bp': 0}).values
+        assert (first != -1).all(), 'the first breakpoint lost its adjacency row'
+
+
 def test_the_emitted_foreach_follows_declaration_order():
     """The frame is a *set* of dims until something orders it, and iterating a
     set spends randomised string hashing — so the emitted ``foreach``, and every

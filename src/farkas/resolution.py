@@ -229,7 +229,7 @@ def _resolve_arith(node: ArithmeticNode, ns: Namespace, context: str, errors: li
         kwargs: dict[str, ArithmeticNode] = {}
         for key, value in node.kwargs.items():
             # roll(x, snapshot=1): the dim is the key, so there is no node to type
-            if builtin.dimension_is_key and key not in ns.dimensions:
+            if builtin.dimension_is_key and key not in builtin.value_kwargs and key not in ns.dimensions:
                 errors.append(_undeclared_dim(context, node.name, f'{key}=...', key, ns))
             if key in builtin.dimension_kwargs:
                 kwargs[key] = _resolve_dim_ref(value, ns, context, node.name, key, errors)

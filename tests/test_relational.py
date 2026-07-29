@@ -838,7 +838,7 @@ def _reindexed_parameter_model(op: str) -> dict:
         'dimensions': {'t': {'dtype': 'int', 'values': [0, 1, 2]}},
         'parameters': {'dt': {'dims': ['t']}},
         'variables': {'x': {'foreach': ['t'], 'bounds': {'lower': 0, 'upper': 100}}},
-        'constraints': {'r': {'foreach': ['t'], 'equations': [{'expression': f'x <= {op}(dt, t=1)'}]}},
+        'constraints': {'r': {'foreach': ['t'], 'equations': [{'expression': f'x <= {op}'}]}},
         'objectives': {'o': {'sense': 'maximize', 'equations': [{'expression': 'sum(x, over=t)'}]}},
     }
 
@@ -846,23 +846,23 @@ def _reindexed_parameter_model(op: str) -> dict:
 @pytest.mark.parametrize(
     ('op', 'expected'),
     [
-        # shift is acyclic: t=0 vacates to zero, which in RHS position is a pin
-        ('shift', {0: 0.0, 1: 5.0, 2: 6.0}),
-        # roll is cyclic: t=0 reads the last value instead
-        ('roll', {0: 7.0, 1: 5.0, 2: 6.0}),
+        # roll is cyclic: nothing is vacated, so t=0 reads the last value
+        ('roll(dt, t=1)', {0: 7.0, 1: 5.0, 2: 6.0}),
+        # shift with the escape hatch: the vacated position contributes zero,
+        # and a zero in right-hand-side position is a pin
+        ('shift(dt, t=1, fill=0)', {0: 0.0, 1: 5.0, 2: 6.0}),
     ],
 )
-def test_shift_and_roll_re_index_a_parameter_not_only_a_variable(op, expected):
-    """``array`` in §7 is any node, so both operators read a parameter.
+def test_roll_and_filled_shift_re_index_a_parameter_not_only_a_variable(op, expected):
+    """``array`` in §7 is any node, so these operators read a parameter.
 
     Worth its own test because every example in SPEC took a variable, and a
     downstream consumer built and shipped a hand-shifted copy of a parameter
     table before probing revealed this works.
 
-    The parametrisation carries the sharp edge: ``shift``'s vacated position
-    contributes zero, and a zero in *right-hand-side* position is ``x <= 0`` —
-    a pin, not "unconstrained". ``roll`` is the contrast, and the two differ
-    only at ``t=0``.
+    ``fill=0`` is what a *bare* ``shift`` used to mean here, and the pin it
+    produces at ``t=0`` is why it stopped being the default — see the refusal
+    below. Spelled out, it is a legitimate thing to ask for, so it still works.
     """
     data = {'dt': pd.Series({0: 5.0, 1: 6.0, 2: 7.0})}
     with differential(_reindexed_parameter_model(op), data, lp=True) as run:
@@ -870,6 +870,25 @@ def test_shift_and_roll_re_index_a_parameter_not_only_a_variable(op, expected):
         x = dict(zip(solved['t'], solved['value'], strict=True))
         for t, want in expected.items():
             assert x[t] == pytest.approx(want, abs=1e-9), f'{op} at t={t}'
+
+
+def test_a_bare_shift_over_data_is_refused_rather_than_filled():
+    """The pin, removed at its source (#289).
+
+    ``x <= shift(dt, t=1)`` used to build ``x <= 0`` at the first coordinate:
+    a bound invented from a slot that has no value. Absence would be the
+    consistent answer, but a parameter has no absence to propagate — a missing
+    row is a zero coefficient (§6) — so this follows linopy v1 and refuses,
+    at load time, naming the three things the author might have meant.
+
+    Decidable without data, so ``fk.check()`` catches it: the operand is
+    variable-free by declaration, not by what arrives in ``sources``.
+    """
+    model = _reindexed_parameter_model('shift(dt, t=1)')
+    with pytest.raises(LanguageError) as exc:
+        fk.check(model)
+    assert 'fill=0' in str(exc.value), 'the refusal must name the escape hatch'
+    assert 'roll' in str(exc.value), 'and the operator for a genuinely cyclic horizon'
 
 
 PINNED_MODEL = {

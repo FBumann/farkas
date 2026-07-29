@@ -289,7 +289,7 @@ def _check_template_names(
             errors.extend(
                 f'{context}: {node.name}({key}=...) does not name a declared dimension.'
                 for key in node.kwargs
-                if key not in known_dims
+                if key not in known_dims and key not in builtin.value_kwargs
             )
         for value in node.kwargs.values():
             if not isinstance(value, NameNode):

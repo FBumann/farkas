@@ -224,6 +224,11 @@ what an existing `where: "snapshot > 0"` means.
 | dimension argument (`over=`, `into=`, `roll(x, snapshot=1)`) | dimension |
 | where string | parameter, dimension |
 | `bounds.lower` / `.upper` | parameter name, or a number |
+| `shift(x, d=n, fill=0)` — the `fill` key | a number, never a dimension |
+
+`fill` is the one keyword whose *key* is fixed rather than naming a dimension,
+so a dimension called `fill` does not change what it means; the position takes
+a number and nothing else.
 
 A dimension in a value position is an error — it is a coordinate space, not
 data. To use its coordinates as data, declare a parameter over it.
@@ -287,10 +292,9 @@ not there, mask the row (`where: "rel_max"`) and let the row go with it.
 
 This matches linopy's v1 arithmetic convention, which both lanes are built
 against; `farkas.linopy.semantics` is where the eager lane answers it. `shift`
-is the one place it does not: v1 counts `.shift()` among the operations that
-*create* absence, while §7 fills its vacated positions with zero, so both lanes
-are held to the zero by construction. Whether to adopt v1 there is
-[#289](https://github.com/FBumann/farkas/issues/289).
+creates absence there too (§7), so the four ways to say "not here" — a `where`
+mask, a bare variable name, an absent operand, and an acyclic shift — are one
+rule and not four.
 
 ```text
 where_expr ::= atom | "NOT" where_expr | where_expr ("AND"|"OR") where_expr
@@ -333,17 +337,36 @@ a comparison of dialects. Dimension arguments are name-checked at load time:
 | `sum(array, over=dim)` | `dim` collapses | `array` must carry `dim` |
 | `group_sum(array, over=dim, by=coord)` | `over` → the dimension `coord` targets | `coord` is declared on `over` (§2); its values are the group labels, checked against the target dimension at bind time. The membership sum that makes topology data rather than structure; groups with no members contribute nothing |
 | `roll(array, dim=n)` | value at *t−n*, cyclic | coordinates fixed, values wrap |
-| `shift(array, dim=n)` | value at *t−n*, acyclic | vacated positions contribute **zero** |
+| `shift(array, dim=n)` | value at *t−n*, acyclic | vacated positions are **absent**: they propagate and drop the row (§6) |
+| `shift(array, dim=n, fill=0)` | as above | vacated positions contribute **zero** instead, and the row survives |
 
 `array` is any node of the right dim set, so `roll` and `shift` re-index a
-**parameter** as readily as a variable: `shift(dt, t=1)` is the previous
+**parameter** as readily as a variable: `shift(dt, t=1, fill=0)` is the previous
 snapshot's duration, and saves shipping a pre-shifted copy of a table the model
-already has. `shift`'s zero has a sharp edge in RHS position, where it is a bound rather
-than a term — `x <= shift(dt, t=1)` pins the first coordinate to `x <= 0`, not
-"unconstrained". Mask that coordinate out where the pin is not the intent, or
-use `roll` where the horizon really is cyclic. That the zero is right for a term
-and wrong for a bound is what
-[#289](https://github.com/FBumann/farkas/issues/289) weighs.
+already has.
+
+A shift moves values along a dimension and leaves the position at the edge with
+nothing to move in. That position is **absent**, which is the same word §6 uses
+for a masked variable and behaves the same way — so an acyclic recurrence has
+no row at its first coordinate rather than a row asserting the quantity starts
+at zero. An initial condition is then something the model states, next to the
+recurrence and under a complementary `where`, rather than something the
+language supplies unasked.
+
+`fill=0` asks for the zero back, for the case where the vacated position really
+does contribute nothing to a *sum*: `lam <= seg + shift(seg, bp=1, fill=0)`
+bounds the first breakpoint by the first segment, where dropping the row would
+leave it unbounded. It takes the literal `0` — a nonzero fill is a constant
+contributed at the vacated coordinate, which is a different thing from a
+translated term and is refused rather than half-implemented — and `roll` refuses
+it outright, having vacated nothing.
+
+**A bare `shift` over a variable-free expression is a load error.** Absence is a
+property of variables (§6); a parameter's missing row is a zero coefficient, so
+there is no absence for the vacated slot to carry and inventing a value there is
+what silently turned `x <= shift(dt, t=1)` into `x <= 0`. The error names the
+three things it could have meant: `fill=0`, a `where` that masks the coordinate
+out, or `roll` if the horizon is genuinely cyclic.
 
 Anything composable out of these belongs in `macros:`. Math that is not sayable
 at all goes to a declared `escape:` island
