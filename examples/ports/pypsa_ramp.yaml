@@ -1,5 +1,5 @@
 # PyPSA linear optimal power flow, rung 2: rung 1 plus generator ramp limits.
-# Optimum 18200.0, from PyPSA itself. See docs/ports.md.
+# Optimum 18200.0, from PyPSA itself. See docs/models/index.md.
 
 dimensions:
   snapshot:

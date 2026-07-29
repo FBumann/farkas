@@ -1,18 +1,24 @@
-"""Which language construct each example model exercises, read off its plan.
+"""The gallery's two evidence tables: what each model exercises, and what
+somebody else says its answer is.
 
-    uv run python -m tools.constructs           # rewrite the table in the gallery
-    uv run python -m tools.constructs --check   # fail if it has drifted
+    uv run python -m tools.constructs           # rewrite both tables
+    uv run python -m tools.constructs --check   # fail if either has drifted
 
-The point of generating it is that a hand-kept coverage table is the exact
+The point of generating them is that a hand-kept evidence table is the exact
 shape of claim that rots: it is written once when it is true, and nothing
-fails when a model changes underneath it. ``tests/test_constructs.py`` asserts
-the committed table equals what this produces.
+fails when a model changes underneath it. ``tests/test_models_gallery.py``
+asserts the committed tables equal what this produces.
 
-It reads the **logical plan**, not the YAML text. Grepping for ``roll(`` would
-count a construct inside a macro that never expands, miss one a macro
-introduces, and disagree with itself about whether a bound written as ``0`` is
-a bound. ``lower_program`` needs no data, so the plan is available for any
-model in the repo — and it is what the engine actually builds.
+**Constructs** are read off the **logical plan**, not the YAML text. Grepping
+for ``roll(`` would count a construct inside a macro that never expands, miss
+one a macro introduces, and disagree with itself about whether a bound written
+as ``0`` is a bound. ``lower_program`` needs no data, so the plan is available
+for any model in the repo — and it is what the engine actually builds.
+
+**References** are read off ``examples/ports/references.json``, which is the
+same file ``tests/test_ports.py`` asserts against. That is the whole point: a
+published optimum and an asserted optimum that can disagree is a correctness
+claim with nothing behind it. Adding a port is a JSON entry and a regenerate.
 """
 
 from __future__ import annotations
@@ -35,6 +41,7 @@ ROOT = Path(__file__).resolve().parent.parent
 PAGE = ROOT / 'docs' / 'models' / 'index.md'
 REFERENCES = json.loads((ROOT / 'examples' / 'ports' / 'references.json').read_text())
 BEGIN, END = '<!-- constructs:begin -->', '<!-- constructs:end -->'
+REF_BEGIN, REF_END = '<!-- references:begin -->', '<!-- references:end -->'
 
 #: Column order is the order a reader meets these in docs/SPEC.md, not alphabetical
 #: and not by how many models happen to use them.
@@ -119,6 +126,37 @@ def table(models: list[tuple[str, Path]]) -> str:
     return '\n'.join(lines)
 
 
+def references_table() -> str:
+    """One row per verified port, straight from ``references.json``.
+
+    The optimum is written as ``repr`` rather than rounded: this is the number
+    the assertion uses, and a table that rounds it is a different claim from
+    the one the test makes.
+
+    ``rtol`` is a column rather than a footnote even though every port shares
+    one today — a footnote saying "all matched to 1e-09" becomes quietly false
+    the first time one does not, and nothing would catch it.
+    """
+    lines = [
+        '| port | optimum | `rtol` | duals | reference |',
+        '|---|---|---|---|---|',
+    ]
+    notes = []
+    for name, entry in sorted(REFERENCES.items()):
+        duals = '**✔**' if entry.get('duals') else '·'
+        mark = f'[^{name}]' if entry.get('corroborated_by') else ''
+        lines.append(
+            f'| [{name}]({name}.md) | {entry["objective"]!r} | {entry["rtol"]:g} | '
+            f'{duals} | {entry["provenance"]}{mark} |'
+        )
+        if corroborated := entry.get('corroborated_by'):
+            notes.append(f'[^{name}]: {corroborated}')
+    # Corroboration runs to a paragraph, so it goes under the table rather than
+    # in a cell — `footnotes` is already on in mkdocs.yml and renders in the
+    # repo view as plain text that still reads.
+    return '\n'.join(lines) + ('\n\n' + '\n\n'.join(notes) if notes else '')
+
+
 def models() -> list[tuple[str, Path]]:
     """Every model the gallery shows, examples before ports."""
     examples = sorted((ROOT / 'examples').glob('*.yaml'))
@@ -126,10 +164,15 @@ def models() -> list[tuple[str, Path]]:
     return [(p.stem, p) for p in examples] + [(p.stem, p) for p in ports]
 
 
+def _replace(page: str, begin: str, end: str, body: str) -> str:
+    i, j = page.index(begin) + len(begin), page.index(end)
+    return page[:i] + '\n' + body + '\n' + page[j:]
+
+
 def rendered(page: str) -> str:
-    """*page* with the block between the markers replaced."""
-    i, j = page.index(BEGIN) + len(BEGIN), page.index(END)
-    return page[:i] + '\n' + table(models()) + '\n' + page[j:]
+    """*page* with both generated blocks replaced."""
+    page = _replace(page, BEGIN, END, table(models()))
+    return _replace(page, REF_BEGIN, REF_END, references_table())
 
 
 def main(argv: list[str] | None = None) -> int:

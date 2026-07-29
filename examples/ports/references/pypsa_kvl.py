@@ -11,7 +11,7 @@
 # # Checked: this script emits byte-identical output on pandas 2.3.3 and
 # # 3.0.5, so the floor is a measured claim rather than an assumption.
 # ///
-"""Reference for ``pypsa_kvl``: PyPSA's own LOPF with lines. See docs/ports.md.
+"""Reference for ``pypsa_kvl``: PyPSA's own LOPF with lines. See docs/models/index.md.
 
     uv run --script examples/ports/references/pypsa_kvl.py
 

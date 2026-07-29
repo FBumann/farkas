@@ -74,7 +74,7 @@ Write the math in YAML, bind data at runtime, solve.
 
     Eleven models in the gallery match an optimum this project did not compute —
     GAMS, PyPSA, OR-Library, TSPLIB — objectives *and* shadow prices.
-    [The corpus](ports.md)
+    [The corpus](models/index.md)
 
 </div>
 
@@ -278,11 +278,10 @@ pip install "farkas[linopy]"  # adds linopy + xarray + pandas: the shim, the
 
 !!! warning "Alpha, pre-1.0"
 
-    **Breaking changes land without a deprecation cycle.** When a construct is
-    named wrong, a default is wrong, or a permissive input turns out to hide a
-    silent wrong answer, it gets fixed rather than aliased. Pin an exact version
-    if you depend on this, and read the [changelog](changelog.md) before
-    upgrading — breaking commits are marked `!`, and every one names the
-    rewrite. It is the *surface* that is not yet frozen, not the behaviour.
+    {%
+       include-markdown "../README.md"
+       start="<!--status-start-->"
+       end="<!--status-end-->"
+    %}
 
 </div>

@@ -1,6 +1,6 @@
 # PyPSA linear optimal power flow, rung 5: passive AC lines under Kirchhoff's
 # voltage law, rather than links whose flow is chosen.
-# Optimum 17000.0, from PyPSA itself. See docs/ports.md.
+# Optimum 17000.0, from PyPSA itself. See docs/models/index.md.
 
 dimensions:
   snapshot:

@@ -9,7 +9,7 @@ Each expected objective was published with the model or produced by somebody
 else's code; ``examples/ports/references/`` holds the scripts, run out of band,
 and ``references.json`` records what they said. So the corpus needs no oracle
 and no extra dependency: it is linopy-free and pandas-free, and runs on the
-bare-install job. See docs/ports.md; the gallery page for each port is
+bare-install job. See docs/models/index.md; the gallery page for each port is
 asserted against its model file by ``test_models_gallery.py``.
 """
 

@@ -1,6 +1,6 @@
 # PyPSA unit commitment: binary status per generator per snapshot, with
 # start-up and shut-down charges. Optimum 24900.0, from PyPSA itself.
-# See docs/ports.md.
+# See docs/models/index.md.
 
 dimensions:
   snapshot:

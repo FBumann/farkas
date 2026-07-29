@@ -7,7 +7,7 @@
 # # data model. pandas is a floor — it only shapes the input tables.
 # ///
 """Reference for ``transport_pwl``: the same model through linopy's own
-piecewise formulation. See docs/ports.md.
+piecewise formulation. See docs/models/index.md.
 
     uv run --script examples/ports/references/transport_pwl.py
 

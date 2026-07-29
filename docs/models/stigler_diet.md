@@ -67,7 +67,7 @@ $$\mathit{spend}_{f} \ge 0 \qquad \forall\thinspace f \in \mathcal{F}$$
 # Stigler's diet problem (1945): the cheapest set of foods meeting a year's
 # nutritional minimums. Laderman solved it in 1947 on desk calculators as the
 # first serious test of the simplex method — nine clerks, about 120 man-days,
-# for an annual cost of $39.69. See docs/ports.md.
+# for an annual cost of $39.69. See docs/models/index.md.
 #
 # Stigler's table is normalised per dollar spent, so a variable is *money on a
 # food per day* rather than a quantity, and the objective is simply the total.
@@ -152,6 +152,9 @@ objectives.
 
 ## Side by side
 
+<details>
+<summary><b>linopy</b> — <code>examples/ports/references/stigler_diet.py</code></summary>
+
 ```python
 from __future__ import annotations
 
@@ -218,6 +221,8 @@ def main() -> float:
 if __name__ == '__main__':
     main()
 ```
+
+</details>
 
 ## What it exercises
 

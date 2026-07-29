@@ -107,7 +107,7 @@ $$1 \le u_{c} \le 17 \qquad \forall\thinspace c \in \mathcal{C}$$
 ```yaml
 # The travelling salesman problem, MTZ formulation. TSPLIB instance `gr17`:
 # 17 cities, explicit distance matrix, published optimum 2085.
-# See docs/ports.md — this is the port that tests where the ceiling actually is.
+# See docs/models/index.md — this is the port that tests where the ceiling actually is.
 #
 # TSP's usual formulation (Dantzig-Fulkerson-Johnson) forbids subtours with one
 # row per subset of cities. Written out in full that is sayable here — the
