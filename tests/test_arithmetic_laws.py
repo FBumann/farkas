@@ -344,19 +344,35 @@ def test_shift_created_absence_reaches_a_reduction_like_any_other():
     that absence must behave inside a reduction exactly like a mask's. If it did
     not, the language would have two kinds of "not here" and SPEC §6 would be
     describing only one of them.
+
+    The shifted operand is a **separate** variable from the one the objective
+    maximises, and that is what makes the case discriminating. Written as
+    ``sum(x + shift(x, t=1), over=f)`` it is not: the ``t=1`` row bounds the
+    same ``x[.,0]`` that a missing restriction would bound at ``t=0``, so it
+    dominates and the objective reads 120 either way. Verified by disabling the
+    propagation — that spelling still passed while five other cases failed.
+
+    Here ``v`` appears only under the shift, so ``t=0`` is the only place the
+    rule can show: propagated, the summand is absent there and ``x[.,0]`` is
+    free to its bounds; without it the row survives as ``sum(x, over=f) <= 120``
+    and caps them at 120, giving 240.
     """
     model = {
         'dimensions': {'f': {}, 't': {'dtype': 'int'}},
         'parameters': {},
-        'variables': {'x': {'foreach': ['f', 't'], 'bounds': {'lower': 0, 'upper': 100}}},
+        'variables': {
+            'x': {'foreach': ['f', 't'], 'bounds': {'lower': 0, 'upper': 100}},
+            'v': {'foreach': ['f', 't'], 'bounds': {'lower': 0, 'upper': 100}},
+        },
         'constraints': {
-            'c': {'foreach': ['t'], 'equations': [{'expression': 'sum(x + shift(x, t=1), over=f) <= 120'}]}
+            'c': {'foreach': ['t'], 'equations': [{'expression': 'sum(x + shift(v, t=1), over=f) <= 120'}]}
         },
         'objectives': {'o': {'sense': 'maximize', 'equations': [{'expression': 'x'}]}},
     }
     coords = {'f': pd.Index(['a', 'b'], name='f'), 't': pd.Index([0, 1], name='t')}
 
     with differential(model, {}, coords, lp=True) as run:
-        # t=0 vacates, so that row sums nothing and both x[.,0] stay at 100;
-        # t=1 carries the real row
-        assert float(run.result.objective) == pytest.approx(120.0, rel=RTOL)
+        # t=0: the shifted operand vacates, so the summand is absent and the row
+        # sums nothing — both x[.,0] stay at 100. t=1: the row binds, and `v` is
+        # free to fall to 0, leaving 120 for x[.,1].
+        assert float(run.result.objective) == pytest.approx(320.0, rel=RTOL)
