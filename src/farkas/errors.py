@@ -110,5 +110,17 @@ def null_bounds_message(name: str, rows: int) -> str:
     all in a bound: unbounded is not bounded-at-zero, and guessing either way
     changes which solutions exist. So both lanes refuse, and both say so while
     the model is still being built rather than letting the gap reach a sink.
+
+    Naming both exits is the point. They are not two spellings of one repair —
+    supplying the value keeps the variable and bounds it, masking removes the
+    variable from every row and from the solution. A message that named only one
+    would be choosing the model on the caller's behalf, which is the thing the
+    refusal exists to avoid.
     """
-    return f"variable '{name}': {rows} rows have NULL bounds — a bound parameter is missing values for some coordinates"
+    return (
+        f"variable '{name}': {rows} rows have NULL bounds — a bound parameter is missing "
+        f'values for some coordinates. The two ways out build different models, so the '
+        f'language will not pick one:\n'
+        f'  supply the value           the variable exists there, bounded (`inf` is a value)\n'
+        f'  where: "<the parameter>"   the variable does not exist there at all'
+    )

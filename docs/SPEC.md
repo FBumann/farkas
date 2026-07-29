@@ -322,6 +322,15 @@ for the opposite intent:
 | to test whether a variable exists here | its bare name in a `where` |
 | a sparse coefficient to remove the row rather than zero the term | mask on it — `where: "rel_max"` |
 | to divide by a parameter you only have some of | mask the row or the variable — `where: "d"`. The divisor is required where the division survives, not everywhere it is indexed |
+| a bound only where the data has one | supply the missing value (`inf` is a value), or mask the variable — the two build **different models**, so neither is inferred |
+
+**Only one of those is a fill, and that is the rule.** `shift(..., fill=0)`
+exists because the vacated coordinate is *created by the operator* — there is no
+row a caller could have supplied. Everywhere else the value is expressible in
+the data, so the language does not offer a default and §11 keeps the fill in
+data prep. A bound with no value is the sharp case: `.fillna(inf)` is one line
+in the caller, and a dense bound table is one row per `foreach` coordinate —
+the same order as the variable it bounds, which is being built anyway.
 
 This is linopy's v1 arithmetic convention, which both lanes are built against;
 `farkas.linopy.semantics` is where the eager lane answers it.
@@ -583,6 +592,7 @@ not a silent override. There is no `register()` decorator and no helper registry
 | multi-objective | one objective — declaring a second is a load error (§2); weight them into one expression |
 | schema migrations | — |
 | arbitrary array ops (`merge`, `reindex`, `apply_ufunc`) | data prep, or a declared `escape:` island — the closed AST is what makes streaming possible |
+| filling a missing value (`.fillna`) | data prep, or a `where` if you meant the coordinate not to exist. In the language only where the data cannot reach — `shift(..., fill=)`, §6 |
 
 Calliope's math language is a corpus we score coverage against, not a
 specification we match; file portability is not a goal, and neither is
