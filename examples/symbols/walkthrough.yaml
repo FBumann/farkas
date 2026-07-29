@@ -1,0 +1,28 @@
+# The dispatch notation, for the model that carries a macro and a named
+# expression.
+#
+#   python -m farkas markdown examples/walkthrough.yaml \
+#       --symbols examples/symbols/walkthrough.yaml
+#
+# Note what is *not* here: `total_supply` and `weighted_sum`. Both are gone
+# before the walk sees anything (expansion precedes everything — hard rule 1),
+# so there is no symbol to give them. That is the sidecar agreeing with the
+# language rather than working around it: naming either would be an error,
+# because the model does not declare them as parameters or variables.
+
+dimensions:
+  snapshot: {index: s, set: "\\mathcal{S}"}
+  generator: {index: g, set: "\\mathcal{G}"}
+
+names:
+  cost: "c"
+  load: "\\ell"
+  p_max: "\\bar p"
+
+descriptions:
+  snapshot: dispatch periods
+  generator: generating units, including the retired one
+  p: output of generator $g$ in snapshot $s$
+  cost: marginal cost
+  load: demand to be met
+  p_max: installed capacity, zero for a retired unit

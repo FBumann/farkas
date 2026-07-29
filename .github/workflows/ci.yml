@@ -53,6 +53,44 @@ jobs:
       - run: uv sync --group docs
       - run: uv run --no-sync mkdocs build --strict
 
+      # Typst is compiled by the suite above — it ships as a pip wheel, so
+      # `pytest` already proves that half. LaTeX needs a toolchain, so its
+      # compile lives here. The suite's structural checks (brace balance,
+      # environment nesting, \left/\right pairing) are what a *generator* gets
+      # wrong and need nothing installed, but they are not a compile: a
+      # malformed \mathcal or a package we forgot to \usepackage passes every
+      # one of them.
+      #
+      # Every model, examples *and* ports — `examples/*.yaml` is not recursive
+      # and would cover five of sixteen, which is the bug #282 fixed in two
+      # test globs. A port is exactly where an unusual construct shows up.
+      #
+      # The package list is deliberately minimal, and each entry earns its place:
+      #   texlive-latex-base        geometry.sty, amsmath.sty (and pulls in
+      #                             texlive-base, which carries amssymb.sty)
+      #   texlive-fonts-recommended the msam/msbm fonts amssymb *draws* with —
+      #                             \mathbb and \ominus are unset without them
+      # If the preamble ever grows a \usepackage, this list grows with it, and
+      # that is the point: it keeps the preamble installable from a small TeX.
+      - name: Install a minimal TeX
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            texlive-latex-base texlive-fonts-recommended
+      - name: Every model renders to LaTeX that compiles
+        # (the Typst half of this claim is `test_typst_output_compiles`)
+        run: |
+          mkdir -p "$RUNNER_TEMP/tex"
+          for model in examples/*.yaml examples/ports/*.yaml; do
+            name=$(basename "$model" .yaml)
+            symbols="examples/symbols/$name.yaml"
+            args=(latex "$model" --standalone -o "$RUNNER_TEMP/tex/$name.tex")
+            [ -f "$symbols" ] && args+=(--symbols "$symbols")
+            uv run --no-sync python -m farkas "${args[@]}"
+            pdflatex -halt-on-error -interaction=nonstopmode \
+              -output-directory "$RUNNER_TEMP/tex" "$RUNNER_TEMP/tex/$name.tex"
+          done
+
       # Re-install the same checkout into the shipped shape, at the declared
       # floors. Two claims in one install:
       #   1. the relational product runs with no linopy, xarray, pandas or

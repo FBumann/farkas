@@ -1,0 +1,29 @@
+# The notation docs/models/dispatch.md already uses, written down.
+#
+# That page states the math by hand, in symbols a reader of the gallery
+# expects — $\bar p_g$ for a capacity, $\ell_s$ for a load, $s$ for a snapshot
+# — and nothing checks it against the model beside it. This file is what lets
+# the page be *generated* in that notation instead:
+#
+#   python -m farkas markdown examples/dispatch.yaml \
+#       --symbols examples/symbols/dispatch.yaml --no-legend
+#
+# The point is not that the derived symbols were wrong. It is that a hand-
+# written equation drifts silently and a generated one cannot.
+
+dimensions:
+  snapshot: {index: s, set: "\\mathcal{S}"}
+  generator: {index: g, set: "\\mathcal{G}"}
+
+names:
+  cost: "c"
+  load: "\\ell"
+  p_max: "\\bar p"
+
+descriptions:
+  snapshot: dispatch periods
+  generator: generating units
+  p: output of generator $g$ in snapshot $s$
+  cost: marginal cost
+  load: demand to be met
+  p_max: installed capacity

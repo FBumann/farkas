@@ -1,0 +1,38 @@
+# The notation docs/models/transport.md already uses, written down —
+# with one deliberate departure.
+#
+#   python -m farkas markdown examples/transport.yaml \
+#       --symbols examples/symbols/transport.yaml
+#
+# The gallery writes $\sum_{g \in \mathrm{bus}} p_{s,g} + \sum_{\ell \to b}
+# f_{s,\ell} - \sum_{\ell \,\text{from}\, b} f_{s,\ell} = \ell_{s,b}$, which
+# uses $\ell$ for the line index *and* for the load. A reader has to
+# disambiguate by position. A generated equation cannot make that choice
+# silently, and this table will not either: lines keep $\ell$, load becomes
+# $d$ (demand). Everything else matches the page.
+
+dimensions:
+  snapshot: {index: s, set: "\\mathcal{S}"}
+  generator: {index: g, set: "\\mathcal{G}"}
+  bus: {index: b, set: "\\mathcal{B}"}
+  line: {index: "\\ell", set: "\\mathcal{L}"}
+
+names:
+  cost: "c"
+  load: "d"
+  p_max: "\\bar p"
+  cap: "\\bar f"
+  neg_cap: "\\underline{f}"
+
+descriptions:
+  snapshot: dispatch periods
+  generator: generating units
+  bus: network nodes
+  line: transmission lines, each joining two buses
+  p: output of generator $g$ in snapshot $s$
+  f: flow on line $\ell$, signed towards its `to` bus
+  cost: marginal cost
+  load: demand at each bus
+  p_max: installed capacity
+  cap: forward transmission limit
+  neg_cap: reverse transmission limit
