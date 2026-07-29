@@ -117,7 +117,11 @@ constraints:
     foreach: [from_city, to_city]
     where: "from_city != c01 AND to_city != c01"
     equations:
-      - expression: group_sum(u, over=city, by=as_from) - group_sum(u, over=city, by=as_to) + n * travel <= n - 1
+      - expression: >-
+          group_sum(u, over=city, by=as_from)
+          - group_sum(u, over=city, by=as_to)
+          + n * travel
+          <= n - 1
 
 objectives:
   tour_length:
