@@ -14,12 +14,21 @@ name: PR title
 
 on:
   pull_request:
-    # Deliberately no `synchronize`: a title does not change when commits do, and
-    # re-running on every push made this a third of the CI bill. The one case it
-    # gives up is a force-push that leaves a PR at exactly one commit with a
-    # non-conventional subject — that costs a CHANGELOG line, and editing the
-    # title (which does re-trigger) fixes it.
-    types: [opened, edited, reopened]
+    # `synchronize` is here because this check is **required**, and a required
+    # check is evaluated against the head commit. Skipping the push event does
+    # not mean "reuse the previous result" — it means the new head has *no*
+    # result, and GitHub waits for one that will never arrive. The PR is then
+    # blocked with nothing to click on: not a failing check, an absent one.
+    #
+    # That is what happened to #269 — opened, pushed to, then stuck at
+    # `mergeStateStatus: BLOCKED` for hours with every visible check green. It
+    # was reported as CI hanging, which is exactly how it looks.
+    #
+    # It was dropped to save a job per push, and that reasoning was sound while
+    # the check was advisory. Once it gates the merge queue, an unreported run
+    # is indistinguishable from an unfinished one, and no amount of waiting
+    # resolves it. Cost: one ~5s job per push, billed as a minute.
+    types: [opened, edited, reopened, synchronize]
 
 permissions:
   contents: read

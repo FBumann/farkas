@@ -121,11 +121,17 @@ that deliberately trades coverage for cost. What that gives up:
   removal or deprecation that only bites on 3.13.
 - **Only two dependency sets are installed:** current-with-dev, and the declared
   floors bare. The floors are exercised *without* linopy/xarray, so the linopy
-  lane is only ever tested against current linopy — narrow, since the pin is
-  already `>=0.9.0,<0.10`.
-- **The PR-title check does not re-run on `synchronize`.** A force-push that
-  leaves a PR at exactly one commit with a non-conventional subject is not
-  re-validated. The cost is a missing CHANGELOG line, not a broken release.
+  lane is only ever tested against current linopy — narrow, since the lane
+  resolves to one branch anyway (`[tool.uv.sources]`, pending the v1 release).
+
+This list used to carry a third entry, and it is worth keeping the correction
+rather than the claim: *"the PR-title check does not re-run on `synchronize` …
+the cost is a missing CHANGELOG line, not a broken release."* The cost was a
+**permanently blocked PR**. A required check is evaluated against the head
+commit, so skipping the push event leaves the new head with no result at all,
+and GitHub waits for one that never arrives — every visible check green, merge
+blocked, nothing to click. #269 sat like that for hours and was reported as CI
+hanging. The trigger is back; the saving was one ~5s job per push.
 
 Tighten these before the first non-alpha release — that is the point where a
 missed regression reaches somebody rather than just us. A Python matrix is the
