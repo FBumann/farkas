@@ -13,6 +13,8 @@ look like an answer.
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pytest
 
@@ -118,3 +120,48 @@ def test_unknown_constraint_is_a_keyerror(dispatch_yaml, dispatch_inputs):
         pytest.raises(KeyError, match='unknown constraint'),
     ):
         run.result.dual('power_balnce')
+
+
+RAMP_BLOCK = {
+    'dimensions': {'t': {'dtype': 'int', 'values': [0, 1, 2]}},
+    'parameters': {'lim': {'dims': ['t']}},
+    'variables': {'p': {'foreach': ['t'], 'bounds': {'lower': 0, 'upper': 100}}},
+    'constraints': {
+        'ramp': {
+            'foreach': ['t'],
+            'equations': [
+                {'expression': 'p - roll(p, t=1) <= lim'},
+                {'expression': 'roll(p, t=1) - p <= lim'},
+            ],
+        }
+    },
+    'objectives': {'o': {'sense': 'maximize', 'equations': [{'expression': 'sum(p, over=t)'}]}},
+}
+
+
+@pytest.mark.parametrize(
+    ('asked', 'expected'),
+    [
+        # the block's own name was never built, and nearest-match is actively
+        # unhelpful here: it picks one sibling and implies the other is not there
+        ('ramp', 'named by position — ramp_0, ramp_1'),
+        ('ram_0', "Did you mean 'ramp_0'?"),
+        ('zzz', 'Declared: ramp_0, ramp_1.'),
+    ],
+)
+def test_reading_back_an_unknown_name_says_what_was_built(asked, expected):
+    """SPEC §9 asks a message to name the fix, and this is where it matters most.
+
+    A multi-equation block names its constraints by list position, so the name
+    the file writes resolves to nothing and the correct answer is one the caller
+    never wrote and cannot guess (#298). A bare ``KeyError`` left them to find
+    that out from the source.
+
+    Single-line on purpose: these raise ``KeyError``, whose ``str`` is the repr
+    of its argument, so a newline would reach the reader as a literal ``\\n``.
+    """
+    import polars as pl
+
+    sources = {'lim': pl.DataFrame({'t': [0, 1, 2], 'value': [10.0, 10.0, 10.0]})}
+    with fk.solve(RAMP_BLOCK, sources) as sol, pytest.raises(KeyError, match=re.escape(expected)):
+        sol.dual(asked)

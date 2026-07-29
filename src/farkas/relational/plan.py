@@ -20,6 +20,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
+from farkas.errors import unknown_name_message
+
 ConstraintSense = Literal['==', '<=', '>=']
 ObjectiveSense = Literal['min', 'max']
 ComparisonOperator = Literal['==', '!=', '<=', '>=', '<', '>']
@@ -320,19 +322,19 @@ class Program:
         for p in self.parameters:
             if p.name == name:
                 return p
-        raise KeyError(f"unknown parameter '{name}'")
+        raise KeyError(unknown_name_message('parameter', name, (p.name for p in self.parameters)))
 
     def variable(self, name: str) -> VariableDeclaration:
         for v in self.variables:
             if v.name == name:
                 return v
-        raise KeyError(f"unknown variable '{name}'")
+        raise KeyError(unknown_name_message('variable', name, (v.name for v in self.variables)))
 
     def constraint(self, name: str) -> ConstraintDeclaration:
         for c in self.constraints:
             if c.name == name:
                 return c
-        raise KeyError(f"unknown constraint '{name}'")
+        raise KeyError(unknown_name_message('constraint', name, (c.name for c in self.constraints)))
 
 
 def divisor_parameters(*expressions: Expression) -> frozenset[str]:
