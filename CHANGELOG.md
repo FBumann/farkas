@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.11](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.10...v0.0.1-alpha.11) (2026-07-29)
+
+
+### Bug Fixes
+
+* **docs:** readable mermaid diagrams in dark mode, and the site icons ([#285](https://github.com/FBumann/farkas/issues/285)) ([b21d5d8](https://github.com/FBumann/farkas/commit/b21d5d8aea094b17713d0cb3547d63c73f89e596))
+
 ## [0.0.1-alpha.10](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.9...v0.0.1-alpha.10) (2026-07-28)
 
 
