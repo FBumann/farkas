@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.22](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.21...v0.0.1-alpha.22) (2026-07-29)
+
+
+### Documentation
+
+* **spec:** when a fill belongs in the language, and when it is data prep ([#325](https://github.com/FBumann/farkas/issues/325)) ([5f71da8](https://github.com/FBumann/farkas/commit/5f71da8deae76011f6d2afd3af685ddb88196cca))
+
 ## [0.0.1-alpha.21](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.20...v0.0.1-alpha.21) (2026-07-29)
 
 
