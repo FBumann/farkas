@@ -41,6 +41,7 @@ jobs:
           REPO: ${{ github.repository }}
           NUMBER: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
           COMMIT_COUNT: ${{ github.event.pull_request.commits }}
         run: |
           set -euo pipefail
@@ -67,6 +68,26 @@ jobs:
 
           check "PR title" "$PR_TITLE"
 
+          # A breaking marker moves the *base* version, not the alpha counter.
+          # The 0.0.0-alpha.N stream was immune — under `versioning: prerelease`
+          # a zero patch is an absorbing state, so every bump only incremented
+          # the counter. The stream left 0.0.0 at #251 and that immunity went
+          # with it: `feat!:` on 0.0.1-alpha.12 produced 0.1.0-alpha.12, which
+          # is how the project jumped a minor by accident. Until the release
+          # config says otherwise, a breaking marker is refused here rather
+          # than discovered in a release PR.
+          base=$(sed -n 's/.*"\.": *"\([^"]*\)".*/\1/p' .release-please-manifest.json)
+          if [[ "$base" == 0.* ]]; then
+            if [[ "$PR_TITLE" =~ ^[a-z]+(\([a-z0-9._/-]+\))?!: ]]; then
+              echo "::error::'!' in the title bumps the base version off the pinned alpha stream (currently ${base})."
+              fail=1
+            fi
+            if grep -qE '^BREAKING[ -]CHANGE:' <<<"${PR_BODY:-}"; then
+              echo "::error::a 'BREAKING CHANGE:' footer bumps the base version off the pinned alpha stream (currently ${base})."
+              fail=1
+            fi
+          fi
+
           # exactly one commit: GitHub squashes using that commit's title, not the PR title
           if [[ "$COMMIT_COUNT" == "1" ]]; then
             only=$(gh api "repos/${REPO}/pulls/${NUMBER}/commits" --jq '.[0].commit.message' | head -1)
@@ -83,9 +104,10 @@ jobs:
                      fix(parser): where clauses with a trailing comma
                      refactor!: closed helper set, no monkey-patch
 
-          A '!' (or a 'BREAKING CHANGE:' footer) marks a breaking change. That only
-          moves the alpha counter while the project is pinned to the 0.0.0aN stream,
-          but it still decides how the change reads in the changelog.
+          A '!' (or a 'BREAKING CHANGE:' footer) is refused while the version is
+          pinned to an alpha stream: it moves the *base* version, not the counter.
+          Describe the break in the PR body instead — the alpha stream carries no
+          compatibility promise, so there is nothing for the version to announce.
 
           Fix the PR title — no need to rewrite the branch. Edits re-run this check.
           EOF
