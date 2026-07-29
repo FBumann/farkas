@@ -88,15 +88,15 @@ Write the math in YAML, bind data at runtime, solve.
 
 {%
    include-markdown "../README.md"
-   start="<!--quickstart-start-->"
-   end="<!--quickstart-end-->"
+   start="<!--model-start-->"
+   end="<!--model-end-->"
 %}
 
-## The same file, as math
+### And that file says, exactly this
 
-A declared model can be *printed* — the way a paper prints it, from the file
-above and nothing else. Which makes it the cheapest review tool here: read the
-math, not the YAML, and see whether it says what you meant.
+Nothing was added here. The math below is *generated from the YAML above* —
+which is what "self-documenting" has to mean if it is to mean anything: read
+the statement, not the syntax, and see whether it is the one you meant.
 
 <!-- home-math:begin -->
 === "The math"
@@ -158,6 +158,14 @@ math, not the YAML, and see whether it says what you meant.
     python -m farkas latex dispatch.yaml --standalone -o dispatch.tex
     ```
 <!-- home-math:end -->
+
+### Then you solve it
+
+{%
+   include-markdown "../README.md"
+   start="<!--solve-start-->"
+   end="<!--quickstart-end-->"
+%}
 
 ## Where to next
 
