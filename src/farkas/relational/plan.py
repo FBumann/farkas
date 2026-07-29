@@ -333,3 +333,49 @@ class Program:
             if c.name == name:
                 return c
         raise KeyError(f"unknown constraint '{name}'")
+
+
+def divisor_parameters(program: Program) -> frozenset[str]:
+    """Parameters appearing anywhere in a divisor position.
+
+    Static, like every other question this module answers: which names *can*
+    reach a divisor is decided by the plan, and whether they cover their
+    coordinates is decided by the data. Splitting it that way keeps the
+    expensive half — a coverage check per parameter — off the parameters that
+    can never need it.
+    """
+
+    found: set[str] = set()
+
+    def names(e: Expression) -> None:
+        if isinstance(e, Parameter):
+            found.add(e.name)
+        elif isinstance(e, Negate):
+            names(e.operand)
+        elif isinstance(e, (Add, Multiply)):
+            names(e.left)
+            names(e.right)
+        elif isinstance(e, Divide):
+            names(e.numerator)
+            names(e.divisor)
+        elif isinstance(e, (Sum, GroupSum, Translate)):
+            names(e.operand)
+
+    def walk(e: Expression) -> None:
+        if isinstance(e, Divide):
+            names(e.divisor)
+            walk(e.numerator)
+            walk(e.divisor)
+        elif isinstance(e, Negate):
+            walk(e.operand)
+        elif isinstance(e, (Add, Multiply)):
+            walk(e.left)
+            walk(e.right)
+        elif isinstance(e, (Sum, GroupSum, Translate)):
+            walk(e.operand)
+
+    for c in program.constraints:
+        walk(c.lhs)
+        walk(c.rhs)
+    walk(program.objective.expression)
+    return frozenset(found)

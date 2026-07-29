@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, Literal, get_args
 
 import polars as pl
 
-from farkas.errors import DataError, LanguageError, LinopyYamlError, NoSolutionError
+from farkas.errors import DataError, LanguageError, LinopyYamlError, NoSolutionError, sparse_divisor_message
 from farkas.relational import plan, sinks
 from farkas.relational.compiler import PolarsCompiler, TermFragment, _ordinal
 from farkas.relational.frames import as_frame
@@ -270,6 +270,7 @@ class PolarsExecutor:
         for p in program.parameters:
             self._create_param_frame(p, sources)
         self._create_dim_frames(program, sources)
+        self._check_divisors_are_dense(program)
 
         self._compiler = PolarsCompiler(
             program,
@@ -325,6 +326,27 @@ class PolarsExecutor:
         if frame.collect_schema()['value'] == pl.Boolean:
             self._bool_params.add(p.name)
         self._parameters[p.name] = frame
+
+    def _check_divisors_are_dense(self, program: plan.Program) -> None:
+        """A divisor may not be sparse, because zero is not a divisor.
+
+        Counted rather than anti-joined: ``_check_one_row_per_coordinate`` has
+        already refused a duplicated coordinate, so for these parameters row
+        count and coordinate count are the same number, and the comparison is a
+        metadata read instead of a join per parameter.
+
+        After the dim frames, since the expected count is the product of the
+        dimension cardinalities — which is also why a scalar divisor needs no
+        check: it covers its one coordinate by existing.
+        """
+        for name in plan.divisor_parameters(program):
+            declared = program.parameter(name).dims
+            if not declared:
+                continue
+            expected = math.prod(self._dim_card[d] for d in declared)
+            actual = self._parameters[name].select(pl.len()).collect(engine='streaming').item()
+            if actual < expected:
+                raise DataError(sparse_divisor_message(name, expected - actual))
 
     def _check_one_row_per_coordinate(self, p: plan.ParameterDeclaration, frame: pl.LazyFrame) -> None:
         """A parameter is a function of its dims: one row per coordinate.

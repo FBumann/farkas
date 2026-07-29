@@ -8,7 +8,15 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from farkas.errors import DataError
+from farkas.errors import DataError, sparse_divisor_message
+from farkas.expansion import parse_and_expand
+from farkas.expression_parser import (
+    BinaryOperatorNode,
+    ComparisonNode,
+    FunctionCallNode,
+    NameNode,
+    UnaryOperatorNode,
+)
 
 if TYPE_CHECKING:
     from farkas.schema import MathSchema
@@ -312,3 +320,57 @@ def _validate_coords(
                 f"Master '{dim}' coords: {list(master_coords[dim])}"
             )
             raise DataError(msg)
+
+
+def check_divisors_are_dense(schema: MathSchema, dataset: Any) -> None:
+    """Refuse a divisor with uncovered coordinates, as the native lane does.
+
+    Reached after the reindex, which is the only point where the gap is still
+    visible: ``semantics.coefficient`` fills an uncovered slot with 0.0 at the
+    use site, so by the time the division happens the divisor reads zero and the
+    term silently drops. Both lanes did that, agreed about it, and were wrong
+    together — which is why this is a check rather than a fill.
+
+    Walks the expanded AST rather than the plan: the eager lane never lowers,
+    and lowering here to answer one question would make it refuse models this
+    lane otherwise accepts.
+    """
+    for name in sorted(_divisor_parameters(schema)):
+        missing = int(dataset[name].isnull().sum())
+        if missing:
+            raise DataError(sparse_divisor_message(name, missing))
+
+
+def _divisor_parameters(schema: MathSchema) -> set[str]:
+    """Parameter names appearing anywhere in a divisor position."""
+    found: set[str] = set()
+
+    def names(node: Any) -> None:
+        if isinstance(node, NameNode) and node.name in schema.parameters:
+            found.add(node.name)
+        for child in _children(node):
+            names(child)
+
+    def walk(node: Any) -> None:
+        if isinstance(node, BinaryOperatorNode) and node.op == '/':
+            names(node.right)
+        for child in _children(node):
+            walk(child)
+
+    for block in (*schema.constraints.values(), *schema.objectives.values()):
+        for i, eq in enumerate(block.equations):
+            node = parse_and_expand(eq.expression, schema, f'{type(block).__name__} equation {i}')
+            walk(node)
+    return found
+
+
+def _children(node: Any) -> tuple[Any, ...]:
+    if isinstance(node, ComparisonNode):
+        return (node.left, node.right)
+    if isinstance(node, BinaryOperatorNode):
+        return (node.left, node.right)
+    if isinstance(node, UnaryOperatorNode):
+        return (node.operand,)
+    if isinstance(node, FunctionCallNode):
+        return (*node.args, *node.kwargs.values())
+    return ()

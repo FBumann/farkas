@@ -280,6 +280,14 @@ coordinates is sparse *encoding*, not absence: its missing rows mean a zero
 coefficient (§8), which is why a coefficient table may hold live entries only.
 Absence is a property of variables.
 
+**A divisor is the exception, and is refused.** Zero is a fill that keeps a
+product meaningful — a zeroed term is a term that does not participate, and the
+row survives saying something. Division has no such identity: `0` divides by
+zero, `1` silently rescales, and dropping the term rewrites what the row
+asserts. So a parameter used in divisor position must cover every coordinate it
+is indexed over, and a gap is a load-time-shaped `DataError` at bind rather than
+a constraint that quietly stops constraining.
+
 **A reduction skips absent slots; it does not distribute over addition.** Those
 two rules compose, and the composition is the part worth reading twice, because
 the two spellings below are the same expression in ordinary algebra and are

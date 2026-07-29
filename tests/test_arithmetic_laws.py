@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import pytest
 
+from farkas.errors import DataError
 from tests.differential import RTOL, differential
 from tests.oracle import pd
 
@@ -376,3 +377,36 @@ def test_shift_created_absence_reaches_a_reduction_like_any_other():
         # sums nothing — both x[.,0] stay at 100. t=1: the row binds, and `v` is
         # free to fall to 0, leaving 120 for x[.,1].
         assert float(run.result.objective) == pytest.approx(320.0, rel=RTOL)
+
+
+def test_a_sparse_divisor_is_refused_rather_than_read_as_zero():
+    """The one position with no defensible fill (#312).
+
+    Everywhere else a missing parameter row is a zero coefficient (SPEC §6), and
+    a zeroed term still leaves a row that says something. A divisor has no such
+    identity: 0 divides by zero, 1 silently rescales, and dropping the term
+    rewrites what the constraint asserts. Both lanes used to take that last
+    option and *agree* about it — `x / d <= 10` became vacuous at the uncovered
+    coordinate and `x` ran to its bound, objective 120 where the constraint
+    reads as 20.
+
+    Agreement is why the differential harness could not catch it: this is the
+    shape of defect that needs a test saying what the answer *should* be, not
+    that the lanes concur.
+    """
+    model = {
+        'dimensions': {'f': {'values': ['a', 'b']}},
+        'parameters': {'d': {'dims': ['f']}},
+        'variables': {'x': {'foreach': ['f'], 'bounds': {'lower': 0, 'upper': 100}}},
+        'constraints': {'c': {'foreach': ['f'], 'equations': [{'expression': 'x / d <= 10'}]}},
+        'objectives': {'o': {'sense': 'maximize', 'equations': [{'expression': 'sum(x, over=f)'}]}},
+    }
+    sparse = {'d': pd.Series([2.0], index=pd.Index(['a'], name='f'))}
+
+    with pytest.raises(DataError, match='used as a divisor'), differential(model, sparse) as run:
+        _ = run.result.objective
+
+    # covered, the same model builds and the row binds on both lanes
+    dense = {'d': pd.Series([2.0, 5.0], index=pd.Index(['a', 'b'], name='f'))}
+    with differential(model, dense, lp=True) as run:
+        assert float(run.result.objective) == pytest.approx(70.0, rel=RTOL)
