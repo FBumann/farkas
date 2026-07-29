@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.12](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.11...v0.0.1-alpha.12) (2026-07-29)
+
+
+### Documentation
+
+* **spec:** three behaviours a consumer could only reach by probing ([#288](https://github.com/FBumann/farkas/issues/288)) ([50b087c](https://github.com/FBumann/farkas/commit/50b087c51428770ec476a29349546cbb6f0a948e))
+
 ## [0.0.1-alpha.11](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.10...v0.0.1-alpha.11) (2026-07-29)
 
 
