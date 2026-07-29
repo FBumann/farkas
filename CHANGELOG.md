@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.0-alpha.12](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.12...v0.1.0-alpha.12) (2026-07-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* a bare `shift()` now drops the row at the vacated coordinate instead of contributing zero there, and `shift()` over a variable-free expression is a load error. Add `fill=0` for the previous behaviour.
+
+### Features
+
+* shift() creates absence, as linopy v1 says it does ([#291](https://github.com/FBumann/farkas/issues/291)) ([b394e70](https://github.com/FBumann/farkas/commit/b394e700c2b45b1eb06d434e95a441d64f6255d9))
+
 ## [0.0.1-alpha.12](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.11...v0.0.1-alpha.12) (2026-07-29)
 
 
