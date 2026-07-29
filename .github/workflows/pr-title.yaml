@@ -35,6 +35,16 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
+      # Only the manifest, because only the manifest is read: the base-version
+      # guard below needs it, and a full checkout would fetch the tree to run a
+      # regex over one line of JSON.
+      - name: Fetch the version manifest
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: .release-please-manifest.json
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
       - name: Validate the subject that will land on main
         env:
           GH_TOKEN: ${{ github.token }}
@@ -76,7 +86,22 @@ jobs:
           # is how the project jumped a minor by accident. Until the release
           # config says otherwise, a breaking marker is refused here rather
           # than discovered in a release PR.
-          base=$(sed -n 's/.*"\.": *"\([^"]*\)".*/\1/p' .release-please-manifest.json)
+          # Both ways this can go wrong are named, because either one leaves the
+          # guard below not running: a missing file aborts the step under `set
+          # -e` with only sed's own message, and a manifest whose shape changed
+          # yields an empty $base, which fails *open* — every '!' would sail
+          # through and the version would move off the stream unannounced.
+          manifest=.release-please-manifest.json
+          if [[ ! -f "$manifest" ]]; then
+            echo "::error::${manifest} not found — the base-version guard cannot run."
+            exit 1
+          fi
+          base=$(sed -n 's/.*"\.": *"\([^"]*\)".*/\1/p' "$manifest")
+          if [[ -z "$base" ]]; then
+            echo "::error::no \".\" version in ${manifest} — the base-version guard cannot run."
+            exit 1
+          fi
+
           if [[ "$base" == 0.* ]]; then
             if [[ "$PR_TITLE" =~ ^[a-z]+(\([a-z0-9._/-]+\))?!: ]]; then
               echo "::error::'!' in the title bumps the base version off the pinned alpha stream (currently ${base})."
