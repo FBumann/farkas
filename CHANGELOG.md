@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.0.1-alpha.13](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.12...v0.0.1-alpha.13) (2026-07-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* **linopy:** importing `farkas.linopy` sets `linopy.options['semantics']` to 'v1' process-wide. Models built through this lane change answer wherever a variable is masked or shifted — that is the point, and it is the answer the native engine has always given.
+* a bare `shift()` now drops the row at the vacated coordinate instead of contributing zero there, and `shift()` over a variable-free expression is a load error. Add `fill=0` for the previous behaviour.
+
+### Features
+
+* shift() creates absence, as linopy v1 says it does ([#291](https://github.com/FBumann/farkas/issues/291)) ([b394e70](https://github.com/FBumann/farkas/commit/b394e700c2b45b1eb06d434e95a441d64f6255d9))
+
+
+### Bug Fixes
+
+* **linopy:** the lane selects v1 on import, and fill= takes the identity of its position ([#293](https://github.com/FBumann/farkas/issues/293)) ([451c354](https://github.com/FBumann/farkas/commit/451c3548e6dc88e851d1f51e6c69f9be13a4220e))
+* **release:** put the version back on the alpha stream, and make the pin real ([#295](https://github.com/FBumann/farkas/issues/295)) ([8ef60a5](https://github.com/FBumann/farkas/commit/8ef60a57d3a4fecb649bdb913b651a8396916202))
+
 ## [0.0.1-alpha.12](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.11...v0.0.1-alpha.12) (2026-07-29)
 
 
