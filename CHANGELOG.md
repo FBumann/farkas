@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.24](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.23...v0.0.1-alpha.24) (2026-07-29)
+
+
+### Features
+
+* one rule per constraint, named by the file rather than by position ([#329](https://github.com/FBumann/farkas/issues/329)) ([1ff53b3](https://github.com/FBumann/farkas/commit/1ff53b3cd62bec0779b53bbb2af5720e9ffc303f))
+
 ## [0.0.1-alpha.23](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.22...v0.0.1-alpha.23) (2026-07-29)
 
 
