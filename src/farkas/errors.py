@@ -101,3 +101,14 @@ def sparse_divisor_message(name: str, missing: int) -> str:
         f'would drop and the constraint would silently stop constraining.\n'
         f'  Supply the missing rows, or mask the coordinates out with a where.'
     )
+
+
+def null_bounds_message(name: str, rows: int) -> str:
+    """A bound with no value — one wording, both lanes.
+
+    A missing row is a zero coefficient in a product (SPEC §6) and nothing at
+    all in a bound: unbounded is not bounded-at-zero, and guessing either way
+    changes which solutions exist. So both lanes refuse, and both say so while
+    the model is still being built rather than letting the gap reach a sink.
+    """
+    return f"variable '{name}': {rows} rows have NULL bounds — a bound parameter is missing values for some coordinates"
