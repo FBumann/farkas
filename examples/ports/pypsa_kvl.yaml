@@ -51,7 +51,11 @@ constraints:
   nodal_balance:
     foreach: [snapshot, bus]
     equations:
-      - expression: group_sum(p, over=generator, by=bus) + group_sum(f, over=line, by=to) - group_sum(f, over=line, by=from) == load
+      - expression: >-
+          group_sum(p, over=generator, by=bus)
+          + group_sum(f, over=line, by=to)
+          - group_sum(f, over=line, by=from)
+          == load
 
   # Kirchhoff's voltage law: around each independent cycle, the
   # reactance-weighted flows sum to zero. The incidence table carries both

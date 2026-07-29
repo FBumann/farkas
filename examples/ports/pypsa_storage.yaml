@@ -80,7 +80,13 @@ constraints:
   nodal_balance:
     foreach: [snapshot, bus]
     equations:
-      - expression: group_sum(p, over=generator, by=bus) + group_sum(f, over=link, by=to) - group_sum(f, over=link, by=from) + group_sum(p_dispatch, over=storage, by=bus) - group_sum(p_store, over=storage, by=bus) == load
+      - expression: >-
+          group_sum(p, over=generator, by=bus)
+          + group_sum(f, over=link, by=to)
+          - group_sum(f, over=link, by=from)
+          + group_sum(p_dispatch, over=storage, by=bus)
+          - group_sum(p_store, over=storage, by=bus)
+          == load
 
   ramp:
     foreach: [snapshot, generator]
@@ -97,9 +103,15 @@ constraints:
   energy_balance:
     foreach: [snapshot, storage]
     equations:
-      - expression: soc == soc_initial + p_store * efficiency_store - p_dispatch / efficiency_dispatch
+      - expression: >-
+          soc == soc_initial
+          + p_store * efficiency_store
+          - p_dispatch / efficiency_dispatch
         where: "snapshot == 0"
-      - expression: soc == roll(soc, snapshot=1) * (1 - standing_loss) + p_store * efficiency_store - p_dispatch / efficiency_dispatch
+      - expression: >-
+          soc == roll(soc, snapshot=1) * (1 - standing_loss)
+          + p_store * efficiency_store
+          - p_dispatch / efficiency_dispatch
         where: "snapshot > 0"
 
 objectives:

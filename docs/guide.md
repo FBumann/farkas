@@ -51,7 +51,11 @@ dimensions:
 ```
 
 ```yaml
-- expression: group_sum(p, over=generator, by=bus) + group_sum(f, over=line, by=to) - group_sum(f, over=line, by=from) == load
+- expression: >-
+    group_sum(p, over=generator, by=bus)
+    + group_sum(f, over=line, by=to)
+    - group_sum(f, over=line, by=from)
+    == load
 ```
 
 `group_sum` sums along a coordinate, landing the result on the dimension that

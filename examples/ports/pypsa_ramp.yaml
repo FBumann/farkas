@@ -45,7 +45,11 @@ constraints:
   nodal_balance:
     foreach: [snapshot, bus]
     equations:
-      - expression: group_sum(p, over=generator, by=bus) + group_sum(f, over=link, by=to) - group_sum(f, over=link, by=from) == load
+      - expression: >-
+          group_sum(p, over=generator, by=bus)
+          + group_sum(f, over=link, by=to)
+          - group_sum(f, over=link, by=from)
+          == load
 
   # PyPSA states a ramp limit as a fraction of p_nom, so the right-hand side is
   # parameter arithmetic rather than a precomputed column. Both directions are

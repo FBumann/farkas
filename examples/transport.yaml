@@ -38,7 +38,11 @@ constraints:
   balance:
     foreach: [snapshot, bus]
     equations:
-      - expression: group_sum(p, over=generator, by=bus) + group_sum(f, over=line, by=to) - group_sum(f, over=line, by=from) == load
+      - expression: >-
+          group_sum(p, over=generator, by=bus)
+          + group_sum(f, over=line, by=to)
+          - group_sum(f, over=line, by=from)
+          == load
 
 objectives:
   total_cost:

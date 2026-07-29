@@ -16,7 +16,14 @@ test asserts it, and rots when nothing does.
 from __future__ import annotations
 
 import re
+import textwrap
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+import yaml
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 import pytest
 
@@ -84,7 +91,60 @@ def test_the_page_shows_the_reference_that_runs(reference: Path) -> None:
 
 
 GUIDE = Path(__file__).resolve().parent.parent / 'docs' / 'guide.md'
-_TAUGHT = re.compile(r'^\s*(?:- expression:|where:)\s*\S.*$', re.MULTILINE)
+_TAUGHT_START = re.compile(r'^([ \t]*)(?:- expression:|where:)\s*\S')
+_QUOTED = ('expression', 'where')
+
+
+def _normalise(text: str) -> str:
+    """One expression, whitespace-flattened, so folding is not a difference.
+
+    A YAML folded scalar joins its lines with single spaces, so the same math
+    written on one line and over five parses to the same string only after the
+    runs of whitespace collapse. Comparing *parsed* values rather than source
+    lines is what lets the guide and the models each wrap where they read best.
+    """
+    return ' '.join(text.split())
+
+
+def _taught(markdown: str) -> list[str]:
+    """Every expression and ``where`` the guide shows, as parsed strings.
+
+    A snippet is its opening line plus the lines indented under it, so a folded
+    scalar is collected whole rather than truncated to its ``>-`` header.
+    """
+    lines = markdown.split('\n')
+    snippets: list[str] = []
+    i = 0
+    while i < len(lines):
+        start = _TAUGHT_START.match(lines[i])
+        if start is None:
+            i += 1
+            continue
+        indent, block = len(start.group(1)), [lines[i]]
+        i += 1
+        while i < len(lines) and lines[i].strip() and _indent_of(lines[i]) > indent:
+            block.append(lines[i])
+            i += 1
+        parsed = yaml.safe_load(textwrap.dedent('\n'.join(block)))
+        entry = parsed[0] if isinstance(parsed, list) else parsed
+        snippets.extend(_normalise(v) for k, v in entry.items() if k in _QUOTED)
+    return snippets
+
+
+def _indent_of(line: str) -> int:
+    return len(line) - len(line.lstrip())
+
+
+def _declared(node: object) -> Iterator[str]:
+    """Every ``expression`` and ``where`` string anywhere in a model file."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in _QUOTED and isinstance(value, str):
+                yield _normalise(value)
+            yield from _declared(value)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _declared(item)
 
 
 def test_the_guide_teaches_lines_that_exist() -> None:
@@ -96,13 +156,18 @@ def test_the_guide_teaches_lines_that_exist() -> None:
     dimension blocks are deliberately written in the compact form to be read,
     not to be pasted.
 
+    Compared as **parsed values**, not as source lines. The line form was
+    equivalent only while every expression fitted on one line; once a model
+    folds one across several, a line-wise check silently degrades to comparing
+    ``- expression: >-`` against itself and asserts nothing about the math.
+
     The corpus is ``constructs.models()`` — the same list the gallery and the
     matrix are built from — rather than a glob of ``examples/*.yaml``, which
     silently excluded the two ports one directory down. A guide line taken
     from a port would have failed here for not existing.
     """
-    models = [path.read_text().split('\n') for _, path in constructs.models()]
-    for line in (m.group(0).strip() for m in _TAUGHT.finditer(GUIDE.read_text())):
-        assert any(line == other.strip() for model in models for other in model), (
-            f'docs/guide.md teaches a line no example model contains:\n  {line}'
-        )
+    declared = {text for _, path in constructs.models() for text in _declared(yaml.safe_load(path.read_text()))}
+    taught = _taught(GUIDE.read_text())
+    assert taught, 'no expressions found in docs/guide.md — the extractor is broken'
+    for expression in taught:
+        assert expression in declared, f'docs/guide.md teaches an expression no example model contains:\n  {expression}'
