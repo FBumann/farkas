@@ -1006,3 +1006,51 @@ def test_a_mask_survives_a_broadcast_into_a_reduction():
 
     with differential(BROADCAST_MASK_MODEL, data) as run:
         assert run.result.objective == pytest.approx(100.0, rel=RTOL)
+
+
+LABEL_MODEL = {
+    'dimensions': {'f': {'values': ['a', 'b']}},
+    'parameters': {'cost': {'dims': ['f']}, 'cap': {'dims': ['f']}},
+    'variables': {'x': {'foreach': ['f'], 'bounds': {'lower': 0, 'upper': 'cap'}}},
+    'constraints': {'k': {'foreach': ['f'], 'expression': 'x <= cap'}},
+    'objectives': {'o': {'sense': 'maximize', 'expression': 'x * cost'}},
+}
+_CAP = pl.DataFrame({'f': ['a', 'b'], 'value': [5.0, 5.0]})
+
+
+def test_a_label_the_dimension_does_not_have_is_refused():
+    """A typo used to be worth two thirds of the objective (#350).
+
+    `b` mistyped as `zz` left `b` with no cost row, which reads as a zero
+    coefficient — so the model solved, reported optimal, and returned 5.0 where
+    15.0 is right. The eager lane already refused it; this lane joined the
+    stray row against nothing and carried on.
+    """
+    ok = {'cost': pl.DataFrame({'f': ['a', 'b'], 'value': [1.0, 2.0]}), 'cap': _CAP}
+    assert lps.solve(LABEL_MODEL, ok).objective == pytest.approx(15.0)
+
+    typo = {'cost': pl.DataFrame({'f': ['a', 'zz'], 'value': [1.0, 2.0]}), 'cap': _CAP}
+    with pytest.raises(DataError) as exc:
+        lps.solve(LABEL_MODEL, typo)
+    assert "'zz'" in str(exc.value), 'the refusal must name the offending label'
+    assert 'typo' in str(exc.value)
+
+
+def test_a_missing_row_is_still_only_sparse():
+    """The distinction the refusal above rests on. A row that is *absent* is
+    ordinary — it reads as a zero coefficient (§8) — and only a row that is
+    present and unaddressable is a typo. Refusing both would make sparsity,
+    which is the common case, an error.
+    """
+    sparse = {'cost': pl.DataFrame({'f': ['a'], 'value': [1.0]}), 'cap': _CAP}
+    assert lps.solve(LABEL_MODEL, sparse).objective == pytest.approx(5.0)
+
+
+def test_a_derived_dimension_cannot_have_a_stranger():
+    """`values: null` takes the dimension's labels *from* the parameters, so the
+    union of what arrived is the definition and the check has nothing to ask.
+    Running it anyway would refuse every such model.
+    """
+    derived = {**LABEL_MODEL, 'dimensions': {'f': {'values': None}}}
+    data = {'cost': pl.DataFrame({'f': ['a', 'b'], 'value': [1.0, 2.0]}), 'cap': _CAP}
+    assert lps.solve(derived, data).objective == pytest.approx(15.0)
