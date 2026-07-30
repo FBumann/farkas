@@ -1054,3 +1054,34 @@ def test_a_derived_dimension_cannot_have_a_stranger():
     derived = {**LABEL_MODEL, 'dimensions': {'f': {'values': None}}}
     data = {'cost': pl.DataFrame({'f': ['a', 'b'], 'value': [1.0, 2.0]}), 'cap': _CAP}
     assert lps.solve(derived, data).objective == pytest.approx(15.0)
+
+
+#: A `line` whose two endpoints are *both* multi-valued for one label — the case
+#: that used to be reported one coordinate at a time.
+TWO_BAD_COORDS_MODEL = {
+    'dimensions': {'bus': {'values': ['b1', 'b2']}, 'line': {'coords': {'from': 'bus', 'to': 'bus'}}},
+    'parameters': {'cap': {'dims': ['line']}},
+    'variables': {'f': {'foreach': ['line'], 'bounds': {'lower': 0, 'upper': 'cap'}}},
+    'constraints': {'k': {'foreach': ['line'], 'expression': 'f <= cap'}},
+    'objectives': {'o': {'sense': 'maximize', 'expression': 'f'}},
+}
+
+
+def test_every_multi_valued_coordinate_is_named_at_once():
+    """The per-coordinate loop this replaced raised on the first offender, so a
+    source with two bad coordinates was fixed, rebuilt, and refused again (#273).
+
+    Folding the counts into the caller's `group_by(d)` is what makes naming all
+    of them free — they arrive in one frame instead of one pass each.
+    """
+    data = {
+        'cap': pl.DataFrame({'line': ['l1'], 'value': [1.0]}),
+        'bus': pl.DataFrame({'bus': ['b1', 'b2']}),
+        'line': pl.DataFrame({'line': ['l1', 'l1'], 'from': ['b1', 'b2'], 'to': ['b2', 'b1']}),
+    }
+
+    with pytest.raises(DataError) as exc:
+        lps.solve(TWO_BAD_COORDS_MODEL, data)
+
+    message = str(exc.value)
+    assert "'from'" in message and "'to'" in message, f'both offenders must be named; got: {message}'

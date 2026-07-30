@@ -123,17 +123,40 @@ def _raise_unknown_label(p: plan.ParameterDeclaration, frame: pl.LazyFrame, d: s
     raise DataError(unknown_labels_message(p.name, d, strangers, known.to_list()))
 
 
-def check_coordinates_single_valued(d: str, names: list[str], frame: pl.LazyFrame) -> None:
-    """One label, one coordinate value — two rows disagreeing is a data bug."""
-    for c in names:
-        bad = frame.group_by(d).agg(pl.col(c).n_unique().alias('n')).filter(pl.col('n') > 1).collect().height
-        if bad:
-            raise DataError(
-                f"dimension '{d}': {bad} label(s) carry more than one value for "
-                f"coordinate '{c}'. A coordinate is single-valued per label — "
-                f'reduce the source to one row per {d}, or model the relation as a '
-                f'parameter instead.'
-            )
+#: Prefix for the scratch count column one coordinate contributes to the
+#: caller's aggregate. The spaces make it unrepresentable as a declared name.
+NUNIQUE = '__n unique '
+
+
+def nunique_exprs(names: list[str]) -> list[pl.Expr]:
+    """The count columns :func: reads.
+
+    Handed to the caller so they ride in the group_by(d) it already runs
+    (#273). Asking separately meant one group_by *per coordinate*, and since
+    the frame is a scan over the caller's source, each of those re-opened and
+    re-parsed the file.
+    """
+    return [pl.col(c).n_unique().alias(f'{NUNIQUE}{c}') for c in names]
+
+
+def check_coordinates_single_valued(d: str, names: list[str], counts: pl.DataFrame) -> None:
+    """One label, one coordinate value — two rows disagreeing is a data bug.
+
+    Takes the caller's already-grouped frame rather than the source, so this
+    costs no pass of its own. It also names *every* offending coordinate: the
+    per-coordinate loop this replaced raised on the first and left the rest to
+    be found one build at a time.
+    """
+    offenders = {c: int((counts[f'{NUNIQUE}{c}'] > 1).sum()) for c in names}
+    bad = {c: n for c, n in offenders.items() if n}
+    if not bad:
+        return
+    listed = '; '.join(f"'{c}' ({n} label(s))" for c, n in sorted(bad.items()))
+    raise DataError(
+        f"dimension '{d}' carries more than one value per label for coordinate(s): "
+        f'{listed}. A coordinate is single-valued per label — reduce the source to '
+        f'one row per {d}, or model the relation as a parameter instead.'
+    )
 
 
 def check_coordinate_containment(d: str, cname: str, target: str, dimensions: Dimensions) -> None:
