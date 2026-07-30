@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.29](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.28...v0.0.1-alpha.29) (2026-07-30)
+
+
+### Documentation
+
+* the corpus teaches shift for the acyclic boundary, and names what repeats ([#342](https://github.com/FBumann/lpspec/issues/342)) ([586daa3](https://github.com/FBumann/lpspec/commit/586daa345e1f225f33d3e46160e2ad8f406a5a8f))
+
 ## [0.0.1-alpha.28](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.27...v0.0.1-alpha.28) (2026-07-30)
 
 
