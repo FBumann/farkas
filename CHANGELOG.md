@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.27](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.26...v0.0.1-alpha.27) (2026-07-30)
+
+
+### Refactoring
+
+* rename the package to lpspec, drop the farkas branding ([#336](https://github.com/FBumann/farkas/issues/336)) ([0dd27d4](https://github.com/FBumann/farkas/commit/0dd27d4e4c20ae6111e24872d31a392b00885134))
+
 ## [0.0.1-alpha.26](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.25...v0.0.1-alpha.26) (2026-07-30)
 
 
