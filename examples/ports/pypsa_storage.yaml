@@ -89,19 +89,17 @@ constraints:
 
   ramp_up:
     foreach: [snapshot, generator]
-    where: "snapshot > 0"
-    expression: p - roll(p, snapshot=1) <= ramp_limit_up * p_nom
+    expression: p - shift(p, snapshot=1) <= ramp_limit_up * p_nom
 
   ramp_down:
     foreach: [snapshot, generator]
-    where: "snapshot > 0"
-    expression: roll(p, snapshot=1) - p <= ramp_limit_down * p_nom
+    expression: shift(p, snapshot=1) - p <= ramp_limit_down * p_nom
 
   # Charging is derated on the way in and discharging on the way out, so the
   # two efficiencies enter on opposite sides of the division. `standing_loss`
   # decays only what was *carried over* — PyPSA does not apply it to
   # soc_initial, which is why the first snapshot is its own equation rather
-  # than a `roll` with a seeded value.
+  # than a carry-over with a seeded value.
   energy_balance_initial:
     foreach: [snapshot, storage]
     where: "snapshot == 0"
@@ -112,9 +110,8 @@ constraints:
 
   energy_balance:
     foreach: [snapshot, storage]
-    where: "snapshot > 0"
     expression: >-
-      soc == roll(soc, snapshot=1) * (1 - standing_loss)
+      soc == shift(soc, snapshot=1) * (1 - standing_loss)
       + p_store * efficiency_store
       - p_dispatch / efficiency_dispatch
 

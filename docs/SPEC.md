@@ -146,14 +146,19 @@ rather than a position in a list:
 ```yaml
 storage_balance:
   foreach: [snapshot, storage]
-  where: "snapshot > 0"
-  expression: soc == roll(soc, snapshot=1) * (1 - loss) + charge - discharge
+  expression: soc == shift(soc, snapshot=1) * (1 - loss) + charge - discharge
 
 storage_balance_initial:
   foreach: [snapshot, storage]
   where: "snapshot == 0"
   expression: soc == soc_initial
 ```
+
+`shift` vacates the first snapshot and a vacated position is absent (§7), so
+that row drops without a `where` saying so. Spelling the carry-over `roll` and
+gating it with `where: "snapshot > 0"` builds the same rows here and a different
+model on a horizon that does not start at 0 — the gate hardcodes the origin,
+where the operator does not.
 
 **`objectives`** — `sense` ∈ {`minimize`, `maximize`}, default `minimize`. An
 objective is a scalar by definition, so **every dim the expression carries is

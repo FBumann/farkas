@@ -47,8 +47,6 @@ commitment at all — see [the ledger](index.md#ledger--what-a-port-could-not-sa
 | $\mathit{start\_up}$ | `start_up` over $\mathcal{T} \times \mathcal{G}$ |
 | $\mathit{shut\_down}$ | `shut_down` over $\mathcal{T} \times \mathcal{G}$ |
 
-$t \ominus k$ denotes cyclic translation: index $t-k$ taken modulo the size of the dimension (`roll`). Plain $t-k$ (`shift`) has no wraparound --- terms translated past the edge are simply absent.
-
 #### Objective
 
 **`total_cost`**
@@ -75,7 +73,7 @@ $$\mathit{start\_up}_{t,g} - \mathit{status}_{t,g} \ge -1 \qquad \forall\thinspa
 
 **`start_up`**
 
-$$\mathit{start\_up}_{t,g} - \mathit{status}_{t,g} + \mathit{status}_{t \ominus 1,g} \ge 0 \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t > 0$$
+$$\mathit{start\_up}_{t,g} - \mathit{status}_{t,g} + \mathit{status}_{t - 1,g} \ge 0 \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
 
 **`shut_down_initial`**
 
@@ -83,7 +81,7 @@ $$\mathit{shut\_down}_{t,g} + \mathit{status}_{t,g} \ge 1 \qquad \forall\thinspa
 
 **`shut_down`**
 
-$$\mathit{shut\_down}_{t,g} + \mathit{status}_{t,g} - \mathit{status}_{t \ominus 1,g} \ge 0 \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t > 0$$
+$$\mathit{shut\_down}_{t,g} + \mathit{status}_{t,g} - \mathit{status}_{t - 1,g} \ge 0 \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
 
 #### Variable domains
 
@@ -178,8 +176,7 @@ constraints:
 
   start_up:
     foreach: [snapshot, generator]
-    where: "snapshot > 0"
-    expression: start_up - status + roll(status, snapshot=1) >= 0
+    expression: start_up - status + shift(status, snapshot=1) >= 0
 
   shut_down_initial:
     foreach: [snapshot, generator]
@@ -188,8 +185,7 @@ constraints:
 
   shut_down:
     foreach: [snapshot, generator]
-    where: "snapshot > 0"
-    expression: shut_down + status - roll(status, snapshot=1) >= 0
+    expression: shut_down + status - shift(status, snapshot=1) >= 0
 
 objectives:
   total_cost:
@@ -280,6 +276,6 @@ if __name__ == '__main__':
 
 ## What it exercises
 
-`binary` variables and the integrality path through to HiGHS, `roll` across a
+`binary` variables and the integrality path through to HiGHS, `shift` across a
 boundary condition, and a three-term objective mixing an energy cost with two
 transition charges.

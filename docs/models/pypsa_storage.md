@@ -56,8 +56,6 @@ third, which is what a free end-of-horizon buys you.
 | $p^{\mathrm{store}}$ | `p_store` over $\mathcal{T} \times \mathcal{S}$ |
 | $\mathit{soc}$ | `soc` over $\mathcal{T} \times \mathcal{S}$ |
 
-$t \ominus k$ denotes cyclic translation: index $t-k$ taken modulo the size of the dimension (`roll`). Plain $t-k$ (`shift`) has no wraparound --- terms translated past the edge are simply absent.
-
 #### Objective
 
 **`total_cost`**
@@ -72,11 +70,11 @@ $$\sum_{g \in \mathcal{G} \thinspace:\thinspace \mathrm{bus}(g) = b} p_{t,g} + \
 
 **`ramp_up`**
 
-$$p_{t,g} - p_{t \ominus 1,g} \le \mathit{ramp\_limit\_up}_{g} \cdot p^{\mathrm{nom}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t > 0$$
+$$p_{t,g} - p_{t - 1,g} \le \mathit{ramp\_limit\_up}_{g} \cdot p^{\mathrm{nom}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
 
 **`ramp_down`**
 
-$$p_{t \ominus 1,g} - p_{t,g} \le \mathit{ramp\_limit\_down}_{g} \cdot p^{\mathrm{nom}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t > 0$$
+$$p_{t - 1,g} - p_{t,g} \le \mathit{ramp\_limit\_down}_{g} \cdot p^{\mathrm{nom}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
 
 **`energy_balance_initial`**
 
@@ -84,7 +82,7 @@ $$\mathit{soc}_{t,s} = \mathit{soc}^{\mathrm{initial}}_{s} + p^{\mathrm{store}}_
 
 **`energy_balance`**
 
-$$\mathit{soc}_{t,s} = \mathit{soc}_{t \ominus 1,s} \cdot \left( 1 - \mathit{standing\_loss}_{s} \right) + p^{\mathrm{store}}_{t,s} \cdot \mathit{efficiency\_store}_{s} - \frac{p^{\mathrm{dispatch}}_{t,s}}{\mathit{efficiency\_dispatch}_{s}} \qquad \forall\thinspace t \in \mathcal{T},\enspace s \in \mathcal{S} \thinspace:\thinspace t > 0$$
+$$\mathit{soc}_{t,s} = \mathit{soc}_{t - 1,s} \cdot \left( 1 - \mathit{standing\_loss}_{s} \right) + p^{\mathrm{store}}_{t,s} \cdot \mathit{efficiency\_store}_{s} - \frac{p^{\mathrm{dispatch}}_{t,s}}{\mathit{efficiency\_dispatch}_{s}} \qquad \forall\thinspace t \in \mathcal{T},\enspace s \in \mathcal{S}$$
 
 #### Variable domains
 
@@ -203,19 +201,17 @@ constraints:
 
   ramp_up:
     foreach: [snapshot, generator]
-    where: "snapshot > 0"
-    expression: p - roll(p, snapshot=1) <= ramp_limit_up * p_nom
+    expression: p - shift(p, snapshot=1) <= ramp_limit_up * p_nom
 
   ramp_down:
     foreach: [snapshot, generator]
-    where: "snapshot > 0"
-    expression: roll(p, snapshot=1) - p <= ramp_limit_down * p_nom
+    expression: shift(p, snapshot=1) - p <= ramp_limit_down * p_nom
 
   # Charging is derated on the way in and discharging on the way out, so the
   # two efficiencies enter on opposite sides of the division. `standing_loss`
   # decays only what was *carried over* — PyPSA does not apply it to
   # soc_initial, which is why the first snapshot is its own equation rather
-  # than a `roll` with a seeded value.
+  # than a carry-over with a seeded value.
   energy_balance_initial:
     foreach: [snapshot, storage]
     where: "snapshot == 0"
@@ -226,9 +222,8 @@ constraints:
 
   energy_balance:
     foreach: [snapshot, storage]
-    where: "snapshot > 0"
     expression: >-
-      soc == roll(soc, snapshot=1) * (1 - standing_loss)
+      soc == shift(soc, snapshot=1) * (1 - standing_loss)
       + p_store * efficiency_store
       - p_dispatch / efficiency_dispatch
 
@@ -246,7 +241,7 @@ on the way out.
 
 **`standing_loss` decays only what was carried over.** PyPSA does not apply it
 to `soc_initial`, so the first snapshot is its own equation rather than a
-`roll` with a seeded value. Applying the loss to the seed as well — a one-token
+carry-over with a seeded value. Applying the loss to the seed as well — a one-token
 change, and the reading most people would call obvious — moves the objective to
 **15272.957445031367**, about 20 out of 15253. Wrong by 0.13%: far too small to
 notice by eye on a plot, far too large to be rounding. That gap is the entire
@@ -352,7 +347,7 @@ if __name__ == '__main__':
 
 ## What it exercises
 
-`roll` across a boundary condition, division of a variable by a parameter, and
+`shift` across a boundary condition, division of a variable by a parameter, and
 a five-term `group_sum` nodal balance — generators, both ends of every link,
 and both directions of storage, all projected onto `bus`.
 

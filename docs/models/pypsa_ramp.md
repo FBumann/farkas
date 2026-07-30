@@ -50,8 +50,6 @@ them, 18200.
 | $p$ | `p` over $\mathcal{T} \times \mathcal{G}$ |
 | $f$ | `f` over $\mathcal{T} \times \mathcal{L}$ |
 
-$t \ominus k$ denotes cyclic translation: index $t-k$ taken modulo the size of the dimension (`roll`). Plain $t-k$ (`shift`) has no wraparound --- terms translated past the edge are simply absent.
-
 #### Objective
 
 **`total_cost`**
@@ -66,11 +64,11 @@ $$\sum_{g \in \mathcal{G} \thinspace:\thinspace \mathrm{bus}(g) = b} p_{t,g} + \
 
 **`ramp_up`**
 
-$$p_{t,g} - p_{t \ominus 1,g} \le \mathit{ramp\_limit\_up}_{g} \cdot p^{\mathrm{nom}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t > 0$$
+$$p_{t,g} - p_{t - 1,g} \le \mathit{ramp\_limit\_up}_{g} \cdot p^{\mathrm{nom}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
 
 **`ramp_down`**
 
-$$p_{t \ominus 1,g} - p_{t,g} \le \mathit{ramp\_limit\_down}_{g} \cdot p^{\mathrm{nom}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t > 0$$
+$$p_{t - 1,g} - p_{t,g} \le \mathit{ramp\_limit\_down}_{g} \cdot p^{\mathrm{nom}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
 
 #### Variable domains
 
@@ -139,19 +137,16 @@ constraints:
       == load
 
   # PyPSA states a ramp limit as a fraction of p_nom, so the right-hand side is
-  # parameter arithmetic rather than a precomputed column. Both directions are
-  # written from the *second* snapshot on: there is no dispatch before the
-  # first for it to ramp from, which is what `where` says here. That gate is
-  # also why `roll` is safe — its wrap lands on the one row that is excluded.
+  # parameter arithmetic rather than a precomputed column. `shift` vacates the
+  # first snapshot, and a vacated position is absent, so both rows drop there —
+  # which is the boundary PyPSA wants, since nothing precedes it to ramp from.
   ramp_up:
     foreach: [snapshot, generator]
-    where: "snapshot > 0"
-    expression: p - roll(p, snapshot=1) <= ramp_limit_up * p_nom
+    expression: p - shift(p, snapshot=1) <= ramp_limit_up * p_nom
 
   ramp_down:
     foreach: [snapshot, generator]
-    where: "snapshot > 0"
-    expression: roll(p, snapshot=1) - p <= ramp_limit_down * p_nom
+    expression: shift(p, snapshot=1) - p <= ramp_limit_down * p_nom
 
 objectives:
   total_cost:
@@ -159,10 +154,13 @@ objectives:
     expression: p * marginal_cost
 ```
 
-`roll` is cyclic — it wraps the last snapshot onto the first — and that is safe
-here only because `where: "snapshot > 0"` drops the one row where the wrap
-would land. Written without the gate, this would silently be a *cyclic* ramp
-constraint, which is a different model.
+`shift` vacates the first snapshot, and a vacated position is *absent*, so the
+row there drops on its own — which is the boundary PyPSA wants, since nothing
+precedes it to ramp from. No `where` states it. The cyclic spelling, `roll`,
+would wrap the last snapshot onto the first and quietly build a different
+model; it needs a gate, and a gate written as `snapshot > 0` hardcodes the
+index origin, so it stops being the boundary on a horizon that starts anywhere
+else. [Rung 4](pypsa_cyclic_storage.md) wants the wrap and asks for it by name.
 
 ## Side by side
 
@@ -253,7 +251,8 @@ if __name__ == '__main__':
 
 ## What it exercises
 
-`roll` — the first externally verified model in the corpus to use it. Also
+`shift` — the first externally verified model in the corpus to translate along a
+dimension, and the acyclic boundary it carries. Also
 parameter arithmetic on a constraint's right-hand side (`ramp_limit_up *
 p_nom`), kept as arithmetic rather than a precomputed column so the file states
 what PyPSA states.

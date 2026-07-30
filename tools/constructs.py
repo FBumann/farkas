@@ -45,7 +45,7 @@ REF_BEGIN, REF_END = '<!-- references:begin -->', '<!-- references:end -->'
 
 #: Column order is the order a reader meets these in docs/SPEC.md, not alphabetical
 #: and not by how many models happen to use them.
-COLUMNS = ('sum', 'group_sum', 'roll / shift', 'where', 'bounds', 'piecewise', 'MILP')
+COLUMNS = ('sum', 'group_sum', 'shift', 'roll', 'where', 'bounds', 'piecewise', 'MILP')
 
 
 def walk(node: Any) -> Iterator[Any]:
@@ -77,7 +77,11 @@ def constructs(model: Path) -> set[str]:
         elif isinstance(node, plan.GroupSum):
             used.add('group_sum')
         elif isinstance(node, plan.Translate):
-            used.add('roll / shift')
+            # Split rather than one `roll / shift` column: the two spellings are
+            # the acyclic and cyclic boundary, and which a model reaches for is
+            # the distinction #330 was about. `wrap` is what the node keeps them
+            # apart by.
+            used.add('roll' if node.wrap else 'shift')
 
     if any(isinstance(n, plan.Predicate) for n in nodes):
         used.add('where')

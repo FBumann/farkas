@@ -39,24 +39,24 @@ Read off the resolved plan of each model rather than its text, so it cannot
 drift from what the engine builds.
 
 <!-- constructs:begin -->
-| model | verified | `sum` | `group_sum` | `roll / shift` | `where` | `bounds` | `piecewise` | MILP |
-|---|---|---|---|---|---|---|---|---|
-| [dispatch](dispatch.md) | · | **✓** | · | · | **✓** | **✓** | · | · |
-| [piecewise](piecewise.md) | · | **✓** | · | · | · | **✓** | **✓** | · |
-| [storage](storage.md) | · | **✓** | · | **✓** | · | **✓** | · | · |
-| [transport](transport.md) | · | · | **✓** | · | · | **✓** | · | · |
-| [walkthrough](walkthrough.md) | · | **✓** | · | · | **✓** | **✓** | · | · |
-| [facility_location](facility_location.md) | **✔** 932616 | **✓** | · | · | · | **✓** | · | **✓** |
-| [pypsa_cyclic_storage](pypsa_cyclic_storage.md) | **✔** 17228.8 | · | **✓** | **✓** | **✓** | **✓** | · | · |
-| [pypsa_kvl](pypsa_kvl.md) | **✔** 17000 | **✓** | **✓** | · | · | **✓** | · | · |
-| [pypsa_ramp](pypsa_ramp.md) | **✔** 18200 | · | **✓** | **✓** | **✓** | **✓** | · | · |
-| [pypsa_storage](pypsa_storage.md) | **✔** 15253.2 | · | **✓** | **✓** | **✓** | **✓** | · | · |
-| [pypsa_transport](pypsa_transport.md) | **✔** 22000 | · | **✓** | · | · | **✓** | · | · |
-| [pypsa_unit_commitment](pypsa_unit_commitment.md) | **✔** 24900 | **✓** | · | **✓** | **✓** | **✓** | · | **✓** |
-| [stigler_diet](stigler_diet.md) | **✔** 0.108662 | **✓** | · | · | · | **✓** | · | · |
-| [transport_dantzig](transport_dantzig.md) | **✔** 153.675 | **✓** | · | · | · | **✓** | · | · |
-| [transport_pwl](transport_pwl.md) | **✔** 8.78685 | **✓** | · | **✓** | · | **✓** | **✓** | **✓** |
-| [tsp_mtz](tsp_mtz.md) | **✔** 2085 | **✓** | **✓** | · | **✓** | **✓** | · | **✓** |
+| model | verified | `sum` | `group_sum` | `shift` | `roll` | `where` | `bounds` | `piecewise` | MILP |
+|---|---|---|---|---|---|---|---|---|---|
+| [dispatch](dispatch.md) | · | **✓** | · | · | · | **✓** | **✓** | · | · |
+| [piecewise](piecewise.md) | · | **✓** | · | · | · | · | **✓** | **✓** | · |
+| [storage](storage.md) | · | **✓** | · | · | **✓** | · | **✓** | · | · |
+| [transport](transport.md) | · | · | **✓** | · | · | · | **✓** | · | · |
+| [walkthrough](walkthrough.md) | · | **✓** | · | · | · | **✓** | **✓** | · | · |
+| [facility_location](facility_location.md) | **✔** 932616 | **✓** | · | · | · | · | **✓** | · | **✓** |
+| [pypsa_cyclic_storage](pypsa_cyclic_storage.md) | **✔** 17228.8 | · | **✓** | **✓** | **✓** | · | **✓** | · | · |
+| [pypsa_kvl](pypsa_kvl.md) | **✔** 17000 | **✓** | **✓** | · | · | · | **✓** | · | · |
+| [pypsa_ramp](pypsa_ramp.md) | **✔** 18200 | · | **✓** | **✓** | · | · | **✓** | · | · |
+| [pypsa_storage](pypsa_storage.md) | **✔** 15253.2 | · | **✓** | **✓** | · | **✓** | **✓** | · | · |
+| [pypsa_transport](pypsa_transport.md) | **✔** 22000 | · | **✓** | · | · | · | **✓** | · | · |
+| [pypsa_unit_commitment](pypsa_unit_commitment.md) | **✔** 24900 | **✓** | · | **✓** | · | **✓** | **✓** | · | **✓** |
+| [stigler_diet](stigler_diet.md) | **✔** 0.108662 | **✓** | · | · | · | · | **✓** | · | · |
+| [transport_dantzig](transport_dantzig.md) | **✔** 153.675 | **✓** | · | · | · | · | **✓** | · | · |
+| [transport_pwl](transport_pwl.md) | **✔** 8.78685 | **✓** | · | **✓** | · | · | **✓** | **✓** | **✓** |
+| [tsp_mtz](tsp_mtz.md) | **✔** 2085 | **✓** | **✓** | · | · | **✓** | **✓** | · | **✓** |
 <!-- constructs:end -->
 
 **No holes left.** Every construct in the table has at least one model behind
