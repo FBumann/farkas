@@ -48,8 +48,7 @@ variables:
 constraints:
   balance:
     foreach: [snapshot]
-    equations:
-      - expression: "sum(p, over=unit) + sum(discharge, over=unit) + sum(import_, over=unit) == demand"
+    expression: "sum(p, over=unit) + sum(discharge, over=unit) + sum(import_, over=unit) == demand"
   ramp_up:
     foreach: [snapshot, unit]
     expression: "p_up <= p_max"
@@ -72,8 +71,7 @@ constraints:
 objectives:
   total:
     sense: minimize
-    equations:
-      # every variable the balance can substitute into carries a price, so the
-      # optimum is not "use the free one" — a gate comparing 0 == 0 would pass
-      # whatever the engines did
-      - expression: "sum(sum(p * cost, over=unit), over=snapshot) + sum(sum(discharge * cost, over=unit), over=snapshot) + sum(sum(import_ * cost, over=unit), over=snapshot)"
+    # every variable the balance can substitute into carries a price, so the
+    # optimum is not "use the free one" — a gate comparing 0 == 0 would pass
+    # whatever the engines did
+    expression: "sum(sum(p * cost, over=unit), over=snapshot) + sum(sum(discharge * cost, over=unit), over=snapshot) + sum(sum(import_ * cost, over=unit), over=snapshot)"

@@ -44,11 +44,9 @@ variables:
 constraints:
   balance:
     foreach: [snapshot, node]
-    equations:
-      - expression: sum(p, over=tech) == demand
+    expression: sum(p, over=tech) == demand
 
 objectives:
   total_cost:
     sense: minimize
-    equations:
-      - expression: p * cost
+    expression: p * cost
