@@ -27,6 +27,7 @@ from lpspec.errors import (
     NoSolutionError,
     null_bounds_message,
     sparse_divisor_message,
+    unknown_labels_message,
 )
 from lpspec.relational import plan, sinks
 from lpspec.relational.compiler import UNIT, PolarsCompiler, TermFragment, _ordinal
@@ -274,6 +275,12 @@ class PolarsExecutor:
 
         self._program = program
 
+        # Dimensions with an index of their own come first, so a parameter's
+        # labels can be checked against them in the pass that binds it rather
+        # than in a second one over the same rows. The rest are *derived* from
+        # the parameters, so they cannot be built until those exist — and a
+        # derived dimension has no strangers to find.
+        self._create_sourced_dim_frames(program, sources)
         for p in program.parameters:
             self._create_param_frame(p, sources)
         self._create_dim_frames(program, sources)
@@ -387,7 +394,12 @@ class PolarsExecutor:
         # 2.34 s at 12M rows. Whether *any* coordinate repeats is one pass at
         # 0.25 s, and the group-by is then only paid on the path that is about
         # to raise anyway.
-        if not frame.select(pl.struct(p.dims).is_duplicated().any()).collect().item():
+        probes = {'duplicated': pl.struct(p.dims).is_duplicated().any(), **self._unknown_label_probes(p)}
+        answers = frame.select(**probes).collect().row(0, named=True)
+        for key, all_known in answers.items():
+            if key != 'duplicated' and all_known is False:
+                self._raise_unknown_label(p, frame, key.removeprefix('known '))
+        if not answers['duplicated']:
             return
         duplicated = frame.group_by(p.dims).agg(pl.len().alias('n')).filter(pl.col('n') > 1).head(3).collect()
         if duplicated.height == 0:
@@ -414,6 +426,51 @@ class PolarsExecutor:
             f'read — polars, pyarrow, pandas (got {type(source).__name__})'
         )
 
+    @staticmethod
+    def _declared_dims(program: plan.Program) -> set[str]:
+        dims: set[str] = set()
+        for v in program.variables:
+            dims.update(v.dims)
+        for c in program.constraints:
+            dims.update(c.dims)
+        for p in program.parameters:
+            dims.update(p.dims)
+        return dims
+
+    def _register_dim(self, d: str, table: pl.LazyFrame) -> None:
+        materialised = table.collect()
+        self._dimensions[d] = materialised.lazy()
+        self._dim_card[d] = materialised.height
+
+    def _create_sourced_dim_frames(self, program: plan.Program, sources: Mapping[str, Any]) -> None:
+        """Every dimension carrying its own index, before any parameter binds."""
+        for d in sorted(self._declared_dims(program)):
+            if d in sources:
+                coordinates = sorted(dict(program.dimension(d).coordinates))
+                self._register_dim(d, self._explicit_dim_frame(d, sources[d], coordinates))
+
+    def _unknown_label_probes(self, p: plan.ParameterDeclaration) -> dict[str, pl.Expr]:
+        """One boolean per dim: are this parameter's labels all coordinates of it?
+
+        Only for dimensions already built — those are the ones with an index of
+        their own. A dimension derived from the parameters is not here yet, and
+        would have nothing to answer: the union of what arrived is its
+        definition (#350).
+        """
+        probes: dict[str, pl.Expr] = {}
+        for d in p.dims:
+            if d in self._dimensions:
+                known = self._dimensions[d].select('val').collect()['val']
+                probes[f'known {d}'] = pl.col(d).is_in(known).all()
+        return probes
+
+    def _raise_unknown_label(self, p: plan.ParameterDeclaration, frame: pl.LazyFrame, d: str) -> None:
+        """Name the offending labels. Only reached on the path about to raise,
+        so the filter and unique it costs are not paid by a healthy build."""
+        known = self._dimensions[d].select('val').collect()['val']
+        strangers = frame.filter(~pl.col(d).is_in(known)).select(pl.col(d).unique()).collect()[d].to_list()
+        raise DataError(unknown_labels_message(p.name, d, strangers, known.to_list()))
+
     def _create_dim_frames(self, program: plan.Program, sources: Mapping[str, Any]) -> None:
         """Build every dimension's frame, then check its coordinates.
 
@@ -432,6 +489,8 @@ class PolarsExecutor:
             dims.update(p.dims)
 
         for d in sorted(dims):
+            if d in self._dimensions:  # built by `_create_sourced_dim_frames`
+                continue
             coordinates = dict(program.dimension(d).coordinates)
             if d in sources:
                 table = self._explicit_dim_frame(d, sources[d], sorted(coordinates))

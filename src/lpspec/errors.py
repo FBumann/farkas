@@ -132,6 +132,32 @@ def null_bounds_message(name: str, rows: int) -> str:
     )
 
 
+def unknown_labels_message(name: str, dim: str, strangers: list[object], known: list[object]) -> str:
+    """A source label the dimension does not have — one wording, both lanes.
+
+    Distinct from sparsity, which is ordinary: a *missing* row reads as zero
+    (SPEC §8), but a row that is present and unaddressable is a typo, and §2
+    already draws that line for coordinates — "null means no group; an unknown
+    non-null value is a typo". The consequence of not saying so is the row
+    vanishing in the join that places it, and the coordinate it was meant for
+    falling back on the zero it never asked for (#350).
+
+    Only asked where the dimension's labels come from somewhere else. A
+    dimension derived *from* the parameters cannot have a stranger in it,
+    because the union of what arrived is the definition.
+    """
+    shown = ', '.join(repr(s) for s in strangers[:5])
+    more = f' (and {len(strangers) - 5} more)' if len(strangers) > 5 else ''
+    return (
+        f"parameter '{name}' has label(s) in dimension '{dim}' that are not coordinates "
+        f'of it: {shown}{more}.\n'
+        f'  {dim} has: {sorted(str(k) for k in known)[:10]}\n'
+        f'A missing row is a zero coefficient, but a label that is not a coordinate is a '
+        f'typo: its row joins nothing, so the coordinate it was meant for silently reads '
+        f'as absent. Fix the label, or declare it as a coordinate.'
+    )
+
+
 def unknown_name_message(kind: str, name: str, known: Iterable[str]) -> str:
     """``unknown <kind> '<name>'``, plus the near miss or the declared set.
 
