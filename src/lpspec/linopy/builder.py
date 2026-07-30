@@ -23,6 +23,7 @@ from lpspec.expression_parser import (
     ComparisonNode,
     CoordinateNode,
     DimensionNode,
+    EdgeNode,
     FunctionCallNode,
     NameNode,
     NumberNode,
@@ -30,7 +31,7 @@ from lpspec.expression_parser import (
     UnaryOperatorNode,
     VariableNode,
 )
-from lpspec.helpers import unknown_helper_message
+from lpspec.helpers import EDGE_WRAP, unknown_helper_message
 from lpspec.linopy import semantics
 from lpspec.linopy.loader import check_divisors_cover
 from lpspec.resolution import Namespace, expression_of, where_of
@@ -324,6 +325,10 @@ def _eval_ast(
     if isinstance(node, ParameterNode):
         return semantics.coefficient(ctx.dataset[node.name])
 
+    if isinstance(node, EdgeNode):
+        msg = f'EdgeNode({node.policy!r}) reached the evaluator: an edge policy is a shift() kwarg, not a value.'
+        raise AssertionError(msg)
+
     if isinstance(node, (NameNode, DimensionNode, CoordinateNode)):
         msg = (
             f'{type(node).__name__}({node.name!r}) reached the evaluator. '
@@ -372,6 +377,9 @@ def _eval_ast(
         for k, v in node.kwargs.items():
             if isinstance(v, DimensionNode):
                 kwargs[k] = v.name
+            elif isinstance(v, EdgeNode):
+                # a closed keyword, not data — it reaches the helper as itself
+                kwargs[k] = v.policy
             else:
                 kwargs[k] = _eval_ast(v, ctx)
         return helper(*args, **kwargs)
@@ -453,58 +461,49 @@ def _helper_group_sum(array: Any, mapping: Any, *, into: str) -> Any:
     raise TypeError(msg)
 
 
-def _translation(helper: str, kwargs: dict[str, float]) -> Mapping[Hashable, int]:
-    """The ``<dim>=<n>`` signature both spellings of ``plan.Translate`` share.
-
-    Only the signature is shared: how far to move is one rule, and whether the
-    edge wraps is what makes roll and shift different operators.
-    """
-    named = {k: v for k, v in kwargs.items() if k != 'fill'}
-    if len(named) != 1:
-        msg = f'{helper}() expects exactly one keyword argument (dim=n), got {len(named)}: {named}'
+def _translation(over: str, by: float) -> Mapping[Hashable, int]:
+    """The ``{dim: n}`` mapping xarray and linopy both take."""
+    if int(by) != by:
+        msg = f'shift() by must be an integer, got {by!r}'
         raise TypeError(msg)
-    dim, amount = next(iter(named.items()))
-    if int(amount) != amount:
-        msg = f'{helper}() amount must be an integer, got {amount!r}'
-        raise TypeError(msg)
-    return {dim: int(amount)}
+    return {over: int(by)}
 
 
-def _helper_shift(array: Any, **kwargs: float) -> Any:
-    """Non-cyclic shift along a dimension.
+def _helper_shift(array: Any, *, over: str, by: float, edge: str | float | None = None) -> Any:
+    """Translate *array* along one dimension — the value at *t - by*.
 
-    Usage in YAML: ``shift(soc, snapshot=1)`` — the value at *t-1*. The vacated
-    first position is **absent**, which propagates and drops the row, and is
-    what linopy's own v1 convention means by ``.shift()``; ``fill=0`` asks for
-    the zero instead (SPEC §7). Nothing is done to the result in the default
-    case on purpose: the whole point of #289 was to stop holding linopy off its
-    own answer.
+    Usage in YAML: ``shift(soc, over=snapshot, by=1)``. ``edge`` decides the
+    boundary and carries all three policies, so no two keywords can disagree:
+    ``edge=wrap`` is cyclic and vacates nothing, a number is what the vacated
+    positions contribute, and omitting it leaves them **absent** — which
+    propagates and drops the row, what linopy's own v1 convention means by
+    ``.shift()``. Nothing is done to the result in that default case on
+    purpose: the whole point of #289 was to stop holding linopy off its own
+    answer.
     """
-    by = _translation('shift', kwargs)
-    fill = kwargs.get('fill')
+    amount = _translation(over, by)
+    if edge == EDGE_WRAP:
+        if isinstance(array, xr.DataArray):
+            return array.roll(amount, roll_coords=False)
+        if hasattr(array, 'roll'):
+            return array.roll(amount)
+        msg = f"shift(edge=wrap) does not support type '{type(array).__name__}'."
+        raise TypeError(msg)
+    if isinstance(edge, str):
+        # `wrap` is the only string the language has, and it is handled above;
+        # resolution rejects every other one before a lane sees it.
+        msg = f'shift(edge={edge!r}) reached the evaluator: only {EDGE_WRAP!r} or a number resolve.'
+        raise AssertionError(msg)
+    fill = edge
     if isinstance(array, xr.DataArray):
         # A DataArray shift always fills — absence is not representable in
         # data, so lowering refuses a bare shift over a variable-free operand
-        # and this branch is only ever reached under `fill=`.
-        return array.shift(by, fill_value=fill if fill is not None else np.nan)
+        # and this branch is only ever reached under a numeric `edge=`.
+        return array.shift(amount, fill_value=fill if fill is not None else np.nan)
     if hasattr(array, 'shift'):
-        shifted = array.shift(by)
+        shifted = array.shift(amount)
         return shifted if fill is None else semantics.vacated(shifted, fill)
     msg = f"shift() does not support type '{type(array).__name__}'."
-    raise TypeError(msg)
-
-
-def _helper_roll(array: Any, **kwargs: float) -> Any:
-    """Roll (circular shift) *array* along a dimension.
-
-    Usage in YAML: ``roll(soc, snapshot=1)``
-    """
-    by = _translation('roll', kwargs)
-    if isinstance(array, xr.DataArray):
-        return array.roll(by, roll_coords=False)
-    if hasattr(array, 'roll'):
-        return array.roll(by)
-    msg = f"roll() does not support type '{type(array).__name__}'."
     raise TypeError(msg)
 
 
@@ -516,7 +515,6 @@ _HELPERS: dict[str, Callable[..., Any]] = {
     'sum': _helper_sum,
     'group_sum': _helper_group_sum,
     'shift': _helper_shift,
-    'roll': _helper_roll,
 }
 
 

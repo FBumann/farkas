@@ -126,7 +126,7 @@ constraints:
   soc_balance:
     foreach: [snapshot]
   # cyclic storage: soc wraps around the snapshot horizon
-    expression: soc == roll(soc, snapshot=1) + charge * 0.9 - discharge
+    expression: soc == shift(soc, over=snapshot, by=1, edge=wrap) + charge * 0.9 - discharge
 
 objectives:
   total_cost:
@@ -136,7 +136,7 @@ objectives:
 
 ## What it exercises
 
-`roll(soc, snapshot=1)` is the whole of it. One term reaches one position
+`shift(soc, over=snapshot, by=1, edge=wrap)` is the whole of it. One term reaches one position
 back along `snapshot`, and `roll` wraps — the first snapshot reads the last,
 which is what makes the storage cyclic without a boundary condition written
 out by hand. `shift` is the same node with `wrap: false`, where positions

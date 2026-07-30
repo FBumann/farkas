@@ -10,7 +10,7 @@ fails when a model changes underneath it. ``tests/test_models_gallery.py``
 asserts the committed tables equal what this produces.
 
 **Constructs** are read off the **logical plan**, not the YAML text. Grepping
-for ``roll(`` would count a construct inside a macro that never expands, miss
+for ``shift(`` would count a construct inside a macro that never expands, miss
 one a macro introduces, and disagree with itself about whether a bound written
 as ``0`` is a bound. ``lower_program`` needs no data, so the plan is available
 for any model in the repo — and it is what the engine actually builds.

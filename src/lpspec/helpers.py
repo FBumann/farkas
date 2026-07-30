@@ -21,47 +21,50 @@ are lowering cases and SQL.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
-
-_T = TypeVar('_T')
+    from collections.abc import Iterable
 
 
 @dataclass(frozen=True)
 class Builtin:
     """The call shape of one built-in helper.
 
-    Keyword arguments come in three kinds, and which kind a name is decides
-    what resolution turns its value into. ``dimension_kwargs`` name a dimension
-    in the *value* (``sum(x, over=generator)``); ``coordinate_kwargs`` name a
+    Keyword arguments come in four kinds, and which kind a name is decides what
+    resolution turns its value into. ``dimension_kwargs`` name a dimension in
+    the *value* (``sum(x, over=generator)``); ``coordinate_kwargs`` name a
     coordinate carried by the sibling ``over=`` dimension
     (``group_sum(x, over=line, by=to)``), so they are only meaningful together;
-    ``dimension_is_key`` marks the helpers that instead name the dimension in
-    the keyword *key* (``roll(x, snapshot=1)``) and therefore take exactly one,
-    whatever it is called. ``usage`` is the one wording every lane quotes back.
+    ``edge_kwargs`` take a closed keyword or a number
+    (``shift(x, over=t, by=1, edge=wrap)``). ``usage`` is the one wording every
+    lane quotes back.
 
-    ``value_kwargs`` are the exception to all of that: a fixed keyword whose
-    value is a number and whose key never names a dimension. There is one,
-    ``shift(..., fill=0)``, and it exists so a caller can ask for the vacated
-    positions to be filled rather than absent (§7). ``refusals`` names the
-    keywords a helper deliberately does *not* take, with the reason, so the
-    error can say why rather than only that the shape is wrong.
+    The remaining two are ordinary values — a number, never a name that has to
+    resolve. ``required_value_kwargs`` must be present (``shift(..., by=1)``),
+    ``value_kwargs`` are optional. Every dimension a helper names now arrives in
+    a kwarg *value*, which is what lets a macro pass one as a formal.
     """
 
     positional: int
     usage: str
     dimension_kwargs: tuple[str, ...] = ()
     coordinate_kwargs: tuple[str, ...] = ()
-    dimension_is_key: bool = False
+    edge_kwargs: tuple[str, ...] = ()
+    required_value_kwargs: tuple[str, ...] = ()
     value_kwargs: tuple[str, ...] = ()
-    refusals: tuple[tuple[str, str], ...] = ()
 
     @property
     def keywords(self) -> frozenset[str]:
         """Every keyword the call must carry, when they are named at all."""
-        return frozenset(self.dimension_kwargs) | frozenset(self.coordinate_kwargs)
+        return (
+            frozenset(self.dimension_kwargs) | frozenset(self.coordinate_kwargs) | frozenset(self.required_value_kwargs)
+        )
+
+    @property
+    def optional(self) -> frozenset[str]:
+        """Every keyword the call may carry but need not."""
+        return frozenset(self.edge_kwargs) | frozenset(self.value_kwargs)
 
 
 BUILTINS: dict[str, Builtin] = {
@@ -72,21 +75,30 @@ BUILTINS: dict[str, Builtin] = {
         dimension_kwargs=('over',),
         coordinate_kwargs=('by',),
     ),
-    'roll': Builtin(
-        1,
-        'roll(<expr>, <dim>=<n>)',
-        dimension_is_key=True,
-        refusals=(('fill', 'roll is cyclic, so no position is ever vacated'),),
-    ),
     'shift': Builtin(
         1,
-        'shift(<expr>, <dim>=<n>[, fill=0])',
-        dimension_is_key=True,
-        value_kwargs=('fill',),
+        'shift(<expr>, over=<dim>, by=<n>[, edge=wrap|<number>])',
+        dimension_kwargs=('over',),
+        required_value_kwargs=('by',),
+        edge_kwargs=('edge',),
     ),
 }
 
 BUILTIN_NAMES = frozenset(BUILTINS)
+
+#: The one closed keyword an ``edge=`` accepts. Everything else in that
+#: position is a number: the value the vacated positions contribute.
+EDGE_WRAP = 'wrap'
+
+
+def edge_error(name: str, given: str) -> str:
+    """Why an ``edge=`` value is not one the language has."""
+    return (
+        f'{name}(edge={given}) is not an edge policy.\n'
+        f"Write 'edge={EDGE_WRAP}' for a cyclic translation, a number for the "
+        f'value the vacated positions contribute, or omit it and they are '
+        f'absent — which drops the row.'
+    )
 
 
 def call_shape_error(name: str, positional: int, kwargs: Iterable[str]) -> str | None:
@@ -98,29 +110,8 @@ def call_shape_error(name: str, positional: int, kwargs: Iterable[str]) -> str |
     """
     builtin = BUILTINS[name]
     keys = set(kwargs)
-    for refused, reason in builtin.refusals:
-        if refused in keys:
-            return f'{name}() takes no {refused}= — {reason}. Expects {builtin.usage}'
-    named = keys - set(builtin.value_kwargs)
-    fits = positional == builtin.positional and (
-        len(named) == 1 if builtin.dimension_is_key else named == builtin.keywords
-    )
+    fits = positional == builtin.positional and keys - builtin.optional == builtin.keywords
     return None if fits else f'{name}() expects {builtin.usage}'
-
-
-def split_dimension_key(name: str, kwargs: Mapping[str, _T]) -> tuple[str, _T, dict[str, _T]]:
-    """A ``dimension_is_key`` call's dimension, its offset, and its value kwargs.
-
-    Three passes unpack these kwargs (dim algebra, lowering, and the eager
-    builder), and each of them wants "the one that names a dimension" rather
-    than "the only one" — which stopped being the same thing when ``fill=``
-    arrived. Splitting here keeps the three from disagreeing about which
-    keyword is which.
-    """
-    builtin = BUILTINS[name]
-    values = {k: v for k, v in kwargs.items() if k in builtin.value_kwargs}
-    ((dim, by),) = ((k, v) for k, v in kwargs.items() if k not in values)
-    return dim, by, values
 
 
 def unknown_helper_message(name: str) -> str:

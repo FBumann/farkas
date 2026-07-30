@@ -7,7 +7,7 @@ a :class:`~lpspec.relational.plan.Program`. It lives on the language side —
 the engine subpackage stays free of YAML knowledge, and this module never
 imports the eager builder.
 
-Covered: foreach, where, arithmetic (+ - * /), sum, group_sum, roll, shift,
+Covered: foreach, where, arithmetic (+ - * /), sum, group_sum, shift,
 comparison, and binary/integer variables (variable_type). Constructs with no
 lowering raise :class:`~lpspec.errors.LanguageError` naming
 the construct and its rewrite — never a pointer to another backend: the two
@@ -37,6 +37,7 @@ from lpspec.expression_parser import (
     ComparisonNode,
     CoordinateNode,
     DimensionNode,
+    EdgeNode,
     FunctionCallNode,
     NameNode,
     NumberNode,
@@ -44,7 +45,7 @@ from lpspec.expression_parser import (
     UnaryOperatorNode,
     VariableNode,
 )
-from lpspec.helpers import BUILTIN_NAMES, call_shape_error, split_dimension_key
+from lpspec.helpers import BUILTIN_NAMES, call_shape_error, edge_error
 from lpspec.relational import plan
 from lpspec.resolution import Namespace, expression_of, where_of
 from lpspec.where_parser import (
@@ -176,6 +177,10 @@ def _lower_expr(node: ArithmeticNode, schema: MathSchema, context: str) -> plan.
     if isinstance(node, ParameterNode):
         return plan.Parameter(node.name)
 
+    if isinstance(node, EdgeNode):
+        msg = f'EdgeNode({node.policy!r}) reached lowering: an edge policy is a shift() kwarg, not a value.'
+        raise AssertionError(msg)
+
     if isinstance(node, (NameNode, DimensionNode, CoordinateNode)):
         msg = (
             f'{type(node).__name__}({node.name!r}) reached lowering. Expressions '
@@ -253,24 +258,34 @@ def _lower_expr(node: ArithmeticNode, schema: MathSchema, context: str) -> plan.
                 into=by_node.into,
             )
 
-        if node.name in ('roll', 'shift'):
-            dim, shift_node, values = split_dimension_key(node.name, node.kwargs)
+        if node.name == 'shift':
+            over_node = node.kwargs['over']
+            if not isinstance(over_node, DimensionNode):
+                raise LanguageError(f'{context}: shift(over=...) must name a dimension')
+            by_node = node.kwargs['by']
             sign = 1
-            if isinstance(shift_node, UnaryOperatorNode) and shift_node.op == '-':
-                sign, shift_node = -1, shift_node.operand
-            if not isinstance(shift_node, NumberNode) or int(shift_node.value) != shift_node.value:
-                raise LanguageError(f'{context}: {node.name}() shift must be an integer literal')
+            if isinstance(by_node, UnaryOperatorNode) and by_node.op == '-':
+                sign, by_node = -1, by_node.operand
+            if not isinstance(by_node, NumberNode) or int(by_node.value) != by_node.value:
+                raise LanguageError(f'{context}: shift(by=...) must be an integer literal')
             _check_dim_rules(node, schema, context)
             operand = _lower_expr(node.args[0], schema, context)
             has_var = _has_var(operand)
-            fill = _translate_fill(values, node.name, context, has_var=has_var)
-            if fill is None and node.name == 'shift' and not has_var:
+            edge = node.kwargs.get('edge')
+            wrap = isinstance(edge, EdgeNode)
+            # One kwarg, three policies: `edge=wrap` is cyclic and vacates
+            # nothing, a number is the value the vacated slots contribute, and
+            # an absent `edge=` leaves them absent. The pair that used to
+            # contradict each other — a cyclic call also asking for a fill —
+            # is unrepresentable rather than refused.
+            fill = None if wrap else _translate_fill(edge, context, has_var=has_var)
+            if not wrap and fill is None and not has_var:
                 raise LanguageError(_shift_over_data_message(context))
             return plan.Translate(
                 operand,
-                dim,
-                by=sign * int(shift_node.value),
-                wrap=node.name == 'roll',
+                over_node.name,
+                by=sign * int(by_node.value),
+                wrap=wrap,
                 fill=fill,
             )
 
@@ -291,15 +306,15 @@ def _check_dim_rules(node: FunctionCallNode, schema: MathSchema, context: str) -
     dims_of(node, schema, context)
 
 
-def _translate_fill(values: dict[str, ArithmeticNode], name: str, context: str, *, has_var: bool) -> float | None:
-    """The ``fill=`` value, or ``None`` for the absence default.
+def _translate_fill(node: ArithmeticNode | None, context: str, *, has_var: bool) -> float | None:
+    """The number an ``edge=`` names, or ``None`` for the absence default.
 
     **The right fill is positional**, which is linopy v1's own reason for
     refusing to pick one (``convention.rst`` §7): 0 is the identity of a sum and
-    1 the identity of a product, so ``x * shift(eff, t=1, fill=1)`` wants a
-    different number from ``lam <= seg + shift(seg, bp=1, fill=0)``. Over data
-    any number is therefore accepted — it is a data fill, and both lanes do it
-    natively.
+    1 the identity of a product, so ``x * shift(eff, over=t, by=1, edge=1)``
+    wants a different number from
+    ``lam <= seg + shift(seg, over=bp, by=1, edge=0)``. Over data any number is
+    therefore accepted — it is a data fill, and both lanes do it natively.
 
     Over an operand that carries a **variable** the only representable fill is
     0, because there the vacated slot contributes no term at all. A nonzero one
@@ -307,18 +322,17 @@ def _translate_fill(values: dict[str, ArithmeticNode], name: str, context: str, 
     from the stream the operand produces, and is refused rather than
     implemented on one lane and not the other.
     """
-    node = values.get('fill')
     if node is None:
         return None
     sign = 1.0
     if isinstance(node, UnaryOperatorNode) and node.op in ('-', '+'):
         sign, node = (-1.0 if node.op == '-' else 1.0), node.operand
     if not isinstance(node, NumberNode):
-        raise LanguageError(f'{context}: {name}(fill=...) takes a number literal.')
+        raise LanguageError(f'{context}: {edge_error("shift", "...")}')
     fill = sign * float(node.value)
     if has_var and fill != 0:
         raise LanguageError(
-            f'{context}: {name}(fill={fill:g}) over an expression containing a variable — only '
+            f'{context}: shift(edge={fill:g}) over an expression containing a variable — only '
             f'fill=0 is representable there, since a vacated slot contributes no term. A nonzero '
             f'fill would be a constant standing where a term was; add that constant to the '
             f'expression instead.'
@@ -330,9 +344,9 @@ def _shift_over_data_message(context: str) -> str:
     return (
         f'{context}: shift() over a variable-free expression leaves vacated positions with no '
         f'value, and inventing one is what silently pinned a bound to zero. Say which you mean:\n'
-        f'  shift(x, d=n, fill=0)   the vacated positions contribute zero\n'
-        f'  where: "..."            mask the vacated coordinate out of the row\n'
-        f'  roll(x, d=n)            the dimension really is cyclic'
+        f'  shift(x, over=d, by=n, edge=0)      the vacated positions contribute zero\n'
+        f'  where: "..."                        mask the vacated coordinate out of the row\n'
+        f'  shift(x, over=d, by=n, edge=wrap)   the dimension really is cyclic'
     )
 
 
@@ -347,15 +361,10 @@ def _has_var(expr: plan.Expression) -> bool:
         return True
     if isinstance(expr, (plan.Constant, plan.Parameter)):
         return False
-    if isinstance(expr, plan.Negate):
-        return _has_var(expr.operand)
-    if isinstance(expr, (plan.Add, plan.Multiply)):
-        return _has_var(expr.left) or _has_var(expr.right)
-    if isinstance(expr, plan.Divide):
-        return _has_var(expr.numerator) or _has_var(expr.divisor)
-    if isinstance(expr, (plan.Sum, plan.Translate, plan.GroupSum)):
-        return _has_var(expr.operand)
-    raise LanguageError(f'cannot decide degree of {type(expr).__name__}')
+    operands = plan.children(expr)
+    if not operands:
+        raise LanguageError(f'cannot decide degree of {type(expr).__name__}')
+    return any(_has_var(operand) for operand in operands)
 
 
 def _bound_expression(value: float | str) -> plan.Expression:
@@ -414,11 +423,3 @@ def _lower_where_node(node: WhereNode, context: str) -> plan.Predicate:
         )
 
     assert_never(node)
-
-
-def _and_preds(a: plan.Predicate | None, b: plan.Predicate | None) -> plan.Predicate | None:
-    if a is None:
-        return b
-    if b is None:
-        return a
-    return plan.And(a, b)

@@ -82,6 +82,22 @@ class CoordinateNode:
 
 
 @dataclass
+class EdgeNode:
+    """A resolved edge policy for ``shift(x, over=d, by=n, edge=wrap)``.
+
+    Only legal as the value of ``shift``'s ``edge=`` kwarg. Like
+    :class:`DimensionNode` and :class:`CoordinateNode` this names neither data
+    nor a coordinate — it is a closed keyword, and the only one the language
+    has. A *number* in the same position stays an ordinary
+    :class:`NumberNode`, the value the vacated positions contribute, so one
+    kwarg carries all three edge policies and no second kwarg can contradict
+    it.
+    """
+
+    policy: str
+
+
+@dataclass
 class UnaryOperatorNode:
     op: str
     operand: ArithmeticNode
@@ -115,14 +131,11 @@ ArithmeticNode = (
     | ParameterNode
     | DimensionNode
     | CoordinateNode
+    | EdgeNode
     | UnaryOperatorNode
     | BinaryOperatorNode
     | FunctionCallNode
 )
-
-#: The subset a backend may see: resolution has removed every NameNode.
-#: Both consumers assert on this rather than re-implementing name lookup.
-RESOLVED_REFERENCE_NODES = (VariableNode, ParameterNode, DimensionNode, CoordinateNode)
 
 
 @dataclass

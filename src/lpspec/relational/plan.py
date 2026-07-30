@@ -18,7 +18,7 @@ Expressions support operator sugar so plans read naturally in Python:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, TypeVar
 
 from lpspec.errors import unknown_name_message
 
@@ -169,6 +169,25 @@ class Translate(Expression):
     fill: float | None = None
 
 
+def children(expression: Expression) -> tuple[Expression, ...]:
+    """The sub-expressions of *expression* — the structural half of any walk.
+
+    Three passes recurse over this tree (degree in ``lowering._has_var``, and
+    both halves of :func:`divisor_parameters`), and they differ only in what
+    they do at the leaves. Enumerating the children once per pass is how a node
+    added later reaches two of them and not the third.
+    """
+    if isinstance(expression, Negate):
+        return (expression.operand,)
+    if isinstance(expression, (Add, Multiply)):
+        return (expression.left, expression.right)
+    if isinstance(expression, Divide):
+        return (expression.numerator, expression.divisor)
+    if isinstance(expression, (Sum, GroupSum, Translate)):
+        return (expression.operand,)
+    return ()
+
+
 # --------------------------------------------------------------------------
 # Predicates (where masks — row absence)
 # --------------------------------------------------------------------------
@@ -302,6 +321,17 @@ class ObjectiveDeclaration:
     expression: Expression
 
 
+_Declaration = TypeVar('_Declaration', ParameterDeclaration, VariableDeclaration, ConstraintDeclaration)
+
+
+def _declared(items: tuple[_Declaration, ...], name: str, kind: str) -> _Declaration:
+    """The declaration called *name*, or a ``KeyError`` naming the near miss."""
+    for item in items:
+        if item.name == name:
+            return item
+    raise KeyError(unknown_name_message(kind, name, (i.name for i in items)))
+
+
 @dataclass(frozen=True)
 class Program:
     """A complete linear program over named tidy tables."""
@@ -313,28 +343,21 @@ class Program:
     dimensions: tuple[DimensionDeclaration, ...] = ()
 
     def dimension(self, name: str) -> DimensionDeclaration:
+        """The dimension called *name*. Undeclared is not an error here: a
+        dimension with no coordinates has nothing to declare."""
         for d in self.dimensions:
             if d.name == name:
                 return d
         return DimensionDeclaration(name)
 
     def parameter(self, name: str) -> ParameterDeclaration:
-        for p in self.parameters:
-            if p.name == name:
-                return p
-        raise KeyError(unknown_name_message('parameter', name, (p.name for p in self.parameters)))
+        return _declared(self.parameters, name, 'parameter')
 
     def variable(self, name: str) -> VariableDeclaration:
-        for v in self.variables:
-            if v.name == name:
-                return v
-        raise KeyError(unknown_name_message('variable', name, (v.name for v in self.variables)))
+        return _declared(self.variables, name, 'variable')
 
     def constraint(self, name: str) -> ConstraintDeclaration:
-        for c in self.constraints:
-            if c.name == name:
-                return c
-        raise KeyError(unknown_name_message('constraint', name, (c.name for c in self.constraints)))
+        return _declared(self.constraints, name, 'constraint')
 
 
 def divisor_parameters(*expressions: Expression) -> frozenset[str]:
@@ -350,31 +373,18 @@ def divisor_parameters(*expressions: Expression) -> frozenset[str]:
     found: set[str] = set()
 
     def names(e: Expression) -> None:
+        """Every parameter under *e*, wherever it sits."""
         if isinstance(e, Parameter):
             found.add(e.name)
-        elif isinstance(e, Negate):
-            names(e.operand)
-        elif isinstance(e, (Add, Multiply)):
-            names(e.left)
-            names(e.right)
-        elif isinstance(e, Divide):
-            names(e.numerator)
-            names(e.divisor)
-        elif isinstance(e, (Sum, GroupSum, Translate)):
-            names(e.operand)
+        for child in children(e):
+            names(child)
 
     def walk(e: Expression) -> None:
+        """Every divisor under *e*, whose parameters are the answer."""
         if isinstance(e, Divide):
             names(e.divisor)
-            walk(e.numerator)
-            walk(e.divisor)
-        elif isinstance(e, Negate):
-            walk(e.operand)
-        elif isinstance(e, (Add, Multiply)):
-            walk(e.left)
-            walk(e.right)
-        elif isinstance(e, (Sum, GroupSum, Translate)):
-            walk(e.operand)
+        for child in children(e):
+            walk(child)
 
     for e in expressions:
         walk(e)

@@ -404,14 +404,7 @@ class PolarsExecutor:
         leaving a model that builds and solves without them.
         """
 
-        dims: set[str] = set()
-        for v in program.variables:
-            dims.update(v.dims)
-        for c in program.constraints:
-            dims.update(c.dims)
-        for p in program.parameters:
-            dims.update(p.dims)
-
+        dims = self._declared_dims(program)
         for d in sorted(dims):
             if d in self._dimensions:  # built by `_create_sourced_dim_frames`
                 continue
@@ -434,9 +427,7 @@ class PolarsExecutor:
                     )
                 stacked = pl.concat([self._parameters[p.name].select(pl.col(d).alias('val')) for p in params])
                 table = stacked.unique().sort('val').with_row_index('ord').with_columns(pl.col('ord').cast(pl.Int64))
-            materialised = table.collect()
-            self._dimensions[d] = materialised.lazy()
-            self._dim_card[d] = materialised.height
+            self._register_dim(d, table)
 
         for d in sorted(dims):
             for cname, target in sorted(program.dimension(d).coordinates):
@@ -523,7 +514,8 @@ class PolarsExecutor:
             if where is None:
                 frame = self._q.frame(dims, None)
                 rows = math.prod(self._dim_card[d] for d in dims)
-                return self._positional(frame, dims, label, start), start + rows
+                labelled = frame.select(*dims, self._row_major(dims, start).alias(label))
+                return labelled.collect(engine='streaming'), start + rows
 
             free = _free_prefix(dims, _predicate_dims(where, self._param_dims()))
             if free:
@@ -574,11 +566,11 @@ class PolarsExecutor:
         it is a sort of the generators rather than of 10M
         ``(snapshot, generator)`` pairs.
 
-        The label is then arithmetic again, exactly as :meth:`_positional`:
-        row-major over the leading dims, times the width of the surviving set,
-        plus a survivor's rank within it. That is the same number the sort
-        would have counted, because for each leading coordinate the same
-        survivors appear in the same order.
+        The label is then arithmetic again, through the same
+        :meth:`_row_major` the unmasked path uses: row-major over the leading
+        dims, times the width of the surviving set, plus a survivor's rank
+        within it. That is the same number the sort would have counted, because
+        for each leading coordinate the same survivors appear in the same order.
 
         The prefix has to be *leading* rather than merely absent from the mask:
         a label follows declaration order, and only a prefix leaves the
@@ -606,14 +598,9 @@ class PolarsExecutor:
             )
             return empty, start
 
-        stride, position = 1, pl.lit(0, dtype=pl.Int64)
-        for d in reversed(head):
-            position = position + pl.col(_ordinal(d)) * stride
-            stride *= self._dim_card[d]
-
         labelled = (
             self._q.frame(head, None)
-            .select(*head, position.alias('__position'))
+            .select(*head, self._row_major(head, 0).alias('__position'))
             .join(survivors.lazy(), how='cross')
             .select(
                 *dims,
@@ -623,20 +610,24 @@ class PolarsExecutor:
         )
         return labelled, start + labelled.height
 
-    def _positional(self, frame: pl.LazyFrame, dims: tuple[str, ...], label: str, start: int) -> pl.DataFrame:
-        """Labels as row-major position in the coordinate product.
+    def _row_major(self, dims: tuple[str, ...], start: int) -> pl.Expr:
+        """Row-major position in *dims*' coordinate product, offset by *start*.
 
         The trailing dim has stride 1 and every other is the product of the
-        cardinalities to its right, so the label is a dot product against the
+        cardinalities to its right, so the position is a dot product against the
         ordinals the frame already carries — no ordering imposed, because the
         answer does not depend on the order rows arrive in.
+
+        Both arithmetic paths of :meth:`_label_frame` reach a label through
+        this, written once for the reason the label itself is: two copies would
+        come to disagree about which coordinate gets which solver index.
         """
 
         stride, position = 1, pl.lit(start, dtype=pl.Int64)
         for d in reversed(dims):
             position = position + pl.col(_ordinal(d)) * stride
             stride *= self._dim_card[d]
-        return frame.select(*dims, position.alias(label)).collect(engine='streaming')
+        return position
 
     # ------------------------------------------------------------------
     # declarations

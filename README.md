@@ -142,8 +142,8 @@ parameters: {ramp_max: {dims: [generator]}}
 constraints:
   ramp_up:
     foreach: [snapshot, generator]
-    where: "snapshot > 0 AND ramp_max"
-    expression: p - roll(p, snapshot=1) <= ramp_max
+    where: "ramp_max"
+    expression: p - shift(p, over=snapshot, by=1) <= ramp_max
 ```
 
 [linopy](https://github.com/PyPSA/linopy) is not a runtime dependency — that shim

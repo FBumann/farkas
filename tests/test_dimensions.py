@@ -73,7 +73,7 @@ def test_the_base_model_typechecks():
         ('sum(p, over=generator)', {'snapshot'}),
         ('sum(p * cost, over=generator)', {'snapshot'}),
         ('group_sum(p, over=generator, by=bus)', {'snapshot', 'bus'}),
-        ('roll(p, snapshot=1)', {'snapshot', 'generator'}),
+        ('shift(p, over=snapshot, by=1, edge=wrap)', {'snapshot', 'generator'}),
     ],
 )
 def test_dim_inference(expr, expected):
@@ -110,8 +110,8 @@ def test_group_sum_into_a_dim_the_operand_already_carries():
 
 
 def test_roll_requires_the_dim():
-    with pytest.raises(DimensionError, match="roll\\(\\) along 'snapshot'"):
-        _dims('roll(cost, snapshot=1)')
+    with pytest.raises(DimensionError, match='shift\\(over=snapshot\\) but the expression has dims'):
+        _dims('shift(cost, over=snapshot, by=1, edge=wrap)')
 
 
 def test_an_outer_product_is_legal_and_carries_both_dim_sets():

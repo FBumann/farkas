@@ -1,9 +1,9 @@
-"""roll / shift: time-coupled recurrences through both backends.
+"""shift: time-coupled recurrences through both backends.
 
 examples/storage.yaml is dispatch plus a cyclic battery:
-soc == roll(soc, snapshot=1) + charge * 0.9 - discharge. The eager backend
-implements roll with linopy's circular .roll(); the relational backend lowers
-it to plan.Shift — a pointwise ord-join remap.
+soc == shift(soc, over=snapshot, by=1, edge=wrap) + charge * 0.9 - discharge. The eager backend
+The eager backend implements `edge=wrap` with linopy's circular .roll(); the
+relational backend lowers it to plan.Translate — a pointwise ord-join remap.
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ def _soc_trace(result):
 # ---------------------------------------------------------------------------
 
 
-def test_roll_is_cyclic_on_both_lanes(storage_inputs):
+def test_a_wrapping_edge_is_cyclic_on_both_lanes(storage_inputs):
     data, coords = storage_inputs
 
     with differential(STORAGE_YAML, data, coords, lp=True) as run:
@@ -89,8 +89,8 @@ def test_shift_drops_the_row_it_has_no_predecessor_for_on_both_lanes(storage_inp
     data = {**data, 'load': (data['load'] * 0.93).round(3)}
 
     original = STORAGE_YAML.read_text()
-    assert 'roll(soc, snapshot=1)' in original
-    acyclic = original.replace('roll(soc, snapshot=1)', 'shift(soc, snapshot=1)')
+    assert 'shift(soc, over=snapshot, by=1, edge=wrap)' in original
+    acyclic = original.replace('shift(soc, over=snapshot, by=1, edge=wrap)', 'shift(soc, over=snapshot, by=1)')
 
     with differential(acyclic, data, coords) as run:
         soc, charge, discharge = _soc_trace(run.result)
@@ -146,7 +146,7 @@ constraints:
   ramp_up:
     foreach: [snapshot, generator]
     where: "snapshot > 0"
-    expression: p - shift(p, snapshot=1) <= ramp_max
+    expression: p - shift(p, over=snapshot, by=1) <= ramp_max
 objectives:
   total_cost:
     sense: minimize
@@ -189,9 +189,9 @@ def test_a_where_on_dimension_coordinates_means_the_same_on_both_lanes():
 @pytest.mark.parametrize(
     ('expression', 'expected'),
     [
-        ('roll(soc, snapshot=1)', Translate(Variable('soc'), 'snapshot', 1)),
-        ('roll(soc, snapshot=-2)', Translate(Variable('soc'), 'snapshot', -2)),  # look-ahead
-        ('shift(soc, snapshot=1)', Translate(Variable('soc'), 'snapshot', 1, wrap=False)),
+        ('shift(soc, over=snapshot, by=1, edge=wrap)', Translate(Variable('soc'), 'snapshot', 1)),
+        ('shift(soc, over=snapshot, by=-2, edge=wrap)', Translate(Variable('soc'), 'snapshot', -2)),  # look-ahead
+        ('shift(soc, over=snapshot, by=1)', Translate(Variable('soc'), 'snapshot', 1, wrap=False)),
     ],
 )
 def test_translation_lowers_to_a_bounded_halo(expression, expected):
@@ -202,8 +202,8 @@ def test_translation_lowers_to_a_bounded_halo(expression, expected):
 @pytest.mark.parametrize(
     ('expression', 'match'),
     [
-        ('roll(soc, nope=1)', r'roll\(nope=\.\.\.\) does not name a declared dimension'),
-        ('roll(load, generator=1)', 'but the expression has dims'),
+        ('shift(soc, over=nope, by=1, edge=wrap)', r'shift\(over=nope\) does not name a declared dimension'),
+        ('shift(load, over=generator, by=1, edge=wrap)', 'but the expression has dims'),
     ],
 )
 def test_translation_along_a_dim_the_expression_lacks_is_refused(expression, match):
@@ -219,8 +219,8 @@ def test_fill_lowers_to_the_escape_hatch_and_a_bare_shift_does_not():
     field both lanes branch on: ``None`` is absence, ``0.0`` is the zero.
     """
     schema = schema_of(STORAGE_YAML)
-    bare = _lower_expr(resolved('shift(soc, snapshot=1)', schema), schema, 't')
-    filled = _lower_expr(resolved('shift(soc, snapshot=1, fill=0)', schema), schema, 't')
+    bare = _lower_expr(resolved('shift(soc, over=snapshot, by=1)', schema), schema, 't')
+    filled = _lower_expr(resolved('shift(soc, over=snapshot, by=1, edge=0)', schema), schema, 't')
     assert bare == Translate(Variable('soc'), 'snapshot', 1, wrap=False, fill=None)
     assert filled == Translate(Variable('soc'), 'snapshot', 1, wrap=False, fill=0.0)
 
@@ -228,12 +228,14 @@ def test_fill_lowers_to_the_escape_hatch_and_a_bare_shift_does_not():
 @pytest.mark.parametrize(
     ('expression', 'match'),
     [
-        # roll vacates nothing, so a fill would be a no-op the reader has to
-        # puzzle over — and the refusal says why rather than only that it fits no shape
-        ('roll(soc, snapshot=1, fill=0)', 'roll is cyclic, so no position is ever vacated'),
+        # "cyclic, and also fill the vacated slots" no longer has a spelling:
+        # one `edge=` carries all three policies, so the pair that used to
+        # contradict each other cannot be written down to be refused. What is
+        # left to check is that the keyword is closed.
+        ('shift(soc, over=snapshot, by=1, edge=nonsense)', 'is not an edge policy'),
         # over a *variable* a vacated slot contributes no term, so a nonzero
         # fill would be a constant standing where a term was
-        ('shift(soc, snapshot=1, fill=1)', 'only fill=0 is representable there'),
+        ('shift(soc, over=snapshot, by=1, edge=1)', 'only fill=0 is representable there'),
     ],
 )
 def test_fill_is_refused_where_neither_lane_can_honour_it(expression, match):
@@ -251,7 +253,7 @@ variables:
 constraints:
   c:
     foreach: [t]
-    expression: "x * shift(eff, t=1, fill=1) <= 10"
+    expression: "x * shift(eff, over=t, by=1, edge=1) <= 10"
 objectives:
   o: {sense: maximize, expression: "sum(x, over=t)"}
 """
@@ -262,7 +264,7 @@ def test_the_fill_a_product_wants_is_one_not_zero():
 
     linopy v1 refuses to fill on the caller's behalf precisely because the right
     value is positional (``convention.rst`` §7): 0 is the identity of a sum, 1 of
-    a product. ``x * shift(eff, t=1, fill=0)`` would force ``x`` to zero at the
+    a product. ``x * shift(eff, over=t, by=1, edge=0)`` would force ``x`` to zero at the
     first coordinate — the pin again, wearing the coefficient's hat — where
     ``fill=1`` leaves it governed by its own bound.
 

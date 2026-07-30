@@ -41,7 +41,7 @@ constraints:
   soc_balance:
     foreach: [snapshot]
   # cyclic storage: soc wraps around the snapshot horizon
-    expression: soc == roll(soc, snapshot=1) + charge * 0.9 - discharge
+    expression: soc == shift(soc, over=snapshot, by=1, edge=wrap) + charge * 0.9 - discharge
 
 objectives:
   total_cost:

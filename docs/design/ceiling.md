@@ -25,7 +25,8 @@ enter as plan expression nodes.
 For any request, triage: **macro, primitive, or escape?** Most are compositions.
 New primitives must be **macro-friendly** — anything a user might parameterise
 goes in a *value* position like `over=`/`by=`, never a kwarg key; the
-`roll(x, snapshot=1)` dim-as-key design is the language's own counterexample.
+`shift(x, over=snapshot, by=1)` takes its dimension in a kwarg *value*, so a
+macro can pass one as a formal — the dim-as-key design that could not is gone.
 
 A candidate primitive is admissible iff it is all three of **degree 1 (affine)**
 — `variable × parameter`, never `variable × variable`, the one axis that is a

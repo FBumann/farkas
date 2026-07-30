@@ -27,6 +27,7 @@ from lpspec.expression_parser import (
     ComparisonNode,
     CoordinateNode,
     DimensionNode,
+    EdgeNode,
     ExpressionNode,
     FunctionCallNode,
     NameNode,
@@ -35,7 +36,7 @@ from lpspec.expression_parser import (
     UnaryOperatorNode,
     VariableNode,
 )
-from lpspec.helpers import BUILTINS, call_shape_error, unknown_helper_message
+from lpspec.helpers import BUILTINS, EDGE_WRAP, call_shape_error, edge_error, unknown_helper_message
 from lpspec.where_parser import (
     AndNode,
     BooleanLiteralNode,
@@ -185,7 +186,7 @@ def _resolve_arith(node: ArithmeticNode, ns: Namespace, context: str, errors: li
     if isinstance(node, NumberNode):
         return node
 
-    if isinstance(node, (VariableNode, ParameterNode, DimensionNode, CoordinateNode)):
+    if isinstance(node, (VariableNode, ParameterNode, DimensionNode, CoordinateNode, EdgeNode)):
         return node  # idempotent: piecewise re-resolves expanded links
 
     if isinstance(node, NameNode):
@@ -228,10 +229,9 @@ def _resolve_arith(node: ArithmeticNode, ns: Namespace, context: str, errors: li
         args = [_resolve_arith(a, ns, context, errors) for a in node.args]
         kwargs: dict[str, ArithmeticNode] = {}
         for key, value in node.kwargs.items():
-            # roll(x, snapshot=1): the dim is the key, so there is no node to type
-            if builtin.dimension_is_key and key not in builtin.value_kwargs and key not in ns.dimensions:
-                errors.append(_undeclared_dim(context, node.name, f'{key}=...', key, ns))
-            if key in builtin.dimension_kwargs:
+            if key in builtin.edge_kwargs:
+                kwargs[key] = _resolve_edge(value, context, node.name, errors)
+            elif key in builtin.dimension_kwargs:
                 kwargs[key] = _resolve_dim_ref(value, ns, context, node.name, key, errors)
             elif key in builtin.coordinate_kwargs:
                 # scoped to the sibling over= dim, so that kwarg has to be read
@@ -253,6 +253,28 @@ def _undeclared_dim(context: str, helper: str, shown: str, name: str, ns: Namesp
         f"Declare '{name}' under 'dimensions:', or fix the typo — an unknown "
         f'dimension makes {helper}() a silent no-op rather than an error.'
     )
+
+
+def _resolve_edge(
+    value: ArithmeticNode,
+    context: str,
+    helper: str,
+    errors: list[str],
+) -> ArithmeticNode:
+    """Resolve ``edge=``: the closed keyword ``wrap``, or a number to contribute.
+
+    A bare name here is never a model name — the one keyword is closed, so an
+    unrecognised name is a typo rather than a lookup. That is why this does not
+    take a namespace: nothing in it could make ``edge=usual`` mean anything.
+    """
+    if isinstance(value, EdgeNode):
+        return value
+    if isinstance(value, NameNode):
+        if value.name == EDGE_WRAP:
+            return EdgeNode(EDGE_WRAP)
+        errors.append(f'{context}: {edge_error(helper, value.name)}')
+        return value
+    return value
 
 
 def _resolve_dim_ref(

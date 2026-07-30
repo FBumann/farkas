@@ -127,8 +127,8 @@ RAMP_BLOCK = {
     'parameters': {'lim': {'dims': ['t']}},
     'variables': {'p': {'foreach': ['t'], 'bounds': {'lower': 0, 'upper': 100}}},
     'constraints': {
-        'ramp_up': {'foreach': ['t'], 'expression': 'p - roll(p, t=1) <= lim'},
-        'ramp_down': {'foreach': ['t'], 'expression': 'roll(p, t=1) - p <= lim'},
+        'ramp_up': {'foreach': ['t'], 'expression': 'p - shift(p, over=t, by=1, edge=wrap) <= lim'},
+        'ramp_down': {'foreach': ['t'], 'expression': 'shift(p, over=t, by=1, edge=wrap) - p <= lim'},
     },
     'objectives': {'o': {'sense': 'maximize', 'expression': 'sum(p, over=t)'}},
 }

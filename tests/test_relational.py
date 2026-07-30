@@ -839,10 +839,10 @@ def _reindexed_parameter_model(op: str) -> dict:
     ('op', 'expected'),
     [
         # roll is cyclic: nothing is vacated, so t=0 reads the last value
-        ('roll(dt, t=1)', {0: 7.0, 1: 5.0, 2: 6.0}),
+        ('shift(dt, over=t, by=1, edge=wrap)', {0: 7.0, 1: 5.0, 2: 6.0}),
         # shift with the escape hatch: the vacated position contributes zero,
         # and a zero in right-hand-side position is a pin
-        ('shift(dt, t=1, fill=0)', {0: 0.0, 1: 5.0, 2: 6.0}),
+        ('shift(dt, over=t, by=1, edge=0)', {0: 0.0, 1: 5.0, 2: 6.0}),
     ],
 )
 def test_roll_and_filled_shift_re_index_a_parameter_not_only_a_variable(op, expected):
@@ -867,7 +867,7 @@ def test_roll_and_filled_shift_re_index_a_parameter_not_only_a_variable(op, expe
 def test_a_bare_shift_over_data_is_refused_rather_than_filled():
     """The pin, removed at its source (#289).
 
-    ``x <= shift(dt, t=1)`` used to build ``x <= 0`` at the first coordinate:
+    ``x <= shift(dt, over=t, by=1)`` used to build ``x <= 0`` at the first coordinate:
     a bound invented from a slot that has no value. Absence would be the
     consistent answer, but a parameter has no absence to propagate — a missing
     row is a zero coefficient (§6) — so this follows linopy v1 and refuses,
@@ -876,11 +876,11 @@ def test_a_bare_shift_over_data_is_refused_rather_than_filled():
     Decidable without data, so ``lps.check()`` catches it: the operand is
     variable-free by declaration, not by what arrives in ``sources``.
     """
-    model = _reindexed_parameter_model('shift(dt, t=1)')
+    model = _reindexed_parameter_model('shift(dt, over=t, by=1)')
     with pytest.raises(LanguageError) as exc:
         lps.check(model)
-    assert 'fill=0' in str(exc.value), 'the refusal must name the escape hatch'
-    assert 'roll' in str(exc.value), 'and the operator for a genuinely cyclic horizon'
+    assert 'edge=0' in str(exc.value), 'the refusal must name the escape hatch'
+    assert 'edge=wrap' in str(exc.value), 'and the policy for a genuinely cyclic horizon'
 
 
 PINNED_MODEL = {

@@ -85,7 +85,7 @@ model: examples/walkthrough.yaml
     a helper that is not in the closed built-in set:
     caught by check() as SchemaError
       Constraint 'cumulative': Unknown helper function 'cumsum'.
-      Available: ['group_sum', 'roll', 'shift', 'sum']
+      Available: ['group_sum', 'shift', 'sum']
       Define 'cumsum' as a macro under 'macros:' if it composes built-ins; if the math is not sayable in the language, use a declared escape.
 
     variable x variable — above the degree-1 ceiling:

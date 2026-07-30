@@ -316,9 +316,10 @@ suffix**, which is what keeps the three vocabularies from colliding:
 
 Two rules follow from that table, and a PR that adds a construct keeps them:
 
-- **A node names the coordinate map, not a surface spelling.** `roll` and
-  `shift` are one node, so it is `Translate` — naming it `Shift` would make
-  one of the two spellings look privileged.
+- **A node names the coordinate map, not a surface spelling.** The translation
+  node is `Translate`, and it stayed that way when the surface collapsed to a
+  single `shift(…, edge=)`: the node is named for what it does to coordinates,
+  so which keyword the language happens to expose does not reach it.
 - **Nothing is abbreviated.** `Cmp` became `ParameterComparison`, `vtype`
   became `variable_type`. The one place abbreviation survives is frame column
   names inside the engine, which are not Python identifiers.

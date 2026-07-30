@@ -32,6 +32,7 @@ from lpspec.expression_parser import (
     ComparisonNode,
     CoordinateNode,
     DimensionNode,
+    EdgeNode,
     FunctionCallNode,
     NameNode,
     NumberNode,
@@ -130,7 +131,6 @@ def validate_expressions(
             )
 
     for cname, cdef in schema.constraints.items():
-        _check_where(cdef.where, ns, f"Constraint '{cname}'", errors)
         context = f"Constraint '{cname}'"
         _check_where(cdef.where, ns, context, errors)
         ast = _parse_expand(cdef.expression, schema, context, errors)
@@ -246,7 +246,7 @@ def _check_template_names(
     that are *not* formals, which is what makes an uncalled macro still fail
     at load time.
     """
-    if isinstance(node, (NumberNode, VariableNode, ParameterNode, DimensionNode, CoordinateNode)):
+    if isinstance(node, (NumberNode, VariableNode, ParameterNode, DimensionNode, CoordinateNode, EdgeNode)):
         return
 
     if isinstance(node, NameNode):
@@ -284,12 +284,6 @@ def _check_template_names(
                     f'{context}: {node.name}({kwarg}={value.name}) does not name a '
                     f'declared dimension or a formal of this macro.'
                 )
-        if builtin is not None and builtin.dimension_is_key:
-            errors.extend(
-                f'{context}: {node.name}({key}=...) does not name a declared dimension.'
-                for key in node.kwargs
-                if key not in known_dims and key not in builtin.value_kwargs
-            )
         for value in node.kwargs.values():
             if not isinstance(value, NameNode):
                 _check_template_names(value, template, context, ns, formals, errors)
