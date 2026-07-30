@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.32](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.31...v0.0.1-alpha.32) (2026-07-30)
+
+
+### Bug Fixes
+
+* **relational:** refuse a source label the dimension does not have ([#352](https://github.com/FBumann/lpspec/issues/352)) ([5600cd8](https://github.com/FBumann/lpspec/commit/5600cd83b2fe4fa5529b7a9b4dd30aef164b60d5)), closes [#350](https://github.com/FBumann/lpspec/issues/350)
+
 ## [0.0.1-alpha.31](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.30...v0.0.1-alpha.31) (2026-07-30)
 
 
