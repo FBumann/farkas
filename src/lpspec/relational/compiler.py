@@ -354,8 +354,20 @@ class PolarsCompiler:
         # an optimisation detail: a presence frame is data, and carrying one
         # costs `_label_frame` both of its arithmetic paths. Whether it is
         # needed is decided here, off the declaration, before any data is read.
-        presence = self.variables[name].select(*dims) if self.program.variable(name).where is not None else None
-        return TermFragment(dims, frame, True, label_dims=frozenset(dims), presence=presence)
+        masked = self.program.variable(name).where is not None
+        presence = self.variables[name].select(*dims) if masked else None
+        # `presence_dims` is stated rather than left implied. It defaults to
+        # None, meaning "keyed by dims" — but dims are rewritten downstream (a
+        # product broadcasts, a sum drops) while this frame is not, so an
+        # implied key silently becomes a claim about columns it never had.
+        return TermFragment(
+            dims,
+            frame,
+            True,
+            label_dims=frozenset(dims),
+            presence=presence,
+            presence_dims=dims if masked else None,
+        )
 
     def _product(self, a: CompiledExpression, b: CompiledExpression, context: str) -> CompiledExpression:
         """``a * b``, with the variable-carrying side normalised to the left."""
@@ -688,14 +700,7 @@ def _join_mul(a: TermFragment, c: TermFragment, is_term: bool, divide: bool = Fa
     carried = ['var_label', out] if is_term else [out]
     frame = joined.with_columns(combined.alias(out)).select(*out_dims, *carried)
     # *c* is variable-free, so it contributes no absence: a sparse coefficient
-    # zeroes a term, it does not unmake the variable underneath it.
-    #
-    # But `c` may still *widen* the dims, and `presence_dims=None` means "keyed
-    # by dims" — so carrying it through a widening silently re-reads the
-    # presence frame as keyed by columns it does not have. Pin the key to what
-    # presence actually carries. Left as None where nothing widened, so the
-    # common case keeps the cheaper representation.
-    presence_dims = a.presence_dims
-    if a.presence is not None and presence_dims is None and out_dims != a.dims:
-        presence_dims = a.dims
-    return TermFragment(out_dims, frame, is_term, a.keyed and c.keyed, a.label_dims, a.presence, presence_dims)
+    # zeroes a term, it does not unmake the variable underneath it. `out_dims`
+    # may be wider than `a.dims`, which is why the presence key travels with the
+    # frame rather than being re-derived from dims here (#345).
+    return TermFragment(out_dims, frame, is_term, a.keyed and c.keyed, a.label_dims, a.presence, a.presence_dims)
