@@ -149,7 +149,11 @@ def _build_grammar() -> pp.ParserElement:
     # float, not int: NumberNode.value is declared float, so store one
     integer = pp.Regex(r'-?\d+').set_parse_action(lambda t: NumberNode(float(t[0])))
     real = pp.Regex(r'-?\d+\.\d*([eE][+-]?\d+)?').set_parse_action(lambda t: NumberNode(float(t[0])))
-    inf_literal = (pp.Literal('.inf') | pp.Literal('inf')).set_parse_action(lambda: NumberNode(float('inf')))
+    # Keyword, not Literal: `Literal('inf')` matches a prefix, so it eats the
+    # first three characters of `inflow` and the parser then meets `low` where
+    # it expects the end of the expression. `where_parser.py` had this right
+    # from the start — every keyword there is a `CaselessKeyword`.
+    inf_literal = (pp.Keyword('.inf') | pp.Keyword('inf')).set_parse_action(lambda: NumberNode(float('inf')))
     number = real | inf_literal | integer
 
     name = pp.Regex(r'[a-zA-Z_][a-zA-Z0-9_]*')
