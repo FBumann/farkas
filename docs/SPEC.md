@@ -125,6 +125,15 @@ parameter or a number.
 block's name *is* the constraint's name, which is what a row is read back by.
 The LHS must involve at least one decision variable.
 
+`foreach: []` is **one scalar row** — a single system-wide budget, where the
+expression reduces every dim away. Nothing special: law 5 requires `dims(lhs) ∪
+dims(rhs)` to *equal* `foreach`, and `sum(x, over=f) <= 120` has no free dims,
+so `[]` is the signature that satisfies it. It is the empty coordinate, the
+same reading `[]` already has as a parameter's `dims` above, and it means a
+dummy dimension of size 1 is never the way to write a scalar row. A **variable**
+still requires at least one dim, since there its scalar-ness would be declared
+rather than derived from a reduction.
+
 Two regimes of one rule are two blocks, and each gets a name a reader chose
 rather than a position in a list:
 

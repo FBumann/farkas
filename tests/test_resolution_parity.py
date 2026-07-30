@@ -205,3 +205,41 @@ def test_a_bool_parameter_is_a_mask_on_both_lanes(tmp_path):
         relational = result.objective
 
     assert eager == relational == 1.0
+
+
+#: A budget row: one constraint over no dims, because `sum` reduces the only
+#: one away. The narrowest model that needs a scalar row at all.
+SCALAR_ROW_MODEL = {
+    'dimensions': {'f': {'values': ['a', 'b', 'c']}},
+    'parameters': {'cost': {'dims': ['f']}},
+    'variables': {'x': {'foreach': ['f'], 'bounds': {'lower': 0, 'upper': 100}}},
+    'constraints': {'budget': {'foreach': [], 'expression': 'sum(x, over=f) <= 120'}},
+    'objectives': {'total': {'sense': 'maximize', 'expression': 'x * cost'}},
+}
+
+
+def test_a_scalar_constraint_builds_on_both_lanes(tmp_path):
+    """`foreach: []` is one row, and law 5 is what says so: a constraint must
+    *equal* its `foreach`, and `sum(x, over=f) <= 120` has no free dims (#320).
+
+    Was: the eager lane built the row and solved, while the relational lane
+    raised `constraint 'budget' has no dims` — so the same file was two
+    languages, against hard rule 3. Under that guard `_coordinate_product`
+    asserted no declaration ever arrives dimensionless; the empty cross join is
+    one row of no columns, which is what a scalar row needs.
+    """
+    path = tmp_path / 'm.yaml'
+    path.write_text(pyyaml.safe_dump(SCALAR_ROW_MODEL))
+    data = {'cost': pd.Series({'a': 1.0, 'b': 2.0, 'c': 3.0})}
+
+    m = lpspec_linopy.build(path, data=data)
+    m.solve(solver_name='highs')
+    eager = float(m.objective.value)
+
+    with lps.solve(path, data) as result:
+        relational = result.objective
+        # The claim is *one* row — not zero, and not one per `f`.
+        assert result.dual('budget').height == 1
+        assert result.primal('x').sort('f')['value'].to_list() == [0.0, 20.0, 100.0]
+
+    assert eager == relational == 340.0

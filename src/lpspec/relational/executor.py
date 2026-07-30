@@ -737,8 +737,6 @@ class PolarsExecutor:
         is skipped where nothing can (:func:`_needs_aggregate`).
         """
 
-        if not c.dims:
-            raise LanguageError(f"constraint '{c.name}' has no dims")
         lhs = self._q.expression(c.lhs, f"constraint '{c.name}' lhs")
         rhs = self._q.expression(c.rhs, f"constraint '{c.name}' rhs")
         terms = [(p, 1.0) for p in lhs.terms] + [(p, -1.0) for p in rhs.terms]

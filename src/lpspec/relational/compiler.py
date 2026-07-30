@@ -156,7 +156,11 @@ class PolarsCompiler:
         for d in dims:
             table = self.dimensions[d].select(pl.col('val').alias(d), pl.col('ord').alias(_ordinal(d)))
             out = table if out is None else out.join(table, how='cross')
-        assert out is not None, 'a declaration with no dims is rejected before it reaches the compiler'
+        if out is None:
+            # No dims is the *empty* cross join, whose unit is one row of no
+            # columns — not nothing. A scalar constraint is that one row, and
+            # `_positional` labels it by selecting a bare literal against this.
+            return pl.LazyFrame()
         return out
 
     def parameter_join(
