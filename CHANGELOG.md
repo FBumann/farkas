@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.30](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.29...v0.0.1-alpha.30) (2026-07-30)
+
+
+### Bug Fixes
+
+* **bench:** migrate the bench corpus off equations:, and gate it ([#346](https://github.com/FBumann/lpspec/issues/346)) ([72818b2](https://github.com/FBumann/lpspec/commit/72818b2a2eefef3e9afdce0387692f8d7545d896)), closes [#343](https://github.com/FBumann/lpspec/issues/343)
+
 ## [0.0.1-alpha.29](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.28...v0.0.1-alpha.29) (2026-07-30)
 
 
