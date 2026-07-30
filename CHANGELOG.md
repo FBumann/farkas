@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.25](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.24...v0.0.1-alpha.25) (2026-07-30)
+
+
+### Documentation
+
+* the ten laws at the head of SPEC, one evidence page, the ceiling as its own note ([#333](https://github.com/FBumann/farkas/issues/333)) ([71ae5f7](https://github.com/FBumann/farkas/commit/71ae5f70b9f76bcdb9c47cf436cf63a232801c0a))
+
 ## [0.0.1-alpha.24](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.23...v0.0.1-alpha.24) (2026-07-29)
 
 
