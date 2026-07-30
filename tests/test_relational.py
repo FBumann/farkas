@@ -946,3 +946,63 @@ def test_a_scalar_variable_may_not_be_masked():
 
     assert '#340' in str(exc.value), 'the refusal must name where the fix is tracked'
     assert 'dimension of size 1' in str(exc.value), 'and the workaround'
+
+
+#: A masked variable broadcast onto a wider frame, then reduced back. `p` is
+#: over (node, tech); `produces` adds `carrier`; the sum removes `tech`. So the
+#: constraint's dims are neither a subset nor a superset of the variable's.
+BROADCAST_MASK_MODEL = {
+    'dimensions': {
+        'node': {'values': ['n1', 'n2']},
+        'tech': {'values': ['t1', 't2']},
+        'carrier': {'values': ['elec', 'heat']},
+    },
+    'parameters': {
+        'produces': {'dims': ['tech', 'carrier']},
+        'demand': {'dims': ['node', 'carrier']},
+        'cost': {'dims': ['tech']},
+        'installed': {'dims': ['node', 'tech']},
+    },
+    'variables': {
+        'p': {'foreach': ['node', 'tech'], 'where': 'installed > 0', 'bounds': {'lower': 0, 'upper': 'installed'}},
+    },
+    'constraints': {
+        'balance': {'foreach': ['node', 'carrier'], 'expression': 'sum(p * produces, over=tech) == demand'},
+    },
+    'objectives': {'total': {'sense': 'minimize', 'expression': 'p * cost'}},
+}
+
+
+def test_a_mask_survives_a_broadcast_into_a_reduction():
+    """`presence_dims=None` means "keyed by dims", and a product may *widen*
+    dims — so carrying it through the widening re-read `p`'s (node, tech)
+    presence as keyed by (node, tech, carrier) and `_propagate_absence` selected
+    a column it never had (#345).
+
+    Unmasked the same model was fine, which is what made it look like a problem
+    with the coordinate dim rather than with the mask. The whole benchmark
+    `sector` case sat on this.
+    """
+    import pandas as pd
+    import xarray as xr
+
+    data = {
+        # a tech produces exactly one carrier, which is what makes `produces` sparse
+        'produces': xr.DataArray(
+            [[1.0, 0.0], [0.0, 1.0]],
+            coords={'tech': ['t1', 't2'], 'carrier': ['elec', 'heat']},
+            dims=['tech', 'carrier'],
+        ),
+        'demand': xr.DataArray(
+            [[10.0, 20.0], [10.0, 20.0]],
+            coords={'node': ['n1', 'n2'], 'carrier': ['elec', 'heat']},
+            dims=['node', 'carrier'],
+        ),
+        'cost': pd.Series({'t1': 1.0, 't2': 2.0}),
+        'installed': xr.DataArray(
+            [[100.0, 100.0], [100.0, 100.0]], coords={'node': ['n1', 'n2'], 'tech': ['t1', 't2']}, dims=['node', 'tech']
+        ),
+    }
+
+    with differential(BROADCAST_MASK_MODEL, data) as run:
+        assert run.result.objective == pytest.approx(100.0, rel=RTOL)

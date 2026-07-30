@@ -689,4 +689,13 @@ def _join_mul(a: TermFragment, c: TermFragment, is_term: bool, divide: bool = Fa
     frame = joined.with_columns(combined.alias(out)).select(*out_dims, *carried)
     # *c* is variable-free, so it contributes no absence: a sparse coefficient
     # zeroes a term, it does not unmake the variable underneath it.
-    return TermFragment(out_dims, frame, is_term, a.keyed and c.keyed, a.label_dims, a.presence, a.presence_dims)
+    #
+    # But `c` may still *widen* the dims, and `presence_dims=None` means "keyed
+    # by dims" — so carrying it through a widening silently re-reads the
+    # presence frame as keyed by columns it does not have. Pin the key to what
+    # presence actually carries. Left as None where nothing widened, so the
+    # common case keeps the cheaper representation.
+    presence_dims = a.presence_dims
+    if a.presence is not None and presence_dims is None and out_dims != a.dims:
+        presence_dims = a.dims
+    return TermFragment(out_dims, frame, is_term, a.keyed and c.keyed, a.label_dims, a.presence, presence_dims)
