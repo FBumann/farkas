@@ -24,7 +24,7 @@ from farkas.typeset import FORMATS, SymbolTable, to_latex, to_markdown, to_typst
 from farkas.typeset.format import OPERATOR_NAMES
 from farkas.typeset.symbols import _derive_name_symbol
 from tests import golden
-from tools import constructs
+from tools import constructs, gallery_math
 
 if TYPE_CHECKING:
     from farkas.typeset.format import Format
@@ -377,28 +377,114 @@ def test_markdown_renders_the_legend_as_a_table():
     assert '| `p_max` over' in md.replace('$p^{\\mathrm{max}}$ ', '')
 
 
-def test_the_gallery_notation_is_reproducible_from_the_model():
-    """`docs/models/dispatch.md` states its math by hand, in symbols a reader of
-    the gallery expects. Those symbols are expressible, so the page *could* be
-    generated — which is the whole argument for this format existing."""
-    md = to_markdown('examples/dispatch.yaml', symbols='examples/symbols/dispatch.yaml', legend=False)
-    for hand_written in (r'p_{s,g}', r'c_{g}', r'\ell_{s}', r'\bar p_{g}'):
-        assert hand_written in md, f'the gallery writes {hand_written}; the generated math does not'
+GALLERY = Path(__file__).resolve().parent.parent / 'docs' / 'models'
+
+#: Pages whose hand-written summary states the **model's** math. The notation a
+#: gallery reader expects is the spec and `typeset/` is what is under test — so
+#: every symbol the summary uses, the generator has to be able to reach.
+REPRODUCIBLE = ('dispatch', 'transport')
+
+#: Pages whose summary deliberately says something *else*, each with its reason.
+#: Declared rather than assumed: `test_every_summary_declares_itself` fails on a
+#: page in neither list, so a new summary cannot quietly opt out of the check.
+DIVERGENT = {
+    'storage': (
+        'writes soc_{s-1}, ordinary index arithmetic. The model rolls, and a roll '
+        'wraps — which the generator writes as the cyclic ⊖. Matching would mean '
+        'either dropping the wrap or opening with a symbol nobody has met yet.'
+    ),
+    'piecewise': (
+        "shows one generator's curve. The model carries the snapshot dim through λ "
+        'as well, so the generated subscripts are (t, g, k) where the summary has (g, k).'
+    ),
+    'transport_dantzig': (
+        'is the textbook statement of the transportation problem, with an abstract '
+        'c_{ij}. The model is the GAMS instance, whose cost is distance times freight over 1000.'
+    ),
+    'tsp_mtz': (
+        'is DFJ subtour elimination — the formulation the language refuses, which is '
+        'the point of the section it sits in. The model is MTZ.'
+    ),
+}
+
+#: Reduction operators carry a subscript without being a symbol.
+_OPERATORS = frozenset({r'\sum', r'\min', r'\max', r'\prod', r'\int'})
+_SUBSCRIPTED = re.compile(r'(\\[a-zA-Z]+|[A-Za-z])\s*_\s*(?:\{([^{}]*)\}|(\S))')
 
 
-def test_the_dispatch_page_and_its_generated_math_agree_about_the_mask():
-    """This began as the opposite assertion. The page's summary showed a bound
-    for every `(s, g)` while the prose beneath called `where: "p_max > 0"` the
-    one line worth pausing on — found by generating the same equation, and
-    fixed in the same change. It stays as a regression guard: the summary is
-    prose, so nothing else would notice it losing the mask again.
+def _summary(stem: str) -> str:
+    """The hand-written math on a gallery page — the whole page *minus* the
+    generated block, which is the definition of hand-written here.
 
-    It lives on this branch rather than with the renderer because it reads
-    `docs/models/dispatch.md`, and that page's fix is here.
+    Not the first `$$` in the file: positional indexing survives only until
+    someone adds math above it, and then it silently checks a different
+    equation. Not a heading name either — `tsp_mtz` states its math under
+    "What genuinely is refused", because for that page the summary is the
+    formulation the language *cannot* use. Keying on the machine-maintained
+    markers is the one anchor that holds for both.
     """
-    summary = Path('docs/models/dispatch.md').read_text().split('$$')[1]
-    assert r'\bar p_g > 0' in summary
+    page = (GALLERY / f'{stem}.md').read_text()
+    if gallery_math.BEGIN in page:
+        page = page[: page.index(gallery_math.BEGIN)] + page[page.index(gallery_math.END) :]
+    # `$$` blocks only. The prose and the YAML fence around them are full of
+    # identifiers like `p_max` and `group_sum`, which read as subscripts.
+    return '\n'.join(page.split('$$')[1::2])
 
+
+def _symbols(latex: str) -> set[str]:
+    """Every subscripted quantity, as `head_subscript` with braces dropped.
+
+    Brace-insensitive because the two sides spell single-character subscripts
+    differently by convention — a summary writes `c_g`, the generator `c_{g}` —
+    and that is a spelling difference, not a disagreement about the math.
+    """
+    found = set()
+    for head, braced, bare in _SUBSCRIPTED.findall(latex):
+        if head in _OPERATORS:
+            continue
+        found.add(f'{head}_{f"{braced}{bare}".strip()}')
+    return found
+
+
+def test_every_summary_declares_itself():
+    """A page with hand-written math is checked against the generator, or says
+    why not. Being in neither list is the failure this guards."""
+    with_math = {p.stem for p in GALLERY.glob('*.md') if p.stem != 'index' and _summary(p.stem).strip()}
+    undeclared = with_math - set(REPRODUCIBLE) - set(DIVERGENT)
+    assert not undeclared, (
+        f'gallery summaries that neither claim reproducibility nor explain a divergence: '
+        f'{sorted(undeclared)} — add each to REPRODUCIBLE or to DIVERGENT with its reason'
+    )
+    stale = (set(REPRODUCIBLE) | set(DIVERGENT)) - with_math
+    assert not stale, f'declared pages that no longer carry hand-written math: {sorted(stale)}'
+
+
+@pytest.mark.parametrize('stem', REPRODUCIBLE)
+def test_a_reproducible_summary_uses_only_symbols_the_generator_emits(stem: str):
+    """The oracle direction: the hand-written notation is the expectation, and
+    the renderer is what has to meet it.
+
+    This began as the opposite assertion, on `dispatch`. Its summary showed a
+    bound for every `(s, g)` while the prose beneath called `where: "p_max > 0"`
+    the one line worth pausing on — found by generating the same equation, and
+    fixed in the same change. A summary is prose, so nothing else would notice
+    it drifting again.
+    """
+    symbols = f'examples/symbols/{stem}.yaml'
+    generated = to_markdown(f'examples/{stem}.yaml', symbols=symbols, legend=False)
+    missing = sorted(_symbols(_summary(stem)) - _symbols(generated))
+    assert not missing, (
+        f'docs/models/{stem}.md writes {missing}, which the generated math does not — '
+        f'either the summary drifted from the model, or the renderer cannot say what '
+        f'the gallery promises it can'
+    )
+
+
+def test_the_dispatch_summary_still_carries_the_mask():
+    """The specific regression above, pinned by value rather than by symbol set:
+    `> 0` is a condition, not a subscripted quantity, so the check below would
+    not see it disappear."""
+    assert r'\bar p_g > 0' in _summary('dispatch')
     generated = to_markdown('examples/dispatch.yaml', symbols='examples/symbols/dispatch.yaml', legend=False)
     assert r'\bar p_{g} > 0' in generated
 
