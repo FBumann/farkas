@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.31](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.30...v0.0.1-alpha.31) (2026-07-30)
+
+
+### Bug Fixes
+
+* **relational:** a mask survives a broadcast into a reduction ([#348](https://github.com/FBumann/lpspec/issues/348)) ([3515fd6](https://github.com/FBumann/lpspec/commit/3515fd619476b404697f611fbd655d6c633146f8))
+
 ## [0.0.1-alpha.30](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.29...v0.0.1-alpha.30) (2026-07-30)
 
 
