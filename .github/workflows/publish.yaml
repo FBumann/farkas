@@ -110,7 +110,7 @@ jobs:
           fi
 
   pypi:
-    # Off until a PyPI trusted publisher exists for farkas. Flip the repo
+    # Off until a PyPI trusted publisher exists for lpspec. Flip the repo
     # variable PUBLISH_TO_PYPI to "true" to go live — see RELEASING.md.
     name: PyPI
     needs: [build]
@@ -119,7 +119,7 @@ jobs:
     timeout-minutes: 10
     environment:
       name: pypi
-      url: https://pypi.org/project/farkas
+      url: https://pypi.org/project/lpspec
     permissions:
       id-token: write
       attestations: write

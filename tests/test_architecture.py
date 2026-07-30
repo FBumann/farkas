@@ -11,14 +11,14 @@ import ast
 from pathlib import Path
 
 REPO = Path(__file__).parent.parent
-PKG = REPO / 'src' / 'farkas'
+PKG = REPO / 'src' / 'lpspec'
 
 FORBIDDEN_RUNTIME = {'linopy', 'xarray'}
 
 
 def _in_linopy_lane(path: Path) -> bool:
     """The linopy/oracle lane — the ONLY modules allowed to import linopy or
-    xarray at module level (they load only via ``import farkas.linopy``).
+    xarray at module level (they load only via ``import lpspec.linopy``).
 
     Structural, not a filename allowlist: membership is "lives under
     ``linopy/``". A new eager-lane module therefore cannot land outside the
@@ -107,7 +107,7 @@ def test_lazy_oracle_imports_stay_on_the_allowlist():
 #: Package modules the engine may import: dependency-free leaves that carry no
 #: YAML, schema or AST knowledge. ``errors.py`` is one — without it there is no
 #: single exception class a caller can catch across both lanes.
-ENGINE_MAY_IMPORT = {'farkas.errors'}
+ENGINE_MAY_IMPORT = {'lpspec.errors'}
 
 
 def test_engine_is_isolated():
@@ -132,15 +132,15 @@ def test_engine_is_isolated():
                     for a in node.names
                     if a.name.split('.')[0] in FORBIDDEN_RUNTIME | {'yaml'}
                     or (
-                        a.name.startswith('farkas')
-                        and not a.name.startswith('farkas.relational')
+                        a.name.startswith('lpspec')
+                        and not a.name.startswith('lpspec.relational')
                         and a.name not in ENGINE_MAY_IMPORT
                     )
                 ]
             elif isinstance(node, ast.ImportFrom) and node.module:
                 m = node.module
                 if m.split('.')[0] in FORBIDDEN_RUNTIME | {'yaml'} or (
-                    m.startswith('farkas') and not m.startswith('farkas.relational') and m not in ENGINE_MAY_IMPORT
+                    m.startswith('lpspec') and not m.startswith('lpspec.relational') and m not in ENGINE_MAY_IMPORT
                 ):
                     bad.append(m)
         if bad:
@@ -177,7 +177,7 @@ def test_every_plan_node_is_handled_by_the_compiler():
     the executor moves around it. Grep-level drift alarm; the differential
     tests prove semantics.
     """
-    import farkas.relational.plan as plan
+    import lpspec.relational.plan as plan
 
     compiler_src = (PKG / 'relational' / 'compiler.py').read_text()
     for base in (plan.Expression, plan.Predicate):
@@ -193,7 +193,7 @@ def test_both_lanes_implement_exactly_the_closed_helper_set():
     Read statically: ``linopy/builder.py`` imports xarray at module level (it
     is linopy lane), and this check must still run on a bare install.
     """
-    from farkas.helpers import BUILTIN_NAMES
+    from lpspec.helpers import BUILTIN_NAMES
 
     tree = ast.parse((PKG / 'linopy' / 'builder.py').read_text())
     table = next(
@@ -257,12 +257,12 @@ def test_every_schema_model_is_strict():
     )
 
 
-#: Every in-function ``farkas`` import in the package, with why it is one.
+#: Every in-function ``lpspec`` import in the package, with why it is one.
 #: A lazy import is a real tool here — it is how the one genuine cycle is
 #: broken — which is exactly why the decorative ones had to go: a reader
 #: cannot tell load-bearing from leftover if both are present.
 DELIBERATE_LAZY_IMPORTS = {
-    ('lowering.py', 'farkas.piecewise'): (
+    ('lowering.py', 'lpspec.piecewise'): (
         'formulations expand before lowering, and expanding needs the subset '
         'test that lowering defines — piecewise imports lowering at module '
         'level, so this direction has to stay lazy'
@@ -293,7 +293,7 @@ def test_lazy_intra_package_imports_are_all_declared():
             if (
                 isinstance(node, ast.ImportFrom)
                 and node.module
-                and node.module.startswith('farkas')
+                and node.module.startswith('lpspec')
                 and id(node) not in module_level
             ):
                 found[(str(path.relative_to(PKG)), node.module)] = node.lineno

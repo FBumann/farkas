@@ -20,7 +20,7 @@ and run out of band — PyPSA is not a dependency of this project.
 
 It reads the same instance the port binds, since a reference optimum means
 nothing against a different one, and builds the network with PyPSA's own
-objects. Nothing here imports farkas.
+objects. Nothing here imports lpspec.
 
 Rung 1: transport model, linear marginal cost. Links rather than lines is what
 makes it one — a link's flow is a variable bounded by its rating, with no

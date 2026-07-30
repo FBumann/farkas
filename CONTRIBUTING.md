@@ -78,7 +78,7 @@ Three rules, each enforced, so none has to be remembered:
 - **Inside `docs/`, link relatively.** `../SPEC.md`, `models/index.md`. mkdocs
   resolves and validates these; a dead one fails the build.
 - **Outside `docs/`, write the full GitHub URL** —
-  `https://github.com/FBumann/farkas/blob/main/bench/README.md`, not
+  `https://github.com/FBumann/lpspec/blob/main/bench/README.md`, not
   `../bench/README.md`. The site has no file above `docs/` to resolve to, and
   mkdocs does *not* flag the relative form: it ships as a silent 404. This is
   the same convention the model pages already use to link at their `.yaml`.
@@ -145,8 +145,8 @@ differently" belongs in git.
 A port is a model somebody else already solved, said again in this language and
 checked against **an optimum that did not come from us**. It is the only test
 class that can catch a *shared misreading* — both lanes agreeing on a meaning
-the modeller did not intend — because every other test compares farkas against
-farkas. The corpus, its ladder and the ledger of what a port could *not* say
+the modeller did not intend — because every other test compares lpspec against
+lpspec. The corpus, its ladder and the ledger of what a port could *not* say
 are in [docs/models/index.md](docs/models/index.md), where the reference table
 is generated from `examples/ports/references.json` — the same file the tests
 assert against. Each port's page there shows the model and a side-by-side
@@ -157,7 +157,7 @@ Four files per port:
 ```
 examples/ports/<name>.yaml              the model
 examples/ports/data/<name>.json         the instance
-examples/ports/references/<name>.py     a reference implementation, importing no farkas
+examples/ports/references/<name>.py     a reference implementation, importing no lpspec
 examples/ports/references.json          the recorded objective and where it came from
 docs/models/<name>.md                   the gallery page — maths, model, side-by-side
 ```

@@ -12,9 +12,9 @@ import polars as pl
 import pytest
 import yaml as pyyaml
 
-import farkas as fk
+import lpspec as lps
 from tests.conftest import DISPATCH_MODEL, override
-from tests.oracle import farkas_linopy, pd  # skips the module without the [linopy] extra
+from tests.oracle import lpspec_linopy, pd  # skips the module without the [linopy] extra
 
 
 @pytest.fixture
@@ -60,10 +60,10 @@ def test_both_lanes_refuse_the_same_where(tmp_path, data, coords, where, match, 
     path = _write(tmp_path, **{'variables.p.where': where})
 
     with pytest.raises(ValueError, match=match):
-        farkas_linopy.build(path, data=data, coords=coords)  # was: {was}
+        lpspec_linopy.build(path, data=data, coords=coords)  # was: {was}
 
     with pytest.raises(ValueError, match=match):
-        fk.check(path)
+        lps.check(path)
 
 
 #: Where-strings that must build *identically* on both lanes. Chosen to cover
@@ -95,11 +95,11 @@ COVERED_ELSEWHERE = {
 def test_both_lanes_build_the_same_model(tmp_path, data, coords, where):
     path = _write(tmp_path, **{'variables.p.where': where})
 
-    m = farkas_linopy.build(path, data=data, coords=coords)
+    m = lpspec_linopy.build(path, data=data, coords=coords)
     eager_rows = int((m.variables['p'].labels != -1).sum())
     eager_status = m.solve(solver_name='highs')[1]
 
-    with fk.build(path, data, coords=coords) as ex:
+    with lps.build(path, data, coords=coords) as ex:
         relational_rows = ex._variables['p'].select(pl.len()).collect().item()
         relational_status = ex.solve().termination_condition
 
@@ -121,8 +121,8 @@ def test_every_resolved_predicate_is_parity_tested():
     """
     from typing import get_args
 
-    from farkas.resolution import Namespace, where_of
-    from farkas.where_parser import UnresolvedComparisonNode, UnresolvedNameNode, WhereNode
+    from lpspec.resolution import Namespace, where_of
+    from lpspec.where_parser import UnresolvedComparisonNode, UnresolvedNameNode, WhereNode
 
     unresolved = {UnresolvedNameNode, UnresolvedComparisonNode}  # rewritten by resolution, never evaluated
     expected = set(get_args(WhereNode)) - unresolved
@@ -165,10 +165,10 @@ def test_a_constraint_row_left_with_no_variables(tmp_path, data, coords):
     """
     path = _write(tmp_path, **{'variables.p.where': 'snapshot > 0'})
 
-    m = farkas_linopy.build(path, data=data, coords=coords)
+    m = lpspec_linopy.build(path, data=data, coords=coords)
     eager_status = m.solve(solver_name='highs')[1]
 
-    with fk.build(path, data, coords=coords) as ex:
+    with lps.build(path, data, coords=coords) as ex:
         relational_status = ex.solve().termination_condition
 
     assert eager_status == relational_status
@@ -197,11 +197,11 @@ def test_a_bool_parameter_is_a_mask_on_both_lanes(tmp_path):
         'cap': pd.Series({0: 1.0, 1: 1.0, 2: 1.0}),
     }
 
-    m = farkas_linopy.build(path, data=data)
+    m = lpspec_linopy.build(path, data=data)
     m.solve(solver_name='highs')
     eager = float(m.objective.value)
 
-    with fk.solve(path, data) as result:
+    with lps.solve(path, data) as result:
         relational = result.objective
 
     assert eager == relational == 1.0

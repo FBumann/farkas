@@ -1,4 +1,4 @@
-"""Shared fixtures and schema helpers for farkas tests.
+"""Shared fixtures and schema helpers for lpspec tests.
 
 Everything here is linopy-free *and pandas-free at import*, so it loads on a
 bare install. On a bare install (no [linopy] extra) the eager/oracle modules
@@ -27,7 +27,7 @@ import numpy as np
 import pytest
 import yaml as pyyaml
 
-from farkas.schema import MathSchema
+from lpspec.schema import MathSchema
 
 EXAMPLES_DIR = Path(__file__).parent.parent / 'examples'
 
@@ -126,14 +126,14 @@ def resolved(text, schema):
     this: a raw `parse_expression` result still holds NameNodes, and both
     backends now assert those never reach them (resolution.py).
     """
-    from farkas.resolution import Namespace, expression_of
+    from lpspec.resolution import Namespace, expression_of
 
     return expression_of(text, schema, Namespace.of(schema), 't')
 
 
 def resolved_where(text, schema):
     """Parse + resolve a where string."""
-    from farkas.resolution import Namespace, where_of
+    from lpspec.resolution import Namespace, where_of
 
     return where_of(text, Namespace.of(schema), 't')
 

@@ -8,11 +8,11 @@ anything in `docs/SPEC.md` moving.
 
 Peak RSS and wall time for the same model built two ways — declaratively on the
 relational engine, and eagerly through linopy — from the same parquet files to
-the same destination. `wall` and `peak` columns are **farkas ÷ linopy: below
+the same destination. `wall` and `peak` columns are **lpspec ÷ linopy: below
 1.00 is a win for us.** The [chart page](benchmarks-scaling.html) plots the same
 run.
 
-**The eager arm is `farkas.linopy.build`, not hand-written linopy** — our own
+**The eager arm is `lpspec.linopy.build`, not hand-written linopy** — our own
 YAML→`linopy.Model` shim, so it carries our loader on top of linopy's work.
 Against hand-written linopy on the same model the shim costs a constant
 **~2.3 ms**: a fixed offset, nowhere near enough to move a conclusion.
@@ -24,8 +24,8 @@ you actually use.
 
 ## How to reproduce it
 
-Read straight off [`latest.jsonl`](https://github.com/FBumann/farkas/blob/main/bench/results/latest.jsonl) and
-[`density.jsonl`](https://github.com/FBumann/farkas/blob/main/bench/results/density.jsonl), each carrying the machine
+Read straight off [`latest.jsonl`](https://github.com/FBumann/lpspec/blob/main/bench/results/latest.jsonl) and
+[`density.jsonl`](https://github.com/FBumann/lpspec/blob/main/bench/results/density.jsonl), each carrying the machine
 fingerprint, the library versions and the commit that produced it. Two files
 because a run *replaces* its output: one narrower than the tables it publishes
 would leave them unprovenanced while still looking complete.
@@ -50,7 +50,7 @@ relative (`fleet` to 4.6e-16) before anything is timed.
 
 *This lane replaced a duckdb engine, and the three-way comparison that decided
 it — speed against a settable memory ceiling — is in
-[#189](https://github.com/FBumann/farkas/pull/189) and in git. It is not
+[#189](https://github.com/FBumann/lpspec/pull/189) and in git. It is not
 re-measured here: duckdb is no longer a dependency, and a column nobody can
 re-run is a claim with a shelf life.*
 
@@ -58,9 +58,9 @@ re-run is a claim with a shelf life.*
 
 ### dispatch — highs sink
 
-Both arms end holding a populated `highspy.Highs` with `run()` never called: farkas through `build_highs`, linopy through `to_highspy()`. The simplex is the same work whoever filled the model, so timing it would say nothing about the lane that filled it.
+Both arms end holding a populated `highspy.Highs` with `run()` never called: lpspec through `build_highs`, linopy through `to_highspy()`. The simplex is the same work whoever filled the model, so timing it would say nothing about the lane that filled it.
 
-| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
+| variables | live | rows | wall: lpspec | wall: linopy | wall | peak: lpspec | peak: linopy | peak | LP |
 |---|---|---|---|---|---|---|---|---|---|
 | 10k | 100% | 100 | 0.02 s | 0.21 s | 0.08x | 0.17 GB | 0.20 GB | 0.83x | — |
 | 100k | 100% | 1k | 0.02 s | 0.22 s | 0.10x | 0.21 GB | 0.23 GB | 0.91x | — |
@@ -69,9 +69,9 @@ Both arms end holding a populated `highspy.Highs` with `run()` never called: far
 
 ### dispatch — lp sink
 
-farkas writes the LP file, linopy through its `lp-polars` writer.
+lpspec writes the LP file, linopy through its `lp-polars` writer.
 
-| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
+| variables | live | rows | wall: lpspec | wall: linopy | wall | peak: lpspec | peak: linopy | peak | LP |
 |---|---|---|---|---|---|---|---|---|---|
 | 10k | 100% | 100 | 0.01 s | 0.21 s | 0.07x | 0.17 GB | 0.21 GB | 0.79x | 1 MB |
 | 100k | 100% | 1k | 0.03 s | 0.22 s | 0.13x | 0.21 GB | 0.26 GB | 0.81x | 7 MB |
@@ -80,9 +80,9 @@ farkas writes the LP file, linopy through its `lp-polars` writer.
 
 ### fleet — highs sink
 
-Both arms end holding a populated `highspy.Highs` with `run()` never called: farkas through `build_highs`, linopy through `to_highspy()`. The simplex is the same work whoever filled the model, so timing it would say nothing about the lane that filled it.
+Both arms end holding a populated `highspy.Highs` with `run()` never called: lpspec through `build_highs`, linopy through `to_highspy()`. The simplex is the same work whoever filled the model, so timing it would say nothing about the lane that filled it.
 
-| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
+| variables | live | rows | wall: lpspec | wall: linopy | wall | peak: lpspec | peak: linopy | peak | LP |
 |---|---|---|---|---|---|---|---|---|---|
 | 12k | 100% | 6.02k | 0.04 s | 0.29 s | 0.15x | 0.17 GB | 0.20 GB | 0.86x | — |
 | 120k | 100% | 60.2k | 0.06 s | 0.32 s | 0.18x | 0.23 GB | 0.25 GB | 0.94x | — |
@@ -91,9 +91,9 @@ Both arms end holding a populated `highspy.Highs` with `run()` never called: far
 
 ### fleet — lp sink
 
-farkas writes the LP file, linopy through its `lp-polars` writer.
+lpspec writes the LP file, linopy through its `lp-polars` writer.
 
-| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
+| variables | live | rows | wall: lpspec | wall: linopy | wall | peak: lpspec | peak: linopy | peak | LP |
 |---|---|---|---|---|---|---|---|---|---|
 | 12k | 100% | 6.02k | 0.04 s | 0.30 s | 0.14x | 0.18 GB | 0.22 GB | 0.82x | 1 MB |
 | 120k | 100% | 60.2k | 0.06 s | 0.32 s | 0.19x | 0.24 GB | 0.25 GB | 0.98x | 9 MB |
@@ -102,9 +102,9 @@ farkas writes the LP file, linopy through its `lp-polars` writer.
 
 ### nodal — highs sink
 
-Both arms end holding a populated `highspy.Highs` with `run()` never called: farkas through `build_highs`, linopy through `to_highspy()`. The simplex is the same work whoever filled the model, so timing it would say nothing about the lane that filled it.
+Both arms end holding a populated `highspy.Highs` with `run()` never called: lpspec through `build_highs`, linopy through `to_highspy()`. The simplex is the same work whoever filled the model, so timing it would say nothing about the lane that filled it.
 
-| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
+| variables | live | rows | wall: lpspec | wall: linopy | wall | peak: lpspec | peak: linopy | peak | LP |
 |---|---|---|---|---|---|---|---|---|---|
 | 3k | 25% | 1k | 0.02 s | 0.21 s | 0.08x | 0.17 GB | 0.20 GB | 0.83x | — |
 | 30k | 25% | 10k | 0.02 s | 0.23 s | 0.09x | 0.19 GB | 0.21 GB | 0.87x | — |
@@ -113,9 +113,9 @@ Both arms end holding a populated `highspy.Highs` with `run()` never called: far
 
 ### nodal — lp sink
 
-farkas writes the LP file, linopy through its `lp-polars` writer.
+lpspec writes the LP file, linopy through its `lp-polars` writer.
 
-| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
+| variables | live | rows | wall: lpspec | wall: linopy | wall | peak: lpspec | peak: linopy | peak | LP |
 |---|---|---|---|---|---|---|---|---|---|
 | 3k | 25% | 1k | 0.02 s | 0.21 s | 0.07x | 0.17 GB | 0.21 GB | 0.79x | 0 MB |
 | 30k | 25% | 10k | 0.02 s | 0.23 s | 0.09x | 0.19 GB | 0.24 GB | 0.81x | 2 MB |
@@ -124,9 +124,9 @@ farkas writes the LP file, linopy through its `lp-polars` writer.
 
 ### profiled — highs sink
 
-Both arms end holding a populated `highspy.Highs` with `run()` never called: farkas through `build_highs`, linopy through `to_highspy()`. The simplex is the same work whoever filled the model, so timing it would say nothing about the lane that filled it.
+Both arms end holding a populated `highspy.Highs` with `run()` never called: lpspec through `build_highs`, linopy through `to_highspy()`. The simplex is the same work whoever filled the model, so timing it would say nothing about the lane that filled it.
 
-| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
+| variables | live | rows | wall: lpspec | wall: linopy | wall | peak: lpspec | peak: linopy | peak | LP |
 |---|---|---|---|---|---|---|---|---|---|
 | 12k | 100% | 1k | 0.02 s | 0.29 s | 0.08x | 0.17 GB | 0.21 GB | 0.85x | — |
 | 120k | 100% | 10k | 0.04 s | 0.28 s | 0.16x | 0.26 GB | 0.25 GB | 1.06x | — |
@@ -135,9 +135,9 @@ Both arms end holding a populated `highspy.Highs` with `run()` never called: far
 
 ### profiled — lp sink
 
-farkas writes the LP file, linopy through its `lp-polars` writer.
+lpspec writes the LP file, linopy through its `lp-polars` writer.
 
-| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
+| variables | live | rows | wall: lpspec | wall: linopy | wall | peak: lpspec | peak: linopy | peak | LP |
 |---|---|---|---|---|---|---|---|---|---|
 | 12k | 100% | 1k | 0.02 s | 0.22 s | 0.09x | 0.18 GB | 0.22 GB | 0.81x | 1 MB |
 | 120k | 100% | 10k | 0.04 s | 0.25 s | 0.17x | 0.26 GB | 0.30 GB | 0.88x | 9 MB |
@@ -146,9 +146,9 @@ farkas writes the LP file, linopy through its `lp-polars` writer.
 
 ### sector — highs sink
 
-Both arms end holding a populated `highspy.Highs` with `run()` never called: farkas through `build_highs`, linopy through `to_highspy()`. The simplex is the same work whoever filled the model, so timing it would say nothing about the lane that filled it.
+Both arms end holding a populated `highspy.Highs` with `run()` never called: lpspec through `build_highs`, linopy through `to_highspy()`. The simplex is the same work whoever filled the model, so timing it would say nothing about the lane that filled it.
 
-| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
+| variables | live | rows | wall: lpspec | wall: linopy | wall | peak: lpspec | peak: linopy | peak | LP |
 |---|---|---|---|---|---|---|---|---|---|
 | 1k | 6% | 1k | 0.02 s | 0.23 s | 0.09x | 0.17 GB | 0.20 GB | 0.83x | — |
 | 10k | 6% | 10k | 0.02 s | 0.23 s | 0.11x | 0.19 GB | 0.22 GB | 0.86x | — |
@@ -157,9 +157,9 @@ Both arms end holding a populated `highspy.Highs` with `run()` never called: far
 
 ### sector — lp sink
 
-farkas writes the LP file, linopy through its `lp-polars` writer.
+lpspec writes the LP file, linopy through its `lp-polars` writer.
 
-| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
+| variables | live | rows | wall: lpspec | wall: linopy | wall | peak: lpspec | peak: linopy | peak | LP |
 |---|---|---|---|---|---|---|---|---|---|
 | 1k | 6% | 1k | 0.02 s | 0.23 s | 0.07x | 0.17 GB | 0.21 GB | 0.79x | 0 MB |
 | 10k | 6% | 10k | 0.02 s | 0.24 s | 0.09x | 0.19 GB | 0.24 GB | 0.79x | 1 MB |
@@ -168,9 +168,9 @@ farkas writes the LP file, linopy through its `lp-polars` writer.
 
 ### transport — highs sink
 
-Both arms end holding a populated `highspy.Highs` with `run()` never called: farkas through `build_highs`, linopy through `to_highspy()`. The simplex is the same work whoever filled the model, so timing it would say nothing about the lane that filled it.
+Both arms end holding a populated `highspy.Highs` with `run()` never called: lpspec through `build_highs`, linopy through `to_highspy()`. The simplex is the same work whoever filled the model, so timing it would say nothing about the lane that filled it.
 
-| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
+| variables | live | rows | wall: lpspec | wall: linopy | wall | peak: lpspec | peak: linopy | peak | LP |
 |---|---|---|---|---|---|---|---|---|---|
 | 9.8k | 100% | 1.4k | 0.02 s | 0.24 s | 0.10x | 0.17 GB | 0.20 GB | 0.85x | — |
 | 98k | 100% | 14k | 0.03 s | 0.26 s | 0.13x | 0.22 GB | 0.23 GB | 0.95x | — |
@@ -179,9 +179,9 @@ Both arms end holding a populated `highspy.Highs` with `run()` never called: far
 
 ### transport — lp sink
 
-farkas writes the LP file, linopy through its `lp-polars` writer.
+lpspec writes the LP file, linopy through its `lp-polars` writer.
 
-| variables | live | rows | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak | LP |
+| variables | live | rows | wall: lpspec | wall: linopy | wall | peak: lpspec | peak: linopy | peak | LP |
 |---|---|---|---|---|---|---|---|---|---|
 | 9.8k | 100% | 1.4k | 0.02 s | 0.23 s | 0.10x | 0.18 GB | 0.22 GB | 0.81x | 1 MB |
 | 98k | 100% | 14k | 0.04 s | 0.25 s | 0.15x | 0.23 GB | 0.29 GB | 0.81x | 8 MB |
@@ -229,7 +229,7 @@ the wrong one for a rolling horizon, which pays it once.
 
 Build only, repeated in one process. **first** is what a caller pays who builds one model and solves it; **steady** is what every model after the first costs in a rolling horizon. Every lane does lazy first-call work that a loop never pays again — ~180 ms of it on the eager lane, ~4 ms here.
 
-| case | vars | farkas: first | farkas: steady | linopy: first | linopy: steady | steady vs linopy |
+| case | vars | lpspec: first | lpspec: steady | linopy: first | linopy: steady | steady vs linopy |
 |---|---|---|---|---|---|
 | transport | 9.8k | 28.8 ms | **13.7 ms** | 289.9 ms | 34.7 ms | 0.39x |
 | dispatch | 10k | 166.1 ms | **5.7 ms** | 449.0 ms | 13.8 ms | 0.41x |
@@ -262,7 +262,7 @@ Build only, repeated in one process. **first** is what a caller pays who builds 
 the ladder covers. Best of two, read from `bench/results/scaling.jsonl`,
 plotted in [benchmarks-scaling.html](benchmarks-scaling.html):
 
-| variables | farkas | linopy | wall | peak |
+| variables | lpspec | linopy | wall | peak |
 |---|---|---|---|---|
 | 10k | **0.02 s** / 0.17 GB | 0.21 s / 0.21 GB | **0.07x** | **0.79x** |
 | 100k | **0.03 s** / 0.21 GB | 0.22 s / 0.26 GB | **0.12x** | **0.81x** |
@@ -295,7 +295,7 @@ relational lane nothing and costs the eager lane a NaN, so the gap should widen
 as density falls. One model size, through the `lp` sink; `live` is how many of
 the 12 technologies each node has installed.
 
-| case | live | variables | wall: farkas | wall: linopy | wall | peak: farkas | peak: linopy | peak |
+| case | live | variables | wall: lpspec | wall: linopy | wall | peak: lpspec | peak: linopy | peak |
 |---|---|---|---|---|---|---|---|---|
 | nodal | 100% | 1.2M | 0.22 s | 0.44 s | 0.50x | 0.58 GB | 0.64 GB | 0.91x |
 | nodal | 50% | 600k | 0.12 s | 0.31 s | 0.38x | 0.43 GB | 0.59 GB | 0.72x |
@@ -407,7 +407,7 @@ mask-density sweep.
 
 ## Method
 
-Recorded in [`bench/README.md`](https://github.com/FBumann/farkas/blob/main/bench/README.md) — one process per
+Recorded in [`bench/README.md`](https://github.com/FBumann/lpspec/blob/main/bench/README.md) — one process per
 measurement, `ru_maxrss` rather than a tracker, import excluded from
 `wall_seconds` and teardown included, and a parity gate that aborts the run
 before anything is timed if the two lanes disagree. Failures are results and are

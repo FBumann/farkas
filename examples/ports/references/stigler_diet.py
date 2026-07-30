@@ -21,7 +21,7 @@ This script is what the same data gives to a modern solver: $39.6617 a year,
 *composition* of the diet is the stronger corroboration — both arrive at the
 same five foods.
 
-Nothing here imports farkas. The model is a covering LP with no network in it
+Nothing here imports lpspec. The model is a covering LP with no network in it
 at all, which is why it is in the corpus: every other verified port is a flow
 of something through something.
 """

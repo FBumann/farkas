@@ -5,7 +5,7 @@
 # — and nothing checks it against the model beside it. This file is what lets
 # the page be *generated* in that notation instead:
 #
-#   python -m farkas markdown examples/dispatch.yaml \
+#   python -m lpspec markdown examples/dispatch.yaml \
 #       --symbols examples/symbols/dispatch.yaml --no-legend
 #
 # The point is not that the derived symbols were wrong. It is that a hand-

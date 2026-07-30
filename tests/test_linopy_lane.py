@@ -18,9 +18,9 @@ import textwrap
 
 import pytest
 
-from farkas.errors import DataError, LanguageError
-from farkas.schema import MathSchema
-from tests.oracle import builder, farkas_linopy, linopy, loader, pd, xr
+from lpspec.errors import DataError, LanguageError
+from lpspec.schema import MathSchema
+from tests.oracle import builder, linopy, loader, lpspec_linopy, pd, xr
 
 
 @pytest.fixture
@@ -55,7 +55,7 @@ def model_with():
 
 
 def test_nothing_is_patched_onto_linopy_model():
-    """Importing farkas_linopy must not touch linopy.Model."""
+    """Importing lpspec_linopy must not touch linopy.Model."""
     assert not hasattr(linopy.Model, 'from_yaml')
     assert not hasattr(linopy.Model, 'yaml')
 
@@ -81,7 +81,7 @@ def test_extend_is_stateless(yaml_file):
         """,
         'first.yaml',
     )
-    farkas_linopy.extend(m, first, data={'cap': pd.Series({'wind': 1.0, 'solar': 2.0})})
+    lpspec_linopy.extend(m, first, data={'cap': pd.Series({'wind': 1.0, 'solar': 2.0})})
 
     # 'q' is a model variable, so the second file may reference it. 'cap' is
     # not redeclared here — and must therefore be unknown.
@@ -97,7 +97,7 @@ def test_extend_is_stateless(yaml_file):
         'second.yaml',
     )
     with pytest.raises(ValueError, match="'cap' not found"):
-        farkas_linopy.extend(m, second)
+        lpspec_linopy.extend(m, second)
 
 
 # ---------------------------------------------------------------------------
@@ -109,7 +109,7 @@ def test_infer_coords_unions_across_variables(model_with):
     """_infer_coords unions per-dim coordinates across all model variables."""
     m = model_with(a=('generator', ['wind', 'solar']), b=('generator', ['wind', 'gas']))
 
-    inferred = farkas_linopy._infer_coords(m)
+    inferred = lpspec_linopy._infer_coords(m)
     assert set(inferred['generator']) == {'wind', 'solar', 'gas'}
 
 
@@ -128,10 +128,10 @@ def test_redeclared_dim_values_must_match_the_existing_model(yaml_file, model_wi
     ext = yaml_file(f'dimensions:\n  generator: {{values: {declared}}}\n')
 
     if accepted:
-        farkas_linopy.extend(m, ext)  # must not raise
+        lpspec_linopy.extend(m, ext)  # must not raise
     else:
         with pytest.raises(ValueError, match='differ from the existing model'):
-            farkas_linopy.extend(m, ext)
+            lpspec_linopy.extend(m, ext)
 
 
 def test_extend_falls_back_to_inferred_coords(yaml_file, model_with):
@@ -150,7 +150,7 @@ def test_extend_falls_back_to_inferred_coords(yaml_file, model_with):
         """
     )
 
-    farkas_linopy.extend(m, ext, data={'cap': pd.Series({'wind': 1.0, 'solar': 2.0})})
+    lpspec_linopy.extend(m, ext, data={'cap': pd.Series({'wind': 1.0, 'solar': 2.0})})
     assert 'limit' in m.constraints
 
 
@@ -159,7 +159,7 @@ def test_the_coords_kwarg_wins_over_inference(yaml_file, model_with):
     ext = yaml_file('dimensions:\n  generator: {}\nparameters:\n  cap: {dims: [generator]}\n')
 
     # must not raise: the override, not inference, defines the dim here
-    farkas_linopy.extend(
+    lpspec_linopy.extend(
         m,
         ext,
         data={'cap': pd.Series({'wind': 1.0, 'gas': 3.0})},
@@ -178,10 +178,10 @@ def test_extend_sees_existing_model_variables(yaml_file, model_with):
             foreach: [g]
             expression: p <= 100
         """
-    farkas_linopy.extend(model_with(p=('g', ['wind', 'solar'])), yaml_file(text))
+    lpspec_linopy.extend(model_with(p=('g', ['wind', 'solar'])), yaml_file(text))
 
     with pytest.raises(ValueError, match="'p' not found"):
-        farkas_linopy.extend(linopy.Model(), yaml_file(text))
+        lpspec_linopy.extend(linopy.Model(), yaml_file(text))
 
 
 # ---------------------------------------------------------------------------
@@ -282,7 +282,7 @@ def gens():
 
 def _resolved(text, parameters=('p_max',), dimensions=('g',)):
     """Resolve then evaluate — the evaluator no longer takes strings."""
-    from farkas.resolution import Namespace, where_of
+    from lpspec.resolution import Namespace, where_of
 
     return where_of(text, Namespace((), parameters, dimensions), 'test')
 
@@ -371,7 +371,7 @@ def test_a_failure_names_the_declaration_and_the_file(yaml_file, tail, error, ma
     bad = yaml_file(textwrap.dedent(_MINIMAL).lstrip() + tail, 'bad.yaml')
 
     with pytest.raises(error, match=match) as ei:
-        farkas_linopy.build(bad)
+        lpspec_linopy.build(bad)
 
     assert context in str(ei.value) or _has_note(ei.value, context)
     assert _has_note(ei.value, f"while loading YAML '{bad}'")
@@ -382,7 +382,7 @@ def test_a_failure_inside_extend_names_the_extension_file(yaml_file, model_with)
     ext = yaml_file('dimensions:\n  time: {values: [a, b]}\n', 'ext.yaml')
 
     with pytest.raises(ValueError) as ei:
-        farkas_linopy.extend(m, ext)
+        lpspec_linopy.extend(m, ext)
 
     assert _has_note(ei.value, f"while extending with YAML '{ext}'")
 
@@ -405,7 +405,7 @@ def test_importing_the_lane_selects_the_v1_convention():
     A subprocess is the only place the claim is falsifiable, so it is the only
     place worth making it.
     """
-    probe = 'import linopy, farkas.linopy; print(linopy.options["semantics"])'
+    probe = 'import linopy, lpspec.linopy; print(linopy.options["semantics"])'
     out = subprocess.run([sys.executable, '-c', probe], capture_output=True, text=True, check=True)
     assert out.stdout.strip() == 'v1', f'the lane must select v1 on import, got {out.stdout.strip()!r}'
 
@@ -441,12 +441,12 @@ def test_the_two_lanes_agree_about_a_masked_variable_without_the_harness(tmp_pat
     probe = textwrap.dedent(f"""
         import warnings; warnings.simplefilter('ignore')
         import pandas as pd, polars as pl
-        import farkas as fk
-        from farkas import linopy as fkl
+        import lpspec as lps
+        from lpspec import linopy as fkl
         data = {{'gate': pd.Series({{'a': True}}), 'relmax': pd.Series({{'a': 0.5, 'b': 0.5}})}}
         m = fkl.build({str(model)!r}, data=data)
         m.solve(solver_name='highs', output_flag=False)
-        native = fk.solve({str(model)!r}, {{
+        native = lps.solve({str(model)!r}, {{
             'gate': pl.DataFrame({{'f': ['a'], 'value': [True]}}),
             'relmax': pl.DataFrame({{'f': ['a', 'b'], 'value': [0.5, 0.5]}}),
         }})
@@ -496,11 +496,11 @@ def test_a_missing_bound_is_refused_at_build_with_the_native_lane_s_message(yaml
     }
 
     with pytest.raises(DataError, match='NULL bounds'):
-        farkas_linopy.build(model, data=data)
+        lpspec_linopy.build(model, data=data)
 
     masked = yaml_file(
         model.read_text().replace('{foreach: [f], bounds:', '{foreach: [f], where: live, bounds:'),
         'masked.yaml',
     )
-    built = farkas_linopy.build(masked, data=data)  # must not raise
+    built = lpspec_linopy.build(masked, data=data)  # must not raise
     assert 'x' in built.variables

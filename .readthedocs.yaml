@@ -14,7 +14,7 @@ build:
       - asdf global uv latest
     create_environment:
       - uv venv "${READTHEDOCS_VIRTUALENV_PATH}"
-    # The `docs` group only — the site needs no farkas install. Nothing in
+    # The `docs` group only — the site needs no lpspec install. Nothing in
     # mkdocs.yml imports the package (no mkdocstrings, no notebooks to execute),
     # so a build here proves the docs, not the wheel.
     install:

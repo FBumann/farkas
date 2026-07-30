@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import pytest
 
-from farkas.errors import DataError
+from lpspec.errors import DataError
 from tests.differential import RTOL, differential
 from tests.oracle import pd
 

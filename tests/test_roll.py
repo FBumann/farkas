@@ -13,9 +13,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from farkas.errors import LanguageError
-from farkas.lowering import _lower_expr
-from farkas.relational.plan import (
+from lpspec.errors import LanguageError
+from lpspec.lowering import _lower_expr
+from lpspec.relational.plan import (
     Translate,
     Variable,
 )

@@ -4,7 +4,7 @@
     uv run python -m bench.run --cases dispatch --sizes m
     uv run python -m bench.run --skip-gate           # timings only, when iterating
 
-The parent process deliberately imports neither farkas nor linopy: it must not
+The parent process deliberately imports neither lpspec nor linopy: it must not
 warm an allocator or a module cache that a measurement would then inherit.
 
 **The gate runs first.** Before anything is timed, the smallest rung of each
@@ -54,7 +54,7 @@ CACHE = Path(__file__).resolve().parent / '.cache'
 
 GATE_RTOL = 1e-9
 _EXCEPTION = re.compile(r'^[\w.]*(Error|Exception)\b')
-TRACKED = ('farkas', 'linopy', 'highspy', 'polars', 'pandas', 'numpy', 'xarray', 'pyarrow')
+TRACKED = ('lpspec', 'linopy', 'highspy', 'polars', 'pandas', 'numpy', 'xarray', 'pyarrow')
 
 
 def _commit(root: Path) -> str | None:
@@ -88,7 +88,7 @@ def _commit(root: Path) -> str | None:
 def fingerprint() -> dict[str, Any]:
     """Everything a number needs to still mean something in six months."""
     here = Path(__file__).resolve().parent.parent
-    commits = {'farkas': _commit(here)}
+    commits = {'lpspec': _commit(here)}
     versions = {}
     for pkg in TRACKED:
         try:
@@ -178,7 +178,7 @@ def loops(case: str, sizes: list[str], arms: list[str], opts: argparse.Namespace
     return out
 
 
-def gate(case: str, timeout: float, arms: Sequence[str] = ('farkas', 'linopy')) -> dict[str, Any]:
+def gate(case: str, timeout: float, arms: Sequence[str] = ('lpspec', 'linopy')) -> dict[str, Any]:
     """Solve the smallest rung on every arm; objectives must agree.
 
     Gating *the arms being timed* rather than a fixed pair: an arm that is
@@ -264,7 +264,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         '--sizes', nargs='+', default=['xs', 's', 'm'], help="rung labels, or 'all' for every rung a case has"
     )
-    ap.add_argument('--arms', nargs='+', default=['farkas', 'linopy'])
+    ap.add_argument('--arms', nargs='+', default=['lpspec', 'linopy'])
     ap.add_argument('--repeat', type=int, default=1)
     ap.add_argument(
         '--builds',

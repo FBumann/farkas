@@ -18,8 +18,8 @@ import re
 import numpy as np
 import pytest
 
-import farkas as fk
-from farkas.errors import LinopyYamlError, NoSolutionError
+import lpspec as lps
+from lpspec.errors import LinopyYamlError, NoSolutionError
 from tests.differential import differential
 from tests.oracle import pd  # through the guard: a bare import would beat it
 from tests.test_milp import COMMITMENT_YAML
@@ -101,7 +101,7 @@ def test_infeasible_solve_refuses_duals(dispatch_yaml, dispatch_inputs):
     # demand every generator together cannot meet, at every snapshot
     data = dict(data, load=pd.Series(1e6, index=coords['snapshot']))
 
-    with fk.solve(dispatch_yaml, data, coords=coords) as result:
+    with lps.solve(dispatch_yaml, data, coords=coords) as result:
         assert not result.has_primal
         assert result.termination_condition == 'infeasible'
 
@@ -159,5 +159,5 @@ def test_reading_back_an_unknown_name_says_what_was_built(asked, expected):
     import polars as pl
 
     sources = {'lim': pl.DataFrame({'t': [0, 1, 2], 'value': [10.0, 10.0, 10.0]})}
-    with fk.solve(RAMP_BLOCK, sources) as sol, pytest.raises(KeyError, match=re.escape(expected)):
+    with lps.solve(RAMP_BLOCK, sources) as sol, pytest.raises(KeyError, match=re.escape(expected)):
         sol.dual(asked)

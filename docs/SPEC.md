@@ -2,7 +2,7 @@
 
 What a YAML file may contain and what it means. *Why* it is shaped this way:
 [docs/ARCHITECTURE.md](ARCHITECTURE.md). What is planned or refused:
-[docs/ROADMAP.md](ROADMAP.md). A worked example: [README](https://github.com/FBumann/farkas/blob/main/README.md#example).
+[docs/ROADMAP.md](ROADMAP.md). A worked example: [README](https://github.com/FBumann/lpspec/blob/main/README.md#example).
 
 ## 0. The laws
 
@@ -105,7 +105,7 @@ Omitting a bound means unbounded on that side, as in
 `linopy.Model.add_variables` — non-negativity is written, not assumed. Bounds
 are a *narrower* language than expressions (a name or a number, never
 arithmetic) and the error says so rather than reporting a parse failure;
-expressions here are [#31](https://github.com/FBumann/farkas/issues/31). A
+expressions here are [#31](https://github.com/FBumann/lpspec/issues/31). A
 bound parameter's dims must not exceed `foreach`.
 
 **Equal bounds pin a variable**, which is how one declaration covers a quantity
@@ -351,7 +351,7 @@ Everywhere else the value is expressible in the data, and §11 keeps it there �
 row per `foreach` coordinate anyway.
 
 This is linopy's v1 arithmetic convention, which both lanes are built against;
-`farkas.linopy.semantics` is where the eager lane answers it.
+`lpspec.linopy.semantics` is where the eager lane answers it.
 
 ### 6.1 Where strings
 
@@ -435,7 +435,7 @@ out, or `roll` if the horizon is genuinely cyclic.
 
 Anything composable out of these belongs in `macros:`. Math that is not sayable
 at all goes to a declared `escape:` island
-([#38](https://github.com/FBumann/farkas/issues/38)): named in the file,
+([#38](https://github.com/FBumann/lpspec/issues/38)): named in the file,
 bounded by the preceding `where` mask, terminal (it yields a constraint, never a
 sub-expression), and billed against a label budget before any Python runs.
 
@@ -512,12 +512,12 @@ exception tree rooted at `LinopyYamlError`: `LanguageError` (with `SchemaError`,
 was bound to it.
 
 ```python
-import farkas as fk
+import lpspec as lps
 
-fk.check('model.yaml')  # parse → validate → lower, no data bound
-schema = fk.load_schema('model.yaml')  # MathSchema
+lps.check('model.yaml')  # parse → validate → lower, no data bound
+schema = lps.load_schema('model.yaml')  # MathSchema
 
-result = fk.solve('model.yaml', sources, solver_options={'time_limit': 60})
+result = lps.solve('model.yaml', sources, solver_options={'time_limit': 60})
 result.status, result.termination_condition, result.objective
 result.is_ok  # linopy's rollup: not an error, abort or refusal
 result.has_primal  # narrower: are there values to read
@@ -528,17 +528,17 @@ result.to_dataarray('p')  # the same, labelled: .sel / resample / plot
 result.to_dataset()  # every variable by default; names for a subset
 result.to_parquet(directory)  # streamed to disk, never through this process
 
-fk.write('model.yaml', sources, 'model.lp')  # sink chosen by the suffix
+lps.write('model.yaml', sources, 'model.lp')  # sink chosen by the suffix
 ```
 
 **Nothing has to be released.** The built model is frames this process owns, so
 `primal` and the `to_*` readers stay valid for as long as the `Result` does.
 `close()` and the context-manager protocol exist to hand a large model back
-early, not because forgetting them breaks anything. `fk.build` returns the
+early, not because forgetting them breaks anything. `lps.build` returns the
 executor when one build should feed more than one sink:
 
 ```python
-ex = fk.build('model.yaml', sources)
+ex = lps.build('model.yaml', sources)
 ex.write_lp('model.lp')
 result = ex.solve()
 ```
@@ -572,22 +572,22 @@ undefined — raises `LinopyYamlError`, because the primals are still readable
 and only this quantity is missing. Duals exist only on the `solver_direct`
 path — a model written to LP and solved elsewhere never passes back through
 here. Reduced costs and slacks ride the same join and are not exposed yet
-([#78](https://github.com/FBumann/farkas/issues/78)). `.lp` is the only
+([#78](https://github.com/FBumann/lpspec/issues/78)). `.lp` is the only
 sink `write` supports today; `.mps` raises `NotImplementedError`.
 
-**Linopy shim** (`farkas.linopy`, `[linopy]` extra) — two *pure producers*,
+**Linopy shim** (`lpspec.linopy`, `[linopy]` extra) — two *pure producers*,
 YAML in, model out, nothing retained:
 
 ```python
-from farkas import linopy as farkas_linopy
+from lpspec import linopy as lpspec_linopy
 
-m = farkas_linopy.build('model.yaml', data={...}, coords={...})  # -> linopy.Model
-farkas_linopy.extend(m, 'ramp.yaml', data={...})  # mutates m in place
+m = lpspec_linopy.build('model.yaml', data={...}, coords={...})  # -> linopy.Model
+lpspec_linopy.extend(m, 'ramp.yaml', data={...})  # mutates m in place
 ```
 
 `build` returns a plain `linopy.Model` — no accessor, no attached schema, no
 patched attributes — so nothing is lost across `pickle`, `deepcopy` or
-`to_netcdf`; to inspect the math, re-read the file with `fk.load_schema`.
+`to_netcdf`; to inspect the math, re-read the file with `lps.load_schema`.
 `extend` may reference variables already on the model (they come from the model
 argument, not from Python-side history), while the YAML must still declare every
 parameter *and dimension* it uses — the declaration is required, the `values:`
@@ -601,8 +601,8 @@ not a silent override. There is no `register()` decorator and no helper registry
 | Not here | Instead |
 |---|---|
 | time-series processing (resample, cluster, interpolate, align), file IO, units | data prep; pass a parameter |
-| solver breadth | HiGHS via `solver_direct`, Gurobi planned on the same path, LP files for everything else ([#28](https://github.com/FBumann/farkas/issues/28)) |
-| SOS and indicator constraints | `piecewise:` (§4) covers SOS2's usual purpose; the streaming lane's default solver has no SOS or indicator concept at all, so this is a *sink capability* question rather than a language one — [#23](https://github.com/FBumann/farkas/issues/23), ROADMAP Track 4 |
+| solver breadth | HiGHS via `solver_direct`, Gurobi planned on the same path, LP files for everything else ([#28](https://github.com/FBumann/lpspec/issues/28)) |
+| SOS and indicator constraints | `piecewise:` (§4) covers SOS2's usual purpose; the streaming lane's default solver has no SOS or indicator concept at all, so this is a *sink capability* question rather than a language one — [#23](https://github.com/FBumann/lpspec/issues/23), ROADMAP Track 4 |
 | multi-objective | one objective — declaring a second is a load error (§2); weight them into one expression |
 | schema migrations | — |
 | arbitrary array ops (`merge`, `reindex`, `apply_ufunc`) | data prep, or a declared `escape:` island — the closed AST is what makes streaming possible |
@@ -614,4 +614,4 @@ operation parity with xarray/pandas. Whether `.yaml` should ever be a complete
 representation of a model built partly in Python is open — the *math* side is
 feasible, but expression and where strings become anonymous arrays, giving a
 functional round-trip and not a readable one
-([#3](https://github.com/FBumann/farkas/issues/3)).
+([#3](https://github.com/FBumann/lpspec/issues/3)).

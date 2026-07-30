@@ -10,7 +10,7 @@ is a row that stops failing.
 import pytest
 from pydantic import ValidationError
 
-from farkas.schema import MathSchema
+from lpspec.schema import MathSchema
 
 
 def test_empty_schema():
@@ -70,7 +70,7 @@ def test_an_omitted_bound_means_unbounded_all_the_way_down():
     checks the relational lane carries the default through rather than
     re-defaulting it on the way to the plan.
     """
-    from farkas.lowering import _bound_expression
+    from lpspec.lowering import _bound_expression
 
     s = MathSchema.model_validate({'dimensions': {'x': {'values': [1]}}, 'variables': {'v': {'foreach': ['x']}}})
     bounds = s.variables['v'].bounds

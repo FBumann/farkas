@@ -41,7 +41,7 @@ def _instrument(timings: dict[Any, list[float]], phase: dict[str, str]) -> None:
     """Tag each collection with the build step that issued it."""
     import polars as pl
 
-    from farkas.relational.executor import PolarsExecutor
+    from lpspec.relational.executor import PolarsExecutor
 
     original_collect = pl.LazyFrame.collect
 
@@ -87,7 +87,7 @@ def main() -> None:
     phase = {'now': 'setup'}
     _instrument(timings, phase)
 
-    import farkas as fk
+    import lpspec as lps
 
     case = bench_cases.CASES[args.case]
     sources = case.data(case.shape(args.size))
@@ -96,7 +96,7 @@ def main() -> None:
 
     with tempfile.TemporaryDirectory() as tmp:
         started = time.perf_counter()
-        with fk.build(case.model, sources) as executor:
+        with lps.build(case.model, sources) as executor:
             build = time.perf_counter() - started
             phase['now'] = 'emit'
             started = time.perf_counter()

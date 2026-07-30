@@ -2,7 +2,7 @@
 
 docs/ARCHITECTURE.md describes the pipeline; this script *executes* it one stage at
 a time and prints the artifact each stage produces. Nothing here is a
-reimplementation: every call is the same public entry point ``fk.solve`` takes
+reimplementation: every call is the same public entry point ``lps.solve`` takes
 internally, so what you see is what actually runs.
 
     uv run python examples/walkthrough.py
@@ -26,12 +26,12 @@ from pathlib import Path
 
 import polars as pl
 
-import farkas as fk
-from farkas.expansion import parse_and_expand
-from farkas.expression_parser import parse_expression
-from farkas.lowering import lower_program
-from farkas.relational.executor import PolarsExecutor
-from farkas.sources import tidy_sources
+import lpspec as lps
+from lpspec.expansion import parse_and_expand
+from lpspec.expression_parser import parse_expression
+from lpspec.lowering import lower_program
+from lpspec.relational.executor import PolarsExecutor
+from lpspec.sources import tidy_sources
 
 HERE = Path(__file__).parent
 MODEL = HERE / 'walkthrough.yaml'
@@ -79,7 +79,7 @@ def main() -> None:
     # name-checks every expression, where string, named expression and macro
     # template — used or not. After this call the model is known to be
     # well-formed; no data has been touched.
-    schema = fk.load_schema(MODEL)
+    schema = lps.load_schema(MODEL)
     print(f'    dimensions   {", ".join(schema.dimensions)}')
     print(f'    parameters   {", ".join(schema.parameters)}')
     print(f'    variables    {", ".join(schema.variables)}')
@@ -102,7 +102,7 @@ def main() -> None:
     banner(3, 'core AST -> relational IR', 'lowering.py')
     # This is where the language's boundary is *decided* — by attempting the
     # lowering, so eligibility can never drift from what the backend supports.
-    # It needs no data, which is what makes `fk.check()` a CI verb for model
+    # It needs no data, which is what makes `lps.check()` a CI verb for model
     # repositories: compile the math, bind nothing.
     program = lower_program(schema)
     print('    Program(')
@@ -170,7 +170,7 @@ def main() -> None:
     # and its rewrite. Never a silent fallback, never a redirect to the other
     # lane — both lanes accept exactly the same language (hard rule 3).
     #
-    # Each model below is run through `fk.check()` — stages 1-3, no data
+    # Each model below is run through `lps.check()` — stages 1-3, no data
     # bound — and then, only if that passes, through a build. Both are caught
     # by `check()`, which is what makes it a CI verb: a model repository can
     # compile-check its math with no data in the runner. The build arm stays
@@ -180,12 +180,12 @@ def main() -> None:
         print(f'\n    {label}:')
         model = {**_raw(MODEL), **patch}
         try:
-            fk.check(model)
+            lps.check(model)
         except ValueError as exc:  # LanguageError is a ValueError subclass
             _refusal('check()', exc)
             continue
         try:
-            fk.build(model, SOURCES, coords=COORDS).close()
+            lps.build(model, SOURCES, coords=COORDS).close()
         except ValueError as exc:
             _refusal('build()', exc)
 

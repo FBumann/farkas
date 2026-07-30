@@ -219,10 +219,10 @@ boundary condition · 5 KVL.
 **This rung hit the ceiling once**, and that is recorded rather than worked
 around quietly: PyPSA's `p_min_pu = -1` is a bound of `-rating`, an expression
 this language cannot yet put in `bounds:`. It ships as a `neg_rating` column
-instead, and the gap is [issue #31](https://github.com/FBumann/farkas/issues/31)
+instead, and the gap is [issue #31](https://github.com/FBumann/lpspec/issues/31)
 with the verdict *primitive*. See
 [the ledger](index.md#ledger--what-a-port-could-not-say).
 
 ---
 
-[`examples/ports/pypsa_transport.yaml`](https://github.com/FBumann/farkas/blob/main/examples/ports/pypsa_transport.yaml) · back to [all models](index.md)
+[`examples/ports/pypsa_transport.yaml`](https://github.com/FBumann/lpspec/blob/main/examples/ports/pypsa_transport.yaml) · back to [all models](index.md)

@@ -14,14 +14,14 @@ import numpy as np
 import polars as pl
 import pytest
 
-import farkas as fk
-from farkas.errors import DataError, LanguageError
-from farkas.lowering import lower_program
-from farkas.relational import (
+import lpspec as lps
+from lpspec.errors import DataError, LanguageError
+from lpspec.lowering import lower_program
+from lpspec.relational import (
     PolarsExecutor,
     chunking,
 )
-from farkas.relational.plan import (
+from lpspec.relational.plan import (
     Constant,
     ConstraintDeclaration,
     DimensionDeclaration,
@@ -35,7 +35,7 @@ from farkas.relational.plan import (
     Variable,
     VariableDeclaration,
 )
-from farkas.schema import MathSchema
+from lpspec.schema import MathSchema
 from tests.conftest import solve_lp_file
 from tests.differential import RTOL, differential
 from tests.oracle import linopy, pd, transport_eager_objective, xr
@@ -282,13 +282,13 @@ def test_a_dimensionless_parameter_must_be_one_row(rows):
     """
     data = {'s': pl.DataFrame({'value': [1.0] * rows}, schema={'value': pl.Float64})}
     with pytest.raises(DataError, match=f"parameter 's' .* its source has {rows} rows"):
-        fk.build(SCALAR_MODEL, data)
+        lps.build(SCALAR_MODEL, data)
 
 
 def test_a_dimensionless_parameter_of_one_row_still_builds():
     """The control: the shape the check exists to let through."""
     data = {'s': pl.DataFrame({'value': [10.0]})}
-    with fk.solve(SCALAR_MODEL, data) as result:
+    with lps.solve(SCALAR_MODEL, data) as result:
         assert result.objective == pytest.approx(20.0)  # x == 1 at both coordinates of i, times s
 
 
@@ -335,8 +335,8 @@ def test_an_awkward_path_is_a_value_not_syntax(tmp_path):
     }
     sources = {'load': str(odd / 'load.parquet'), 'snapshot': str(odd / 'index.parquet')}
 
-    fk.write(model, sources, odd / 'model.lp')
-    result = fk.solve(model, sources)
+    lps.write(model, sources, odd / 'model.lp')
+    result = lps.solve(model, sources)
     assert result.objective == pytest.approx(3.0)
     assert set(result.to_parquet(odd / 'solution')) == {'p'}
 
@@ -357,7 +357,7 @@ def test_a_variable_appearing_twice_in_a_row_is_summed_not_duplicated():
         'objectives': {'o': {'sense': 'minimize', 'expression': 'sum(x, over=i)'}},
     }
     sources = {'rhs': pl.DataFrame({'i': [0, 1], 'value': [6.0, 9.0]})}
-    with fk.build(model, sources) as ex:
+    with lps.build(model, sources) as ex:
         matrix = ex._tables().matrix
         assert matrix.height == 2  # one entry per row, not one per fragment
         assert sorted(matrix['coeff'].to_list()) == [3.0, 3.0]
@@ -380,7 +380,7 @@ def test_a_factored_mask_labels_exactly_like_the_counted_path():
     """
     import polars as pl_
 
-    from farkas.relational.compiler import _ordinal
+    from lpspec.relational.compiler import _ordinal
 
     model = {
         'dimensions': {
@@ -415,7 +415,7 @@ def test_a_factored_mask_labels_exactly_like_the_counted_path():
         'load': pl.DataFrame({'snapshot': list(range(5)), 'value': [1.0] * 5}),
     }
 
-    with fk.build(model, sources) as ex:
+    with lps.build(model, sources) as ex:
         fast = ex._variables['p'].collect().sort('var_label')
         dims = ('snapshot', 'node', 'tech')
         counted = (
@@ -452,9 +452,9 @@ def test_a_dictionary_encoded_source_column_binds_like_a_plain_one():
     encoded = pl.DataFrame({'node': ['a', 'b'], 'value': [3.0, 4.0]}).with_columns(pl.col('node').cast(pl.Categorical))
     plain = pl.DataFrame({'node': ['a', 'b'], 'value': [3.0, 4.0]})
 
-    with fk.build(model, {'cap': encoded}) as ex:
+    with lps.build(model, {'cap': encoded}) as ex:
         from_encoded = ex.solve().objective
-    with fk.build(model, {'cap': plain}) as ex:
+    with lps.build(model, {'cap': plain}) as ex:
         from_plain = ex.solve().objective
 
     assert from_encoded == pytest.approx(7.0)
@@ -470,7 +470,7 @@ def test_an_objective_naming_a_variable_twice_sums_its_coefficients():
         'constraints': {'c': {'foreach': ['i'], 'expression': 'x >= lb'}},
         'objectives': {'o': {'sense': 'minimize', 'expression': 'x + 4 * x'}},
     }
-    with fk.build(model, {'lb': pl.DataFrame({'i': [0], 'value': [2.0]})}) as ex:
+    with lps.build(model, {'lb': pl.DataFrame({'i': [0], 'value': [2.0]})}) as ex:
         assert ex._tables().obj.height == 1
         assert ex._tables().obj['coeff'].to_list() == [5.0]
         assert ex.solve().objective == pytest.approx(10.0)
@@ -525,13 +525,13 @@ def test_the_matrix_aggregate_runs_on_what_repeats_and_not_on_what_might():
     sources = {'rhs': pl.DataFrame({'i': [0, 1], 'value': [4.0, 6.0]})}
 
     disjoint = dict(base, constraints={'c': {'foreach': ['i'], 'expression': 'x + y >= rhs'}})
-    with fk.build(disjoint, sources) as ex:
+    with lps.build(disjoint, sources) as ex:
         matrix = ex._tables().matrix
         assert matrix.height == 4, 'two variables per row, nothing to collapse'
         assert matrix['coeff'].to_list() == [1.0, 1.0, 1.0, 1.0]
 
     overlapping = dict(base, constraints={'c': {'foreach': ['i'], 'expression': 'x + 3 * x >= rhs'}})
-    with fk.build(overlapping, sources) as ex:
+    with lps.build(overlapping, sources) as ex:
         matrix = ex._tables().matrix
         assert matrix.height == 2, 'one cell per row after the collapse'
         assert matrix['coeff'].to_list() == [4.0, 4.0]
@@ -873,12 +873,12 @@ def test_a_bare_shift_over_data_is_refused_rather_than_filled():
     row is a zero coefficient (§6) — so this follows linopy v1 and refuses,
     at load time, naming the three things the author might have meant.
 
-    Decidable without data, so ``fk.check()`` catches it: the operand is
+    Decidable without data, so ``lps.check()`` catches it: the operand is
     variable-free by declaration, not by what arrives in ``sources``.
     """
     model = _reindexed_parameter_model('shift(dt, t=1)')
     with pytest.raises(LanguageError) as exc:
-        fk.check(model)
+        lps.check(model)
     assert 'fill=0' in str(exc.value), 'the refusal must name the escape hatch'
     assert 'roll' in str(exc.value), 'and the operator for a genuinely cyclic horizon'
 

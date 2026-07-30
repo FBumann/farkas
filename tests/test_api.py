@@ -1,7 +1,7 @@
 """Native API: YAML → streaming engine → solver, with linopy never imported.
 
 The linopy-free guarantee is asserted in a subprocess so conftest's optional
-farkas_linopy import cannot pollute the check.
+lpspec_linopy import cannot pollute the check.
 
 This module is deliberately **pandas-free**: it is the bare install's proof
 that the native path — frames in, build, solve, frames out — needs no
@@ -19,13 +19,13 @@ import numpy as np
 import polars as pl
 import pytest
 
-import farkas as fk
+import lpspec as lps
 from tests.conftest import schema_of, solve_lp_file
 
 
 def test_solve(dispatch_yaml, dispatch_frame_inputs):
     sources, coords = dispatch_frame_inputs
-    result = fk.solve(dispatch_yaml, sources, coords=coords)
+    result = lps.solve(dispatch_yaml, sources, coords=coords)
     try:
         assert result.is_ok
         assert np.isfinite(result.objective)
@@ -37,12 +37,12 @@ def test_solve(dispatch_yaml, dispatch_frame_inputs):
 
 def test_build_context_manager_and_write_lp(dispatch_yaml, dispatch_frame_inputs, tmp_path):
     sources, coords = dispatch_frame_inputs
-    with fk.build(dispatch_yaml, sources, coords=coords) as ex:
+    with lps.build(dispatch_yaml, sources, coords=coords) as ex:
         result = ex.solve()
         assert result.is_ok
         objective_direct = result.objective
 
-    lp = fk.write(dispatch_yaml, sources, tmp_path / 'm.lp', coords=coords)
+    lp = lps.write(dispatch_yaml, sources, tmp_path / 'm.lp', coords=coords)
     assert solve_lp_file(lp) == pytest.approx(objective_direct, rel=1e-9)
 
 
@@ -54,13 +54,13 @@ def test_parquet_path_sources(dispatch_yaml, dispatch_frame_inputs, tmp_path):
         frame.write_parquet(p)
         paths[name] = str(p)
 
-    result = fk.solve(dispatch_yaml, paths, coords=coords)
+    result = lps.solve(dispatch_yaml, paths, coords=coords)
     try:
         assert result.is_ok
     finally:
         result.close()
 
-    ref = fk.solve(dispatch_yaml, sources, coords=coords)
+    ref = lps.solve(dispatch_yaml, sources, coords=coords)
     try:
         assert result.objective == pytest.approx(ref.objective, rel=1e-9)
     finally:
@@ -88,11 +88,11 @@ def test_runtime_is_linopy_free(dispatch_yaml):
         assert "linopy" not in sys.modules
 
         import polars as pl
-        import farkas as fk
+        import lpspec as lps
         for lib in {absent!r}:
             assert lib not in sys.modules, f"package import pulled in {{lib}}"
 
-        result = fk.solve(
+        result = lps.solve(
             {str(dispatch_yaml)!r},
             {{
                 "p_max": pl.DataFrame({{"generator": ["wind", "solar", "gas"],
@@ -121,7 +121,7 @@ def test_runtime_is_linopy_free(dispatch_yaml):
 def test_check_and_load_schema_need_no_data(dispatch_yaml):
     """The model stands for itself: the schema is read from the file when
     wanted, never carried on a built model."""
-    for schema in (fk.check(dispatch_yaml), fk.load_schema(dispatch_yaml)):
+    for schema in (lps.check(dispatch_yaml), lps.load_schema(dispatch_yaml)):
         assert schema.variables['p'].foreach == ['snapshot', 'generator']
         assert schema.parameters['load'].dims == ['snapshot']
 
@@ -139,48 +139,48 @@ def test_check_reports_language_errors_before_any_data_is_bound(
 ):
     raw = schema_of(dispatch_yaml, **{'objectives.total_cost.expression': expression}).model_dump()
 
-    with pytest.raises(fk.LanguageError, match=match):
-        fk.check(raw)
+    with pytest.raises(lps.LanguageError, match=match):
+        lps.check(raw)
     # ...and build says the same thing rather than deferring it to the solver
     sources, coords = dispatch_frame_inputs
-    with pytest.raises(fk.LanguageError, match=match):
-        fk.build(raw, sources, coords=coords)
+    with pytest.raises(lps.LanguageError, match=match):
+        lps.build(raw, sources, coords=coords)
 
 
 def test_error_hierarchy_is_one_catchable_tree():
     """One ``except`` covers the package, and the model/run split is real."""
-    from farkas.relational import RelationalBuildError
+    from lpspec.relational import RelationalBuildError
 
-    for cls in (fk.LanguageError, fk.DataError):
-        assert issubclass(cls, fk.LinopyYamlError)
-    for cls in (fk.SchemaError, fk.DimensionError, fk.PiecewiseExpansionError):
-        assert issubclass(cls, fk.LanguageError)
-    assert not issubclass(fk.DataError, fk.LanguageError)
-    assert issubclass(fk.LinopyYamlError, ValueError)
+    for cls in (lps.LanguageError, lps.DataError):
+        assert issubclass(cls, lps.LinopyYamlError)
+    for cls in (lps.SchemaError, lps.DimensionError, lps.PiecewiseExpansionError):
+        assert issubclass(cls, lps.LanguageError)
+    assert not issubclass(lps.DataError, lps.LanguageError)
+    assert issubclass(lps.LinopyYamlError, ValueError)
 
     # the retired name still catches everything it used to
-    assert RelationalBuildError is fk.LinopyYamlError
+    assert RelationalBuildError is lps.LinopyYamlError
 
 
 def test_multi_file_composition_reserved(dispatch_yaml):
     with pytest.raises(NotImplementedError, match='issues/30'):
-        fk.check([dispatch_yaml, dispatch_yaml])
+        lps.check([dispatch_yaml, dispatch_yaml])
 
 
 def test_write_suffix_dispatch(dispatch_yaml, dispatch_frame_inputs, tmp_path):
     sources, coords = dispatch_frame_inputs
-    out = fk.write(dispatch_yaml, sources, tmp_path / 'm.lp', coords=coords)
+    out = lps.write(dispatch_yaml, sources, tmp_path / 'm.lp', coords=coords)
     assert out.stat().st_size > 0
     with pytest.raises(NotImplementedError, match='mps'):
-        fk.write(dispatch_yaml, sources, tmp_path / 'm.mps', coords=coords)
+        lps.write(dispatch_yaml, sources, tmp_path / 'm.mps', coords=coords)
     with pytest.raises(ValueError, match='unsupported output format'):
-        fk.write(dispatch_yaml, sources, tmp_path / 'm.nc', coords=coords)
+        lps.write(dispatch_yaml, sources, tmp_path / 'm.nc', coords=coords)
 
 
 def test_solution_to_parquet(dispatch_yaml, dispatch_frame_inputs, tmp_path):
     """One file per variable, tidy, streamed straight to disk."""
     sources, coords = dispatch_frame_inputs
-    result = fk.solve(dispatch_yaml, sources, coords=coords)
+    result = lps.solve(dispatch_yaml, sources, coords=coords)
     assert result.is_ok
     written = result.to_parquet(tmp_path / 'solution')
     assert set(written) == {'p'}
@@ -203,7 +203,7 @@ def test_read_back_is_in_label_order_and_stays_there(dispatch_yaml, dispatch_fra
     """
     sources, coords = dispatch_frame_inputs
     generators = list(sources['p_max']['generator'])
-    with fk.solve(dispatch_yaml, sources, coords=coords) as result:
+    with lps.solve(dispatch_yaml, sources, coords=coords) as result:
         first = result.primal('p')
         assert first.equals(result.primal('p'))  # a second read agrees, to the row
 
@@ -225,7 +225,7 @@ def test_a_result_stays_readable_until_it_is_closed(dispatch_yaml, dispatch_fram
     there is nothing left to read.
     """
     sources, coords = dispatch_frame_inputs
-    result = fk.solve(dispatch_yaml, sources, coords=coords)
+    result = lps.solve(dispatch_yaml, sources, coords=coords)
     height = result.primal('p').height
     assert height > 0
     assert result.primal('p').height == height  # still there, no close in sight
@@ -247,7 +247,7 @@ def test_a_second_solve_does_not_rewrite_the_first_result(dispatch_yaml, dispatc
     """
     key = ['snapshot', 'generator']  # a read is a join, so compare on coordinates
     sources, coords = dispatch_frame_inputs
-    with fk.build(dispatch_yaml, sources, coords=coords) as ex:
+    with lps.build(dispatch_yaml, sources, coords=coords) as ex:
         first = ex.solve()
         before = first.primal('p').sort(key)
         assert first.is_ok
@@ -270,7 +270,7 @@ def test_primal_is_a_frame_and_to_pandas_is_the_bridge(dispatch_yaml, dispatch_f
     second query with its own opinion about column order or dtypes.
     """
     sources, coords = dispatch_frame_inputs
-    result = fk.solve(dispatch_yaml, sources, coords=coords)
+    result = lps.solve(dispatch_yaml, sources, coords=coords)
     frame = result.primal('p')
     assert isinstance(frame, pl.DataFrame)
     assert frame.columns == ['snapshot', 'generator', 'value']
@@ -291,9 +291,9 @@ def test_no_helper_registry_anywhere():
     makes the differential tests an oracle rather than a comparison of
     dialects (docs/ARCHITECTURE.md, "The expressive ceiling").
     """
-    import farkas.helpers as helpers
+    import lpspec.helpers as helpers
 
-    assert not hasattr(fk, 'register')
+    assert not hasattr(lps, 'register')
     assert not hasattr(helpers, 'register')
     assert not hasattr(helpers, '_REGISTRY')
 
@@ -304,7 +304,7 @@ def test_solution_to_dataarray(dispatch_yaml, dispatch_frame_inputs):
     pytest.importorskip('xarray')
     sources, coords = dispatch_frame_inputs
 
-    with fk.solve(dispatch_yaml, sources, coords=coords) as result:
+    with lps.solve(dispatch_yaml, sources, coords=coords) as result:
         arr = result.to_dataarray('p')
         tidy = result.to_pandas('p')
 
@@ -321,7 +321,7 @@ def test_solution_to_dataset(dispatch_yaml, dispatch_frame_inputs):
     pytest.importorskip('xarray')
     sources, coords = dispatch_frame_inputs
 
-    with fk.solve(dispatch_yaml, sources, coords=coords) as result:
+    with lps.solve(dispatch_yaml, sources, coords=coords) as result:
         ds = result.to_dataset('p')
         tidy = result.to_pandas('p')
 
@@ -358,7 +358,7 @@ def test_to_dataset_defaults_to_every_variable():
         'load': pl.DataFrame({'snapshot': list(range(n)), 'value': np.full(n, 90.0)}),
     }
 
-    with fk.solve(TWO_VARIABLE_MODEL, sources, coords={'snapshot': range(n)}) as result:
+    with lps.solve(TWO_VARIABLE_MODEL, sources, coords={'snapshot': range(n)}) as result:
         ds = result.to_dataset()
         subset = result.to_dataset('shed')
 

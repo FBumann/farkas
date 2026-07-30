@@ -19,9 +19,9 @@ from __future__ import annotations
 import polars as pl
 import pytest
 
-from farkas.errors import LanguageError
-from farkas.relational import plan
-from farkas.relational.compiler import PolarsCompiler
+from lpspec.errors import LanguageError
+from lpspec.relational import plan
+from lpspec.relational.compiler import PolarsCompiler
 
 PROGRAM = plan.Program(
     parameters=(

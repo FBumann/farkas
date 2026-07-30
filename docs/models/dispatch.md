@@ -103,4 +103,4 @@ language reference.
 
 ---
 
-[`examples/dispatch.yaml`](https://github.com/FBumann/farkas/blob/main/examples/dispatch.yaml) · back to [all models](index.md)
+[`examples/dispatch.yaml`](https://github.com/FBumann/lpspec/blob/main/examples/dispatch.yaml) · back to [all models](index.md)

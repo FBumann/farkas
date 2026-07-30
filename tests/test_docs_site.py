@@ -23,7 +23,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 DOCS = REPO / 'docs'
-REPO_URL = 'https://github.com/FBumann/farkas'
+REPO_URL = 'https://github.com/FBumann/lpspec'
 BLOB = f'{REPO_URL}/blob/main'
 
 #: `](target)` and `[label]: target`, the two ways markdown names a destination.

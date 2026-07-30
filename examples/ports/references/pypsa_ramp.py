@@ -19,7 +19,7 @@ Pinned above to the versions that produced the number in ``references.json``,
 and run out of band — PyPSA is not a dependency of this project.
 
 It reads the same instance the port binds and builds the network with PyPSA's
-own objects. Nothing here imports farkas.
+own objects. Nothing here imports lpspec.
 
 Rung 2: rung 1 plus generator ramp limits. ``ramp_limit_up`` and
 ``ramp_limit_down`` are fractions of ``p_nom`` bounding the change between

@@ -1,8 +1,8 @@
-site_name: farkas
+site_name: lpspec
 site_description: Self-documenting optimisation models — declarative LP/MILP, built relationally and handed straight to the solver
-site_url: https://farkas.readthedocs.io/en/latest/
-repo_url: https://github.com/FBumann/farkas
-repo_name: FBumann/farkas
+site_url: https://lpspec.readthedocs.io/en/latest/
+repo_url: https://github.com/FBumann/lpspec
+repo_name: FBumann/lpspec
 edit_uri: edit/main/docs/
 strict: true
 
@@ -72,12 +72,6 @@ nav:
 theme:
   name: material
   language: en
-
-  # `farkas-icon.svg` rather than `farkas-mark.svg`: the bare mark is drawn in
-  # #0f201e, which disappears against the slate header. The icon carries its own
-  # dark tile, so it reads on any header colour and needs no inverse variant.
-  logo: assets/farkas-icon.svg
-  favicon: assets/farkas-favicon.svg
 
   palette:
     # Dark first = default for new visitors (no auto/system-pref entry).
@@ -167,11 +161,11 @@ extra_css:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/FBumann/farkas
-      name: farkas on GitHub
+      link: https://github.com/FBumann/lpspec
+      name: lpspec on GitHub
     - icon: simple/pypi
-      link: https://pypi.org/project/farkas/
-      name: farkas on PyPI
+      link: https://pypi.org/project/lpspec/
+      name: lpspec on PyPI
 
 extra_javascript:
   - javascripts/mathjax.js

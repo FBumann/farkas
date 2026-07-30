@@ -1,6 +1,6 @@
 # How piecewise.yaml should print, for a paper or a review.
 #
-#   python -m farkas latex examples/piecewise.yaml \
+#   python -m lpspec latex examples/piecewise.yaml \
 #       --symbols examples/symbols/piecewise.yaml --standalone -o model.tex
 #
 # It lives in examples/symbols/ rather than beside the model because

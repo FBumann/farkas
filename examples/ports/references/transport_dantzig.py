@@ -21,7 +21,7 @@ reasons:
 
 Run out of band with the pinned versions above, like every reference here:
 linopy is not a runtime dependency of this project. Nothing here imports
-farkas.
+lpspec.
 """
 
 from __future__ import annotations

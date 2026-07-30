@@ -5,13 +5,13 @@ this file in the same PR. The language is [docs/SPEC.md](SPEC.md); what may
 enter it is [docs/design/ceiling.md](design/ceiling.md); plans and refusals
 are [docs/ROADMAP.md](ROADMAP.md); measured results are
 [docs/benchmarks.md](benchmarks.md), produced by the harness in
-[bench/](https://github.com/FBumann/farkas/blob/main/bench/README.md) — which is
+[bench/](https://github.com/FBumann/lpspec/blob/main/bench/README.md) — which is
 also how a claim here gets falsified.
 
 `python examples/walkthrough.py` executes the pipeline below stage by stage
-and prints what each one produces — the same public calls `fk.solve` makes,
+and prints what each one produces — the same public calls `lps.solve` makes,
 so the demonstration cannot drift from the code. Its output is committed as
-[examples/walkthrough.out](https://github.com/FBumann/farkas/blob/main/examples/walkthrough.out) and asserted line for line
+[examples/walkthrough.out](https://github.com/FBumann/lpspec/blob/main/examples/walkthrough.out) and asserted line for line
 (`tests/test_walkthrough.py`), so reading it is the same as running it — and a
 stage that starts telling a different story shows up as a diff in that file.
 
@@ -28,7 +28,7 @@ flowchart TB
     Y[YAML file] -->|"parse + validate<br/>(schema.py, validation.py)"| MS[MathSchema]
     MS -->|"expand macros: / expressions: (expansion.py)<br/>expand piecewise: blocks (piecewise.py)<br/>resolve names to typed nodes (resolution.py)<br/>check dim sets (dimensions.py)<br/>— backends never see any of them"| AST["core AST<br/>= the only contract between layers<br/>fully typed: names resolved, dims checked"]
     AST -->|"api.py: check / build / solve / write"| LOWER
-    AST -.->|"farkas.linopy<br/>(opt-in shim: build / extend)"| BUILD
+    AST -.->|"lpspec.linopy<br/>(opt-in shim: build / extend)"| BUILD
     LOWER -->|"outside the language:<br/>LanguageError naming the construct"| ERR["load error<br/>(no fallback)"]
 
     subgraph REL["Relational lane — sparse · batched at every sink · linopy-free"]
@@ -42,7 +42,7 @@ flowchart TB
         DIRECT --> SOL["solution tables<br/>(label join, never dense)"]
     end
 
-    subgraph EAGER["Linopy lane (eager/oracle) — opt-in via farkas.linopy · the ONLY lane importing linopy · not a runtime dependency"]
+    subgraph EAGER["Linopy lane (eager/oracle) — opt-in via lpspec.linopy · the ONLY lane importing linopy · not a runtime dependency"]
         direction TB
         DE[("data<br/>parquet paths / pandas")] --> LOAD["linopy/loader.py<br/>coerce data → xr.Dataset"]
         LOAD --> BUILD["linopy/builder.py<br/>evaluate AST"]
@@ -56,10 +56,10 @@ flowchart TB
 ```
 
 Eligibility is decided by **attempting the lowering** — `lower_program` returns
-a `Program` or raises `fk.LanguageError` — so it cannot drift from what the
+a `Program` or raises `lps.LanguageError` — so it cannot drift from what the
 engine supports. Errors split model from run: everything under `LanguageError`
 is decidable without data, `DataError` is what a source failed to supply, and
-both are `LinopyYamlError` (`errors.py`). `fk.check()` is exactly parse
+both are `LinopyYamlError` (`errors.py`). `lps.check()` is exactly parse
 → expand → validate → lower with no data bound, so a model repository can
 compile-check its math in CI. Expansion precedes validation in **both** lanes,
 because a formulation emits declarations and those are language too — a stray
@@ -170,7 +170,7 @@ that made an implementation choice load-bearing in the language's rulebook.
    hold its own opinion about what a name refers to. Resolving independently is
    how the two lanes silently disagreed about scoping before.
 2. **The engine knows nothing about linopy, xarray or YAML.**
-   `src/farkas/relational/` goes polars → highspy → solver, with linopy's
+   `src/lpspec/relational/` goes polars → highspy → solver, with linopy's
    semantics as a spec to match rather than code to share; it never sees the
    schema, the AST, or the eager builder. Engine-internal naming encodes
    neither "polars" nor "yaml". Enforced *more* strictly than stated — the
@@ -276,7 +276,7 @@ than discovered at solve time.
 | `validation.py` | load-time: parse, expand, resolve, check everything |
 | `piecewise.py` | `piecewise:` → λ-formulation declarations + curvature guard |
 | `api.py` | native entry point: `check` / `solve` / `write`, linopy-free |
-| `typeset/` | **spike** — resolved AST → LaTeX / Typst. A reader, not a lane: no model, no data, no plan ([README](https://github.com/FBumann/farkas/blob/main/src/farkas/typeset/README.md)) |
+| `typeset/` | **spike** — resolved AST → LaTeX / Typst. A reader, not a lane: no model, no data, no plan ([README](https://github.com/FBumann/lpspec/blob/main/src/lpspec/typeset/README.md)) |
 | `sources.py` | bind runtime data (parquet paths / in-memory tables) to a validated schema |
 | `lowering.py` | core AST → logical plan (defines the relational subset) |
 | `helpers.py` | the closed set of built-in operators: their *names* and *call shapes* — no registry |
@@ -287,7 +287,7 @@ than discovered at solve time.
 | `relational/chunking.py` | how a batched pass sizes its chunk: budget ÷ the width of one unit |
 | `relational/status.py` | solve outcome on two axes; linopy's vocabulary, copied not imported |
 | `relational/executor.py` | bind sources, assign labels, assemble the model frames |
-| `relational/sinks/` | how a built model leaves: `lp_file`, `solver_direct` (one module each, [README](https://github.com/FBumann/farkas/blob/main/src/farkas/relational/sinks/README.md)) |
+| `relational/sinks/` | how a built model leaves: `lp_file`, `solver_direct` (one module each, [README](https://github.com/FBumann/lpspec/blob/main/src/lpspec/relational/sinks/README.md)) |
 | `linopy/__init__.py` | opt-in shim: `build` / `extend` on a `linopy.Model` |
 | `linopy/loader.py` | data coercion to `xr.Dataset`, master coords |
 | `linopy/builder.py` | eager backend: core AST → `linopy.Model` |

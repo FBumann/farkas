@@ -2,7 +2,7 @@
 
 There is no runtime fallback — the streaming subset IS the language
 (docs/ARCHITECTURE.md). The eager builder survives only as the opt-in
-compatibility layer (`farkas.linopy`) and the differential oracle.
+compatibility layer (`lpspec.linopy`) and the differential oracle.
 Errors must carry the construct and its context, verbatim.
 """
 
@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from farkas.errors import LanguageError
-from farkas.lowering import lower_program
+from lpspec.errors import LanguageError
+from lpspec.lowering import lower_program
 from tests.conftest import schema_of
 from tools import constructs
 
@@ -60,7 +60,7 @@ def test_inside_the_language(patch):
         ),
         # `check()` must catch degree 2 — it is the first clause of the ceiling.
         # The affine guard used to live only in the executor, so it needed data
-        # bound: `fk.check()` accepted this and the model only blew up at build
+        # bound: `lps.check()` accepted this and the model only blew up at build
         # time, which made check() useless as the CI verb for exactly the rule
         # it should enforce first.
         pytest.param(_objective('sum(p * p, over=generator)'), 'degree 2', id='degree-two'),
