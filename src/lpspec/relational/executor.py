@@ -25,6 +25,7 @@ from lpspec.errors import (
     LanguageError,
     LinopyYamlError,
     NoSolutionError,
+    duplicate_coordinate_message,
     null_bounds_message,
     sparse_divisor_message,
     unknown_labels_message,
@@ -408,11 +409,7 @@ class PolarsExecutor:
             ', '.join(f'{d}={row[d]!r}' for d in p.dims) + f' ({row["n"]} rows)'
             for row in duplicated.iter_rows(named=True)
         )
-        raise DataError(
-            f"parameter '{p.name}' has more than one row for a coordinate: {shown}. "
-            f'A parameter is a function of its dims, so which value applies is undefined — '
-            f'aggregate the source to one row per {list(p.dims)} before binding it.'
-        )
+        raise DataError(duplicate_coordinate_message(p.name, shown, list(p.dims)))
 
     def _source_frame(self, name: str, source: Any) -> pl.LazyFrame:
 
@@ -461,14 +458,17 @@ class PolarsExecutor:
         for d in p.dims:
             if d in self._dimensions:
                 known = self._dimensions[d].select('val').collect()['val']
-                probes[f'known {d}'] = pl.col(d).is_in(known).all()
+                # `.implode()`: `is_in` against a bare Series of the same dtype
+                # is ambiguous and deprecated in polars — imploding says "this
+                # whole collection", not "element-wise against a list column".
+                probes[f'known {d}'] = pl.col(d).is_in(known.implode()).all()
         return probes
 
     def _raise_unknown_label(self, p: plan.ParameterDeclaration, frame: pl.LazyFrame, d: str) -> None:
         """Name the offending labels. Only reached on the path about to raise,
         so the filter and unique it costs are not paid by a healthy build."""
         known = self._dimensions[d].select('val').collect()['val']
-        strangers = frame.filter(~pl.col(d).is_in(known)).select(pl.col(d).unique()).collect()[d].to_list()
+        strangers = frame.filter(~pl.col(d).is_in(known.implode())).select(pl.col(d).unique()).collect()[d].to_list()
         raise DataError(unknown_labels_message(p.name, d, strangers, known.to_list()))
 
     def _create_dim_frames(self, program: plan.Program, sources: Mapping[str, Any]) -> None:

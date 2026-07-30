@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from lpspec.errors import DataError, sparse_divisor_message
+from lpspec.errors import DataError, duplicate_coordinate_message, sparse_divisor_message
 from lpspec.expression_parser import (
     BinaryOperatorNode,
     ComparisonNode,
@@ -203,6 +203,22 @@ def load_parameters(
     return xr.Dataset(arrays)
 
 
+def _refuse_duplicate_index(name: str, index: pd.Index, dims: list[str]) -> None:
+    """Two values for one coordinate, before xarray sees it.
+
+    `DataArray.from_series` raises `ValueError: cannot reindex or align along
+    dimension ... duplicate values` from its index machinery — which names
+    neither the parameter nor the repair. The relational lane already refuses
+    this with wording that does both, and `tests/test_data_parity.py` is what
+    asserts the two lanes agree (#351).
+    """
+    duplicated = index[index.duplicated()].unique()
+    if len(duplicated) == 0:
+        return
+    shown = '; '.join(f'{dims[0]}={label!r}' for label in duplicated[:3])
+    raise DataError(duplicate_coordinate_message(name, shown, dims))
+
+
 def _coerce_to_dataarray(
     name: str,
     raw: Any,
@@ -234,6 +250,7 @@ def _coerce_to_dataarray(
         if raw.index.name is None:
             raw = raw.copy()
             raw.index.name = dims[0]
+        _refuse_duplicate_index(name, raw.index, dims)
         return xr.DataArray.from_series(raw)
 
     # pd.DataFrame

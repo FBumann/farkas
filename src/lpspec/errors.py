@@ -132,6 +132,22 @@ def null_bounds_message(name: str, rows: int) -> str:
     )
 
 
+def duplicate_coordinate_message(name: str, shown: str, dims: list[str]) -> str:
+    """More than one value for one coordinate — one wording, both lanes.
+
+    A parameter is a function of its dims, so two rows for one coordinate has
+    no answer the language could pick. Both lanes refuse; the eager one used to
+    let the duplicate reach xarray, which raised a bare `ValueError` from its
+    index machinery — the opaque exception with no pointer back to a
+    declaration that §9 exists to prevent (#351).
+    """
+    return (
+        f"parameter '{name}' has more than one row for a coordinate: {shown}. "
+        f'A parameter is a function of its dims, so which value applies is undefined — '
+        f'aggregate the source to one row per {dims} before binding it.'
+    )
+
+
 def unknown_labels_message(name: str, dim: str, strangers: list[object], known: list[object]) -> str:
     """A source label the dimension does not have — one wording, both lanes.
 
