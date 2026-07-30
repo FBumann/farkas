@@ -113,7 +113,7 @@ is the output this audience reads most often after the cost.
 
 That matters because an objective is one number and hides a great deal. A dual
 vector is where two implementations most reliably disagree quietly: which side
-of a constraint the price belongs to, and what sign an inequality's carries.
+of a constraint the price belongs to, and what sign an inequality carries.
 [Dantzig transport](transport_dantzig.md) is in that set specifically because
 both of its constraints are inequalities pointing opposite ways. A MILP has no
 dual solution, and farkas refuses to invent one — which is what the `·` rows

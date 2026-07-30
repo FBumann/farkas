@@ -2,7 +2,7 @@
 
 What we build toward and what we have decided never to build. Ordered work is in
 GitHub issues; this is the index and the rationale. Everything is judged against
-the ceiling in [docs/ARCHITECTURE.md](design/ceiling.md#two-tiers-and-the-ceiling):
+the ceiling in [docs/design/ceiling.md](design/ceiling.md#two-tiers-and-the-ceiling):
 affine ∩ relational ∩ local.
 
 ## How we measure

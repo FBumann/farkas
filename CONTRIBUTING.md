@@ -130,7 +130,7 @@ Read, in order:
 1. [the deliberate non-primitives in docs/ROADMAP.md](docs/ROADMAP.md) — parity with
    another tool is not by itself a reason to add anything, and several
    plausible-sounding features are refused there on purpose;
-2. [the ceiling in docs/ARCHITECTURE.md](docs/design/ceiling.md#two-tiers-and-the-ceiling) —
+2. [the ceiling in docs/design/ceiling.md](docs/design/ceiling.md#two-tiers-and-the-ceiling) —
    the admissibility test;
 3. [the extension checklists](docs/ARCHITECTURE.md#extension-checklists), which sit directly under that
    test. They stay there rather than moving here: *may I?* and *how?* are one
@@ -179,7 +179,7 @@ docs/models/<name>.md                   the gallery page — maths, model, side-
 - **`rtol` is per port.** A published optimum is rounded; a solved one is not.
 - **Record the duals too, if the model has any.** An objective is one number;
   a dual vector is where two implementations disagree quietly — which side of a
-  constraint the price belongs to, and what sign an inequality's carries. The
+  constraint the price belongs to, and what sign an inequality carries. The
   reference script prints a `duals {...}` line keyed by constraint name; paste
   it into the port's entry as a `duals` block. A MILP has no dual solution, so
   it records none and the test skips rather than passing vacuously.

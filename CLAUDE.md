@@ -22,7 +22,7 @@ A PR that adds, renames, or retires a construct updates `docs/SPEC.md` — **§0
 
 Everything under `docs/` is also published as an mkdocs-material site (`mkdocs.yml`), built from those same files. Two rules: **a new page under `docs/` needs a `nav:` entry** or `mkdocs build --strict` fails in CI, and **a link to anything outside `docs/` is written as a full GitHub URL**, never as `../CONTRIBUTING.md` — the relative form resolves in the repo and 404s on the site, silently. Links inside `docs/` stay relative. `tests/test_docs_site.py` enforces both; see *the docs* in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-**Before proposing a new language feature**, triage it: **macro, primitive, or escape?** Most requests are compositions (macro, free); a genuinely new shape earns a primitive only if it clears the expressive ceiling in `docs/ARCHITECTURE.md` (degree 1 ∩ relational ∩ local); unsayable math goes to a declared `escape:` island (#38) rather than into the language. Check the deliberate non-primitives in `docs/ROADMAP.md` first — parity with another tool is not by itself a reason to add anything.
+**Before proposing a new language feature**, triage it: **macro, primitive, or escape?** Most requests are compositions (macro, free); a genuinely new shape earns a primitive only if it clears the expressive ceiling in `docs/design/ceiling.md` (degree 1 ∩ relational ∩ local); unsayable math goes to a declared `escape:` island (#38) rather than into the language. Check the deliberate non-primitives in `docs/ROADMAP.md` first — parity with another tool is not by itself a reason to add anything.
 
 ## Common Commands
 

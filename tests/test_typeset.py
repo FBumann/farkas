@@ -423,9 +423,21 @@ def _summary(stem: str) -> str:
     formulation the language *cannot* use. Keying on the machine-maintained
     markers is the one anchor that holds for both.
     """
-    page = (GALLERY / f'{stem}.md').read_text()
+    path = GALLERY / f'{stem}.md'
+    page = path.read_text()
     if gallery_math.BEGIN in page:
-        page = page[: page.index(gallery_math.BEGIN)] + page[page.index(gallery_math.END) :]
+        begin = page.index(gallery_math.BEGIN)
+        # `find` from `begin`, so a closing marker that is missing *or* sits
+        # above the opening one is the same failure. Left to `index` it would
+        # be a bare ValueError naming no file; left unchecked in the
+        # out-of-order case it would splice the generated block back in and
+        # quietly check it as hand-written math.
+        end = page.find(gallery_math.END, begin)
+        assert end != -1, (
+            f'{path}: has {gallery_math.BEGIN} with no {gallery_math.END} after it, '
+            f'so the generated block cannot be separated from the hand-written math'
+        )
+        page = page[:begin] + page[end:]
     # `$$` blocks only. The prose and the YAML fence around them are full of
     # identifiers like `p_max` and `group_sum`, which read as subscripts.
     return '\n'.join(page.split('$$')[1::2])
