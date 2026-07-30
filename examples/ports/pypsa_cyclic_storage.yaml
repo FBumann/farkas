@@ -83,18 +83,17 @@ constraints:
 
   ramp_up:
     foreach: [snapshot, generator]
-    where: "snapshot > 0"
-    expression: p - roll(p, snapshot=1) <= ramp_limit_up * p_nom
+    expression: p - shift(p, snapshot=1) <= ramp_limit_up * p_nom
 
   ramp_down:
     foreach: [snapshot, generator]
-    where: "snapshot > 0"
-    expression: roll(p, snapshot=1) - p <= ramp_limit_down * p_nom
+    expression: shift(p, snapshot=1) - p <= ramp_limit_down * p_nom
 
   # Rung 3 needed two equations here: one seeding the first snapshot from
-  # soc_initial, one rolling every other. Closing the cycle *removes* the
-  # first — `roll` is already cyclic, so the wrap onto the last snapshot is
-  # what it does unguarded, and dropping the `where` is the whole change.
+  # soc_initial, one carrying over every other. Closing the cycle *removes* the
+  # first, and the whole change is `shift` -> `roll`: where `shift` vacates the
+  # first snapshot and drops that row, `roll` wraps it onto the last. The
+  # operator is the cycle, so nothing else moves.
   energy_balance:
     foreach: [snapshot, storage]
     expression: >-

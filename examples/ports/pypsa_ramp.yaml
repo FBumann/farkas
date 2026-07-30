@@ -51,19 +51,16 @@ constraints:
       == load
 
   # PyPSA states a ramp limit as a fraction of p_nom, so the right-hand side is
-  # parameter arithmetic rather than a precomputed column. Both directions are
-  # written from the *second* snapshot on: there is no dispatch before the
-  # first for it to ramp from, which is what `where` says here. That gate is
-  # also why `roll` is safe — its wrap lands on the one row that is excluded.
+  # parameter arithmetic rather than a precomputed column. `shift` vacates the
+  # first snapshot, and a vacated position is absent, so both rows drop there —
+  # which is the boundary PyPSA wants, since nothing precedes it to ramp from.
   ramp_up:
     foreach: [snapshot, generator]
-    where: "snapshot > 0"
-    expression: p - roll(p, snapshot=1) <= ramp_limit_up * p_nom
+    expression: p - shift(p, snapshot=1) <= ramp_limit_up * p_nom
 
   ramp_down:
     foreach: [snapshot, generator]
-    where: "snapshot > 0"
-    expression: roll(p, snapshot=1) - p <= ramp_limit_down * p_nom
+    expression: shift(p, snapshot=1) - p <= ramp_limit_down * p_nom
 
 objectives:
   total_cost:

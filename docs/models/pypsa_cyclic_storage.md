@@ -5,17 +5,18 @@
 > **✔ Verified against pypsa 1.2.4 (its own linopy 0.9.0)** — objective **17228.77962151063**, matched to `rtol=1e-09`.
 
 **The rung that makes the model smaller.** Rung 3 needs two equations for the
-energy balance — one seeding the first snapshot from `soc_initial`, one rolling
-every other. Closing the cycle *removes the first*. `roll` is already cyclic, so
-wrapping snapshot 0 onto the last is what it does unguarded, and deleting the
-`where` is the entire change:
+energy balance — one seeding the first snapshot from `soc_initial`, one carrying
+over every other. Closing the cycle *removes the first*, and what is left
+changes by one token: `shift` vacates the first snapshot and drops that row,
+`roll` wraps it onto the last.
 
 ```diff
--      - expression: soc == soc_initial + p_store * ... - p_dispatch / ...
--        where: "snapshot == 0"
--      - expression: soc == roll(soc, snapshot=1) * (1 - standing_loss) + ...
--        where: "snapshot > 0"
-+      - expression: soc == roll(soc, snapshot=1) * (1 - standing_loss) + ...
+-  energy_balance_initial:
+-    where: "snapshot == 0"
+-    expression: soc == soc_initial + p_store * ... - p_dispatch / ...
+   energy_balance:
+-    expression: soc == shift(soc, snapshot=1) * (1 - standing_loss) + ...
++    expression: soc == roll(soc, snapshot=1) * (1 - standing_loss) + ...
 ```
 
 `soc_initial` leaves the instance with it — a cyclic horizon has no seed to
@@ -86,11 +87,11 @@ $$\sum_{g \in \mathcal{G} \thinspace:\thinspace \mathrm{bus}(g) = b} p_{t,g} + \
 
 **`ramp_up`**
 
-$$p_{t,g} - p_{t \ominus 1,g} \le \mathit{ramp\_limit\_up}_{g} \cdot p^{\mathrm{nom}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t > 0$$
+$$p_{t,g} - p_{t - 1,g} \le \mathit{ramp\_limit\_up}_{g} \cdot p^{\mathrm{nom}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
 
 **`ramp_down`**
 
-$$p_{t \ominus 1,g} - p_{t,g} \le \mathit{ramp\_limit\_down}_{g} \cdot p^{\mathrm{nom}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G} \thinspace:\thinspace t > 0$$
+$$p_{t - 1,g} - p_{t,g} \le \mathit{ramp\_limit\_down}_{g} \cdot p^{\mathrm{nom}}_{g} \qquad \forall\thinspace t \in \mathcal{T},\enspace g \in \mathcal{G}$$
 
 **`energy_balance`**
 
@@ -207,18 +208,17 @@ constraints:
 
   ramp_up:
     foreach: [snapshot, generator]
-    where: "snapshot > 0"
-    expression: p - roll(p, snapshot=1) <= ramp_limit_up * p_nom
+    expression: p - shift(p, snapshot=1) <= ramp_limit_up * p_nom
 
   ramp_down:
     foreach: [snapshot, generator]
-    where: "snapshot > 0"
-    expression: roll(p, snapshot=1) - p <= ramp_limit_down * p_nom
+    expression: shift(p, snapshot=1) - p <= ramp_limit_down * p_nom
 
   # Rung 3 needed two equations here: one seeding the first snapshot from
-  # soc_initial, one rolling every other. Closing the cycle *removes* the
-  # first — `roll` is already cyclic, so the wrap onto the last snapshot is
-  # what it does unguarded, and dropping the `where` is the whole change.
+  # soc_initial, one carrying over every other. Closing the cycle *removes* the
+  # first, and the whole change is `shift` -> `roll`: where `shift` vacates the
+  # first snapshot and drops that row, `roll` wraps it onto the last. The
+  # operator is the cycle, so nothing else moves.
   energy_balance:
     foreach: [snapshot, storage]
     expression: >-
@@ -330,7 +330,8 @@ if __name__ == '__main__':
 
 ## What it exercises
 
-The same constructs as [rung 3](pypsa_storage.md) — `roll`, division by a
-parameter, a five-term `group_sum` balance — with one fewer equation and one
-fewer parameter. Worth reading the two side by side: the language's cyclic case
-is its default, and the *acyclic* one is what needs the extra clause.
+`roll`, against rung 3's `shift` — plus division by a parameter and the same
+five-term `group_sum` balance, with one fewer equation and one fewer parameter.
+Worth reading the two side by side: neither boundary needs a clause to state it.
+The operator names which one is meant, and picking the wrong one is a different
+model rather than a missing guard.

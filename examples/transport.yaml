@@ -34,14 +34,17 @@ variables:
       lower: neg_cap
       upper: cap
 
+# Naming the two halves of the nodal balance. Pure substitution before either
+# backend sees the model, so this costs nothing at build and nothing at solve —
+# what it buys is a constraint that reads as the sentence it is.
+expressions:
+  gen_at_bus: group_sum(p, over=generator, by=bus)
+  net_inflow: group_sum(f, over=line, by=to) - group_sum(f, over=line, by=from)
+
 constraints:
   balance:
     foreach: [snapshot, bus]
-    expression: >-
-      group_sum(p, over=generator, by=bus)
-      + group_sum(f, over=line, by=to)
-      - group_sum(f, over=line, by=from)
-      == load
+    expression: gen_at_bus + net_inflow == load
 
 objectives:
   total_cost:
