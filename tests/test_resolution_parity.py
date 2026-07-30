@@ -205,3 +205,48 @@ def test_a_bool_parameter_is_a_mask_on_both_lanes(tmp_path):
         relational = result.objective
 
     assert eager == relational == 1.0
+
+
+#: A budget row over no dims, because `sum` reduces the only one away — and a
+#: scalar `slack` column and scalar `budget` value beside it, so one model
+#: carries the empty coordinate in all three positions it can appear in.
+SCALAR_ROW_MODEL = {
+    'dimensions': {'f': {'values': ['a', 'b', 'c']}},
+    'parameters': {'cost': {'dims': ['f']}, 'budget': {'dims': []}},
+    'variables': {
+        'x': {'foreach': ['f'], 'bounds': {'lower': 0, 'upper': 100}},
+        'slack': {'foreach': [], 'bounds': {'lower': 0, 'upper': 10}},
+    },
+    'constraints': {'budget_row': {'foreach': [], 'expression': 'sum(x, over=f) - slack <= budget'}},
+    'objectives': {'total': {'sense': 'maximize', 'expression': 'x * cost'}},
+}
+
+
+def test_the_empty_coordinate_builds_on_both_lanes(tmp_path):
+    """A scalar row, a scalar column and a scalar value, in one model (#320).
+
+    Was: the eager lane built all three and solved; the relational lane raised
+    `constraint 'budget_row' has no dims`, and with that guard gone,
+    `variable 'slack' has no dims (scalars: use dims of size 1)`. So the same
+    file was two languages, against hard rule 3 — and the hint pointed at the
+    dummy dimension §2 now says is never how a scalar is written.
+
+    Underneath both guards `_coordinate_product` asserted that no declaration
+    arrives dimensionless. A product over nothing has one coordinate, not none.
+    """
+    path = tmp_path / 'm.yaml'
+    path.write_text(pyyaml.safe_dump(SCALAR_ROW_MODEL))
+    data = {'cost': pd.Series({'a': 1.0, 'b': 2.0, 'c': 3.0}), 'budget': 120.0}
+
+    m = lpspec_linopy.build(path, data=data)
+    m.solve(solver_name='highs')
+    eager = float(m.objective.value)
+
+    with lps.solve(path, data) as result:
+        relational = result.objective
+        # Each claim is *one* — not zero, and not one per `f`.
+        assert result.dual('budget_row').height == 1
+        assert result.primal('slack').to_dicts() == [{'value': 10.0}]
+        assert result.primal('x').sort('f')['value'].to_list() == [0.0, 30.0, 100.0]
+
+    assert eager == relational == 360.0

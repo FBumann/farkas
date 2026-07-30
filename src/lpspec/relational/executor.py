@@ -29,7 +29,7 @@ from lpspec.errors import (
     sparse_divisor_message,
 )
 from lpspec.relational import plan, sinks
-from lpspec.relational.compiler import PolarsCompiler, TermFragment, _ordinal
+from lpspec.relational.compiler import UNIT, PolarsCompiler, TermFragment, _ordinal
 from lpspec.relational.frames import as_frame
 
 if TYPE_CHECKING:
@@ -599,7 +599,9 @@ class PolarsExecutor:
 
         materialised = (
             restricted.sort([_ordinal(d) for d in dims])
-            .select(*dims)
+            # No dims means the carrier is `UNIT`: selecting nothing would drop
+            # the one row this path exists to count.
+            .select(*(dims or (UNIT,)))
             .with_row_index(label, offset=start)
             .select(*dims, pl.col(label).cast(pl.Int64))
             .collect(engine='streaming')
@@ -707,8 +709,6 @@ class PolarsExecutor:
     def _build_variable(self, v: plan.VariableDeclaration) -> pl.DataFrame:
         """One variable's labelled frame, and its share of ``cols``."""
 
-        if not v.dims:
-            raise LanguageError(f"variable '{v.name}' has no dims (scalars: use dims of size 1)")
         labelled, self._n_cols = self._label_frame(v.dims, v.where, 'var_label', self._n_cols)
         self._variables[v.name] = labelled.lazy()
 
@@ -737,8 +737,6 @@ class PolarsExecutor:
         is skipped where nothing can (:func:`_needs_aggregate`).
         """
 
-        if not c.dims:
-            raise LanguageError(f"constraint '{c.name}' has no dims")
         lhs = self._q.expression(c.lhs, f"constraint '{c.name}' lhs")
         rhs = self._q.expression(c.rhs, f"constraint '{c.name}' rhs")
         terms = [(p, 1.0) for p in lhs.terms] + [(p, -1.0) for p in rhs.terms]

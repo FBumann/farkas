@@ -915,3 +915,34 @@ def test_equal_bounds_pin_a_variable_so_one_equation_covers_both_regimes():
         rate = dict(zip(solved['f'], solved['value'], strict=True))
         assert rate['fixed'] == pytest.approx(8.0, rel=RTOL), 'pinned at 10, so the envelope is 0.8 * 10'
         assert rate['sized'] == pytest.approx(40.0, rel=RTOL), 'free to 50, so the envelope is 0.8 * 50'
+
+
+SCALAR_MASKED_MODEL = {
+    'dimensions': {'f': {'values': ['a', 'b']}},
+    'parameters': {'cost': {'dims': ['f']}, 'budget': {'dims': []}},
+    'variables': {
+        'x': {'foreach': ['f'], 'bounds': {'lower': 0, 'upper': 100}},
+        'slack': {'foreach': [], 'where': 'budget > 100', 'bounds': {'lower': 0, 'upper': 10}},
+    },
+    'constraints': {'cap': {'foreach': [], 'expression': 'sum(x, over=f) - slack <= budget'}},
+    'objectives': {'total': {'sense': 'maximize', 'expression': 'x * cost'}},
+}
+
+
+def test_a_scalar_variable_may_not_be_masked():
+    """The one case `foreach: []` on a variable does not cover (#340).
+
+    Presence is `select()` over no dims, and polars cannot hold one row of no
+    columns — collecting reports (0, 0), so present and absent are the same
+    frame. The restriction is lost and `cap` stays enforced with the term gone:
+    340.0 where the eager lane, and law 7, say 600.0. The dimensional case has
+    a column to key on, which is what makes this the exception.
+
+    `check()` catches it, so a model repository in CI does not need data bound
+    to see it.
+    """
+    with pytest.raises(ValueError) as exc:
+        lps.check(SCALAR_MASKED_MODEL)
+
+    assert '#340' in str(exc.value), 'the refusal must name where the fix is tracked'
+    assert 'dimension of size 1' in str(exc.value), 'and the workaround'
