@@ -51,6 +51,13 @@ document must be a mapping.
 
 ## 2. Declarations
 
+**An empty dim list is the empty coordinate, everywhere it appears** — one
+value for a parameter's `dims: []`, one column for a variable's `foreach: []`,
+one row for a constraint's. Not a special case but the ordinary reading of a
+product over nothing, whose unit is a single coordinate rather than none. So a
+dummy dimension of size 1 is never how a scalar is written, and an objective —
+scalar by definition — needs no `foreach` at all.
+
 **`dimensions`** — the master coordinate index. Every dimension named anywhere
 must be declared. `dtype` ∈ {`float`, `int`, `str`, `datetime`}, default `str`.
 `values` is a list or null; if null, coordinates must arrive via `sources=`
@@ -128,11 +135,7 @@ The LHS must involve at least one decision variable.
 `foreach: []` is **one scalar row** — a single system-wide budget, where the
 expression reduces every dim away. Nothing special: law 5 requires `dims(lhs) ∪
 dims(rhs)` to *equal* `foreach`, and `sum(x, over=f) <= 120` has no free dims,
-so `[]` is the signature that satisfies it. It is the empty coordinate, the
-same reading `[]` already has as a parameter's `dims` above, and it means a
-dummy dimension of size 1 is never the way to write a scalar row. A **variable**
-still requires at least one dim, since there its scalar-ness would be declared
-rather than derived from a reduction.
+so `[]` is the signature that satisfies it.
 
 Two regimes of one rule are two blocks, and each gets a name a reader chose
 rather than a position in a list:

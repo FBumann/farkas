@@ -707,8 +707,6 @@ class PolarsExecutor:
     def _build_variable(self, v: plan.VariableDeclaration) -> pl.DataFrame:
         """One variable's labelled frame, and its share of ``cols``."""
 
-        if not v.dims:
-            raise LanguageError(f"variable '{v.name}' has no dims (scalars: use dims of size 1)")
         labelled, self._n_cols = self._label_frame(v.dims, v.where, 'var_label', self._n_cols)
         self._variables[v.name] = labelled.lazy()
 

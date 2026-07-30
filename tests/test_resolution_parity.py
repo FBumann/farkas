@@ -207,30 +207,36 @@ def test_a_bool_parameter_is_a_mask_on_both_lanes(tmp_path):
     assert eager == relational == 1.0
 
 
-#: A budget row: one constraint over no dims, because `sum` reduces the only
-#: one away. The narrowest model that needs a scalar row at all.
+#: A budget row over no dims, because `sum` reduces the only one away — and a
+#: scalar `slack` column and scalar `budget` value beside it, so one model
+#: carries the empty coordinate in all three positions it can appear in.
 SCALAR_ROW_MODEL = {
     'dimensions': {'f': {'values': ['a', 'b', 'c']}},
-    'parameters': {'cost': {'dims': ['f']}},
-    'variables': {'x': {'foreach': ['f'], 'bounds': {'lower': 0, 'upper': 100}}},
-    'constraints': {'budget': {'foreach': [], 'expression': 'sum(x, over=f) <= 120'}},
+    'parameters': {'cost': {'dims': ['f']}, 'budget': {'dims': []}},
+    'variables': {
+        'x': {'foreach': ['f'], 'bounds': {'lower': 0, 'upper': 100}},
+        'slack': {'foreach': [], 'bounds': {'lower': 0, 'upper': 10}},
+    },
+    'constraints': {'budget_row': {'foreach': [], 'expression': 'sum(x, over=f) - slack <= budget'}},
     'objectives': {'total': {'sense': 'maximize', 'expression': 'x * cost'}},
 }
 
 
-def test_a_scalar_constraint_builds_on_both_lanes(tmp_path):
-    """`foreach: []` is one row, and law 5 is what says so: a constraint must
-    *equal* its `foreach`, and `sum(x, over=f) <= 120` has no free dims (#320).
+def test_the_empty_coordinate_builds_on_both_lanes(tmp_path):
+    """A scalar row, a scalar column and a scalar value, in one model (#320).
 
-    Was: the eager lane built the row and solved, while the relational lane
-    raised `constraint 'budget' has no dims` — so the same file was two
-    languages, against hard rule 3. Under that guard `_coordinate_product`
-    asserted no declaration ever arrives dimensionless; the empty cross join is
-    one row of no columns, which is what a scalar row needs.
+    Was: the eager lane built all three and solved; the relational lane raised
+    `constraint 'budget_row' has no dims`, and with that guard gone,
+    `variable 'slack' has no dims (scalars: use dims of size 1)`. So the same
+    file was two languages, against hard rule 3 — and the hint pointed at the
+    dummy dimension §2 now says is never how a scalar is written.
+
+    Underneath both guards `_coordinate_product` asserted that no declaration
+    arrives dimensionless. A product over nothing has one coordinate, not none.
     """
     path = tmp_path / 'm.yaml'
     path.write_text(pyyaml.safe_dump(SCALAR_ROW_MODEL))
-    data = {'cost': pd.Series({'a': 1.0, 'b': 2.0, 'c': 3.0})}
+    data = {'cost': pd.Series({'a': 1.0, 'b': 2.0, 'c': 3.0}), 'budget': 120.0}
 
     m = lpspec_linopy.build(path, data=data)
     m.solve(solver_name='highs')
@@ -238,8 +244,9 @@ def test_a_scalar_constraint_builds_on_both_lanes(tmp_path):
 
     with lps.solve(path, data) as result:
         relational = result.objective
-        # The claim is *one* row — not zero, and not one per `f`.
-        assert result.dual('budget').height == 1
-        assert result.primal('x').sort('f')['value'].to_list() == [0.0, 20.0, 100.0]
+        # Each claim is *one* — not zero, and not one per `f`.
+        assert result.dual('budget_row').height == 1
+        assert result.primal('slack').to_dicts() == [{'value': 10.0}]
+        assert result.primal('x').sort('f')['value'].to_list() == [0.0, 30.0, 100.0]
 
-    assert eager == relational == 340.0
+    assert eager == relational == 360.0
