@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.33](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.32...v0.0.1-alpha.33) (2026-07-30)
+
+
+### Refactoring
+
+* **relational:** one data-validation module for this lane ([#355](https://github.com/FBumann/lpspec/issues/355)) ([4b19fe4](https://github.com/FBumann/lpspec/commit/4b19fe4576a8cb58f1b067f20bf8abf9a99dd813))
+
 ## [0.0.1-alpha.32](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.31...v0.0.1-alpha.32) (2026-07-30)
 
 
