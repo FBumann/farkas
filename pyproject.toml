@@ -3,7 +3,7 @@ requires = ["hatchling>=1.27", "hatch-vcs"]  # 1.27 is the first with PEP 639 li
 build-backend = "hatchling.build"
 
 [project]
-name = "farkas"
+name = "lpspec"
 # the git tag is the version — see RELEASING.md. Never hardcode it here.
 dynamic = ["version"]
 # "at any scale" and "streaming" were true of the duckdb engine, which built
@@ -45,7 +45,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# linopy + xarray power the compatibility layer (farkas.linopy): YAML math
+# linopy + xarray power the compatibility layer (lpspec.linopy): YAML math
 # on a Python-built linopy.Model, plus the differential-test oracle.
 # The relational engine never imports them, and `dev` installs this extra by
 # name rather than repeating it — one place for the pins, so what CI tests the
@@ -57,7 +57,7 @@ dependencies = [
 # resolves it for development and CI. When v1 ships, this becomes an ordinary
 # floor on the release that carries it and the source pin goes away.
 #
-# **That last sentence is a release step, not a tidy-up.** `farkas/linopy/
+# **That last sentence is a release step, not a tidy-up.** `lpspec/linopy/
 # __init__.py` sets `options['semantics'] = 'v1'` on import and does not guard,
 # on the grounds that this floor guarantees the option — so a linopy released
 # without v1 would satisfy `>=0.8.0.post1.dev0` (0.9 > 0.8.0.post1.dev0) and
@@ -75,7 +75,7 @@ linopy = [
 ]
 
 [project.urls]
-repository = "https://github.com/FBumann/farkas"
+repository = "https://github.com/FBumann/lpspec"
 
 [tool.hatch.version]
 source = "vcs"
@@ -83,7 +83,7 @@ source = "vcs"
 fallback-version = "0.0.0"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/farkas"]
+packages = ["src/lpspec"]
 
 [tool.hatch.build.targets.sdist]
 include = ["/src"]
@@ -117,8 +117,8 @@ dev = [
     "pyrefly==1.1.1",
     "pre-commit==4.6.1",
     # the shim and the oracle, by reference: the pins live in the extra above,
-    # so they cannot drift from what a user installing `farkas[linopy]` gets
-    "farkas[linopy]",
+    # so they cannot drift from what a user installing `lpspec[linopy]` gets
+    "lpspec[linopy]",
     # how pandas reads parquet, which the benchmark harness's linopy arm does
     # as part of the cost it is there to measure. Not needed by the engine —
     # the bare-install job runs the suite without it.
@@ -165,7 +165,7 @@ extend-fixable = ["B", "SIM", "RUF", "C4", "UP"]
 "bench/**/*.py" = ["T20"]  # a harness reports by printing; stdout is its interface
 "tools/**/*.py" = ["T20"]  # same: a generator says what it wrote
 "tests/golden/__main__.py" = ["T20"]  # likewise a generator, and only reachable as a command
-"src/farkas/where_parser.py" = ["N806"]  # grammar tokens (NOT/AND/OR) are named after keywords
+"src/lpspec/where_parser.py" = ["N806"]  # grammar tokens (NOT/AND/OR) are named after keywords
 
 [tool.ruff.format]
 quote-style = "single"
@@ -193,7 +193,7 @@ filterwarnings = ["error"]
 # check against the *lowest* supported interpreter, so 3.12+ syntax and stdlib
 # additions are caught here rather than by the 3.11 leg of the CI matrix.
 python-version = "3.11"
-project-includes = ["src/farkas"]
+project-includes = ["src/lpspec"]
 preset = "strict"
 
 # Warn-by-default rules promoted to error, so a regression fails CI instead of
@@ -223,7 +223,7 @@ untyped-import = true
 unused-ignore = true
 variance-mismatch = true
 
-# The v1 arithmetic convention is not released. farkas's eager lane is written
+# The v1 arithmetic convention is not released. lpspec's eager lane is written
 # against it — absence propagates and drops a constraint row rather than being
 # filled with zero — so the oracle is only an oracle on a linopy that speaks it.
 # Pinned by branch rather than by rev deliberately: this is tracking active

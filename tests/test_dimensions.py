@@ -10,13 +10,13 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from farkas.dimensions import DimensionError, check_schema, dims_of
-from farkas.resolution import Namespace, expression_of
+from lpspec.dimensions import DimensionError, check_schema, dims_of
+from lpspec.resolution import Namespace, expression_of
 from tests.conftest import override, schema_of
 from tools import constructs
 
 if TYPE_CHECKING:
-    from farkas.schema import MathSchema
+    from lpspec.schema import MathSchema
 
 #: A *network* dispatch model: `conftest.DISPATCH_MODEL` plus buses, so
 #: `group_sum` and per-bus loads are in scope. The dim rules are mostly about
@@ -175,12 +175,12 @@ def test_bound_parameter_dim_outside_foreach_is_rejected():
 
 def test_checking_needs_no_data():
     """The whole point: every rule above is decided from declarations alone,
-    so `fk.check()` catches them in CI with no sources bound."""
-    import farkas as fk
+    so `lps.check()` catches them in CI with no sources bound."""
+    import lpspec as lps
 
     raw = override(BASE, **{'constraints.stray': {'foreach': ['snapshot'], 'expression': 'p <= p_max'}})
     with pytest.raises(DimensionError):
-        fk.check(raw)
+        lps.check(raw)
 
 
 @pytest.mark.parametrize('path', [p for _, p in constructs.models()], ids=lambda p: p.name)

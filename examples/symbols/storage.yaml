@@ -1,6 +1,6 @@
 # The notation docs/models/storage.md already uses, written down.
 #
-#   python -m farkas markdown examples/storage.yaml \
+#   python -m lpspec markdown examples/storage.yaml \
 #       --symbols examples/symbols/storage.yaml
 #
 # That page writes $\mathrm{soc}_s = \mathrm{soc}_{s-1} + \eta\,\mathrm{charge}_s

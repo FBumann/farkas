@@ -58,8 +58,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from farkas._yaml import read_yaml
-from farkas.typeset import to_latex, to_markdown
+from lpspec._yaml import read_yaml
+from lpspec.typeset import to_latex, to_markdown
 from tools.constructs import models
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -114,7 +114,7 @@ def _home_block() -> str:
     A reader who sees ``load`` in the YAML and $\\ell$ in the math, with
     neither in front of them, has to take the page on faith.
 
-    Typst is deliberately absent: :class:`~farkas.typeset.symbols.SymbolTable`
+    Typst is deliberately absent: :class:`~lpspec.typeset.symbols.SymbolTable`
     entries are LaTeX strings, and ``to_typst`` passes them through verbatim,
     so this model prints ``\\mathcal{S}`` into a Typst document. That is a bug
     in the symbol table, not something a docs page should paper over by
@@ -133,13 +133,13 @@ def _home_block() -> str:
 
 
 _HOW = """```python
-import farkas as fk
+import lpspec as lps
 
 {symbols}
 
-fk.to_latex('dispatch.yaml', symbols=symbols)  # amsmath align
-fk.to_typst('dispatch.yaml')  # compiles without a TeX toolchain
-fk.to_markdown('dispatch.yaml')  # renders as-is on GitHub
+lps.to_latex('dispatch.yaml', symbols=symbols)  # amsmath align
+lps.to_typst('dispatch.yaml')  # compiles without a TeX toolchain
+lps.to_markdown('dispatch.yaml')  # renders as-is on GitHub
 ```
 
 `symbols` is optional — drop it and the same model prints as
@@ -151,8 +151,8 @@ Or from a shell, where the table is that same YAML on disk and `--standalone`
 emits a document that compiles rather than a fragment to `\\input`:
 
 ```bash
-python -m farkas latex dispatch.yaml --symbols dispatch.symbols.yaml
-python -m farkas typst dispatch.yaml --standalone -o dispatch.typ
+python -m lpspec latex dispatch.yaml --symbols dispatch.symbols.yaml
+python -m lpspec typst dispatch.yaml --standalone -o dispatch.typ
 ```"""
 
 

@@ -29,7 +29,7 @@ python examples/walkthrough.py
 
 `ports/` carries three or four files per model — the YAML, the instance, the
 recorded objective with its provenance, and a reference implementation
-importing no farkas. That last one is absent where the optimum is *published*
+importing no lpspec. That last one is absent where the optimum is *published*
 and needs nothing of ours to reproduce it: `facility_location` (OR-Library) and
 `tsp_mtz` (TSPLIB) cite the literature instead, which is the strongest tier the
 corpus has.

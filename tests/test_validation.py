@@ -6,9 +6,9 @@ import datetime
 
 import pytest
 
-from farkas.schema import MathSchema
-from farkas.validation import validate_expressions
-from tests.oracle import farkas_linopy, linopy, pd
+from lpspec.schema import MathSchema
+from lpspec.validation import validate_expressions
+from tests.oracle import linopy, lpspec_linopy, pd
 
 
 def _schema(**overrides) -> MathSchema:
@@ -175,7 +175,7 @@ class TestLoadTimeIntegration:
             '    expression: pp <= 100\n'
         )
         with pytest.raises(ValueError, match="'pp' not found"):
-            farkas_linopy.build(f)
+            lpspec_linopy.build(f)
 
     def test_extend_sees_existing_model_variables(self, tmp_path):
         """An extension may reference variables already on the model."""
@@ -192,7 +192,7 @@ class TestLoadTimeIntegration:
             '    foreach: [g]\n'
             '    expression: p <= 100\n'
         )
-        farkas_linopy.extend(model, f)
+        lpspec_linopy.extend(model, f)
         assert 'cap' in model.constraints
 
     def test_extend_flags_unknown_variable(self, tmp_path):
@@ -208,7 +208,7 @@ class TestLoadTimeIntegration:
             '    expression: p <= 100\n'
         )
         with pytest.raises(ValueError, match="'p' not found"):
-            farkas_linopy.extend(model, f)
+            lpspec_linopy.extend(model, f)
 
 
 class TestDimensionKwargs:

@@ -6,13 +6,13 @@ hide:
 
 <div class="hero" markdown>
 
-# farkas
+# lpspec
 
 **Self-documenting optimisation models — at any scale.**
 
 Write the math in YAML, bind data at runtime, solve.
 
-[![PyPI](https://img.shields.io/pypi/v/farkas)](https://pypi.org/project/farkas/)
+[![PyPI](https://img.shields.io/pypi/v/lpspec)](https://pypi.org/project/lpspec/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
@@ -179,7 +179,7 @@ Only the notation is a choice, and **How** shows the one that was made here.
 === "How"
 
     ```python
-    import farkas as fk
+    import lpspec as lps
 
     symbols = {
         'dimensions': {
@@ -201,9 +201,9 @@ Only the notation is a choice, and **How** shows the one that was made here.
         },
     }
 
-    fk.to_latex('dispatch.yaml', symbols=symbols)  # amsmath align
-    fk.to_typst('dispatch.yaml')  # compiles without a TeX toolchain
-    fk.to_markdown('dispatch.yaml')  # renders as-is on GitHub
+    lps.to_latex('dispatch.yaml', symbols=symbols)  # amsmath align
+    lps.to_typst('dispatch.yaml')  # compiles without a TeX toolchain
+    lps.to_markdown('dispatch.yaml')  # renders as-is on GitHub
     ```
 
     `symbols` is optional — drop it and the same model prints as
@@ -215,8 +215,8 @@ Only the notation is a choice, and **How** shows the one that was made here.
     emits a document that compiles rather than a fragment to `\input`:
 
     ```bash
-    python -m farkas latex dispatch.yaml --symbols dispatch.symbols.yaml
-    python -m farkas typst dispatch.yaml --standalone -o dispatch.typ
+    python -m lpspec latex dispatch.yaml --symbols dispatch.symbols.yaml
+    python -m lpspec typst dispatch.yaml --standalone -o dispatch.typ
     ```
 <!-- home-math:end -->
 
@@ -271,8 +271,8 @@ Only the notation is a choice, and **How** shows the one that was made here.
 </div>
 
 ```bash
-pip install farkas  # the relational engine (polars, highspy)
-pip install "farkas[linopy]"  # adds linopy + xarray + pandas: the shim, the
+pip install lpspec  # the relational engine (polars, highspy)
+pip install "lpspec[linopy]"  # adds linopy + xarray + pandas: the shim, the
                               # oracle, and to_pandas / to_dataarray
 ```
 

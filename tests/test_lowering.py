@@ -13,9 +13,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from farkas.errors import DataError, DimensionError, LanguageError
-from farkas.lowering import _lower_expr, _lower_where, lower_program
-from farkas.relational.plan import (
+from lpspec.errors import DataError, DimensionError, LanguageError
+from lpspec.lowering import _lower_expr, _lower_where, lower_program
+from lpspec.relational.plan import (
     DimensionComparison,
     Parameter,
     ParameterComparison,
@@ -23,9 +23,9 @@ from farkas.relational.plan import (
     Sum,
     Variable,
 )
-from farkas.resolution import Namespace
-from farkas.schema import MathSchema
-from farkas.sources import tidy_sources
+from lpspec.resolution import Namespace
+from lpspec.schema import MathSchema
+from lpspec.sources import tidy_sources
 from tests.conftest import resolved, schema_of
 from tests.differential import differential
 
@@ -110,7 +110,7 @@ def test_sum_over_absent_dim_raises_at_lowering_too(dispatch_schema):
     SPEC §"dims" and alpha.4 settled the language question: summing over a dim
     the operand does not carry builds a model that solves and is wrong, so it
     is an error rather than the silent identity it once was. ``check_schema``
-    raises it for anything entering through ``fk.check``; this pins that
+    raises it for anything entering through ``lps.check``; this pins that
     ``_lower_expr`` does not quietly disagree one layer down, which is what it
     used to do — it returned the operand unchanged, and the comment claiming
     eager parity outlived the parity.

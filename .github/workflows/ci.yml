@@ -86,7 +86,7 @@ jobs:
             symbols="examples/symbols/$name.yaml"
             args=(latex "$model" --standalone -o "$RUNNER_TEMP/tex/$name.tex")
             [ -f "$symbols" ] && args+=(--symbols "$symbols")
-            uv run --no-sync python -m farkas "${args[@]}"
+            uv run --no-sync python -m lpspec "${args[@]}"
             pdflatex -halt-on-error -interaction=nonstopmode \
               -output-directory "$RUNNER_TEMP/tex" "$RUNNER_TEMP/tex/$name.tex"
           done

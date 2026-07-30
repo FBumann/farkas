@@ -14,7 +14,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-from farkas.relational import plan
+from lpspec.relational import plan
 from tests.differential import differential
 from tests.oracle import pd
 

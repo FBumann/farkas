@@ -2,10 +2,10 @@
 
 ## Project Overview
 
-`farkas` is a YAML-based math definition layer for LP/MILP. It lets users define
+`lpspec` is a YAML-based math definition layer for LP/MILP. It lets users define
 optimisation problems declaratively in YAML and build them at runtime — natively on the
 relational engine (polars → solver or LP file), which is the product path and needs no
-[linopy](https://github.com/PyPSA/linopy); or through the opt-in `farkas.linopy` shim,
+[linopy](https://github.com/PyPSA/linopy); or through the opt-in `lpspec.linopy` shim,
 which puts the same math onto a `linopy.Model` that already exists in memory. Both lanes
 accept exactly the same language; there is no routing and no fallback.
 
@@ -62,26 +62,26 @@ file keeps no third copy to go stale.
 ## API
 
 ```python
-import farkas as fk
+import lpspec as lps
 
 # No lifetime to manage: the model is frames this process owns, so `sol` stays
 # readable as long as it is alive. `close()` and `with` release a large one
 # early and nothing breaks without them.
-sol = fk.solve('model.yaml', {'p_max': 'p_max.parquet', 'load': 'load.parquet'})
+sol = lps.solve('model.yaml', {'p_max': 'p_max.parquet', 'load': 'load.parquet'})
 sol.objective
 sol.primal('p')  # a polars.DataFrame; .to_pandas / .to_dataarray are the bridges out
 
-# fk.build(...) hands back the live executor, for driving several sinks off one build.
+# lps.build(...) hands back the live executor, for driving several sinks off one build.
 ```
 
 Linopy lane — YAML math on a `linopy.Model` that already exists in memory
 (requires the `[linopy]` extra):
 
 ```python
-from farkas import linopy as farkas_linopy
+from lpspec import linopy as lpspec_linopy
 
-m = farkas_linopy.build('model.yaml', data={...})  # YAML -> linopy.Model
-farkas_linopy.extend(m, 'ramp_constraint.yaml', data={...})  # YAML math onto an existing model
+m = lpspec_linopy.build('model.yaml', data={...})  # YAML -> linopy.Model
+lpspec_linopy.extend(m, 'ramp_constraint.yaml', data={...})  # YAML math onto an existing model
 ```
 
 ## Development Guidelines

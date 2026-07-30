@@ -18,9 +18,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-ARMS = ('farkas', 'linopy')
+ARMS = ('lpspec', 'linopy')
 
-#: The ratio columns are farkas ÷ linopy: the eager lane is what this one is
+#: The ratio columns are lpspec ÷ linopy: the eager lane is what this one is
 #: judged against, and the only arm still measured.
 _RATIO_AGAINST = 'linopy'
 
@@ -96,10 +96,10 @@ def sizes_of(case: str, rows: dict[Key, Row], sink: str = 'lp', *, density: bool
 
 #: How each arm reaches each sink, said once so a table can name its own seam.
 _SEAM = {
-    'lp': 'farkas writes the LP file, linopy through its `lp-polars` writer.',
+    'lp': 'lpspec writes the LP file, linopy through its `lp-polars` writer.',
     'highs': (
         'Both arms end holding a populated `highspy.Highs` with `run()` never '
-        'called: farkas through `build_highs`, linopy through `to_highspy()`. '
+        'called: lpspec through `build_highs`, linopy through `to_highspy()`. '
         'The simplex is the same work whoever filled the model, so timing it '
         'would say nothing about the lane that filled it.'
     ),
@@ -135,9 +135,9 @@ def table(case: str, rows: dict[Key, Row], sink: str = 'lp') -> str:
             _live(ref),
             _si(ref['counts']['rows']),
             *(f'{wall[a]:.2f} s' if wall[a] else '—' for a in cols),
-            _ratio(wall['farkas'], wall[_RATIO_AGAINST]),
+            _ratio(wall['lpspec'], wall[_RATIO_AGAINST]),
             *(f'{_gb(peak[a])} GB' if peak[a] else '—' for a in cols),
-            _ratio(peak['farkas'], peak[_RATIO_AGAINST]),
+            _ratio(peak['lpspec'], peak[_RATIO_AGAINST]),
             f'{ref["lp_bytes"] / 1e6:.0f} MB' if ref.get('lp_bytes') else '—',
         ]
         lines.append('| ' + ' | '.join(cells) + ' |')
@@ -184,15 +184,15 @@ def marginal(loop_rows: list[Row]) -> str:
         'first costs in a rolling horizon. Every lane does lazy first-call work '
         'that a loop never pays again — ~180 ms of it on the eager lane, ~4 ms here.',
         '',
-        '| case | vars | farkas: first | farkas: steady | linopy: first | linopy: steady | steady vs linopy |',
+        '| case | vars | lpspec: first | lpspec: steady | linopy: first | linopy: steady | steady vs linopy |',
         '|---|---|---|---|---|---|',
     ]
     seen = sorted(
         {(c, s) for c, s, _ in best},
-        key=lambda k: best[(k[0], k[1], 'farkas')].get('nominal_variables', 0),
+        key=lambda k: best[(k[0], k[1], 'lpspec')].get('nominal_variables', 0),
     )
     for case, size in seen:
-        ours, eager = best.get((case, size, 'farkas')), best.get((case, size, 'linopy'))
+        ours, eager = best.get((case, size, 'lpspec')), best.get((case, size, 'linopy'))
         if not ours or not eager:
             continue
         lines.append(
@@ -253,9 +253,9 @@ def density(rows: dict[Key, Row]) -> str:
                 _live(ref),
                 _si(ref['counts']['columns']),
                 *(f'{wall[a]:.2f} s' if wall[a] else '—' for a in cols),
-                _ratio(wall['farkas'], wall[_RATIO_AGAINST]),
+                _ratio(wall['lpspec'], wall[_RATIO_AGAINST]),
                 *(f'{_gb(peak[a])} GB' if peak[a] else '—' for a in cols),
-                _ratio(peak['farkas'], peak[_RATIO_AGAINST]),
+                _ratio(peak['lpspec'], peak[_RATIO_AGAINST]),
             ]
             lines.append('| ' + ' | '.join(cells) + ' |')
     return '\n'.join(lines)

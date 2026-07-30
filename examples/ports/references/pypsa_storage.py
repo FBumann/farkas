@@ -19,7 +19,7 @@ Pinned above to the versions that produced the number in ``references.json``,
 and run out of band — PyPSA is not a dependency of this project.
 
 It reads the same instance the port binds and builds the network with PyPSA's
-own objects. Nothing here imports farkas.
+own objects. Nothing here imports lpspec.
 
 Rung 3: rung 2 plus a ``StorageUnit``. Its state of charge carries energy
 between snapshots, charged at ``efficiency_store`` and discharged at

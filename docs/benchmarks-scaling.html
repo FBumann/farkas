@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>farkas — how the engine scales</title>
+<title>lpspec — how the engine scales</title>
 <style>*{box-sizing:border-box}body{margin:0}</style>
 </head>
 <body>
@@ -11,7 +11,7 @@
 <div class="viz-root">
 
 <header>
-  <h1>farkas against linopy — how the engine scales</h1>
+  <h1>lpspec against linopy — how the engine scales</h1>
   <p class="lede">
     Build a model and hand it to HiGHS, with <code>run()</code> never called. Every
     point is one process, best of three, on an idle machine. The parity gate passed on
@@ -112,7 +112,7 @@
     <code>bench.plot</code>, which rewrites one line of it. Full method, the LP-file
     sink and the marginal-cost pass are in <code>docs/benchmarks.md</code>. The
     three-engine comparison this page used to carry — against the duckdb engine that
-    preceded this one — is in <a href="https://github.com/FBumann/farkas/pull/189">#189</a>
+    preceded this one — is in <a href="https://github.com/FBumann/lpspec/pull/189">#189</a>
     and in git.
   </p>
 </footer>
@@ -369,10 +369,10 @@ function bandChart(host, metric) {
       raw[eng].push(r);
       mid.push([i, med(r)]); env.push([i, Math.min(...r), Math.max(...r)]);
     });
-    series.push({ name: eng, label: 'farkas', pts: mid }); bands.push({ name: eng, pts: env });
+    series.push({ name: eng, label: 'lpspec', pts: mid }); bands.push({ name: eng, pts: env });
   }
   series.push({ name: 'linopy', label: 'linopy', pts: DATA.rungs.map((_, i) => [i, 1]) });
-  legend(host, [{ name: 'polars', label: 'farkas' }, { name: 'linopy', label: 'linopy = 1.0' }]);
+  legend(host, [{ name: 'polars', label: 'lpspec' }, { name: 'linopy', label: 'linopy = 1.0' }]);
   chart(host, {
     series, bands, logY: true, xTicks: DATA.rungs, xLabel: 'ladder rung',
     fmtY: v => (v < 1 ? v.toFixed(v < 0.1 ? 2 : 1) : v.toFixed(0)) + 'x',
@@ -386,9 +386,9 @@ function scaleChart(host, metric) {
   const V = DATA.scaling.vars;
   const mk = (n, label, dash, dy) => ({ name: n, label, dash, dy,
     pts: V.map((v, i) => [v, DATA.scaling[metric][n][i]]) });
-  legend(host, [{ name: 'polars', label: 'farkas' }, { name: 'linopy', label: 'linopy' }]);
+  legend(host, [{ name: 'polars', label: 'lpspec' }, { name: 'linopy', label: 'linopy' }]);
   chart(host, {
-    series: [mk('polars', 'farkas'), mk('linopy', 'linopy')],
+    series: [mk('polars', 'lpspec'), mk('linopy', 'linopy')],
     logX: true, logY: true, xLabel: 'variables', directLabels: false,
     fmtY: metric === 'wall'
       ? (v => v < 1 ? (v * 1000).toFixed(0) + ' ms' : v.toFixed(0) + ' s')
@@ -442,7 +442,7 @@ function numbers(rung) {
 }
 
 document.getElementById('facet-legend').innerHTML = legendHTML(
-  [{ name: 'polars', label: 'farkas' }, { name: 'linopy', label: 'linopy' }]);
+  [{ name: 'polars', label: 'lpspec' }, { name: 'linopy', label: 'linopy' }]);
 
 bandChart(document.getElementById('band-wall'), 'wall');
 bandChart(document.getElementById('band-peak'), 'peak');

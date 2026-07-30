@@ -1,4 +1,4 @@
-# farkas
+# lpspec
 
 **Self-documenting optimisation models — at any scale.**
 
@@ -33,10 +33,6 @@ And because the math is a closed spec known before any data is touched, every
 name, dimension and expression is checked at load time — `check()` compiles a
 whole model repository in CI with nothing bound to it at all.
 
-> Named for [Farkas' lemma](https://en.wikipedia.org/wiki/Farkas%27_lemma): a
-> system of linear inequalities either has a solution, or has a certificate that
-> it has none — never both, never neither.
-
 <!--flow-start-->
 ```mermaid
 flowchart LR
@@ -45,7 +41,7 @@ flowchart LR
     R -->|"yes"| S["relational engine<br/>polars"]
     S --> OUT["solver (batched) / LP file"]
     R -->|"no"| ERR["load error<br/>naming the construct + rewrite"]
-    AST -.->|"opt-in shim: same language,<br/>for models already in memory"| E["farkas.linopy"]
+    AST -.->|"opt-in shim: same language,<br/>for models already in memory"| E["lpspec.linopy"]
     E --> LS["linopy.Model → solve"]
 
     classDef stream fill:#f0f7f0,stroke:#3a7d44,stroke-width:2px,color:#111
@@ -88,7 +84,7 @@ objectives:
 
 <!--solve-start-->
 ```python
-import farkas as fk, polars as pl
+import lpspec as lps, polars as pl
 
 generators = ['wind', 'solar', 'gas']
 sources = {
@@ -97,7 +93,7 @@ sources = {
     'load': pl.DataFrame({'snapshot': range(6), 'value': [80.0, 120.0, 150.0, 180.0, 140.0, 100.0]}),
 }
 
-result = fk.solve('dispatch.yaml', sources, coords={'snapshot': range(6)})
+result = lps.solve('dispatch.yaml', sources, coords={'snapshot': range(6)})
 print(result.objective)  # 1920.0
 print(result.primal('p'))  # a tidy frame: (snapshot, generator, value)
 print(result.dual('power_balance'))  # the price at each snapshot
@@ -134,9 +130,9 @@ inside wiring code, and a Python function is not a sharable artefact. When the
 modification *is just math*, a file fixes all three:
 
 ```python
-from farkas import linopy as farkas_linopy
+from lpspec import linopy as lpspec_linopy
 
-farkas_linopy.extend(m, 'ramp.yaml', data={'ramp_max': network.generators['ramp_max']})
+lpspec_linopy.extend(m, 'ramp.yaml', data={'ramp_max': network.generators['ramp_max']})
 ```
 ```yaml
 # ramp.yaml — `p` comes from the model; dims are declared here but their
@@ -168,8 +164,8 @@ refused. All of it is indexed in [docs/](docs/README.md); to work on it,
 To see it rather than read it, `python examples/walkthrough.py` runs one small model through every stage — YAML → schema → core AST → logical plan → model frames → LP text → solution — printing the artifact each stage produces, plus two models the language refuses and why. Its output is committed as [examples/walkthrough.out](examples/walkthrough.out) if you would rather just read that.
 
 ```bash
-pip install farkas  # the relational engine (polars, highspy)
-pip install "farkas[linopy]"  # adds linopy + xarray + pandas: the shim, the
+pip install lpspec  # the relational engine (polars, highspy)
+pip install "lpspec[linopy]"  # adds linopy + xarray + pandas: the shim, the
                               # oracle, and to_pandas / to_dataarray
 ```
 
@@ -188,7 +184,7 @@ compatibility shim for every earlier spelling would defeat the point of a small
 language.
 
 In practice: pin an exact version if you depend on this, and read the
-[changelog](https://github.com/FBumann/farkas/blob/main/CHANGELOG.md) before upgrading — breaking commits are marked `!`,
+[changelog](https://github.com/FBumann/lpspec/blob/main/CHANGELOG.md) before upgrading — breaking commits are marked `!`,
 and every one names the rewrite. What exists is tested; both lanes round-trip
 real models through solve, differentially verified against linopy. It is the
 *surface* that is not yet frozen, not the behaviour.

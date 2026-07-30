@@ -12,11 +12,11 @@ piecewise formulation. See docs/models/index.md.
     uv run --script examples/ports/references/transport_pwl.py
 
 **The independence here is sharper than usual.** Every other reference is
-independent of farkas because it is a different program; this one is
-independent of the construct under test. `farkas`'s ``piecewise:`` block and
+independent of lpspec because it is a different program; this one is
+independent of the construct under test. `lpspec`'s ``piecewise:`` block and
 linopy's ``add_piecewise_formulation`` are two implementations of the same
 λ convex-combination idea, written separately, and this compares them on a
-model neither was written for. Nothing here imports farkas.
+model neither was written for. Nothing here imports lpspec.
 
 The model is GAMS model library ``trnspwl`` — Dantzig's transportation problem
 with **economies of scale**: shipping cost grows as ``sqrt(x)`` rather than

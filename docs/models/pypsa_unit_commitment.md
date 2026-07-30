@@ -218,7 +218,7 @@ initial state of charge.
 | shut-downs | `peak` at snapshot 0 (begins off) and at 3 = 100 |
 | **total** | **24900** |
 
-`base` runs throughout; `peak` covers the two peak snapshots. farkas and PyPSA
+`base` runs throughout; `peak` covers the two peak snapshots. lpspec and PyPSA
 agree on the schedule as well as the cost.
 
 ## Side by side

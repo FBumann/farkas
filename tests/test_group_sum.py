@@ -1,7 +1,7 @@
 """group_sum: the transport YAML through both backends, and what coordinates buy.
 
 Three-way differential on examples/transport.yaml:
-  1. eager farkas_linopy.build + solve (group_sum via linopy groupby)
+  1. eager lpspec_linopy.build + solve (group_sum via linopy groupby)
   2. lowered Program -> PolarsExecutor solver_direct, plus the LP file
   3. hand-built indicator-matrix linopy model (an independent oracle that
      involves no group_sum at all)
@@ -15,20 +15,20 @@ import numpy as np
 import polars as pl
 import pytest
 
-import farkas as fk
-from farkas.errors import DataError, LanguageError
-from farkas.lowering import _lower_expr, lower_program
-from farkas.relational import PolarsExecutor
-from farkas.relational.plan import (
+import lpspec as lps
+from lpspec.errors import DataError, LanguageError
+from lpspec.lowering import _lower_expr, lower_program
+from lpspec.relational import PolarsExecutor
+from lpspec.relational.plan import (
     Add,
     GroupSum,
     Negate,
     Variable,
 )
-from farkas.sources import tidy_sources
+from lpspec.sources import tidy_sources
 from tests.conftest import override, resolved, schema_of
 from tests.differential import RTOL, differential
-from tests.oracle import farkas_linopy, pd, transport_eager_objective, xr
+from tests.oracle import lpspec_linopy, pd, transport_eager_objective, xr
 
 TRANSPORT_YAML = Path('examples/transport.yaml')
 
@@ -134,7 +134,7 @@ def test_a_mistyped_coordinate_is_refused_on_both_lanes(transport_data):
     with pytest.raises(DataError, match="not 'bus' coordinates"):
         _relationally(data, coords)
     with pytest.raises(DataError, match="not 'bus' coordinates"):
-        farkas_linopy.build(TRANSPORT_YAML, data=data, coords=coords)
+        lpspec_linopy.build(TRANSPORT_YAML, data=data, coords=coords)
 
 
 def test_a_coordinate_must_be_single_valued(transport_data):
@@ -237,13 +237,13 @@ def test_a_partial_coordinate_places_its_orphans_nowhere(tmp_path):
     path.write_text(PARTIAL_YAML)
     sources, data, coords = _partial_inputs(['g0', 'g0', None])
 
-    with fk.solve(path, sources) as result:
+    with lps.solve(path, sources) as result:
         assert result.is_ok
         assert result.objective == pytest.approx(3.0)
         # the orphan is still a variable; it just carries no group obligation
         assert result.to_pandas('x').set_index('item')['value']['i2'] == pytest.approx(0.0)
 
-    model = farkas_linopy.build(path, data=data, coords=coords)
+    model = lpspec_linopy.build(path, data=data, coords=coords)
     model.solve(solver_name='highs', output_flag=False)
     assert float(model.objective.value) == pytest.approx(3.0)
 
@@ -289,7 +289,7 @@ def test_group_sum_over_a_broadcast_dim_still_collapses_its_terms():
         BROADCAST_SOURCES,
         generator=pl.DataFrame({'generator': ['g1', 'g2', 'g3'], 'bus': ['b1', 'b1', 'b2']}),
     )
-    with fk.build(BROADCAST_GROUP_SUM, sources) as ex:
+    with lps.build(BROADCAST_GROUP_SUM, sources) as ex:
         matrix = ex._tables().matrix.sort('row', 'col')
         assert matrix.height == 4, 'a column appears twice on a row'
         assert matrix['coeff'].to_list() == [3.0, 5.0, 3.0, 5.0]  # 1.0 + 2.0 merged
@@ -313,7 +313,7 @@ def test_group_sum_over_a_foreach_dim_needs_no_such_collapse():
         BROADCAST_SOURCES,
         generator=pl.DataFrame({'generator': ['g1', 'g2', 'g3'], 'bus': ['b1', 'b1', 'b2']}),
     )
-    with fk.build(model, sources) as ex:
+    with lps.build(model, sources) as ex:
         matrix = ex._tables().matrix.sort('row', 'col')
         # one entry per (row, generator-on-that-bus), not one per bus
         assert matrix.height == 6
@@ -356,7 +356,7 @@ def test_an_objective_term_carrying_dims_is_still_summed_per_column():
     `dense[at] = values`, which keeps the last write rather than accumulating,
     so this reads as a plausible answer to a model nobody wrote.
     """
-    with fk.build(BROADCAST_OBJECTIVE, BROADCAST_OBJECTIVE_SOURCES) as ex:
+    with lps.build(BROADCAST_OBJECTIVE, BROADCAST_OBJECTIVE_SOURCES) as ex:
         obj = ex._tables().obj.sort('col')
         assert obj.height == 3, 'one row per column, not one per (bus, snapshot)'
         assert obj['coeff'].to_list() == [1111.0] * 3  # sum(w), not w[-1]
@@ -383,7 +383,7 @@ def test_an_objective_whose_dims_are_all_the_variables_own_still_skips_it():
     model in `bench/`, which is the whole optimisation (#161).
     """
     model = override(BROADCAST_OBJECTIVE, **{'objectives.c.expression': 'y * floor'})
-    with fk.build(model, BROADCAST_OBJECTIVE_SOURCES) as ex:
+    with lps.build(model, BROADCAST_OBJECTIVE_SOURCES) as ex:
         obj = ex._tables().obj.sort('col')
         assert obj.height == 3
         assert obj['coeff'].to_list() == [1.0, 2.0, 3.0]  # floor itself, un-summed

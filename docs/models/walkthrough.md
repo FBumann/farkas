@@ -104,7 +104,7 @@ This is the model behind `python examples/walkthrough.py`, which runs it
 through every stage — YAML → schema → core AST → logical plan → model frames →
 LP text → solution — printing what each stage produces, then two models the
 language refuses and why. The committed output is
-[examples/walkthrough.out](https://github.com/FBumann/farkas/blob/main/examples/walkthrough.out)
+[examples/walkthrough.out](https://github.com/FBumann/lpspec/blob/main/examples/walkthrough.out)
 if you would rather read than run.
 
 It is the only model here that uses **tier 2**: a macro and a named
@@ -113,4 +113,4 @@ expression, neither of which survives past expansion. Nothing downstream of
 
 ---
 
-[`examples/walkthrough.yaml`](https://github.com/FBumann/farkas/blob/main/examples/walkthrough.yaml) · back to [all models](index.md)
+[`examples/walkthrough.yaml`](https://github.com/FBumann/lpspec/blob/main/examples/walkthrough.yaml) · back to [all models](index.md)

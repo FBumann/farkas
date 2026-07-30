@@ -356,6 +356,6 @@ if __name__ == '__main__':
 a five-term `group_sum` nodal balance — generators, both ends of every link,
 and both directions of storage, all projected onto `bus`.
 
-It also asks for [#31](https://github.com/FBumann/farkas/issues/31) a third
+It also asks for [#31](https://github.com/FBumann/lpspec/issues/31) a third
 time: `soc_max` is `p_nom × max_hours` in PyPSA, and a bound here takes a name
 or a number, so the product ships as a column.

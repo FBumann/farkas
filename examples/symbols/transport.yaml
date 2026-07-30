@@ -1,7 +1,7 @@
 # The notation docs/models/transport.md already uses, written down —
 # with one deliberate departure.
 #
-#   python -m farkas markdown examples/transport.yaml \
+#   python -m lpspec markdown examples/transport.yaml \
 #       --symbols examples/symbols/transport.yaml
 #
 # The gallery writes $\sum_{g \in \mathrm{bus}} p_{s,g} + \sum_{\ell \to b}

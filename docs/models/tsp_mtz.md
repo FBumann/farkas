@@ -33,7 +33,7 @@ DFJ was refused for having a data-dependent row count. By that reasoning the
 cycle basis would be refused too, and it is not.
 
 **Lazy generation is the thing every serious TSP code actually does**, which is
-why "farkas can express TSP" and "farkas is a good way to solve a large TSP"
+why "lpspec can express TSP" and "lpspec is a good way to solve a large TSP"
 are different sentences, and only the first is true.
 
 ## What that leaves

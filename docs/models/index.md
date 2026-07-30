@@ -78,7 +78,7 @@ hand.
 by the test suite, so "there is a test" distinguishes nothing. What the badge
 marks is narrower, and it is the only check that can catch a *shared
 misreading* — both lanes of the implementation agreeing on a meaning the
-modeller did not intend, which passes every farkas-against-farkas test green.
+modeller did not intend, which passes every lpspec-against-lpspec test green.
 
 Even the differential harness compares two lanes consuming the *same resolved
 AST* ([hard rule 1](../ARCHITECTURE.md#hard-rules)), which is what makes them
@@ -116,11 +116,11 @@ vector is where two implementations most reliably disagree quietly: which side
 of a constraint the price belongs to, and what sign an inequality carries.
 [Dantzig transport](transport_dantzig.md) is in that set specifically because
 both of its constraints are inequalities pointing opposite ways. A MILP has no
-dual solution, and farkas refuses to invent one — which is what the `·` rows
+dual solution, and lpspec refuses to invent one — which is what the `·` rows
 are.
 
 Adding a port is four files and five rules:
-[CONTRIBUTING.md](https://github.com/FBumann/farkas/blob/main/CONTRIBUTING.md#adding-a-ported-model).
+[CONTRIBUTING.md](https://github.com/FBumann/lpspec/blob/main/CONTRIBUTING.md#adding-a-ported-model).
 
 ## The ladder
 
@@ -161,12 +161,12 @@ sharper statement about the language than either alone.
 ## Ledger — what a port could not say
 
 Feeds [ROADMAP](../ROADMAP.md), with the verdict
-[CLAUDE.md](https://github.com/FBumann/farkas/blob/main/CLAUDE.md) asks for:
+[CLAUDE.md](https://github.com/FBumann/lpspec/blob/main/CLAUDE.md) asks for:
 macro, primitive, or escape.
 
 | Port | What could not be said | Worked around by | Verdict |
 |---|---|---|---|
-| PyPSA rung 1 | a bound of `-rating` — PyPSA's `p_min_pu = -1` | shipping `neg_rating` as data | **primitive**: bounds as expressions, [#31](https://github.com/FBumann/farkas/issues/31). A second model asking for it |
+| PyPSA rung 1 | a bound of `-rating` — PyPSA's `p_min_pu = -1` | shipping `neg_rating` as data | **primitive**: bounds as expressions, [#31](https://github.com/FBumann/lpspec/issues/31). A second model asking for it |
 | PyPSA unit commitment | `min_up_time` — a unit that starts must stay up for *T* snapshots | left at 0, so the constraint is not written | **split verdict**, below |
 | Travelling salesman | subtour cuts **generated lazily** inside branch-and-cut, which is how every serious TSP code works | [MTZ](tsp_mtz.md), O(n²) and static | **refused, and correctly**: a solve loop is an algorithm, not a model |
 
@@ -196,7 +196,7 @@ than a ceiling.
 What is genuinely outside is *lazy* generation: solve, find the violated
 subsets, add rows, re-solve. That is an algorithm, and this language describes
 models. Since lazy generation is what every serious TSP code actually does,
-"farkas can express TSP" and "farkas is a good way to solve a large TSP" are
+"lpspec can express TSP" and "lpspec is a good way to solve a large TSP" are
 different sentences and only the first is true.
 
 An earlier draft of this ledger said DFJ was refused for having a

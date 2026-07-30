@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-import farkas as fk
-from farkas._yaml import read_yaml
-from farkas.schema import MathSchema
+import lpspec as lps
+from lpspec._yaml import read_yaml
+from lpspec.schema import MathSchema
 
 MODEL = """dimensions:
   snapshot: {dtype: int, values: [0, 1]}
@@ -75,14 +75,14 @@ def test_duplicate_key_is_an_error_naming_both_lines(tmp_path):
     )
 
     with pytest.raises(ValueError, match=r"duplicate key 'balance' .* first declared on line 12"):
-        fk.check(path)
+        lps.check(path)
 
 
 def test_duplicate_top_level_section_is_an_error(tmp_path):
     path = _write(tmp_path, MODEL + 'parameters:\n  other: {dims: [snapshot]}\n')
 
     with pytest.raises(ValueError, match="duplicate key 'parameters'"):
-        fk.check(path)
+        lps.check(path)
 
 
 def test_a_merge_key_override_is_not_a_duplicate(tmp_path):
@@ -102,7 +102,7 @@ def test_a_non_mapping_document_is_a_load_error(tmp_path):
     for text in ('- a\n- b\n', 'just a string\n'):
         path = _write(tmp_path, text)
         with pytest.raises(ValueError, match='must be a mapping of sections'):
-            fk.check(path)
+            lps.check(path)
 
 
 def test_an_empty_file_is_an_empty_model(tmp_path):

@@ -19,16 +19,16 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from farkas.lowering import lower_program
-from farkas.piecewise import (
+from lpspec.lowering import lower_program
+from lpspec.piecewise import (
     PiecewiseExpansionError,
     expand_piecewise,
     validate_piecewise_data,
 )
-from farkas.sources import tidy_sources
+from lpspec.sources import tidy_sources
 from tests.conftest import override, raw_of, schema_of
 from tests.differential import differential
-from tests.oracle import farkas_linopy, pd
+from tests.oracle import lpspec_linopy, pd
 
 NONCONVEX_YAML = """
 dimensions:
@@ -153,7 +153,7 @@ def test_the_convex_flag_gives_the_hull_and_stays_a_pure_lp(nonconvex_inputs, tm
 
     path = tmp_path / 'hull.yaml'
     path.write_text(yaml_text)
-    m = farkas_linopy.build(path, data=data, coords=coords)
+    m = lpspec_linopy.build(path, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
 
     on_curve = sum(curve(v, data['bp_x'], data['bp_y']) for v in data['load'])
@@ -443,13 +443,13 @@ def test_both_lanes_check_the_declarations_a_formulation_emits(tmp_path):
     A link's dims come from its values parameter, so a values parameter
     carrying a dim the links do not is a stray dim in generated math — one row
     per zone where the file reads as one per snapshot. The native lane used to
-    validate the file as written, which made ``fk.check()`` pass on a model
-    ``farkas_linopy.build`` refused: the same YAML, two answers (hard rule 3).
+    validate the file as written, which made ``lps.check()`` pass on a model
+    ``lpspec_linopy.build`` refused: the same YAML, two answers (hard rule 3).
     """
     import yaml as pyyaml
 
-    import farkas as fk
-    from farkas.errors import DimensionError
+    import lpspec as lps
+    from lpspec.errors import DimensionError
 
     raw = override(
         raw_of(NONCONVEX_YAML),
@@ -458,12 +458,12 @@ def test_both_lanes_check_the_declarations_a_formulation_emits(tmp_path):
     stray = r"cost_curve_link1.*\['zone'\]"
 
     with pytest.raises(DimensionError, match=stray):
-        fk.check(raw)
+        lps.check(raw)
 
     path = tmp_path / 'stray_dim.yaml'
     path.write_text(pyyaml.safe_dump(raw))
     with pytest.raises(DimensionError, match=stray):
-        farkas_linopy.build(path)
+        lpspec_linopy.build(path)
 
 
 # ---------------------------------------------------------------------------

@@ -9,10 +9,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from farkas.expansion import parse_and_expand
-from farkas.expression_parser import parse_expression
-from farkas.schema import MathSchema
-from farkas.validation import validate_expressions
+from lpspec.expansion import parse_and_expand
+from lpspec.expression_parser import parse_expression
+from lpspec.schema import MathSchema
+from lpspec.validation import validate_expressions
 from tests.differential import differential
 from tests.oracle import pd
 

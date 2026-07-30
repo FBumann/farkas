@@ -1,7 +1,7 @@
 # The dispatch notation, for the model that carries a macro and a named
 # expression.
 #
-#   python -m farkas markdown examples/walkthrough.yaml \
+#   python -m lpspec markdown examples/walkthrough.yaml \
 #       --symbols examples/symbols/walkthrough.yaml
 #
 # Note what is *not* here: `total_supply` and `weighted_sum`. Both are gone

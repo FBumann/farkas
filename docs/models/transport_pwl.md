@@ -7,7 +7,7 @@ GAMS model library `trnspwl`: the same shipping problem, but a big consignment i
 **The corpus's `piecewise` entry**, and the last hole in the construct matrix.
 
 It is also the port with the sharpest kind of independence. Every other
-reference is independent of farkas because it is a different program; this one
+reference is independent of lpspec because it is a different program; this one
 is independent of *the construct under test*. `piecewise:` and linopy's
 `add_piecewise_formulation` are two separate implementations of the same
 λ convex-combination idea, and this compares them on a model neither was
@@ -24,7 +24,7 @@ underestimate `sqrt` everywhere in between.
 |---|---|---|---|---|---|---|---|---|
 | f(x) | 0 | 7.071 | 10.954 | 13.784 | 16.125 | 18.166 | 20 | 24.495 |
 
-The [instance](https://github.com/FBumann/farkas/blob/main/examples/ports/data/transport_pwl.json) is otherwise
+The [instance](https://github.com/FBumann/lpspec/blob/main/examples/ports/data/transport_pwl.json) is otherwise
 [Dantzig's](transport_dantzig.md), unchanged.
 
 ## The model
@@ -268,7 +268,7 @@ if __name__ == '__main__':
 the integrality that follows — plus `sum` and parameter arithmetic in the
 objective.
 
-**It is also the first port whose numbers are not bit-identical.** farkas
+**It is also the first port whose numbers are not bit-identical.** lpspec
 returns `8.786852757777858` against linopy's `8.786852757777865`: a relative
 difference of about 8 × 10⁻¹⁶, which is branch-and-bound arriving at the same
 vertex by a different order of floating-point operations. The shipment plan is

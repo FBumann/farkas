@@ -1,6 +1,6 @@
 """Ported models, checked against an optimum that did not come from us.
 
-Every other test here compares farkas against farkas. Even the differential
+Every other test here compares lpspec against lpspec. Even the differential
 harness compares two lanes consuming the *same resolved AST* (hard rule 1), so
 a **shared misreading** — both lanes agreeing on a meaning the modeller did not
 intend — passes the whole suite green. This is the net for that class.
@@ -22,7 +22,7 @@ from typing import Any
 import polars as pl
 import pytest
 
-import farkas as fk
+import lpspec as lps
 
 PORTS = Path(__file__).resolve().parent.parent / 'examples' / 'ports'
 REFERENCES: dict[str, dict[str, Any]] = json.loads((PORTS / 'references.json').read_text())
@@ -44,7 +44,7 @@ def test_port_reaches_the_reference_optimum(port: dict[str, Any]) -> None:
     at a different vertex than the source prints, so a corpus pinned to a
     solution would fail on a solver upgrade that broke nothing. ``rtol`` is per
     port because a published optimum is rounded and a solved one is not."""
-    with fk.solve(port['model'], sources(port['name'])) as solution:
+    with lps.solve(port['model'], sources(port['name'])) as solution:
         assert solution.is_ok, f'{port["name"]} did not solve: {solution.status}'
         assert solution.objective == pytest.approx(port['objective'], rel=port['rtol']), (
             f'{port["name"]} disagrees with {port["provenance"]}'
@@ -55,7 +55,7 @@ def test_port_is_inside_the_language(port: dict[str, Any]) -> None:
     """Compiles with no data bound, so a language regression fails separately
     from a semantics one: this breaks when lowering stops accepting the model,
     the test above when it lowers and misses the number."""
-    fk.check(port['model'])
+    lps.check(port['model'])
 
 
 def test_port_reaches_the_reference_duals(port: dict[str, Any]) -> None:
@@ -70,13 +70,13 @@ def test_port_reaches_the_reference_duals(port: dict[str, Any]) -> None:
 
     Ports with no ``duals`` block are skipped rather than passing vacuously:
     ``pypsa_unit_commitment`` is a MILP, where a dual solution is undefined and
-    farkas refuses to invent one.
+    lpspec refuses to invent one.
     """
     expected = port.get('duals')
     if not expected:
         pytest.skip(f'{port["name"]} records no duals (a MILP has none)')
 
-    with fk.solve(port['model'], sources(port['name'])) as solution:
+    with lps.solve(port['model'], sources(port['name'])) as solution:
         for constraint, table in expected.items():
             dims = [c for c in table if c != 'value']
             got = solution.dual(constraint).sort(dims)

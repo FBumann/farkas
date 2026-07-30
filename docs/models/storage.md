@@ -148,4 +148,4 @@ size, which is why it is named in *Not measured yet* in
 
 ---
 
-[`examples/storage.yaml`](https://github.com/FBumann/farkas/blob/main/examples/storage.yaml) · back to [all models](index.md)
+[`examples/storage.yaml`](https://github.com/FBumann/lpspec/blob/main/examples/storage.yaml) · back to [all models](index.md)

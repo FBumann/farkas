@@ -104,7 +104,7 @@ exception noted under 2b.
   diagnostics. **Dual read-back has shipped** — `sol.dual(constraint)`, the same
   label join as `primal` against the row table, refusing rather than zero-filling
   where a model has no dual solution; reduced costs and slacks ride the same join
-  and have not ([#78](https://github.com/FBumann/farkas/issues/78)). The headline
+  and have not ([#78](https://github.com/FBumann/lpspec/issues/78)). The headline
   item is **elastic relaxation**, the infeasibility answer — HiGHS has no IIS, so
   `solver_direct` returns a status code for a model too large to open in an
   editor; slack variables with penalty costs, then a query of nonzero slacks
@@ -112,7 +112,7 @@ exception noted under 2b.
   points at *which* constraints conflict rather than at a minimal set. It is the
   exception on this track: adding slacks means **new variables**, so it needs a
   schema-level expansion pass the way `piecewise:` does, and is taxed like a
-  primitive rather than free ([#80](https://github.com/FBumann/farkas/issues/80)).
+  primitive rather than free ([#80](https://github.com/FBumann/lpspec/issues/80)).
 - **2c — value-only re-solve.** In scope, because `var_label` *is* the solver
   column index with no remapping: changing a bound or an RHS is a label query
   plus `changeColsBounds`/`changeRowsBounds`, which is what rolling horizon,
@@ -124,7 +124,7 @@ exception noted under 2b.
   mapping leaves the labels alone but rewrites `A`, which a bounds-only update
   cannot express at all. Both are decidable off the resolved AST, and that check
   ships with the feature
-  ([#82](https://github.com/FBumann/farkas/issues/82)). Structural editing
+  ([#82](https://github.com/FBumann/lpspec/issues/82)). Structural editing
   stays out — it invalidates the label contract. Related gap: warm starts, which
   `solver_direct` would need to set through highspy.
 - **3 — AST consumers** (#21): **math → LaTeX** (a tree walk, no data — the
@@ -155,7 +155,7 @@ Hard rule 3 is untouched — it governs *lanes* accepting the same language, and
 naming an alternative sink is not the lane redirection it forbids.
 
 Full design, work breakdown and open questions:
-[#89](https://github.com/FBumann/farkas/issues/89). First spike is SOS2 on
+[#89](https://github.com/FBumann/lpspec/issues/89). First spike is SOS2 on
 `lp_file`: no new dependency, no license question, no memory risk.
 
 ## Track 5 — the memory axis
@@ -174,7 +174,7 @@ worth stating rather than discovering:
 - **The solver is the larger term anyway.** Measured at roughly an order of
   magnitude above the build at 10⁷ variables
   ([benchmarks](benchmarks.md)), so a ceiling on the build is worth
-  having for the write path — `fk.write` to LP or MPS, handed to something
+  having for the write path — `lps.write` to LP or MPS, handed to something
   else — and worth much less when the same process goes on to solve.
 
 ## Deliberate non-primitives

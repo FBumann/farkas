@@ -33,9 +33,9 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-from farkas.api import load_schema
-from farkas.lowering import lower_program
-from farkas.relational import plan
+from lpspec.api import load_schema
+from lpspec.lowering import lower_program
+from lpspec.relational import plan
 
 ROOT = Path(__file__).resolve().parent.parent
 PAGE = ROOT / 'docs' / 'models' / 'index.md'

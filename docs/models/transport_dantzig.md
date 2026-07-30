@@ -204,4 +204,4 @@ would fail on a solver upgrade that broke nothing.
 
 ---
 
-[`examples/ports/transport_dantzig.yaml`](https://github.com/FBumann/farkas/blob/main/examples/ports/transport_dantzig.yaml) · back to [all models](index.md)
+[`examples/ports/transport_dantzig.yaml`](https://github.com/FBumann/lpspec/blob/main/examples/ports/transport_dantzig.yaml) · back to [all models](index.md)

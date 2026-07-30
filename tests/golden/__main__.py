@@ -10,7 +10,7 @@ review time, not at authoring time.
 
 from __future__ import annotations
 
-from farkas.typeset import FORMATS, typeset
+from lpspec.typeset import FORMATS, typeset
 from tests.golden import MODEL, path_for
 
 

@@ -72,13 +72,13 @@ linopy.options['semantics'] = 'v1'
 
 # Spelled out rather than aliased to something shorter: this module also
 # re-exports the *real* ``linopy`` above, so the shim needs a name that cannot
-# be confused with it. ``farkas_linopy`` names the module it actually is, which
+# be confused with it. ``lpspec_linopy`` names the module it actually is, which
 # also keeps it unambiguous if a second non-streaming execution mode ever
 # lands (ROADMAP Track 5) and "eager" stops picking out one thing.
-from farkas import linopy as farkas_linopy  # noqa: E402  — must follow the guard above
-from farkas.linopy import builder, loader  # noqa: E402
+from lpspec import linopy as lpspec_linopy  # noqa: E402  — must follow the guard above
+from lpspec.linopy import builder, loader  # noqa: E402
 
-__all__ = ['builder', 'farkas_linopy', 'linopy', 'loader', 'pd', 'transport_eager_objective', 'xr']
+__all__ = ['builder', 'linopy', 'loader', 'lpspec_linopy', 'pd', 'transport_eager_objective', 'xr']
 
 
 def transport_eager_objective(gens, lines, load) -> float:

@@ -19,15 +19,15 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-import farkas as fk
-from farkas.typeset import FORMATS, SymbolTable, to_latex, to_markdown, to_typst, typeset
-from farkas.typeset.format import OPERATOR_NAMES
-from farkas.typeset.symbols import _derive_name_symbol
+import lpspec as lps
+from lpspec.typeset import FORMATS, SymbolTable, to_latex, to_markdown, to_typst, typeset
+from lpspec.typeset.format import OPERATOR_NAMES
+from lpspec.typeset.symbols import _derive_name_symbol
 from tests import golden
 from tools import constructs, gallery_math
 
 if TYPE_CHECKING:
-    from farkas.typeset.format import Format
+    from lpspec.typeset.format import Format
 
 LATEX, TYPST = FORMATS['latex'], FORMATS['typst']
 EVERY_FORMAT = pytest.mark.parametrize('fmt', list(FORMATS.values()), ids=list(FORMATS))
@@ -163,7 +163,7 @@ def test_macros_and_named_expressions_are_expanded_away(fmt: Format):
 @EVERY_FORMAT
 def test_an_invalid_model_fails_the_same_way_check_does(fmt: Format):
     broken = {**DISPATCH, 'objectives': {'total_cost': {'expression': 'p * nonexistent'}}}
-    with pytest.raises(fk.LinopyYamlError):
+    with pytest.raises(lps.LinopyYamlError):
         typeset(broken, fmt)
 
 
@@ -637,16 +637,16 @@ def test_a_description_reaches_the_legend_without_hiding_the_name():
 def test_an_entry_naming_nothing_is_an_error_with_the_near_miss():
     """A silent typo means a symbol that never applies and a reader who never
     finds out — so it fails, and says what it probably meant."""
-    with pytest.raises(fk.SchemaError, match="Did you mean 'p_max'"):
+    with pytest.raises(lps.SchemaError, match="Did you mean 'p_max'"):
         to_latex(DISPATCH, symbols={'names': {'p_maxx': 'x'}})
-    with pytest.raises(fk.SchemaError, match="Did you mean 'generator'"):
+    with pytest.raises(lps.SchemaError, match="Did you mean 'generator'"):
         to_latex(DISPATCH, symbols={'dimensions': {'generatr': {'index': 'g'}}})
 
 
 def test_unknown_sections_and_keys_are_rejected():
-    with pytest.raises(fk.SchemaError, match='unknown section'):
+    with pytest.raises(lps.SchemaError, match='unknown section'):
         to_latex(DISPATCH, symbols={'symbols': {'p': 'x'}})
-    with pytest.raises(fk.SchemaError, match='unknown key'):
+    with pytest.raises(lps.SchemaError, match='unknown key'):
         to_latex(DISPATCH, symbols={'dimensions': {'generator': {'letter': 'g'}}})
 
 
@@ -675,5 +675,5 @@ def test_a_model_renders_identically_with_an_empty_table():
 
 
 def test_exported_from_the_package():
-    assert fk.to_latex is to_latex
-    assert fk.to_typst is to_typst
+    assert lps.to_latex is to_latex
+    assert lps.to_typst is to_typst

@@ -101,16 +101,16 @@ them; either way you would build a different model than the file reads as.
 ## Then: check, build, solve
 
 ```python
-import farkas as fk
+import lpspec as lps
 
-fk.check('model.yaml')  # compiles? no data needed
-sol = fk.solve('model.yaml', sources)  # to an answer
+lps.check('model.yaml')  # compiles? no data needed
+sol = lps.solve('model.yaml', sources)  # to an answer
 sol.objective
 sol.primal('p')  # a polars.DataFrame
 sol.dual('power_balance')
 ```
 
-`fk.check` is the CI verb — it parses, expands, resolves and lowers without
+`lps.check` is the CI verb — it parses, expands, resolves and lowers without
 binding anything, so a model repository can be validated on every commit
 without shipping the data.
 
@@ -125,7 +125,7 @@ Worth knowing before you start, rather than after:
 
 - **Bounds take a name or a number, never arithmetic.** `upper: p_max` is
   fine; `upper: -rating` is not. This one has bitten a real port —
-  [#31](https://github.com/FBumann/farkas/issues/31), and the workaround is to
+  [#31](https://github.com/FBumann/lpspec/issues/31), and the workaround is to
   ship the negated column as data.
 - **Every expression is affine in the variables.** Degree 1, always: no
   variable times variable. That is the ceiling the whole design is built

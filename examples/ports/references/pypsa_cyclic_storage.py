@@ -19,7 +19,7 @@ Pinned above to the versions that produced the number in ``references.json``,
 and run out of band — PyPSA is not a dependency of this project.
 
 It reads the same instance the port binds and builds the network with PyPSA's
-own objects. Nothing here imports farkas.
+own objects. Nothing here imports lpspec.
 
 Rung 4: rung 3's storage with ``cyclic_state_of_charge``. The first
 snapshot's state of charge carries over from the *last* rather than from a

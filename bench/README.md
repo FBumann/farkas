@@ -1,6 +1,6 @@
 # The performance harness
 
-Not shipped in the wheel, not imported by `farkas`, not run in CI. It exists so
+Not shipped in the wheel, not imported by `lpspec`, not run in CI. It exists so
 that [docs/benchmarks.md](../docs/benchmarks.md) has a *provenance* — the last
 set of published numbers came from a `scratch/` script that was deleted, and a
 claim nobody can re-run is a claim with a shelf life.
@@ -44,8 +44,8 @@ is the hard part.
 
 | | `lp` | `highs` |
 |---|---|---|
-| `farkas` | `fk.build(...)` then `ex.write_lp(...)` | `fk.build(...)` then `build_highs(...)` |
-| `linopy` | `farkas.linopy.build(...)` then `Model.to_file(io_api='lp-polars')` | `farkas.linopy.build(...)` then `Model.to_highspy()` |
+| `lpspec` | `lps.build(...)` then `ex.write_lp(...)` | `lps.build(...)` then `build_highs(...)` |
+| `linopy` | `lpspec.linopy.build(...)` then `Model.to_file(io_api='lp-polars')` | `lpspec.linopy.build(...)` then `Model.to_highspy()` |
 
 **The `highs` sink stops at the handoff — `run()` is never called.** That is the
 whole discipline of it. HiGHS's simplex is the same work whoever filled the
@@ -73,7 +73,7 @@ it would swamp the build), and anything about expressiveness.
 
 **One process per measurement.** Peak RSS is a property of a process. A second
 arm in the same interpreter inherits the first's high-water mark and its warm
-allocator, so `bench/run.py` never imports farkas or linopy — it only spawns
+allocator, so `bench/run.py` never imports lpspec or linopy — it only spawns
 `bench/_run_case.py` and reads one JSON line back.
 
 **`ru_maxrss`, not a tracker.** The same kernel counter `/usr/bin/time -l`
@@ -93,11 +93,11 @@ performance number describing two different models is worse than none.
 The easiest way to publish a wrong number is to time something in one arm that
 the other never does. The boundaries are therefore explicit:
 
-| | farkas | linopy |
+| | lpspec | linopy |
 |---|---|---|
 | **before the clock** | splitting parquet paths into parameters vs dimensions (harness bookkeeping — it re-parses the YAML only because the *runner* decides which file is which) | — |
-| `import` | `import farkas` | `import farkas.linopy` → linopy, xarray |
-| `build` | `fk.build(...)` — the engine scans the parquet itself | `read_parquet` + reshape + `farkas.linopy.build(...)` |
+| `import` | `import lpspec` | `import lpspec.linopy` → linopy, xarray |
+| `build` | `lps.build(...)` — the engine scans the parquet itself | `read_parquet` + reshape + `lpspec.linopy.build(...)` |
 | `emit` | `ex.write_lp(path)` / `build_highs(ex._tables())` | `Model.to_file(path, io_api='lp-polars')` / `Model.to_highspy()` |
 | `teardown` | `ex.close()` — releases the built model | — (nothing to release) |
 | **after the clock** | row, column and nonzero counts off the built frames | `nvars` / `ncons` |
@@ -105,7 +105,7 @@ the other never does. The boundaries are therefore explicit:
 Three of those are deliberate calls rather than defaults:
 
 - **Import is excluded from `wall_seconds`** but recorded. It is fixed, paid
-  once per process, and at the `xs` rung linopy's import alone exceeds farkas's
+  once per process, and at the `xs` rung linopy's import alone exceeds lpspec's
   entire build — including it would make the small end meaningless.
 - **Teardown is included, and it is now near-free.** It was there to charge the
   arm holding a scratch database for releasing it. There is no scratch database
@@ -114,7 +114,7 @@ Three of those are deliberate calls rather than defaults:
   acquired a lifetime again.
 - **`progress=False` is passed to linopy.** Its default is
   `m._xCounter > 10_000`, so every rung above `xs` would render tqdm bars that
-  the farkas arm has no equivalent of — ~7% of the write at 10M variables, and
+  the lpspec arm has no equivalent of — ~7% of the write at 10M variables, and
   stderr noise in a harness that parses stdout.
 
 Both arms start from the same parquet files and stop at the same seam, so
@@ -145,7 +145,7 @@ across a session, and this machine has drifted 2x on wall time between the
 start of a session and the end of one. Check out A, measure, check out B,
 measure, and go back — not A once and B once an hour later. The tell that you
 needed to is the other arm: if linopy moved too, the machine moved, because
-nothing in `src/farkas/relational/` can reach it. Peak RSS is far steadier than
+nothing in `src/lpspec/relational/` can reach it. Peak RSS is far steadier than
 wall time and is usually the honest half of a before/after claim.
 
 ## The cases
@@ -219,7 +219,7 @@ memray peak.
 
 | arm | `ru_maxrss` | memray peak |
 |---|---|---|
-| farkas | 309 MB | 211 MB |
+| lpspec | 309 MB | 211 MB |
 | linopy | 604 MB | **2967 MB** |
 
 memray counts polars' reserved arenas as allocated and does not count the

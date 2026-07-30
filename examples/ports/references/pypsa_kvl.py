@@ -19,7 +19,7 @@ Pinned above to the versions that produced the number in ``references.json``,
 and run out of band — PyPSA is not a dependency of this project.
 
 It reads the same instance the port binds and builds the network with PyPSA's
-own objects. Nothing here imports farkas.
+own objects. Nothing here imports lpspec.
 
 **Rung 5, the last one: Kirchhoff's voltage law.** Every earlier rung moved
 power over ``Link`` objects, whose flow is a decision variable — a transport

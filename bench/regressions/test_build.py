@@ -1,15 +1,15 @@
 """Did *this change* make it worse? — one lane, tracked across versions.
 
 The sibling of `bench/run.py`, asking the other question. `run.py` publishes
-how farkas compares to linopy and must therefore measure peak RSS, because RSS
-is what a reader can check with `/usr/bin/time`. This module compares farkas to
+how lpspec compares to linopy and must therefore measure peak RSS, because RSS
+is what a reader can check with `/usr/bin/time`. This module compares lpspec to
 *itself* over time, where a different metric is not only allowed but better.
 
 Why memray is right here and wrong there, measured on `dispatch/m`:
 
 | arm | ru_maxrss | memray peak |
 |---|---|---|
-| farkas | 309 MB | 211 MB |
+| lpspec | 309 MB | 211 MB |
 | linopy | 604 MB | **2967 MB** |
 
 memray counts polars' reserved arenas as allocated and does not count the
@@ -57,14 +57,14 @@ def build_and_write(case_name: str, size: str, sources: dict[str, str], coords: 
 
     Top-level and picklable on purpose: ``isolate=True`` sends this to a fresh
     process per pass. Data paths are resolved by the caller so that generating
-    the parquet — which is neither farkas's work nor stable across machines —
+    the parquet — which is neither lpspec's work nor stable across machines —
     stays outside the measurement.
     """
-    import farkas as fk
+    import lpspec as lps
 
     with (
-        tempfile.TemporaryDirectory(prefix='farkas-bench-') as tmp,
-        fk.build(CASES[case_name].model, sources, coords=coords) as ex,
+        tempfile.TemporaryDirectory(prefix='lpspec-bench-') as tmp,
+        lps.build(CASES[case_name].model, sources, coords=coords) as ex,
     ):
         ex.write_lp(Path(tmp) / 'model.lp')
         return ex._tables().column_count
@@ -78,10 +78,10 @@ def build_and_hand_over(case_name: str, size: str, sources: dict[str, str], coor
     work whoever filled the model, and a regression suite that included it would
     be watching a number nothing in this repository can move.
     """
-    import farkas as fk
-    from farkas.relational.sinks.highs import build_highs
+    import lpspec as lps
+    from lpspec.relational.sinks.highs import build_highs
 
-    with fk.build(CASES[case_name].model, sources, coords=coords, memory_limit='1GB') as ex:
+    with lps.build(CASES[case_name].model, sources, coords=coords, memory_limit='1GB') as ex:
         tables = ex._tables()
         _handle = build_highs(tables)
         return tables.column_count

@@ -3,7 +3,7 @@
 Every run is its own interpreter. That is not tidiness: peak RSS is a property
 of a *process*, and a second arm in the same one would inherit the first's
 high-water mark and its warm allocator. The parent (``bench/run.py``) never
-imports farkas or linopy for this reason.
+imports lpspec or linopy for this reason.
 
 Output is exactly one JSON object on stdout. Anything else the libraries print
 goes to stderr and is the parent's problem.
@@ -56,20 +56,20 @@ class Phases:
         self._start = time.perf_counter()
 
 
-def _run_farkas(
+def _run_lpspec(
     case: Case, paths: dict[str, str], lp: Path, phases: Phases, opts: argparse.Namespace
 ) -> dict[str, Any]:
-    import farkas as fk
-    from farkas.relational.sinks.highs import build_highs
+    import lpspec as lps
+    from lpspec.relational.sinks.highs import build_highs
 
     # The parameter/dimension split is harness bookkeeping — it re-parses the
-    # YAML only because the runner, not farkas, decides which parquet file is
+    # YAML only because the runner, not lpspec, decides which parquet file is
     # which. Doing it before the clock starts is the difference between timing
     # the engine and timing the harness; the linopy arm has no counterpart.
     sources, coords = _split_sources(case, paths)
 
     phases.mark('import')
-    ex = fk.build(case.model, sources, coords=coords)
+    ex = lps.build(case.model, sources, coords=coords)
     phases.mark('build')
     if opts.sink == 'lp':
         ex.write_lp(lp)
@@ -85,7 +85,7 @@ def _run_farkas(
     # Read after the clock stops: counts are the harness's, not the engine's.
     # `matrix` is this engine's frame and an older one exposes its own shape,
     # so the nonzero count is optional — this runner is also driven against a
-    # foreign checkout's `farkas`, where only the two totals are common.
+    # foreign checkout's `lpspec`, where only the two totals are common.
     tables = ex._tables()
     matrix = getattr(tables, 'matrix', None)
     counts = {
@@ -103,20 +103,20 @@ def _run_farkas(
 def _run_linopy(
     case: Case, paths: dict[str, str], lp: Path, phases: Phases, opts: argparse.Namespace
 ) -> dict[str, Any]:
-    from farkas import linopy as farkas_linopy
+    from lpspec import linopy as lpspec_linopy
 
     phases.mark('import')
     data, coords = case.eager_inputs(paths)
-    m = farkas_linopy.build(case.model, data=data, coords=coords)
+    m = lpspec_linopy.build(case.model, data=data, coords=coords)
     phases.mark('build')
     if opts.sink == 'lp':
         # progress defaults to `m._xCounter > 10_000`, so every rung above `xs`
-        # would render tqdm bars the farkas arm has no equivalent of — ~7% of
+        # would render tqdm bars the lpspec arm has no equivalent of — ~7% of
         # the write at 10M variables, and stderr noise in a harness that parses
         # stdout
         m.to_file(lp, io_api=opts.io_api, progress=False)
     else:
-        # the same seam as the farkas arm: both end holding a populated
+        # the same seam as the lpspec arm: both end holding a populated
         # `highspy.Highs` with `run()` never called
         _handle = m.to_highspy()
     phases.mark('emit')
@@ -124,24 +124,24 @@ def _run_linopy(
     return {'phases': phases.times, 'counts': counts}
 
 
-ARMS = {'farkas': _run_farkas, 'linopy': _run_linopy}
+ARMS = {'lpspec': _run_lpspec, 'linopy': _run_linopy}
 
 
 def _builder(case: Case, paths: dict[str, str], arm: str):
     """Just the build, callable repeatedly — no sink, no teardown timing."""
-    if arm == 'farkas':
-        import farkas as fk
+    if arm == 'lpspec':
+        import lpspec as lps
 
         sources, coords = _split_sources(case, paths)
 
         def build() -> None:
-            fk.build(case.model, sources, coords=coords).close()
+            lps.build(case.model, sources, coords=coords).close()
     else:
-        from farkas import linopy as farkas_linopy
+        from lpspec import linopy as lpspec_linopy
 
         def build() -> None:
             data, coords = case.eager_inputs(paths)
-            farkas_linopy.build(case.model, data=data, coords=coords)
+            lpspec_linopy.build(case.model, data=data, coords=coords)
 
     return build
 
@@ -187,23 +187,23 @@ def _split_sources(case: Case, paths: dict[str, str]) -> tuple[dict[str, str], d
 
 def _objective(case: Case, shape: Shape, paths: dict[str, str], arm: str) -> float:
     """Solve, and return the objective the parity gate compares."""
-    if arm == 'farkas':
-        import farkas as fk
+    if arm == 'lpspec':
+        import lpspec as lps
 
         sources, coords = _split_sources(case, paths)
-        with fk.solve(case.model, sources, coords=coords) as sol:
+        with lps.solve(case.model, sources, coords=coords) as sol:
             # two axes, not one: `status` is the coarse rollup ('ok') and the
             # solver's verdict is `termination_condition` ('optimal'). Testing
             # the wrong one aborted every run with a parity failure that was
             # really a vocabulary mismatch.
             if sol.termination_condition != 'optimal':
-                raise RuntimeError(f'farkas solve terminated {sol.termination_condition!r}, not optimal')
+                raise RuntimeError(f'lpspec solve terminated {sol.termination_condition!r}, not optimal')
             return float(sol.objective)
 
-    from farkas import linopy as farkas_linopy
+    from lpspec import linopy as lpspec_linopy
 
     data, coords = case.eager_inputs(paths)
-    m = farkas_linopy.build(case.model, data=data, coords=coords)
+    m = lpspec_linopy.build(case.model, data=data, coords=coords)
     m.solve(solver_name='highs', output_flag=False)
     return float(m.objective.value)
 
@@ -258,7 +258,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(record))
         return 0
 
-    with tempfile.TemporaryDirectory(prefix='farkas-bench-') as tmp:
+    with tempfile.TemporaryDirectory(prefix='lpspec-bench-') as tmp:
         lp = Path(tmp) / f'{case.name}-{shape.label}.lp'
         # the clock starts before the arm's own imports, so a lane that pulls in
         # xarray on first use pays for it visibly instead of inside `build`
