@@ -66,7 +66,7 @@ $$x_{i,j} \ge 0 \qquad \forall\thinspace i \in \mathcal{I},\enspace j \in \mathc
 
 ```yaml
 # Dantzig's transportation problem (GAMS model library #1). Optimum 153.675,
-# published with the model. See docs/ports.md.
+# published with the model. See docs/models/index.md.
 
 dimensions:
   plant:

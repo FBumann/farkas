@@ -1,7 +1,7 @@
 # Dantzig's transportation problem with economies of scale — GAMS model
 # library `trnspwl`. Shipping cost grows as sqrt(x) rather than linearly, so a
 # big consignment is cheaper per unit. Optimum 8.786852757777865, from linopy's
-# own piecewise formulation. See docs/ports.md.
+# own piecewise formulation. See docs/models/index.md.
 
 dimensions:
   plant:

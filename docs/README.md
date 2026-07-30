@@ -1,42 +1,33 @@
 # Docs
 
-**New here?** [Writing a model](guide.md) — five ideas, each shown in a model
-that runs. Then [the models](models/index.md) to browse, and
-[SPEC](SPEC.md) when you need the exact rule.
+This folder is both the published site and what you read on GitHub.
+[index.md](index.md) is the site's front door and this page is the folder view;
+start at [writing a model](guide.md), then [the rules](SPEC.md#0-the-laws) for
+the exact one.
 
-Every file here is also published as a site, built by
-[mkdocs-material](https://squidfunk.github.io/mkdocs-material/) from these same
-sources — this page is the view GitHub gives you when you browse the folder,
-and [index.md](index.md) is the site's front door. See *the docs* in
-[CONTRIBUTING.md](../CONTRIBUTING.md#the-docs) for the link conventions that
-make one set of files serve both.
+Two link rules make one set of files serve both places, and
+`tests/test_docs_site.py` enforces them: **inside `docs/`, link relatively**;
+**outside it, write the full GitHub URL** — the relative form resolves in the
+repo and 404s on the site, silently. The rest is in *the docs* in
+[CONTRIBUTING.md](../CONTRIBUTING.md#the-docs).
 
-| | |
-|---|---|
-| [**Writing a model**](guide.md) | the guide: dimensions, absence, topology, `roll`, the dim algebra — and what the language will *not* do |
-| [**Models**](models/index.md) | every model in the repo, what each exercises, and which two are checked against somebody else's optimum |
-| [**SPEC**](SPEC.md) | the reference: what a YAML file may contain and what it means |
-| [**Benchmarks**](benchmarks.md) | what a build costs against the eager lane, and how to reproduce it |
-| [**ARCHITECTURE**](ARCHITECTURE.md) | why it is shaped this way — the hard rules, the expressive ceiling, the module map |
-| [**ROADMAP**](ROADMAP.md) | what we build toward, and what we have decided never to build |
-| [ports.md](ports.md) | how the verified corpus works: the ladder it climbs, and the ledger of what a port could *not* say |
-| [benchmarks-scaling.html](benchmarks-scaling.html) | the benchmark run, plotted — open it locally; GitHub will not render it |
+**Generated, so do not hand-edit:** the construct matrix and the reference
+table in [models/index.md](models/index.md) (`tools/constructs.py`), the *"the
+same model, as math"* block on each model page (`tools/gallery_math.py`), and
+the tables in [benchmarks.md](benchmarks.md) (`bench.report`, `bench.plot`).
+The YAML and Python shown on the model pages and in the guide is asserted
+against the files that run, so a page cannot quietly drift from what it
+describes.
 
-Working on it rather than with it: [CONTRIBUTING.md](../CONTRIBUTING.md) and
-[RELEASING.md](../RELEASING.md) are at the repo root, where GitHub surfaces
-them when a PR is opened.
-
-**What is generated, and must not be hand-edited:** the construct matrix in
-[models/index.md](models/index.md) is read off each model's resolved plan by
-`tools/constructs.py`; the *"the same model, as math"* block on each model page
-is typeset from the model by `tools/gallery_math.py`; the tables in
-[benchmarks.md](benchmarks.md) and the numbers in the chart page come from
-`bench/results/` via `bench.report` and `bench.plot`. Everything else here is
-written by hand — and the YAML and Python shown on the model pages and in the
-guide is asserted against the files that run, so a page cannot quietly drift
-from the thing it describes.
-
-The one-line summary at the top of each model page *is* hand-written, and
-deliberately: it is a summary, read at a glance, and it is allowed to be loose
-in a way the generated block beneath it is not. Three of them had drifted far
-enough to be wrong before the block existed to check them against.
+**What stays hand-written, and what checks it.** A model page opens with a
+summary — a sentence and, on six pages, the math stated the way that problem is
+usually written. That is allowed to be loose in a way the generated block
+beneath it is not: it is read at a glance, and three summaries had drifted far
+enough to be wrong before the block existed to check them against. So the
+looseness is bounded rather than assumed. `tests/test_typeset.py` requires each
+of those six to **either** use only symbols the generator can reach — the
+hand-written notation is then an oracle *for* the typesetter, since the point
+of the format is that a gallery page could be generated — **or** name why it
+deviates. `tsp_mtz` states DFJ, the formulation the language refuses; `storage`
+writes `soc_{s-1}` where the model rolls and the generator writes the cyclic
+`⊖`. A page in neither list fails, so a new summary cannot quietly opt out.

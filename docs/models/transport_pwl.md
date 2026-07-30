@@ -122,7 +122,7 @@ $$\mathit{economies\_of\_scale\_seg}_{p,m,b} \in \{0, 1\} \qquad \forall\thinspa
 # Dantzig's transportation problem with economies of scale — GAMS model
 # library `trnspwl`. Shipping cost grows as sqrt(x) rather than linearly, so a
 # big consignment is cheaper per unit. Optimum 8.786852757777865, from linopy's
-# own piecewise formulation. See docs/ports.md.
+# own piecewise formulation. See docs/models/index.md.
 
 dimensions:
   plant:
@@ -200,6 +200,9 @@ is a modelling error, not a data error.
 
 ## Side by side
 
+<details>
+<summary><b>linopy</b> — <code>examples/ports/references/transport_pwl.py</code></summary>
+
 ```python
 from __future__ import annotations
 
@@ -256,6 +259,8 @@ def main() -> float:
 if __name__ == '__main__':
     main()
 ```
+
+</details>
 
 ## What it exercises
 

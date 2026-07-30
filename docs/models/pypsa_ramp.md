@@ -87,7 +87,7 @@ $$\mathit{neg\_rating}_{l} \le f_{t,l} \le \mathit{rating}_{l} \qquad \forall\th
 
 ```yaml
 # PyPSA linear optimal power flow, rung 2: rung 1 plus generator ramp limits.
-# Optimum 18200.0, from PyPSA itself. See docs/ports.md.
+# Optimum 18200.0, from PyPSA itself. See docs/models/index.md.
 
 dimensions:
   snapshot:
@@ -169,6 +169,9 @@ constraint, which is a different model.
 The reference builds the same network with PyPSA's own objects. The delta from
 rung 1 is two keyword arguments:
 
+<details>
+<summary><b>PyPSA</b> — <code>examples/ports/references/pypsa_ramp.py</code></summary>
+
 ```python
 from __future__ import annotations
 
@@ -245,6 +248,8 @@ def main() -> float:
 if __name__ == '__main__':
     main()
 ```
+
+</details>
 
 ## What it exercises
 

@@ -129,3 +129,49 @@ def test_the_home_page_still_carries_its_math_block():
         f'docs/index.md lost its {gallery_math.HOME_BEGIN}/{gallery_math.HOME_END} markers — '
         f'the LaTeX tabs are generated, and an unmarked page silently opts out'
     )
+
+
+# --------------------------------------------------------------------------
+# SPEC §0 — the laws
+# --------------------------------------------------------------------------
+
+SPEC = DOCS / 'SPEC.md'
+
+#: A `## 0. The laws` row: `| 7 | text | [§6](#6-absence) |`
+_LAW_ROW = re.compile(r'^\|\s*(\d+)\s*\|(.+?)\|([^|]*)\|\s*$', re.MULTILINE)
+
+
+def _laws() -> list[tuple[str, str, str]]:
+    text = SPEC.read_text()
+    start = text.index('## 0. The laws')
+    return _LAW_ROW.findall(text[start : text.index('\n## 1. ', start)])
+
+
+def _headings() -> set[str]:
+    """Every heading in SPEC.md as GitHub would slug it."""
+    slugs = set()
+    for line in SPEC.read_text().splitlines():
+        if line.startswith('#'):
+            title = line.lstrip('#').strip()
+            slugs.add(re.sub(r'[^a-z0-9 -]', '', title.lower()).replace(' ', '-'))
+    return slugs
+
+
+def test_every_law_cites_the_section_that_elaborates_it():
+    """A law is the canonical statement and the section below is the detail.
+
+    An unlinked law is the failure that would otherwise pass silently: mkdocs
+    fails the build on a *dead* anchor, but a row that cites nothing at all
+    resolves fine and quietly becomes a second, drifting home for the rule.
+    """
+    laws = _laws()
+    assert len(laws) >= 10, f'expected the law block to be found and populated; got {len(laws)} rows'
+
+    slugs = _headings()
+    broken = []
+    for number, _, citation in laws:
+        targets = re.findall(r'\]\(#([a-z0-9-]+)\)', citation)
+        if not targets:
+            broken.append(f'law {number} cites no section')
+        broken += [f'law {number} -> #{t}' for t in targets if t not in slugs]
+    assert not broken, f'laws whose citation does not resolve in SPEC.md: {broken}'

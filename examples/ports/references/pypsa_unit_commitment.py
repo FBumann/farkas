@@ -8,7 +8,7 @@
 # # coefficient lands in which row. pandas is only a floor: nothing recorded
 # # here is reshaped with it.
 # ///
-"""Reference for ``pypsa_unit_commitment``: PyPSA's own UC. See docs/ports.md.
+"""Reference for ``pypsa_unit_commitment``: PyPSA's own UC. See docs/models/index.md.
 
     uv run --script examples/ports/references/pypsa_unit_commitment.py
 

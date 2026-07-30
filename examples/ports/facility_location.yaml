@@ -1,7 +1,7 @@
 # Uncapacitated facility location, OR-Library instance `cap71`: 16 possible
 # warehouses, 50 customers. Open a set of warehouses and assign every customer
 # to one, trading fixed opening costs against the cost of serving from further
-# away. Optimum 932615.750, published by OR-Library. See docs/ports.md.
+# away. Optimum 932615.750, published by OR-Library. See docs/models/index.md.
 
 dimensions:
   warehouse:

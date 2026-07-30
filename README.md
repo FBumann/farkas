@@ -178,14 +178,18 @@ polars, pandas or xarray objects, Arrow tables, or parquet paths. MIT licensed.
 
 ## Status
 
-Alpha, pre-1.0. **Breaking changes land without a deprecation cycle.** When a
-construct is named wrong, a default is wrong, or a permissive input turns out
-to hide a silent wrong answer, it gets fixed rather than aliased — carrying a
+Alpha, pre-1.0.
+
+<!--status-start-->
+**Breaking changes land without a deprecation cycle.** When a construct is
+named wrong, a default is wrong, or a permissive input turns out to hide a
+silent wrong answer, it gets fixed rather than aliased — carrying a
 compatibility shim for every earlier spelling would defeat the point of a small
 language.
 
 In practice: pin an exact version if you depend on this, and read the
-[CHANGELOG](CHANGELOG.md) before upgrading — breaking commits are marked `!`,
+[changelog](https://github.com/FBumann/farkas/blob/main/CHANGELOG.md) before upgrading — breaking commits are marked `!`,
 and every one names the rewrite. What exists is tested; both lanes round-trip
 real models through solve, differentially verified against linopy. It is the
 *surface* that is not yet frozen, not the behaviour.
+<!--status-end-->

@@ -101,11 +101,19 @@ def test_every_math_block_opts_into_markdown_inside_html() -> None:
         )
 
 
-def test_the_construct_matrix_is_current() -> None:
-    """Generated from the resolved plan, so a model that gains a construct and
-    a table that does not mention it cannot both be committed."""
+def test_the_generated_evidence_tables_are_current() -> None:
+    """Both of the gallery's tables, which is the whole point of generating them.
+
+    The construct matrix comes from the resolved plan, so a model that gains a
+    construct and a table that does not mention it cannot both be committed.
+    The reference table comes from ``references.json``, the same file
+    ``test_ports.py`` asserts against — so the *published* optimum and the
+    *asserted* one cannot disagree. They used to be able to: the table was
+    hand-written, and hand-written twice, once here and once in the old
+    ``docs/ports.md``.
+    """
     page = constructs.PAGE.read_text()
-    assert constructs.rendered(page) == page, 'the construct matrix is stale — run `uv run python -m tools.constructs`'
+    assert constructs.rendered(page) == page, 'the gallery tables are stale — run `uv run python -m tools.constructs`'
 
 
 PORTS = Path(__file__).resolve().parent.parent / 'examples' / 'ports' / 'references'

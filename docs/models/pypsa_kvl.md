@@ -85,7 +85,7 @@ $$\mathit{neg\_s\_nom}_{l} \le f_{t,l} \le s^{\mathrm{nom}}_{l} \qquad \forall\t
 ```yaml
 # PyPSA linear optimal power flow, rung 5: passive AC lines under Kirchhoff's
 # voltage law, rather than links whose flow is chosen.
-# Optimum 17000.0, from PyPSA itself. See docs/ports.md.
+# Optimum 17000.0, from PyPSA itself. See docs/models/index.md.
 
 dimensions:
   snapshot:
@@ -171,13 +171,16 @@ different file.
 **Computing the basis is data preparation, and stays outside the language.**
 Finding a cycle basis is a graph algorithm — iteration over a structure
 discovered from data, which the
-[ceiling](../ARCHITECTURE.md#two-tiers-and-the-ceiling) refuses by design. The
+[ceiling](../design/ceiling.md#two-tiers-and-the-ceiling) refuses by design. The
 reference prints the rows PyPSA derived so the two can be checked against each
 other. They need only agree on the *cycle space*: PyPSA scales its coefficients
 for conditioning, and since the row is `= 0`, any nonzero multiple of a cycle
 says the same thing.
 
 ## Side by side
+
+<details>
+<summary><b>PyPSA</b> — <code>examples/ports/references/pypsa_kvl.py</code></summary>
 
 ```python
 from __future__ import annotations
@@ -259,6 +262,8 @@ def main() -> float:
 if __name__ == '__main__':
     main()
 ```
+
+</details>
 
 ## What it exercises
 

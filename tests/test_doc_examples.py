@@ -63,7 +63,13 @@ except ModuleNotFoundError:
     linopy_lane = None
 
 REPO = Path(__file__).resolve().parent.parent
-TRACKED = ['README.md', 'docs/SPEC.md', 'docs/ARCHITECTURE.md', 'docs/ROADMAP.md']
+TRACKED = [
+    'README.md',
+    'docs/SPEC.md',
+    'docs/ARCHITECTURE.md',
+    'docs/design/ceiling.md',
+    'docs/ROADMAP.md',
+]
 
 # Names an example may dot into, and the object that decides what is valid.
 # Anything else (pd, np, network, ...) is external and not our contract.

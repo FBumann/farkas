@@ -130,7 +130,7 @@ Read, in order:
 1. [the deliberate non-primitives in docs/ROADMAP.md](docs/ROADMAP.md) — parity with
    another tool is not by itself a reason to add anything, and several
    plausible-sounding features are refused there on purpose;
-2. [the ceiling in docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#two-tiers-and-the-ceiling) —
+2. [the ceiling in docs/design/ceiling.md](docs/design/ceiling.md#two-tiers-and-the-ceiling) —
    the admissibility test;
 3. [the extension checklists](docs/ARCHITECTURE.md#extension-checklists), which sit directly under that
    test. They stay there rather than moving here: *may I?* and *how?* are one
@@ -146,8 +146,10 @@ A port is a model somebody else already solved, said again in this language and
 checked against **an optimum that did not come from us**. It is the only test
 class that can catch a *shared misreading* — both lanes agreeing on a meaning
 the modeller did not intend — because every other test compares farkas against
-farkas. The corpus and its ladder are in [docs/ports.md](docs/ports.md); each port's
-page in [the gallery](docs/models/index.md) shows the model and a side-by-side
+farkas. The corpus, its ladder and the ledger of what a port could *not* say
+are in [docs/models/index.md](docs/models/index.md), where the reference table
+is generated from `examples/ports/references.json` — the same file the tests
+assert against. Each port's page there shows the model and a side-by-side
 against its reference.
 
 Four files per port:
@@ -177,10 +179,15 @@ docs/models/<name>.md                   the gallery page — maths, model, side-
 - **`rtol` is per port.** A published optimum is rounded; a solved one is not.
 - **Record the duals too, if the model has any.** An objective is one number;
   a dual vector is where two implementations disagree quietly — which side of a
-  constraint the price belongs to, and what sign an inequality's carries. The
+  constraint the price belongs to, and what sign an inequality carries. The
   reference script prints a `duals {...}` line keyed by constraint name; paste
   it into the port's entry as a `duals` block. A MILP has no dual solution, so
   it records none and the test skips rather than passing vacuously.
+- **Regenerate the gallery's tables**, don't write them: both the construct
+  matrix and the reference table in `docs/models/index.md` come from
+  `uv run python -m tools.constructs`, and a test fails if either is stale. The
+  reference table is rendered straight from `references.json`, so the published
+  optimum and the asserted one cannot disagree.
 - **A rung that cannot be said is also a result.** It goes in the ledger with a
   verdict — macro, primitive or escape — and feeds docs/ROADMAP.md. Do not work
   around a gap silently.

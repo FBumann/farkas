@@ -12,7 +12,7 @@ commitment.
 
 `min_up_time` and `min_down_time` are left at 0. They need a rolling window sum
 over a horizon, which is a different question from whether the language can say
-commitment at all — see [the ledger](../ports.md#ledger--what-a-port-could-not-say).
+commitment at all — see [the ledger](index.md#ledger--what-a-port-could-not-say).
 
 ## The model
 
@@ -109,7 +109,7 @@ $$\mathit{shut\_down}_{t,g} \in \{0, 1\} \qquad \forall\thinspace t \in \mathcal
 ```yaml
 # PyPSA unit commitment: binary status per generator per snapshot, with
 # start-up and shut-down charges. Optimum 24900.0, from PyPSA itself.
-# See docs/ports.md.
+# See docs/models/index.md.
 
 dimensions:
   snapshot:
@@ -223,6 +223,9 @@ agree on the schedule as well as the cost.
 
 ## Side by side
 
+<details>
+<summary><b>PyPSA</b> — <code>examples/ports/references/pypsa_unit_commitment.py</code></summary>
+
 ```python
 from __future__ import annotations
 
@@ -272,6 +275,8 @@ def main() -> float:
 if __name__ == '__main__':
     main()
 ```
+
+</details>
 
 ## What it exercises
 

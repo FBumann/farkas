@@ -63,7 +63,7 @@ $$\mathit{neg\_rating}_{l} \le f_{t,l} \le \mathit{rating}_{l} \qquad \forall\th
 
 ```yaml
 # PyPSA linear optimal power flow, rung 1: transport model, linear marginal
-# cost, no KVL. Optimum 22000.0, from PyPSA itself. See docs/ports.md.
+# cost, no KVL. Optimum 22000.0, from PyPSA itself. See docs/models/index.md.
 
 dimensions:
   snapshot:
@@ -220,7 +220,8 @@ boundary condition · 5 KVL.
 around quietly: PyPSA's `p_min_pu = -1` is a bound of `-rating`, an expression
 this language cannot yet put in `bounds:`. It ships as a `neg_rating` column
 instead, and the gap is [issue #31](https://github.com/FBumann/farkas/issues/31)
-with the verdict *primitive*. See the ledger in [ports.md](../ports.md).
+with the verdict *primitive*. See
+[the ledger](index.md#ledger--what-a-port-could-not-say).
 
 ---
 

@@ -114,7 +114,7 @@ $$0 \le \mathit{soc}_{t,s} \le \mathit{soc}^{\mathrm{max}}_{s} \qquad \forall\th
 ```yaml
 # PyPSA linear optimal power flow, rung 3: rung 2 plus a storage unit carrying
 # energy between snapshots. Non-cyclic — the horizon starts at soc_initial and
-# ends free. Optimum 15253.178322993519, from PyPSA itself. See docs/ports.md.
+# ends free. Optimum 15253.178322993519, from PyPSA itself. See docs/models/index.md.
 
 dimensions:
   snapshot:
@@ -255,6 +255,9 @@ result that merely looks sensible.
 
 ## Side by side
 
+<details>
+<summary><b>PyPSA</b> — <code>examples/ports/references/pypsa_storage.py</code></summary>
+
 ```python
 from __future__ import annotations
 
@@ -344,6 +347,8 @@ def main() -> float:
 if __name__ == '__main__':
     main()
 ```
+
+</details>
 
 ## What it exercises
 
