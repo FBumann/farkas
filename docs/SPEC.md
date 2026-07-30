@@ -56,7 +56,10 @@ value for a parameter's `dims: []`, one column for a variable's `foreach: []`,
 one row for a constraint's. Not a special case but the ordinary reading of a
 product over nothing, whose unit is a single coordinate rather than none. So a
 dummy dimension of size 1 is never how a scalar is written, and an objective —
-scalar by definition — needs no `foreach` at all.
+scalar by definition — needs no `foreach` at all. One gap, refused at build
+rather than answered wrongly: a scalar **variable** may not carry a `where`
+([#340](https://github.com/FBumann/lpspec/issues/340)) — put the condition on
+the constraints that use it.
 
 **`dimensions`** — the master coordinate index. Every dimension named anywhere
 must be declared. `dtype` ∈ {`float`, `int`, `str`, `datetime`}, default `str`.

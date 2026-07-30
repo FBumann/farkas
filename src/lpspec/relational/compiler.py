@@ -38,6 +38,12 @@ _RHS = '__rhs value__'
 _ORD_IN = '__ord in__'
 _ORD_OUT = '__ord out__'
 
+#: Carries the single row of the empty coordinate product. Polars cannot hold a
+#: frame with one row and no columns — collecting one reports ``(0, 0)`` — so the
+#: unit needs a column to exist in, and every path drops it by selecting the
+#: dims and the label instead.
+UNIT = '__unit__'
+
 
 @dataclass(frozen=True)
 class TermFragment:
@@ -157,10 +163,12 @@ class PolarsCompiler:
             table = self.dimensions[d].select(pl.col('val').alias(d), pl.col('ord').alias(_ordinal(d)))
             out = table if out is None else out.join(table, how='cross')
         if out is None:
-            # No dims is the *empty* cross join, whose unit is one row of no
-            # columns — not nothing. A scalar constraint is that one row, and
-            # `_positional` labels it by selecting a bare literal against this.
-            return pl.LazyFrame()
+            # No dims is the *empty* cross join, and its unit is one row — not
+            # nothing. That row has to be real rather than implied: a `where` on
+            # a scalar declaration filters this frame, and a bare
+            # `pl.LazyFrame()` has no row to survive the filter, so the
+            # declaration silently vanished. `UNIT` is what it survives in.
+            return pl.LazyFrame({UNIT: [0]})
         return out
 
     def parameter_join(

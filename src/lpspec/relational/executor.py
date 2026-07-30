@@ -29,7 +29,7 @@ from lpspec.errors import (
     sparse_divisor_message,
 )
 from lpspec.relational import plan, sinks
-from lpspec.relational.compiler import PolarsCompiler, TermFragment, _ordinal
+from lpspec.relational.compiler import UNIT, PolarsCompiler, TermFragment, _ordinal
 from lpspec.relational.frames import as_frame
 
 if TYPE_CHECKING:
@@ -599,7 +599,9 @@ class PolarsExecutor:
 
         materialised = (
             restricted.sort([_ordinal(d) for d in dims])
-            .select(*dims)
+            # No dims means the carrier is `UNIT`: selecting nothing would drop
+            # the one row this path exists to count.
+            .select(*(dims or (UNIT,)))
             .with_row_index(label, offset=start)
             .select(*dims, pl.col(label).cast(pl.Int64))
             .collect(engine='streaming')
@@ -707,6 +709,17 @@ class PolarsExecutor:
     def _build_variable(self, v: plan.VariableDeclaration) -> pl.DataFrame:
         """One variable's labelled frame, and its share of ``cols``."""
 
+        if not v.dims and v.where is not None:
+            # Absence has to reach the rows that reference the variable (law 7),
+            # and it cannot here: a scalar variable's presence frame is
+            # `select()` over no dims, which polars cannot hold as one row, so
+            # the restriction is silently lost and the constraint stays enforced
+            # with the term simply gone. Refused rather than answered wrongly.
+            raise LanguageError(
+                f"variable '{v.name}' has no dims and a where: a scalar variable cannot be "
+                f'masked (#340). Put the condition on the constraints that use it, or give '
+                f'the variable a dimension of size 1.'
+            )
         labelled, self._n_cols = self._label_frame(v.dims, v.where, 'var_label', self._n_cols)
         self._variables[v.name] = labelled.lazy()
 
