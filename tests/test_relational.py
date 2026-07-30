@@ -932,23 +932,17 @@ SCALAR_MASKED_MODEL = {
 def test_a_scalar_variable_may_not_be_masked():
     """The one case `foreach: []` on a variable does not cover (#340).
 
-    Absence has to reach the rows that reference the variable (law 7), and for
-    a scalar it cannot: presence is `select()` over no dims, and polars cannot
-    hold a frame with one row and no columns — collecting one reports (0, 0),
-    so present and absent are the same frame. The restriction is then lost and
-    `cap` stays enforced with the term simply gone, which is a wrong answer
-    with nothing said about it. The dimensional case has a column to key on
-    and drops the row correctly, which is what makes this the exception.
+    Presence is `select()` over no dims, and polars cannot hold one row of no
+    columns — collecting reports (0, 0), so present and absent are the same
+    frame. The restriction is lost and `cap` stays enforced with the term gone:
+    340.0 where the eager lane, and law 7, say 600.0. The dimensional case has
+    a column to key on, which is what makes this the exception.
 
-    Refused loudly instead. The eager lane accepts it and gets it right, so
-    this is a divergence — a smaller one than refusing every scalar variable,
-    which is what this lane did before, and a loud one either way.
+    `check()` catches it, so a model repository in CI does not need data bound
+    to see it.
     """
-    with pytest.raises(LanguageError) as exc:
-        lps.solve(
-            SCALAR_MASKED_MODEL,
-            {'cost': pl.DataFrame({'f': ['a', 'b'], 'value': [1.0, 2.0]}), 'budget': 120.0},
-        )
+    with pytest.raises(ValueError) as exc:
+        lps.check(SCALAR_MASKED_MODEL)
 
     assert '#340' in str(exc.value), 'the refusal must name where the fix is tracked'
     assert 'dimension of size 1' in str(exc.value), 'and the workaround'

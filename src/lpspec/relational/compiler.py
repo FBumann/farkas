@@ -163,11 +163,9 @@ class PolarsCompiler:
             table = self.dimensions[d].select(pl.col('val').alias(d), pl.col('ord').alias(_ordinal(d)))
             out = table if out is None else out.join(table, how='cross')
         if out is None:
-            # No dims is the *empty* cross join, and its unit is one row — not
-            # nothing. That row has to be real rather than implied: a `where` on
-            # a scalar declaration filters this frame, and a bare
-            # `pl.LazyFrame()` has no row to survive the filter, so the
-            # declaration silently vanished. `UNIT` is what it survives in.
+            # The empty cross join's unit is one row, not nothing — and the row
+            # has to be real, since a `where` on a scalar declaration filters
+            # this frame and nothing survives a filter.
             return pl.LazyFrame({UNIT: [0]})
         return out
 
