@@ -74,6 +74,21 @@ def test_an_unparseable_expression_is_an_error():
         parse_expression('a +')
 
 
+@pytest.mark.parametrize('spelling', ['inf', '.inf'])
+def test_inf_is_a_literal(spelling):
+    """Both spellings, since `bounds: {upper: .inf}` is how YAML writes it."""
+    assert parse_expression(f'p <= {spelling}').right == NumberNode(float('inf'))
+
+
+@pytest.mark.parametrize('name', ['inflow', 'influx', 'infeed', 'infrastructure', 'inf_max'])
+def test_a_name_may_begin_with_inf(name):
+    """`Literal('inf')` matched a prefix, so `inflow` parsed as `inf` and then
+    failed on `low` — reported as "Expected end of text", which names neither
+    the literal nor the real problem. `inflow` is the archetype: hydro models
+    have one, and nothing in the corpus did."""
+    assert parse_expression(f'a + {name}').right == NameNode(name)
+
+
 @pytest.mark.parametrize(
     ('text', 'node_type', 'attrs'),
     [
