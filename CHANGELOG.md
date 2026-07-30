@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.28](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.27...v0.0.1-alpha.28) (2026-07-30)
+
+
+### Bug Fixes
+
+* **relational:** the empty coordinate — scalar rows, columns and values ([#339](https://github.com/FBumann/lpspec/issues/339)) ([15c2892](https://github.com/FBumann/lpspec/commit/15c28927626e48dab2b8ffa54eac4b1cf00f93d0))
+
 ## [0.0.1-alpha.27](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.26...v0.0.1-alpha.27) (2026-07-30)
 
 
