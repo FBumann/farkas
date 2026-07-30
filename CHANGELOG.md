@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.34](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.33...v0.0.1-alpha.34) (2026-07-30)
+
+
+### Performance
+
+* **relational:** coordinate validation rides the aggregate already running ([#357](https://github.com/FBumann/lpspec/issues/357)) ([093a694](https://github.com/FBumann/lpspec/commit/093a694f6aa910a06b83e3a5ccfa81cf2d3d1f1d)), closes [#273](https://github.com/FBumann/lpspec/issues/273)
+
 ## [0.0.1-alpha.33](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.32...v0.0.1-alpha.33) (2026-07-30)
 
 
