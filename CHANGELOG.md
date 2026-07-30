@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.26](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.25...v0.0.1-alpha.26) (2026-07-30)
+
+
+### Bug Fixes
+
+* **parser:** the inf literal needs a word boundary ([#335](https://github.com/FBumann/farkas/issues/335)) ([c34bf1a](https://github.com/FBumann/farkas/commit/c34bf1a17732a0f5824a4276ad6226faa7c4d0c6)), closes [#302](https://github.com/FBumann/farkas/issues/302)
+
 ## [0.0.1-alpha.25](https://github.com/FBumann/farkas/compare/v0.0.1-alpha.24...v0.0.1-alpha.25) (2026-07-30)
 
 
