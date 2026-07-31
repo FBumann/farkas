@@ -8,7 +8,7 @@ both reaching it through :class:`~lpspec.relational.sinks.tables.ModelTables`
 costs one.
 
 The width is the part that gets forgotten, and forgetting it does not look
-like a bug. ``solver_direct`` chunked the constraint matrix by rows with no
+like a bug. The HiGHS solver chunked the constraint matrix by rows with no
 width at all, which reads as bounded and is not: a row is nine entries in one
 model and a hundred in another, so what the pass held tracked the model's
 shape rather than the budget — the one thing a *batched* pass exists to stop

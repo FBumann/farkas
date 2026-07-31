@@ -2,7 +2,7 @@
 
 Three-way differential on examples/transport.yaml:
   1. eager lpspec_linopy.build + solve (group_sum via linopy groupby)
-  2. lowered Program -> PolarsExecutor solver_direct, plus the LP file
+  2. lowered Program -> PolarsExecutor -> the `highs` solver, plus the LP file
   3. hand-built indicator-matrix linopy model (an independent oracle that
      involves no group_sum at all)
 """

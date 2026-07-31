@@ -143,11 +143,11 @@ def main() -> None:
 
         # --------------------------------------------------------------
         banner(5, 'sink: stream the frames to an LP file', 'relational/sinks/lp_file.py')
-        # Same frames, second sink. The other one (solver_direct, stage 6)
+        # Same frames, second sink. The other one (the `highs` solver, stage 6)
         # hands COO batches to highspy without ever forming a full CSR here.
         with tempfile.TemporaryDirectory() as tmp:
             lp = Path(tmp) / 'model.lp'
-            ex.write_lp(lp)
+            ex.write(lp)
             text = lp.read_text().splitlines()
             print(_indent('\n'.join(text[:12])))
             print(f'    ... ({len(text)} lines total)')

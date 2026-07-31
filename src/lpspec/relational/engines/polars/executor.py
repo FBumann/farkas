@@ -16,6 +16,7 @@ which is what :class:`~lpspec.relational.engines.polars.binding.BoundSources` sa
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
 import polars as pl
@@ -23,7 +24,6 @@ import polars as pl
 from lpspec.errors import (
     DataError,
     LanguageError,
-    LpspecError,
     null_bounds_message,
     sparse_divisor_message,
 )
@@ -35,7 +35,6 @@ from lpspec.relational.result import Result
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
-    from pathlib import Path
 
 
 #: The four frames a sink reads, as schemas. Stated here because the executor
@@ -59,14 +58,6 @@ _DTYPES = {
     'lb': pl.Float64, 'ub': pl.Float64, 'rhs': pl.Float64, 'coeff': pl.Float64,
     'sense': pl.String, 'vtype': pl.Enum(get_args(plan.VariableType)),
 }  # fmt: skip
-
-
-#: Deprecated. The engine's failures are now split between
-#: :class:`~lpspec.errors.LanguageError` (the program says something the
-#: engine cannot build) and :class:`~lpspec.errors.DataError` (a source is
-#: missing or the wrong shape). This alias is their common base, so an existing
-#: ``except RelationalBuildError`` keeps catching everything it used to.
-RelationalBuildError = LpspecError
 
 
 class PolarsExecutor:
@@ -309,23 +300,39 @@ class PolarsExecutor:
             objective_constant=self._obj_const,
         )
 
-    def write_lp(self, path: str | Path) -> None:
-        """Sink the built model to an LP file."""
-        sinks.write_lp_file(self._tables(), path)
+    def write(self, path: str | Path) -> None:
+        """Sink the built model to a file; the **suffix** picks the writer.
+
+        ``.lp`` today, ``.mps`` planned — an unknown suffix is an error naming
+        both sets. The caller names an output rather than a writer, which is
+        the one place this differs from :meth:`solve`: a file's format is a
+        property of the file, where which solver runs is not a property of
+        anything but the call.
+        """
+        path = Path(path)
+        sinks.writer(path.suffix.lower())(self._tables(), path)
 
     def solve(
         self,
         batch_rows: int | None = None,
         solver_options: Mapping[str, Any] | None = None,
+        solver_name: str = 'highs',
     ) -> Result:
-        """Sink the built model straight into HiGHS and solve it.
+        """Sink the built model straight into a solver and solve it.
 
-        ``solver_options`` is forwarded verbatim to the solver, the way
-        linopy's is — ``{'time_limit': 60, 'mip_rel_gap': 0.01}``.
-        ``batch_rows`` is the hand-off budget in elements, and defaults to the
-        sink's own — see :data:`~lpspec.relational.sinks.highs.HANDOFF_BUDGET`.
+        ``solver_name`` picks the sink — ``highs``, which ships with the
+        package, or ``gurobi``, which needs the ``[gurobi]`` extra. Spelled
+        the way linopy spells it, and a *caller's* choice at the call: no YAML
+        file can express it, because a model means the same thing whoever
+        solves it.
+
+        ``solver_options`` is forwarded verbatim to that solver, the way
+        linopy's is — ``{'time_limit': 60, 'mip_rel_gap': 0.01}``, and so
+        named in the solver's own vocabulary. ``batch_rows`` is the hand-off
+        budget in elements, and defaults to the sink's own — see
+        :data:`~lpspec.relational.sinks.highs.HANDOFF_BUDGET`.
         """
-        status, objective, primal, dual = sinks.solve_direct(self._tables(), batch_rows, solver_options)
+        status, objective, primal, dual = sinks.solver(solver_name)(self._tables(), batch_rows, solver_options)
         return Result(
             _status=status,
             _objective=objective,

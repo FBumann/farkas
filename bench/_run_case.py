@@ -60,7 +60,7 @@ def _run_lpspec(
     case: Case, paths: dict[str, str], lp: Path, phases: Phases, opts: argparse.Namespace
 ) -> dict[str, Any]:
     import lpspec as lps
-    from lpspec.relational.sinks.highs import build_highs
+    from lpspec.relational.sinks.solvers.highs import build_highs
 
     # The parameter/dimension split is harness bookkeeping — it re-parses the
     # YAML only because the runner, not lpspec, decides which parquet file is
@@ -72,7 +72,7 @@ def _run_lpspec(
     ex = lps.build(case.model, sources, coords=coords)
     phases.mark('build')
     if opts.sink == 'lp':
-        ex.write_lp(lp)
+        ex.write(lp)
     else:
         # the hand-off, and nothing past it. `run()` is never called: the
         # simplex is the same work whoever filled the model, so timing it would

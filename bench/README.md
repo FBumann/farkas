@@ -44,7 +44,7 @@ is the hard part.
 
 | | `lp` | `highs` |
 |---|---|---|
-| `lpspec` | `lps.build(...)` then `ex.write_lp(...)` | `lps.build(...)` then `build_highs(...)` |
+| `lpspec` | `lps.build(...)` then `ex.write(...)` | `lps.build(...)` then `build_highs(...)` |
 | `linopy` | `lpspec.linopy.build(...)` then `Model.to_file(io_api='lp-polars')` | `lpspec.linopy.build(...)` then `Model.to_highspy()` |
 
 **The `highs` sink stops at the handoff — `run()` is never called.** That is the
@@ -98,7 +98,7 @@ the other never does. The boundaries are therefore explicit:
 | **before the clock** | splitting parquet paths into parameters vs dimensions (harness bookkeeping — it re-parses the YAML only because the *runner* decides which file is which) | — |
 | `import` | `import lpspec` | `import lpspec.linopy` → linopy, xarray |
 | `build` | `lps.build(...)` — the engine scans the parquet itself | `read_parquet` + reshape + `lpspec.linopy.build(...)` |
-| `emit` | `ex.write_lp(path)` / `build_highs(ex._tables())` | `Model.to_file(path, io_api='lp-polars')` / `Model.to_highspy()` |
+| `emit` | `ex.write(path)` / `build_highs(ex._tables())` | `Model.to_file(path, io_api='lp-polars')` / `Model.to_highspy()` |
 | `teardown` | `ex.close()` — releases the built model | — (nothing to release) |
 | **after the clock** | row, column and nonzero counts off the built frames | `nvars` / `ncons` |
 
@@ -194,7 +194,7 @@ Data is generated deterministically (a blake2b digest of the shape seeds the
 RNG — `hash()` is salted per process and would give the two arms different
 numbers), cached under `bench/.cache/`, and feasible by construction.
 
-Storage (`roll`, the bounded-halo self-join) and a MILP through `solver_direct`
+Storage (`roll`, the bounded-halo self-join) and a MILP through the `highs` solver
 are the next rungs — see docs/benchmarks.md.
 
 ## The other harness: regression benchmarks

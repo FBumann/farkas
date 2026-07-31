@@ -69,7 +69,8 @@ already materialise.
 - **Reading results.** Duals have shipped; reduced costs and slacks ride the
   same join and have not. Derived results (LCOE, curtailment, emissions by
   group) are SQL over the solution tables.
-- **Infeasibility.** HiGHS has no IIS, so the answer is **elastic relaxation**
+- **Infeasibility.** HiGHS has no IIS — Gurobi does, but an answer only the
+  opt-in sink can give is not the answer — so it is **elastic relaxation**
   ([#80](https://github.com/FBumann/lpspec/issues/80)) — slacks with penalty
   costs, then a query of nonzero slacks grouped by block. Needs no solver
   feature and works on every sink. Taxed like a primitive, since new variables
@@ -119,7 +120,7 @@ That unblocks three things, in order of effort:
 |---|---|---|
 | **Semi-continuous** | nothing | HiGHS has `kSemiContinuous` natively and linopy has the oracle — [#383](https://github.com/FBumann/lpspec/issues/383) |
 | **SOS / indicator** | the capability model | `lp_file` carries SOS as a text section, Gurobi natively, HiGHS not at all — [#23](https://github.com/FBumann/lpspec/issues/23) |
-| **Quadratic** | the capability model, **then** a second solver | below |
+| **Quadratic** | the capability model — the second solver ships | below |
 
 **Quadratic is planned, not refused.** The cost side is settled and small, and
 the oracle is free — linopy's `QuadraticExpression` builds the comparison, which
@@ -129,9 +130,11 @@ The blocker is *where it can land*: HiGHS returns `kError` for
 `Hessian + integrality`, and `binary:`, `integer:` and nonconvex `piecewise:` all
 ship today, so on the default path quadratic conflicts with features already in
 the language. That is a capability finding, not a reason to refuse the math — so
-it needs the table above **and** a second solver on `solver_direct` without the
-exclusion (Gurobi, [#106](https://github.com/FBumann/lpspec/issues/106)).
-Landing the primitive before either ships math the default solver refuses.
+it needs the table above **and** a solver without the exclusion. The second
+solver is no longer the blocking half: the `gurobi` solver ships
+([#106](https://github.com/FBumann/lpspec/issues/106)), and Gurobi takes a
+Hessian alongside integrality. What is left is the capability table, without
+which landing the primitive would ship math the *default* solver refuses.
 
 Until then `piecewise: {convex: true}` and the epigraph pattern are the answer
 for convex 1-D curves — and they keep the LP duals, warm starts and MILP

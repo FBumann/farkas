@@ -35,7 +35,7 @@ def test_solve(dispatch_yaml, dispatch_frame_inputs):
         result.close()
 
 
-def test_build_context_manager_and_write_lp(dispatch_yaml, dispatch_frame_inputs, tmp_path):
+def test_build_context_manager_and_write(dispatch_yaml, dispatch_frame_inputs, tmp_path):
     sources, coords = dispatch_frame_inputs
     with lps.build(dispatch_yaml, sources, coords=coords) as ex:
         result = ex.solve()
@@ -149,8 +149,6 @@ def test_check_reports_language_errors_before_any_data_is_bound(
 
 def test_error_hierarchy_is_one_catchable_tree():
     """One ``except`` covers the package, and the model/run split is real."""
-    from lpspec.relational import RelationalBuildError
-
     for cls in (lps.LanguageError, lps.DataError):
         assert issubclass(cls, lps.LpspecError)
     for cls in (lps.SchemaError, lps.DimensionError, lps.PiecewiseExpansionError):
@@ -158,8 +156,19 @@ def test_error_hierarchy_is_one_catchable_tree():
     assert not issubclass(lps.DataError, lps.LanguageError)
     assert issubclass(lps.LpspecError, ValueError)
 
-    # the retired name still catches everything it used to
-    assert RelationalBuildError is lps.LpspecError
+
+def test_an_unknown_solver_is_refused_with_the_alternatives(dispatch_yaml, dispatch_frame_inputs):
+    """The set of solvers is closed, and a name outside it never falls back to
+    the default — solving with a solver other than the one asked for is the one
+    answer that cannot be right. Here rather than in ``test_gurobi_sink.py``,
+    which skips without the extra: the closed set is a property of the package,
+    not of gurobi. Refused before the build, as an unwritable suffix is."""
+    from lpspec.relational.sinks import SOLVERS
+
+    sources, coords = dispatch_frame_inputs
+    with pytest.raises(lps.LpspecError, match='unknown solver'):
+        lps.solve(dispatch_yaml, sources, solver_name='cplex', coords=coords)
+    assert set(SOLVERS) == {'highs', 'gurobi'}
 
 
 def test_multi_file_composition_reserved(dispatch_yaml):

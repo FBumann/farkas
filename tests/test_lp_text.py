@@ -22,7 +22,7 @@ import polars as pl
 import pytest
 
 import lpspec as lps
-from lpspec.relational.sinks.lp_file import _number, _signed
+from lpspec.relational.sinks.writers.lp_file import _number, _signed
 from tests.conftest import DISPATCH_MODEL, override
 
 #: Doubles that break naive formatters: repeating binary fractions, the
@@ -115,7 +115,7 @@ def test_written_bounds_are_bit_exact() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         lp = Path(tmp) / 'model.lp'
         with lps.build(DISPATCH_MODEL, data) as ex:
-            ex.write_lp(lp)
+            ex.write(lp)
         text = lp.read_text()
 
     section = text.split('bounds\n')[1].split('\nend')[0]
@@ -150,7 +150,7 @@ def test_one_model_writes_the_same_bytes_every_time(tmp_path: Path) -> None:
     with lps.build(schema, data) as ex:
         for attempt in range(3):
             lp = tmp_path / f'{attempt}.lp'
-            ex.write_lp(lp)
+            ex.write(lp)
             written.append(hashlib.sha256(lp.read_bytes()).hexdigest())
 
     assert len(set(written)) == 1, 'the same model wrote different bytes'
@@ -177,7 +177,7 @@ def test_section_keywords_survive_sections_far_larger_than_a_buffer(tmp_path: Pa
 
     lp = tmp_path / 'model.lp'
     with lps.build(schema, data) as ex:
-        ex.write_lp(lp)
+        ex.write(lp)
     lines = lp.read_text().splitlines()
 
     keywords = ['min', 'obj:', 's.t.', 'bounds', 'end']

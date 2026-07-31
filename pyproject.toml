@@ -73,6 +73,21 @@ linopy = [
     # solves and reads results back without it.
     "pandas>=2.2",
 ]
+# The `gurobi` sink (relational/sinks/gurobi.py). Opt-in, and the only sink
+# with a licence question: gurobipy's own wheel carries a size-limited licence
+# that solves small models out of the box, which is what the tests run on.
+#
+# scipy is not a convenience here. gurobipy's matrix API takes a *matrix
+# object* where HiGHS takes the three CSR arrays, so `scipy.sparse.csr_matrix`
+# is the only way to hand over a block of rows without one Python call per
+# row. Only the long-stable `csr_matrix` constructor is used, so its floor is
+# the oldest release we would test against rather than a feature; gurobipy's
+# is 11, the release whose status codes the sink's condition map is written
+# against — 17 is `MEM_LIMIT` from that version on.
+gurobi = [
+    "gurobipy>=11",
+    "scipy>=1.11",
+]
 
 [project.urls]
 repository = "https://github.com/FBumann/lpspec"
@@ -119,6 +134,11 @@ dev = [
     # the shim and the oracle, by reference: the pins live in the extra above,
     # so they cannot drift from what a user installing `lpspec[linopy]` gets
     "lpspec[linopy]",
+    # the second solver sink, by reference for the same reason. In `dev` so CI
+    # exercises it: gurobipy's wheel carries a size-limited licence, and the
+    # sink's tests stay under it. Its own tests skip where it is absent, so a
+    # contributor who does not want it can drop it without failing the suite.
+    "lpspec[gurobi]",
     # how pandas reads parquet, which the benchmark harness's linopy arm does
     # as part of the cost it is there to measure. Not needed by the engine —
     # the bare-install job runs the suite without it.

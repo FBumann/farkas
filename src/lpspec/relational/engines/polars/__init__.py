@@ -10,6 +10,6 @@ is* and *how it is built* was real but invisible, and a reader had to know
 which of the eleven modules under `relational/` were which.
 """
 
-from lpspec.relational.engines.polars.executor import PolarsExecutor, RelationalBuildError
+from lpspec.relational.engines.polars.executor import PolarsExecutor
 
-__all__ = ['PolarsExecutor', 'RelationalBuildError']
+__all__ = ['PolarsExecutor']

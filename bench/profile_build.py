@@ -106,7 +106,7 @@ def main() -> None:
             build = time.perf_counter() - started
             phase['now'] = 'emit'
             started = time.perf_counter()
-            executor.write_lp(Path(tmp) / 'model.lp')
+            executor.write(Path(tmp) / 'model.lp')
             emit = time.perf_counter() - started
 
     print(f'\n{args.case}/{args.size}: build {build:.2f}s, emit {emit:.2f}s')
