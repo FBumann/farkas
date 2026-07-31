@@ -13,6 +13,10 @@ ways depending on how much of the coordinate product survives the mask —
 arithmetic, factored, counted — and *those* must agree with each other, which
 is what makes this a module rather than three methods among twenty.
 
+**Which** of the three is a question about the plan, not about polars, so it is
+asked of `plan.free_prefix` and answered identically for the duckdb engine. Only
+the three executions live here.
+
 Its inputs are stated rather than reached for: a labeller needs the query
 (to build the masked product), the dimension cardinalities (to do the
 arithmetic), and the program (to know which dims a mask reads). Nothing else
@@ -26,7 +30,6 @@ from typing import TYPE_CHECKING
 
 import polars as pl
 
-from lpspec.errors import LanguageError
 from lpspec.relational import plan
 from lpspec.relational.engines.polars.compiler import UNIT, _ordinal
 
@@ -47,13 +50,7 @@ class Labeller:
     ) -> None:
         self._q = compiler
         self._card = dimension_cardinality
-        #: The dims each name in a where is read through — parameters by their
-        #: ``dims`` and variables by their ``foreach``. A bare name in a where
-        #: may be either, and the label planner only asks "which dims does this
-        #: mask touch". One flat mapping, because the language has one flat
-        #: namespace and the two cannot collide.
-        self._param_dims: dict[str, tuple[str, ...]] = {p.name: p.dims for p in program.parameters}
-        self._param_dims.update({v.name: v.dims for v in program.variables})
+        self._param_dims = plan.name_dims(program)
 
     def frame(
         self,
@@ -93,7 +90,7 @@ class Labeller:
                 labelled = frame.select(*dims, self.row_major(dims, start).alias(label))
                 return labelled.collect(engine='streaming'), start + rows
 
-            free = _free_prefix(dims, _predicate_dims(where, self._param_dims))
+            free = plan.free_prefix(dims, plan.predicate_dims(where, self._param_dims))
             if free:
                 return self._factored(dims, free, where, label, start)
 
@@ -191,52 +188,3 @@ class Labeller:
             position = position + pl.col(_ordinal(d)) * stride
             stride *= self._card[d]
         return position
-
-
-def _predicate_dims(where: plan.Predicate, param_dims: Mapping[str, tuple[str, ...]]) -> frozenset[str]:
-    """Which dims *where* reads.
-
-    A parameter is read through its own dims, a dimension comparison through
-    the dim it names, and a constant reads nothing. Anything unrecognised
-    raises: there is no such case today, and a new predicate that forgot to
-    answer here would silently mislabel a model.
-    """
-    if isinstance(where, plan.BooleanConstant):
-        return frozenset()
-    if isinstance(where, plan.DimensionComparison):
-        return frozenset({where.dimension})
-    if isinstance(where, (plan.ParameterComparison, plan.ParameterDefined)):
-        dims = frozenset(param_dims.get(where.parameter, ()))
-        # a parameter compared against another parameter reads both
-        value = getattr(where, 'value', None)
-        if isinstance(value, str) and value in param_dims:
-            dims |= frozenset(param_dims[value])
-        return dims
-    if isinstance(where, plan.VariableDefined):
-        # Read through the variable's own foreach, exactly as a parameter is
-        # read through its dims. `_free_prefix` then keeps its arithmetic path
-        # for the leading dims this mask cannot see, as for any other predicate.
-        return frozenset(param_dims.get(where.variable, ()))
-    if isinstance(where, (plan.And, plan.Or)):
-        return _predicate_dims(where.left, param_dims) | _predicate_dims(where.right, param_dims)
-    if isinstance(where, plan.Not):
-        return _predicate_dims(where.operand, param_dims)
-    raise LanguageError(
-        f'{type(where).__name__} is a predicate the label planner does not know how to read; '
-        'add it to _predicate_dims before using it in a where'
-    )
-
-
-def _free_prefix(dims: tuple[str, ...], touched: frozenset[str]) -> int:
-    """How many leading dims the mask does not read.
-
-    Leading, not merely absent: a label follows declaration order, so only a
-    prefix leaves the surviving set contiguous under each of its coordinates.
-    Returns 0 when the mask reads the first dim, which is the case that has to
-    count its survivors the slow way.
-    """
-    free = 0
-    while free < len(dims) and dims[free] not in touched:
-        free += 1
-    # every remaining dim is masked-or-not; the split only helps if something is left
-    return free if free < len(dims) else 0

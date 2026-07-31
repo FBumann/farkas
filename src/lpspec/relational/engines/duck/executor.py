@@ -91,6 +91,9 @@ class DuckExecutor(Engine):
         self._program: plan.Program | None = None
         self._var_tables: dict[str, str] = {}
         self._row_tables: dict[str, str] = {}
+        #: the dims each declared name is read through — what `plan.free_prefix`
+        #: needs to know which label path a mask allows
+        self._name_dims: dict[str, tuple[str, ...]] = {}
         self._var_labels = _Labels(self._con, self._var_tables)
         self._row_labels = _Labels(self._con, self._row_tables)
         self._n_cols = 0
@@ -129,6 +132,7 @@ class DuckExecutor(Engine):
         is what a caller's data has to survive whoever builds the model.
         """
         self._program = program
+        self._name_dims = plan.name_dims(program)
         bound = bind(program, sources)
         dims = {n: self._register(f'dim_{n}', f.collect()) for n, f in bound.dimensions.items()}
         params = {n: self._register(f'par_{n}', f.collect()) for n, f in bound.parameters.items()}
@@ -170,29 +174,30 @@ class DuckExecutor(Engine):
     ) -> tuple[str, int]:
         """The masked coord product of *dims* with a dense *label* from *start*.
 
-        Two paths, not the polars side's three. **Unmasked**, a row's label is
-        its position in the product — arithmetic on the ordinals, no sort and
-        nothing to count. **Otherwise** it is counted, which costs the ordered
-        window. The `_factored` middle path is an optimisation rather than a
-        semantics, and is left out here on purpose: it is the one place the
-        polars engine is *algorithmically* ahead, so including a half version
-        of it would flatter this port.
-        """
-        rel = self._q.frame(dims, where)
-        if where is None and not restrictions:
-            # row-major: the leading dim's ordinal times the width of the rest
-            terms: list[str] = []
-            stride = 1
-            for d in reversed(dims):
-                terms.append(f'{q(_ordinal(d))} * {stride}')
-                stride *= self._q.cardinality[d]
-            position = ' + '.join(reversed(terms)) if terms else '0'
-            cols = ', '.join(q(d) for d in dims) or q(UNIT)
-            sql = f'SELECT {cols}, ({position} + {start})::BIGINT AS {q(label)} FROM {rel.alias("p")}'
-            name = self._view(sql, 'lbl')
-            return name, start + math.prod(self._q.cardinality[d] for d in dims)
+        The same three paths the polars engine has, chosen by the same
+        function. **Unmasked**, a row's label is its position in the product —
+        arithmetic on the ordinals, no sort and nothing to count. **Masked but
+        factoring**, the survivors are a rectangle and the label is arithmetic
+        again over a ranked survivor set (:meth:`_factored`). **Otherwise** it
+        is counted, which costs the ordered window over the whole product.
 
-        carrier = rel
+        `plan.free_prefix` decides between them for both engines, because a
+        label is the solver's own column index: two engines choosing routes
+        independently is how they would come to build different models.
+        """
+        if not restrictions:
+            if where is None:
+                rows = math.prod(self._q.cardinality[d] for d in dims)
+                cols = ', '.join(q(d) for d in dims) or q(UNIT)
+                rel = self._q.frame(dims, None)
+                sql = f'SELECT {cols}, ({self._row_major(dims, start)})::BIGINT AS {q(label)} FROM {rel.alias("p")}'
+                return self._view(sql, 'lbl'), start + rows
+
+            free = plan.free_prefix(dims, plan.predicate_dims(where, self._name_dims))
+            if free:
+                return self._factored(dims, free, where, label, start)
+
+        carrier = self._q.frame(dims, where)
         for on, presence in restrictions:
             keep = ', '.join(f'l.{q(c)}' for c in carrier.columns)
             on_sql = ' AND '.join(f'l.{q(d)} IS NOT DISTINCT FROM r.{q(d)}' for d in on)
@@ -202,6 +207,32 @@ class DuckExecutor(Engine):
                 f'WHERE {on_sql})',
                 carrier.columns,
             )
+        return self._counted(carrier, dims, label, start)
+
+    def _row_major(self, dims: tuple[str, ...], start: int, alias: str = '') -> str:
+        """Row-major position in *dims*' coordinate product, offset by *start*.
+
+        The trailing dim has stride 1 and every other is the product of the
+        cardinalities to its right, so the position is a dot product against
+        the ordinals the frame already carries — no ordering imposed, because
+        the answer does not depend on the order rows arrive in. The polars twin
+        is `Labeller.row_major`, and both arithmetic paths reach a label
+        through it for the reason the label itself is written once.
+        """
+        prefix = f'{alias}.' if alias else ''
+        terms: list[str] = []
+        stride = 1
+        for d in reversed(dims):
+            terms.append(f'{prefix}{q(_ordinal(d))} * {stride}')
+            stride *= self._q.cardinality[d]
+        return ' + '.join([*reversed(terms), str(start)])
+
+    def _counted(self, carrier: Rel, dims: tuple[str, ...], label: str, start: int) -> tuple[str, int]:
+        """Rank the surviving rows of *carrier*: the ordered window, and a count.
+
+        The general answer and the expensive one — a global sort of the whole
+        product, which is what the two arithmetic paths exist to avoid.
+        """
         order = ', '.join(q(_ordinal(d)) for d in dims) or '1'
         cols = ', '.join(q(d) for d in dims) or q(UNIT)
         sql = (
@@ -209,10 +240,61 @@ class DuckExecutor(Engine):
             f'FROM {carrier.alias("c")}'
         )
         name = self._view(sql, 'lbl')
-        got = self._con.execute(f'SELECT count(*) FROM {q(name)}').fetchone()
+        return name, start + self._height(name)
+
+    def _factored(
+        self,
+        dims: tuple[str, ...],
+        free: int,
+        where: plan.Predicate,
+        label: str,
+        start: int,
+    ) -> tuple[str, int]:
+        """Labels for a mask that reads none of the first *free* dims.
+
+        A mask that cannot see the leading dims removes the same coordinates
+        under every one of their values, so the survivors are a rectangle: the
+        full product of the leading dims against one surviving set. Ranking
+        that set costs a window over the *set*, not over the product — on
+        `dispatch` it ranks 100 generators instead of 10M
+        ``(snapshot, generator)`` pairs, and the window is what a global sort
+        made the dominant cost of the build.
+
+        The label is then arithmetic again, through the same
+        :meth:`_row_major` the unmasked path uses: row-major over the leading
+        dims, times the width of the surviving set, plus a survivor's rank
+        within it. That is the same number the window would have counted,
+        because for each leading coordinate the same survivors appear in the
+        same order — which is what `tests/test_engine_parity.py` checks by
+        comparing the built model against the other engine's.
+        """
+        head, kept = dims[:free], dims[free:]
+        ranked = self._view(
+            f'SELECT {", ".join(q(d) for d in kept)}, '
+            f'(ROW_NUMBER() OVER (ORDER BY {", ".join(q(_ordinal(d)) for d in kept)}) - 1)::BIGINT AS "__rank" '
+            f'FROM {self._q.frame(kept, where).alias("k")}',
+            'srv',
+        )
+        width = self._height(ranked)
+        if width == 0:
+            # nothing survived anywhere, so there is no rectangle to describe.
+            # The counted path returns the right columns and dtypes for free.
+            return self._counted(self._q.frame(dims, where), dims, label, start)
+
+        product = self._q.frame(head, None)
+        picked = ', '.join([*(f'h.{q(d)}' for d in head), *(f's.{q(d)}' for d in kept)])
+        position = self._row_major(head, 0, alias='h')
+        sql = (
+            f'SELECT {picked}, (({position}) * {width} + s."__rank" + {start})::BIGINT AS {q(label)} '
+            f'FROM {product.alias("h")} CROSS JOIN {q(ranked)} AS s'
+        )
+        rows = math.prod(self._q.cardinality[d] for d in head) * width
+        return self._view(sql, 'lbl'), start + rows
+
+    def _height(self, table: str) -> int:
+        got = self._con.execute(f'SELECT count(*) FROM {q(table)}').fetchone()
         assert got is not None
-        height = got[0]
-        return name, start + height
+        return int(got[0])
 
     # -- declarations ---------------------------------------------------
 
