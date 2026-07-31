@@ -146,20 +146,23 @@ spelling even after quadratic lands. The scope, the lowering, and whether
 
 ## Track 4 — the memory axis
 
-The default engine holds the model it builds, so peak tracks the model rather
-than a number the caller sets. That is the right default and it is what makes
-the lifetime disappear from the API, but there is **no declared ceiling** — no
-way to say "build this within N gigabytes or fail".
+Both engines hold the model they build, so peak tracks the model rather than a
+number the caller sets. That is the right default and it is what makes the
+lifetime disappear from the API, but there is **no declared ceiling** — no way
+to say "build this within N gigabytes or fail".
 
-`LPSPEC_ENGINE=duckdb` **is not the answer**, and that is worth knowing before
-this track is picked up. The figure this section used to quote — 2.1–4.2x less
-memory on the write path — was measured on the engine the in-tree one was ported
-from, and the port has never reproduced it: at `e42b9a0` its peak lands between
-0.91x and 1.59x of the default engine's, lighter on two rungs of twelve and
-heavier on eight
+**Choosing an engine is not the answer**, and that is worth knowing before this
+track is picked up. The figure this section used to quote — 2.1–4.2x less
+memory on the write path — was measured on the engine the in-tree duckdb one
+was ported from, and the port has never reproduced it: at `e42b9a0` its peak
+lands between 0.91x and 1.59x of the polars engine's, lighter on two rungs of
+twelve and heavier on eight
 ([bench/duckdb-spike.md](https://github.com/FBumann/lpspec/blob/main/bench/duckdb-spike.md)).
 It was briefly ahead on *speed* at the top of the ladder; five optimisations on
-the default engine have since taken that back too.
+the polars engine have since taken that back too. duckdb is the default
+regardless — being behind on the ladder is what makes it the engine worth
+having under CI's instruments unasked — but the default is not what closes this
+gap and was never meant to be.
 
 **But it locates the ceiling, which is worth more than a ratio.** duckdb *does*
 have the knob this section asks for — `SET memory_limit`, and it spills past it.

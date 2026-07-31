@@ -4,8 +4,10 @@
 about the one thing that is duckdb's alone — that a build's queries read
 duckdb's own storage and never reach back into a Python object mid-plan.
 
-Reached through `LPSPEC_ENGINE`, the switch a caller has, and skipped when the
-extra is absent.
+Reached through `LPSPEC_ENGINE`, the switch a caller has, set explicitly rather
+than left to the default: these assertions are about this engine whatever the
+default happens to be, and the `--engine polars` pass must not turn them into
+assertions about the other one.
 """
 
 from __future__ import annotations
@@ -15,8 +17,6 @@ import pytest
 
 import lpspec as lps
 from lpspec.relational import engines
-
-pytest.importorskip('duckdb')
 
 MODEL = {
     'dimensions': {'i': {'dtype': 'int', 'values': [0, 1, 2]}},

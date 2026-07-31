@@ -1,6 +1,6 @@
 """The two engines, on the same YAML, must answer the same.
 
-`--engine duckdb` already runs the whole suite on the other engine, which is
+`--engine polars` already runs the whole suite on the other engine, which is
 the broad check. This is the narrow one: both engines in **one process**, on
 the same model, compared outright. It catches what a full-suite run cannot —
 a difference that is stable, so both runs pass their own assertions while
@@ -25,10 +25,8 @@ import pytest
 import lpspec as lps
 from lpspec.relational import engines
 
-pytest.importorskip('duckdb')
-
 ROOT = Path(__file__).resolve().parent.parent
-ENGINES = ('polars', 'duckdb')
+ENGINES = ('duckdb', 'polars')
 
 DISPATCH = {
     'p_max': pl.DataFrame({'generator': ['wind', 'solar', 'gas'], 'value': [10.0, 5.0, 100.0]}),
@@ -167,13 +165,13 @@ def test_the_env_var_is_the_whole_switch(monkeypatch):
     """
     assert 'engine' not in inspect.signature(lps.build).parameters
 
-    monkeypatch.setenv(engines.ENV_VAR, 'duckdb')
+    monkeypatch.setenv(engines.ENV_VAR, 'polars')
     with lps.build(ROOT / 'examples/dispatch.yaml', DISPATCH) as ex:
-        assert type(ex).__name__ == 'DuckExecutor'
+        assert type(ex).__name__ == 'PolarsExecutor'
 
     monkeypatch.delenv(engines.ENV_VAR)
     with lps.build(ROOT / 'examples/dispatch.yaml', DISPATCH) as ex:
-        assert type(ex).__name__ == 'PolarsExecutor'
+        assert type(ex).__name__ == 'DuckExecutor'
 
 
 def test_the_engine_option_is_not_silently_a_no_op(pytestconfig):
@@ -188,7 +186,7 @@ def test_the_engine_option_is_not_silently_a_no_op(pytestconfig):
     expected = {
         'polars': 'PolarsExecutor',
         'duckdb': 'DuckExecutor',
-        None: 'PolarsExecutor',
+        None: 'DuckExecutor',
     }[pytestconfig.getoption('--engine')]
     with lps.build(ROOT / 'examples/dispatch.yaml', DISPATCH) as ex:
         assert type(ex).__name__ == expected
@@ -203,5 +201,5 @@ def test_a_typo_in_the_env_var_says_where_it_came_from(monkeypatch):
 
 def test_an_unknown_engine_names_the_ones_that_exist(monkeypatch):
     monkeypatch.setenv(engines.ENV_VAR, 'nope')
-    with pytest.raises(ValueError, match=r"available: 'polars', 'duckdb'"):
+    with pytest.raises(ValueError, match=r"available: 'duckdb', 'polars'"):
         lps.build(ROOT / 'examples/dispatch.yaml', DISPATCH)

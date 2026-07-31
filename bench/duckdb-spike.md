@@ -24,12 +24,15 @@ was the only honest way to price it before a port existed. It is now an engine
 in the tree (`relational/engines/duck/`), so re-running is:
 
 ```bash
-uv sync --extra duckdb
-uv run python -m bench.run --arms lpspec duckdb \
-    --sizes xs s m l xl --sinks lp highs --repeat 2 --builds 0 \
-    --out bench/results/duckdb-spike.jsonl
-uv run python -m bench.report bench/results/duckdb-spike.jsonl --arms lpspec duckdb
+uv sync --group bench
+uv run pytest bench --arms lpspec polars --benchmark-memory \
+    --sizes xs s m l xl --sinks lp highs --builds 0 \
+    --benchmark-json=/tmp/engines.json
 ```
+
+`lpspec` is the *default* engine, so that pair is duckdb against polars. Every
+ratio in this file is written `duckdb ÷ polars` — by engine name rather than by
+arm, so it stays readable whichever one the default names.
 
 **The committed results file is the *old* engine**, kept as the measurement the
 argument was built on rather than re-baselined. §7's ratios are provenance, not
@@ -402,6 +405,11 @@ and the caller chooses, because the answer depends on which path a given
 workload is on and nothing in the library can know that. `LPSPEC_ENGINE` and
 not a parameter — an engine cannot change the answer, only what computing it
 costs, so it does not belong in the call that produces one.
+
+duckdb is the one an unset environment gets, which is a decision about
+*measurement* rather than about which is faster: the default is what CodSpeed,
+`bench.yml` and the unflagged CI pass all measure without being asked, and the
+engine that is behind is the one that needs to be under those instruments.
 
 That decision cost far less than §9's estimate implied, because most of an
 executor turned out not to be engine work: both sinks and the whole solution

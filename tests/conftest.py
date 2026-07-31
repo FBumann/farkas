@@ -61,23 +61,29 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         '--engine',
         default=None,
-        help="run the whole suite on this engine instead of the default ('duckdb' needs the extra). "
-        'Every test that reaches `lps.build` is then a test of that engine, which is what makes a '
-        'second one a lane rather than a demo.',
+        help='run the whole suite on this engine instead of the default. Every test that reaches '
+        '`lps.build` is then a test of that engine, which is what makes a second one a lane '
+        'rather than a demo.',
     )
 
 
 @pytest.fixture
 def engine_internals(pytestconfig: pytest.Config) -> None:
-    """Skip when the suite is running on an engine other than the default.
+    """Skip unless this run is on the polars engine.
 
     For the few tests that reach *inside* an engine — its compiler, its label
     strategies — rather than through `lps.build`. Another engine does not have
     to share those internals to be correct; it has to produce the same model,
     which every other test here already checks against the same YAML.
+
+    `--engine` unset means `DEFAULT_ENGINE`, not polars, so it is resolved
+    before the comparison: reading it as polars would run these against
+    whichever engine the default names.
     """
-    name = pytestconfig.getoption('--engine')
-    if name not in (None, 'polars'):
+    from lpspec.relational import engines
+
+    name = pytestconfig.getoption('--engine') or engines.DEFAULT_ENGINE
+    if name != 'polars':
         pytest.skip(f'reaches polars-engine internals; this run is on {name!r}')
 
 

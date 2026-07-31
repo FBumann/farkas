@@ -55,11 +55,18 @@ polars 1.43.0 · linopy 0.8.0.post1.dev140+g346943317 (the v1-semantics build,
 PyPSA/linopy#717) · highspy 1.15.1 · numpy 2.5.1. Parity gate: all six cases
 agree to 0.0e+00 relative (`fleet` to 4.6e-16) before anything is timed.
 
-*This lane replaced a duckdb engine, and the three-way comparison that decided
-it — speed against a settable memory ceiling — is in
-[#189](https://github.com/FBumann/lpspec/pull/189) and in git. It is not
-re-measured here: duckdb is no longer a dependency, and a column nobody can
-re-run is a claim with a shelf life.*
+**The `lpspec` column here is the polars engine, not the default one.** The run
+at `98f382d` predates the current default, and a table says what the run that
+produced it did. On duckdb the numbers are worse, and
+[bench/duckdb-spike.md](https://github.com/FBumann/lpspec/blob/main/bench/duckdb-spike.md)
+says by how much: `duckdb ÷ polars` is 1.3–3.4× on build and 0.91–1.59× on peak.
+Re-taking this page with `--arms lpspec linopy` on an idle machine puts the
+default engine back in the column.
+
+*This lane replaced an out-of-tree duckdb engine, and the three-way comparison
+that decided it — speed against a settable memory ceiling — is in
+[#189](https://github.com/FBumann/lpspec/pull/189) and in git. The in-tree
+engine is a port of it and has never reproduced its memory advantage.*
 
 ## Results
 
