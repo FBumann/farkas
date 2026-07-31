@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any
 from lpspec.language.validation import load_schema
 from lpspec.lowering import lower_program
 from lpspec.relational.engines import resolve as resolve_engine
+from lpspec.relational.sinks import solver, writer
 from lpspec.sources import tidy_sources
 
 if TYPE_CHECKING:
@@ -72,7 +73,7 @@ def build(
 
     ``sources`` maps parameter names to parquet paths or in-memory tables (and
     optionally dimension names to index tables). One build can feed more than
-    one sink: call ``ex.solve()`` and ``ex.write_lp(path)`` on the same object.
+    one sink: call ``ex.solve()`` and ``ex.write(path)`` on the same object.
 
     Which engine builds it is set by ``LPSPEC_ENGINE`` and is deliberately not
     a parameter here: the engines produce the same model integer for integer,
@@ -101,22 +102,30 @@ def solve(
     model: str | Path | dict[str, Any] | MathSchema,
     sources: Mapping[str, Any],
     solver_options: Mapping[str, Any] | None = None,
+    solver_name: str = 'highs',
     **build_kwargs: Any,
 ) -> Result:
     """Build and solve in one call.
 
-    ``solver_options`` is forwarded verbatim to the solver — the same shape
-    linopy takes, e.g. ``{'time_limit': 60, 'mip_rel_gap': 0.01}``. Build
-    options stay separate, because they govern *construction* and never reach
-    the solver.
+    ``solver_name`` is which solver sink to hand the built model to —
+    ``highs``, which ships with the package, or ``gurobi``, which needs the
+    ``[gurobi]`` extra. linopy's spelling, and a decision the *caller* makes:
+    the same file solves the same model either way, so nothing in the YAML
+    names a solver.
+
+    ``solver_options`` is forwarded verbatim to it — the same shape linopy
+    takes, e.g. ``{'time_limit': 60, 'mip_rel_gap': 0.01}``, in whichever
+    solver's vocabulary was chosen. Build options stay separate, because they
+    govern *construction* and never reach the solver.
 
     The executor stays attached to the returned :class:`Result`, whose label
     frames back ``result.primal(...)``. Nothing has to be released, though
     ``result.close()`` drops a large model early if you want the memory back.
     """
+    solver(solver_name)  # before the build, for the reason `write` checks the suffix first
     ex = build(model, sources, **build_kwargs)
     try:
-        return ex.solve(solver_options=solver_options)
+        return ex.solve(solver_options=solver_options, solver_name=solver_name)
     except BaseException:
         ex.close()
         raise
@@ -130,17 +139,15 @@ def write(
 ) -> Path:
     """Build and stream the model to a file; format from the suffix.
 
-    ``.lp`` is supported today; ``.mps`` is planned (same streaming
-    mechanics, see docs/ARCHITECTURE.md sinks).
+    ``.lp`` is supported today and ``.mps`` is planned, both answered by the
+    writer family rather than by a branch here — this verb owns *when* to
+    build, not what can be written.
+
+    The suffix is checked **before** the build, because a caller who named a
+    format nothing can write should not pay for a model first.
     """
     out = Path(out)
-    suffix = out.suffix.lower()
-    if suffix == '.lp':
-        with build(model, sources, **build_kwargs) as ex:
-            ex.write_lp(out)
-        return out
-    if suffix == '.mps':
-        msg = 'the mps sink is planned but not implemented yet (docs/ARCHITECTURE.md, sinks)'
-        raise NotImplementedError(msg)
-    msg = f"unsupported output format '{suffix}' — supported: .lp (planned: .mps)"
-    raise ValueError(msg)
+    writer(out.suffix.lower())
+    with build(model, sources, **build_kwargs) as ex:
+        ex.write(out)
+    return out

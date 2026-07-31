@@ -157,7 +157,7 @@ def raw_of(source: str | Path | dict[str, Any]) -> dict[str, Any]:
 def solve_lp_file(path: Path | str) -> float:
     """Objective HiGHS reaches reading the written LP file back from disk.
 
-    The third opinion in a differential: ``solver_direct`` builds the model
+    The third opinion in a differential: the ``highs`` solver builds the model
     through the HiGHS API, this one round-trips it through text, and a sink
     that writes a wrong file is otherwise invisible. Lives here rather than in
     ``tests.differential`` because highspy is a core dependency — a bare

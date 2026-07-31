@@ -274,6 +274,7 @@ Only the notation is a choice, and **How** shows the one that was made here.
 pip install lpspec  # the relational engine (polars, highspy)
 pip install "lpspec[linopy]"  # adds linopy + xarray + pandas: the shim, the
                               # oracle, and to_pandas / to_dataarray
+pip install "lpspec[gurobi]"  # adds the gurobi sink: solver_name='gurobi'
 ```
 
 !!! warning "Alpha, pre-1.0"

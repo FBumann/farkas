@@ -78,23 +78,42 @@ class Engine(ABC):
 
     # -- sinks: written against ModelTables, so neither engine owns them ---
 
-    def write_lp(self, path: str | Path) -> None:
-        """Sink the built model to an LP file."""
-        sinks.write_lp_file(self._tables(), path)
+    def write(self, path: str | Path) -> None:
+        """Sink the built model to a file; the **suffix** picks the writer.
+
+        ``.lp`` today, ``.mps`` planned — an unknown suffix is an error naming
+        both sets. The caller names an output rather than a writer, which is
+        the one place this differs from :meth:`solve`: a file's format is a
+        property of the file, where which solver runs is not a property of
+        anything but the call.
+        """
+        from pathlib import Path as _Path
+
+        out = _Path(path)
+        sinks.writer(out.suffix.lower())(self._tables(), out)
 
     def solve(
         self,
         batch_rows: int | None = None,
         solver_options: Mapping[str, Any] | None = None,
+        solver_name: str = 'highs',
     ) -> Result:
-        """Sink the built model straight into HiGHS and solve it.
+        """Sink the built model straight into a solver and solve it.
 
-        ``solver_options`` is forwarded verbatim to the solver, the way
-        linopy's is — ``{'time_limit': 60, 'mip_rel_gap': 0.01}``.
-        ``batch_rows`` is the hand-off budget in elements, and defaults to the
-        sink's own — see :data:`~lpspec.relational.sinks.highs.HANDOFF_BUDGET`.
+        ``solver_name`` picks the sink — ``highs``, which ships with the
+        package, or ``gurobi``, which needs the ``[gurobi]`` extra. Spelled
+        the way linopy spells it, and a *caller's* choice at the call: no YAML
+        file can express it, because a model means the same thing whoever
+        solves it. Neither is it an *engine's* choice — which is why this lives
+        here and not in either executor.
+
+        ``solver_options`` is forwarded verbatim to that solver, the way
+        linopy's is — ``{'time_limit': 60, 'mip_rel_gap': 0.01}``, and so
+        named in the solver's own vocabulary. ``batch_rows`` is the hand-off
+        budget in elements, and defaults to the sink's own — see
+        :data:`~lpspec.relational.sinks.solvers.highs.HANDOFF_BUDGET`.
         """
-        status, objective, primal, dual = sinks.solve_direct(self._tables(), batch_rows, solver_options)
+        status, objective, primal, dual = sinks.solver(solver_name)(self._tables(), batch_rows, solver_options)
         return Result(
             _status=status,
             _objective=objective,

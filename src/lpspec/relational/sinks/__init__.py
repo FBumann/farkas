@@ -1,29 +1,30 @@
-"""Sinks: how a built model leaves the engine.
+"""Sinks: how a built model leaves the engine. See README.md.
 
-docs/ARCHITECTURE.md's pipeline draws two boxes downstream of the executor. This
-package is those boxes — one module each, because that is where the fences
-are: ``highspy`` is an optional dependency of ``solver_direct`` alone, and a
-caller that only writes LP files should never import it.
+**Two families, and that is the whole mental model.** A *solver* takes the
+tables and runs them (``solvers/``, chosen by name); a *writer* takes the
+tables and renders them to a file (``writers/``, chosen by suffix). The
+families are directories rather than a convention, so
+``tests/test_architecture.py`` reads membership off the path.
 
-A sink reads :class:`ModelTables` and nothing else. Neither sink knows how the
-tables were filled, and the executor does not know how they are drained, which
-is what makes the planned ``mps`` sink a new module here rather than another
-method on the executor.
+``tables.py`` is what both read, and neither family imports the other. This
+module is the seam a caller uses: the contract, and the two lookups.
 """
 
-from lpspec.relational.sinks.highs import build_highs, solve_direct
-from lpspec.relational.sinks.lp_file import write_lp_file
+from lpspec.relational.sinks.solvers import SOLVERS, solver
 from lpspec.relational.sinks.tables import COLS, DTYPES, MATRIX, OBJ, ROWS, VTYPE, ModelTables
+from lpspec.relational.sinks.writers import PLANNED_WRITERS, WRITERS, writer
 
 __all__ = [
     'COLS',
     'DTYPES',
     'MATRIX',
     'OBJ',
+    'PLANNED_WRITERS',
     'ROWS',
+    'SOLVERS',
     'VTYPE',
+    'WRITERS',
     'ModelTables',
-    'build_highs',
-    'solve_direct',
-    'write_lp_file',
+    'solver',
+    'writer',
 ]

@@ -167,6 +167,7 @@ To see it rather than read it, `python examples/walkthrough.py` runs one small m
 pip install lpspec  # the relational engine (polars, highspy)
 pip install "lpspec[linopy]"  # adds linopy + xarray + pandas: the shim, the
                               # oracle, and to_pandas / to_dataarray
+pip install "lpspec[gurobi]"  # adds the gurobi sink: solver_name='gurobi'
 ```
 
 Not a solver wrapper, not a domain package, not a data-loading layer — bring
@@ -184,8 +185,9 @@ compatibility shim for every earlier spelling would defeat the point of a small
 language.
 
 In practice: pin an exact version if you depend on this, and read the
-[changelog](https://github.com/FBumann/lpspec/blob/main/CHANGELOG.md) before upgrading — breaking commits are marked `!`,
-and every one names the rewrite. What exists is tested: real models round-trip
+[changelog](https://github.com/FBumann/lpspec/blob/main/CHANGELOG.md) before upgrading — every entry links the PR that
+describes the break, and a retired spelling fails at load naming its rewrite
+rather than drifting on silently. What exists is tested: real models round-trip
 through solve, differentially verified against linopy. It is the
 *surface* that is not yet frozen, not the behaviour.
 <!--status-end-->

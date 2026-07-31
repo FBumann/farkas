@@ -18,6 +18,7 @@ lps.check('model.yaml')  # parse → validate → lower, no data bound
 schema = lps.load_schema('model.yaml')  # MathSchema
 
 result = lps.solve('model.yaml', sources, solver_options={'time_limit': 60})
+# ...or solver_name='gurobi', the other solver sink — same model either way
 result.status, result.termination_condition, result.objective
 result.is_ok  # rolled-up verdict: not an error, abort or refusal
 result.has_primal  # narrower: are there values to read
@@ -39,7 +40,7 @@ executor when one build should feed more than one sink:
 
 ```python
 ex = lps.build('model.yaml', sources)
-ex.write_lp('model.lp')
+ex.write('model.lp')
 result = ex.solve()
 ```
 
@@ -50,6 +51,15 @@ pandas / xarray, which ship with the `[linopy]` extra. The only build knob is
 `coords`; **`solver_options` is not a build knob** and is forwarded verbatim to
 the solver.
 
+**Which solver is a caller's choice, not the file's.** `solver_name` is
+`highs` (ships with the package) or `gurobi` (needs the `[gurobi]` extra), and
+nothing in the YAML names one — the same file means the same model whichever
+takes it. Options travel in the chosen solver's own vocabulary,
+`{'time_limit': 60}` for HiGHS against `{'TimeLimit': 60}` for Gurobi, because
+forwarding verbatim is the contract and translating names would mean holding an
+opinion about every option either one has. A name outside the two is an error
+listing them, never a quiet fallback to the default.
+
 Reading a result:
 
 | Rule | |
@@ -57,9 +67,9 @@ Reading a result:
 | **`is_ok` is not `has_primal`** | `is_ok` rolls up the termination condition; `has_primal` adds the solver's verdict on whether an incumbent exists, and is what every reader gates on. A MIP that hits `time_limit` before finding a feasible point is `ok` with nothing to read |
 | reading anyway | `NoSolutionError`; `objective` is `nan` |
 | `dual` **raises rather than zero-filling** | no values at all is `NoSolutionError`; values but no duals — any integer or binary variable makes them undefined — is `LpspecError`, because only this quantity is missing |
-| duals exist only on `solver_direct` | a model written to LP and solved elsewhere never passes back through here. Reduced costs and slacks ride the same join and are not exposed yet |
+| duals exist only where a solver ran | either solver sink hands them back through the same join; a model written to LP and solved elsewhere never passes back through here. Reduced costs and slacks ride that join too and are not exposed yet |
 | `to_dataset` costs what it says | each variable arrives dense over its own dims — name a subset, or use `to_parquet` |
-| `write` | `.lp` only today; `.mps` raises `NotImplementedError` |
+| `write` | the **suffix** picks the writer — `.lp` today, `.mps` a `NotImplementedError` naming it as planned, anything else a `ValueError` listing both sets. Checked before the build, so a format nothing can write costs no model |
 
 **The linopy shim** (`lpspec.linopy.build` / `.extend`, `[linopy]` extra) puts
 the same YAML math on a `linopy.Model` that already exists in memory. It is

@@ -94,6 +94,9 @@ lpspec_linopy.extend(m, 'ramp_constraint.yaml', data={...})  # YAML math onto an
 
 ## Development Guidelines
 
+- **No backwards compatibility** — the project is `0.0.1aN`. Rename, move and delete
+  outright; no aliases, no deprecation cycle, no shim. Written down once, in
+  *breaking changes are free* in [CONTRIBUTING.md](CONTRIBUTING.md).
 - This package is a **pure consumer** of linopy's public API. Never depend on linopy internals.
 - All validation should happen at load time with clear, actionable error messages.
 - Use `ruff` for linting/formatting, `pyrefly` for type checking, `pytest` for tests.

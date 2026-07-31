@@ -12,8 +12,11 @@ uv run pre-commit install  # once per clone
 ```
 
 `uv sync` installs the `[linopy]` extra too, because the differential test
-suite needs a second lane to compare against. The engine itself never imports
-linopy, xarray or pandas — see *the bare install* below.
+suite needs a second lane to compare against, and `[gurobi]`, because the
+second solver sink needs a second solver to compare against — gurobipy's wheel
+carries a size-limited licence, so those tests run on a plain checkout with no
+licence of your own. They skip where it is absent. The engine itself never
+imports linopy, xarray, pandas or gurobipy — see *the bare install* below.
 
 ## The loop
 
@@ -104,7 +107,7 @@ has to be a conventional-commit subject:
 ```
 feat: streaming executor for indexed constraints
 fix(parser): where clauses with a trailing comma
-refactor!: closed helper set, no monkey-patch
+refactor(api): closed helper set, no monkey-patch
 ```
 
 Types: `feat` `fix` `perf` `refactor` `docs` — these appear in the changelog —
@@ -112,11 +115,37 @@ plus `chore` `test` `ci` `build` `style` `revert`, which are hidden. A subject
 that will not parse fails the required check rather than silently dropping the
 entry. Fixing it is an edit to the PR, not a branch rewrite.
 
+**No `!`, and no `BREAKING CHANGE:` footer.** The same check refuses both while
+the version is pinned to the alpha stream, because a breaking marker moves the
+*base* version rather than the alpha counter — the accident is written up in
+[RELEASING.md](RELEASING.md). Describe the break in the PR body instead; the
+next section is why there is nothing for the version to announce.
+
 `main` is protected: no force-push, no deletion, squash-only through a PR, and
 the two required checks above. Approvals are not required, but the PR is.
 
 Versioning, the release PR, and how to force a specific version:
 [RELEASING.md](RELEASING.md).
+
+## Breaking changes are free
+
+**The project is `0.0.1aN` until the first official release, and holds no
+compatibility promise.** So a construct that is named wrong, a default that is
+wrong, or a permissive input that hides a silent wrong answer gets **fixed in
+place**: rename, move and delete outright — no alias for the old spelling, no
+`DeprecationWarning` cycle, no `legacy_` path beside the new one.
+
+Spend that effort on the error instead. A retired spelling should fail at load
+naming itself and its rewrite: that is checked, unlike a shim, and it is the
+whole migration story an alpha owes anyone.
+
+This binds **agents working in this repo** too, and it is the habit most often
+imported from elsewhere: asked to change something, change it — do not add
+backwards compatibility nobody requested.
+
+It is the *surface* that is unfrozen, not the behaviour. What exists is tested
+and differentially verified against linopy; a break is a deliberate rewrite, not
+licence for churn.
 
 ## Changing the language
 
