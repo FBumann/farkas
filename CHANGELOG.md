@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.59](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.58...v0.0.1-alpha.59) (2026-07-31)
+
+
+### Performance
+
+* **engine:** the read-back reads the label order rather than re-imposing it ([#446](https://github.com/FBumann/lpspec/issues/446)) ([53f8eb8](https://github.com/FBumann/lpspec/commit/53f8eb8781db1ba30c180db0b158628a22fb898d))
+
 ## [0.0.1-alpha.58](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.57...v0.0.1-alpha.58) (2026-07-31)
 
 
