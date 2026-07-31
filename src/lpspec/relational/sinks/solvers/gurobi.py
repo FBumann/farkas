@@ -1,8 +1,8 @@
 """The ``gurobi`` solver: COO blocks straight into gurobipy.
 
-The same hand-off as :mod:`~lpspec.relational.sinks.solvers.highs`, reading
-the same ``dense_columns``, so the two cannot disagree about the model they
-load. Two things differ:
+The same hand-off as :mod:`~lpspec.relational.sinks.solvers.highs`, reading the
+same ``dense_columns``, ``dense_rows`` and ``row_blocks``, so the two cannot
+disagree about the model they load. Two things differ:
 
 - **The matrix's currency.** HiGHS takes the three CSR arrays; gurobipy's
   matrix API takes a matrix *object*, so a block is wrapped in a
@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 import polars as pl
 
 from lpspec.errors import LpspecError
+from lpspec.relational.sinks.tables import SENSE_CODES
 from lpspec.relational.status import SolveStatus
 
 if TYPE_CHECKING:
@@ -162,8 +163,7 @@ def _load(
     x = m.addMVar(model.column_count, lb=lb, ub=ub, obj=cost, vtype=np.where(integral, 'I', 'C'))
 
     sense, rhs = model.dense_rows(gurobipy.GRB.INFINITY)
-    # indexed by SENSE_CODES, which is the order that pairing depends on
-    spelling = np.array([gurobipy.GRB.LESS_EQUAL, gurobipy.GRB.GREATER_EQUAL, gurobipy.GRB.EQUAL], dtype='<U1')
+    spelling = _spelled(gurobipy)
     blocks = []
     for lo, hi, a, starts in model.row_blocks(batch):
         block = scipy.sparse.csr_matrix(
@@ -177,6 +177,29 @@ def _load(
     m.ObjCon = model.objective_constant
     m.update()
     return m, x, blocks, environment
+
+
+#: Our spelling of a comparison against Gurobi's, by ``GRB`` attribute name —
+#: a name rather than a value because ``gurobipy`` is an optional import and
+#: this is module level.
+_GUROBI_SENSE = {'<=': 'LESS_EQUAL', '>=': 'GREATER_EQUAL', '==': 'EQUAL'}
+
+
+def _spelled(gurobipy: Any) -> Any:
+    """:data:`SENSE_CODES` as the characters ``addMConstr`` wants, by code.
+
+    Built from the mapping rather than written out in its order, so the two
+    cannot come to disagree: a wrong order here is a model whose comparisons
+    are silently permuted, which every solver would answer confidently. A
+    sense added to :data:`SENSE_CODES` and not to :data:`_GUROBI_SENSE` raises
+    instead.
+    """
+    import numpy as np
+
+    spelling = np.empty(len(SENSE_CODES), dtype='<U1')
+    for sense, code in SENSE_CODES.items():
+        spelling[code] = getattr(gurobipy.GRB, _GUROBI_SENSE[sense])
+    return spelling
 
 
 def _gurobipy() -> Any:
