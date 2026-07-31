@@ -204,11 +204,41 @@ exception noted under 2b.
   harder than it should be. But `var_label` is a `ROW_NUMBER()` over the rows
   surviving the `where` mask, and integrality does not decide which rows exist —
   so `changeColsIntegrality` is exactly as safe as `changeColsBounds`, with none
-  of the caveats above about `where`-read parameters or a changed `group_sum`.
+  of the caveats above about `where`-read parameters or a changed `group_sum` —
+  and the direct sink already makes that call to set integrality at build time,
+  so the work is a flag on the session rather than a new path.
   It belongs on the solver session ([#204](https://github.com/FBumann/lpspec/issues/204))
   as a sibling of value rebinding, not in the language: relax-and-fix, rounding
   heuristics and LP bounds on a MILP are all *how you solve* a model, not what
   the model says.
+- **2d — decomposition, and why the shape favours us.** Benders and successive
+  substitution are the case 2c is for, and the architecture is *better* suited
+  to them than an array-based layer is — worth stating, because the opposite is
+  the natural assumption. Decomposition wants the model as sparse triplets plus
+  label tables. That is not something we produce for the solver; it **is** the
+  model, so every iteration reads what we already hold rather than re-deriving
+  it. Each step of the algorithm is then a query rather than a scatter: the
+  master/sub split is a `GROUP BY` over the `A` frame
+  ([#39](https://github.com/FBumann/lpspec/issues/39) is exactly that analysis);
+  cut coefficients are `duals ⋈ subproblem rows`, and dual read-back has
+  shipped; and because `var_label` *is* the solver column index with no
+  remapping, a cut in master variables lands with zero translation. `foreach`
+  dims supply the block boundaries for free, which is the same concept
+  [#123](https://github.com/FBumann/lpspec/issues/123) names for scenarios and
+  pathways.
+
+  What is missing is small and already tracked: the session that holds the
+  handle ([#204](https://github.com/FBumann/lpspec/issues/204)), an `addRows` on
+  it — the call the direct sink already makes to feed the initial build, so
+  appending a cut is the same code path, not a new one — and #39. **Appending
+  costs nothing structurally**: adding rows moves no column label and renumbers
+  no existing row, so `primal` and `dual` keep working across cuts. Removal and
+  reindexing are what the label contract refuses, and decomposition needs
+  neither. The open question is not feasibility but **who writes the cut**,
+  since rule 6 refuses a Python modeling API — a shipped driver reading the
+  frames, or the blessed seam that composition
+  ([the ceiling](design/ceiling.md#composition-component-libraries)) already
+  forces. Same question, second direction; worth deciding once.
 - **3 — AST consumers** (#21): **math → LaTeX** (a tree walk, no data — the
   product *is* the declarative math, so it should render as typeset
   documentation), CLI `check`/`solve`/`write` (#35), observability (#34).

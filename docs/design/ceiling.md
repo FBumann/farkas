@@ -91,9 +91,23 @@ That distinction decides more than it looks. A dimension whose members are
 family — because a graph algorithm run before the build is design-bounded, the
 row above. The line is **temporal, not computational**: it does not matter how
 clever the Python is or whether its output size depends on the data, only
-whether it can run before the model is built. What is outside is work that
-needs the solver's *answer* to decide the next row — lazy cut generation, a
-solve loop — because there is no "before" for it to happen in.
+whether it can run before the model is built. What is outside **the plan** is
+work that needs the solver's *answer* to decide the next row — lazy cut
+generation — because there is no "before" for it to happen in.
+
+**Outside the plan is not outside the engine**, and the difference is the whole
+of decomposition. A plan cannot contain a loop; a *process* may loop over plans,
+each with its shape fixed before its own data. Rolling horizon is that shape and
+is in scope ([ROADMAP Track 2c](../ROADMAP.md#tracks-23--untaxed)); so are
+Benders and successive substitution. Nor does appending a cut cost the label
+contract the way removal would: `var_label` is a `ROW_NUMBER()` over the rows
+surviving the `where` mask, so adding *rows* moves no column and renumbers no
+existing row, and `addRows` is already how the direct sink feeds the initial
+build. What such a scheme still owes an answer on is **who writes the cut** —
+rule 6 refuses a Python modeling API, so either a decomposition driver ships
+reading the model frames, or the narrow seam for emitting affine rows discussed
+under [Composition](#composition-component-libraries) gets blessed. That is a
+scope question, not a ceiling one.
 
 This is a different property from how much a build costs, though the two meet at
 the escape hatch. That is why an `escape:` island (#38) is admissible where a
