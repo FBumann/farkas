@@ -118,10 +118,30 @@ class DuckExecutor(Engine):
         return name
 
     def _register(self, name: str, frame: pl.DataFrame) -> str:
-        # the frame itself, not `to_arrow()`: duckdb reads polars natively, and
-        # the round-trip through a pyarrow table is what used to drag pandas
-        # into a runtime that declares it a bridge out and not a dependency
-        self._con.register(name, frame)
+        """Copy *frame* into a table of its own, and return the table's name.
+
+        **Copied, not scanned in place.** A registered frame stays a Python
+        object: duckdb reads it through the buffer protocol from whichever
+        worker thread the scan lands on, and those threads need the GIL — which
+        the thread that called `execute` is holding while it waits. On a plan
+        with several scans of registered frames feeding one pipeline, that
+        deadlocks outright: `transport/l` reproduces it as a build that sits at
+        0% CPU indefinitely, while the same query over copies returns in 0.3 s.
+
+        Copying is not free — the frame and the table are both resident for the
+        length of one statement — but it buys a build that cannot stall, and
+        duckdb's own storage for every scan after the first.
+
+        The frame itself, not `to_arrow()`: duckdb reads polars natively, and
+        the round-trip through a pyarrow table is what used to drag pandas into
+        a runtime that declares it a bridge out and not a dependency.
+        """
+        source = f'__source {name}__'
+        self._con.register(source, frame)
+        try:
+            self._con.execute(f'CREATE TABLE {q(name)} AS SELECT * FROM {q(source)}')
+        finally:
+            self._con.unregister(source)
         return name
 
     def build(self, program: plan.Program, sources: Mapping[str, Any]) -> None:
