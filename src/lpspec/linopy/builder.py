@@ -457,8 +457,16 @@ def _helper_group_sum(array: Any, mapping: Any, *, into: str) -> Any:
         array = array.isel({dim: present.to_numpy()})
     if isinstance(array, xr.DataArray) or hasattr(array, 'groupby'):
         return array.groupby(group).sum()
-    msg = f"group_sum() does not support type '{type(array).__name__}'."
-    raise TypeError(msg)
+    raise _unsupported('group_sum()', array)
+
+
+def _unsupported(call: str, array: Any) -> TypeError:
+    """One wording for an operand shape a helper cannot take.
+
+    Reached only from a hand-built call: every helper's operands come from
+    ``_eval_ast``, so a lane running the language proper never sees this.
+    """
+    return TypeError(f"{call} does not support type '{type(array).__name__}'.")
 
 
 def _translation(over: str, by: float) -> Mapping[Hashable, int]:
@@ -487,8 +495,7 @@ def _helper_shift(array: Any, *, over: str, by: float, edge: str | float | None 
             return array.roll(amount, roll_coords=False)
         if hasattr(array, 'roll'):
             return array.roll(amount)
-        msg = f"shift(edge=wrap) does not support type '{type(array).__name__}'."
-        raise TypeError(msg)
+        raise _unsupported('shift(edge=wrap)', array)
     if isinstance(edge, str):
         # `wrap` is the only string the language has, and it is handled above;
         # resolution rejects every other one before a lane sees it.
@@ -503,8 +510,7 @@ def _helper_shift(array: Any, *, over: str, by: float, edge: str | float | None 
     if hasattr(array, 'shift'):
         shifted = array.shift(amount)
         return shifted if fill is None else semantics.vacated(shifted, fill)
-    msg = f"shift() does not support type '{type(array).__name__}'."
-    raise TypeError(msg)
+    raise _unsupported('shift()', array)
 
 
 #: Eager evaluation of every name in ``helpers.BUILTIN_NAMES``. The two must
@@ -555,6 +561,10 @@ def _eval_node(
     master_coords: dict[str, pd.Index],
     model: linopy.Model | None = None,
 ) -> xr.DataArray:
+    def evaluate(child: WhereNode) -> xr.DataArray:
+        """Recurse carrying this call's bindings — what the connectives need."""
+        return _eval_node(child, dataset, master_coords, model)
+
     if isinstance(node, BooleanLiteralNode):
         return xr.DataArray(node.value)
 
@@ -598,16 +608,12 @@ def _eval_node(
         return result.fillna(False).astype(bool)
 
     if isinstance(node, NotNode):
-        return ~_eval_node(node.operand, dataset, master_coords, model)
+        return ~evaluate(node.operand)
 
     if isinstance(node, AndNode):
-        left = _eval_node(node.left, dataset, master_coords, model)
-        right = _eval_node(node.right, dataset, master_coords, model)
-        return left & right
+        return evaluate(node.left) & evaluate(node.right)
 
     if isinstance(node, OrNode):
-        left = _eval_node(node.left, dataset, master_coords, model)
-        right = _eval_node(node.right, dataset, master_coords, model)
-        return left | right
+        return evaluate(node.left) | evaluate(node.right)
 
     assert_never(node)
