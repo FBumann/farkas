@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.49](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.48...v0.0.1-alpha.49) (2026-07-31)
+
+
+### Bug Fixes
+
+* **bench:** the build profiler names steps that still exist ([#406](https://github.com/FBumann/lpspec/issues/406)) ([e771686](https://github.com/FBumann/lpspec/commit/e7716863911578f85905a7be5667d7bbaf53c299))
+
 ## [0.0.1-alpha.48](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.47...v0.0.1-alpha.48) (2026-07-31)
 
 
