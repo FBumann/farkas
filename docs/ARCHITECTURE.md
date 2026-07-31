@@ -120,9 +120,7 @@ Eligibility is decided by **attempting the lowering** — `lower_program` return
 a `Program` or raises `lps.LanguageError` — so it cannot drift from what the
 engine supports. Errors split model from run: everything under `LanguageError`
 is decidable without data, `DataError` is what a source failed to supply, and
-both are `LinopyYamlError` (`errors.py`). `lps.check()` is exactly parse
-→ expand → validate → lower with no data bound, so a model repository can
-compile-check its math in CI. Expansion precedes validation in **both** lanes,
+both are `LinopyYamlError` (`errors.py`). Expansion precedes validation in **both** lanes,
 because a formulation emits declarations and those are language too — a stray
 dim in generated math is the same error as a stray dim in a written one.
 
@@ -155,8 +153,8 @@ judged.** That is the contract the waist is: `MathSchema` is complete —
 names typed, dims checked, degree decided — before a source is bound, so
 `show it` and `check it` are not cut-down versions of a build, they are the
 same model with the data arrow missing. `check` is the build's own front half
-run to completion (parse → expand → validate → lower) and stopped before
-binding, which is why it is a CI verb and costs seconds.
+run to completion and stopped before binding, which is why it is a CI verb,
+costs seconds, and needs nothing but the file.
 
 **Each box is a family, and [the table below](#the-python-surface) is its
 members** — including the ones nobody has built, which is the point: none of
@@ -176,17 +174,14 @@ than a second walk that could disagree about what the model says.
 `typeset.FORMATS` rather than a list that could fall behind: a consumer that
 needs no data needs no runner.
 
-That last sentence was prose for a while, and false: `typeset/` reached
-`api.load_schema`, so rendering a model imported the executor, the plan and
-polars. Nothing failed, because it was the one fence of the four with no test
-behind it. It has two now — a path-scoped import rule like the other three,
-and a check on the *transitive* closure, since a renderer that imports only
-`language/` still pays for polars if some language module does. Two properties
-carry the rest: **data
-enters at exactly one place**, which is why checking a model costs seconds and
-needs nothing but the file; and the waist is **closed**, which is what the
-ceiling in [docs/design/ceiling.md](design/ceiling.md) protects — a new consumer
-is free, a new primitive is taxed. What is planned, and why, is
+That claim is enforced twice, because a renderer that imports only `language/`
+still pays for polars if some language module does: a path-scoped import rule
+like the other three fences, plus a check on the **transitive** closure. Two
+properties carry the rest — **data enters at exactly one place**, which is why
+checking a model costs seconds and needs nothing but the file, and the waist is
+**closed**, which is what the ceiling in
+[docs/design/ceiling.md](design/ceiling.md) protects: a new consumer is free, a
+new primitive is taxed. What is planned, and why, is
 [docs/ROADMAP.md](ROADMAP.md).
 
 ### The Python surface
@@ -214,20 +209,12 @@ that says *no* needs nothing but the file, which is what makes it a CI verb.
 | | *derived results; re-solve with new numbers, same labels* | | |
 | **catch it** | tell a bad model from bad data | `LinopyYamlError` ⊃ `LanguageError` · `DataError` · `DimensionError` · `SchemaError` · `PiecewiseExpansionError` | — |
 
-**What the data arrow carries.** `solve` / `write` / `build` take
-`(model, sources)`; the shim takes `data=`. Either way it is a mapping, and
-**binding is by name at both levels**: every declared parameter must appear as
-a key or it is a `DataError` naming it, and inside a table the columns must be
-the parameter's declared dims. A value is a parquet path (scanned, never read
-here), any table exporting the Arrow PyCapsule protocol, or — for a parameter
-with no dims — a bare number. `coords=` supplies a dimension's labels when the
-file does not list them and no parameter table implies them.
-
-The one positional fallback is deliberate and narrow: a pandas Series whose
-index levels are *unnamed* takes the declared dims in order. Named levels are
-left alone and bind by name, because renaming them would transpose the data
-whenever two dims share a label space — silently, and past anything downstream
-that could catch it.
+**What the data arrow carries** is [SPEC §8](SPEC.md#8-data-binding) and is not
+restated here. The one structural fact: **binding is by name at both levels** —
+a mapping keyed by declared parameter, and inside each table, columns named for
+that parameter's declared dims. The single positional fallback (an *unnamed*
+pandas index) is narrow on purpose, because renaming a named level would
+transpose the data silently whenever two dims share a label space.
 
 `tests/test_architecture.py` pins all of it: `__all__` must match the table,
 **and** no public non-module attribute may exist outside it. Both directions,
@@ -247,20 +234,16 @@ static checks and CI's bare-install job proves the dependency claims.*
 
 **These rules constrain the language.** What a construct may say, which layer
 may know what, and what a file means on its own — each survives any engine, and
-each decides what can enter `docs/SPEC.md`. How much a build *costs* is a property of
-the engine, measured in [docs/benchmarks.md](benchmarks.md) and not a rule.
-It was one once, phrased around a `memory_limit` that only one engine had, and
-that made an implementation choice load-bearing in the language's rulebook.
+each decides what can enter `docs/SPEC.md`. How much a build *costs* is a
+property of the engine, measured in [docs/benchmarks.md](benchmarks.md), and
+deliberately not a rule: a cost phrased as a rule makes one implementation's
+choice load-bearing in the language's rulebook.
 
 0. **The layers are ordered, and imports prove it.** Every module imports only
    downward, at module level, with **no exception at all**:
    `DELIBERATE_LAZY_IMPORTS` in `tests/test_architecture.py` is empty, and an
-   undeclared in-function import fails the build. It held one entry until
-   recently — `lowering.py` reached `piecewise.py` lazily, because a
-   formulation expands *before* lowering while its link check asked lowering
-   for a verdict. That check was really about **degree**, which is language;
-   asked of `language/degree.py` instead, the cycle is gone rather than
-   deferred, and a lazy import is once again only ever a leftover.
+   undeclared in-function import fails the build. A lazy import here is only
+   ever a leftover — a cycle to remove, not to defer.
 1. **Core AST is the whole language.** Both backends consume only core AST;
    macros, named expressions and `piecewise:` are expanded away before dispatch,
    and the plan/query/xarray are backend-private. The AST crossing that seam is **fully
@@ -313,7 +296,7 @@ lazy frames and reads nothing; `executor.py` fills the model frames; `sinks/`
 drains them. Two more sit beside the executor rather than inside it, because
 each answers a question the executor merely *uses*: `labels.py` decides which
 coordinate gets which solver index, and `result.py` is what a caller reads a
-solve back through. The remaining four are not on the spine and the diagram
+solve back through. The remaining five are not on the spine and the diagram
 does not draw them — `plan.py` is the vocabulary the spine speaks, `frames.py`
 and `status.py` are the two boundaries (a caller's table in, a solver's
 verdict out), and `chunking.py` and `data_validation.py` are single rules
@@ -415,11 +398,11 @@ than discovered at solve time.
 | `sources.py` | bind runtime data (parquet paths / in-memory tables) to a validated schema; the `convex:` curvature guard, which is the one check that needs values |
 | `lowering.py` | core AST → logical plan (defines the relational subset) |
 | `errors.py` | the exception hierarchy; the one module either fenced side may import |
+| `_notes.py` | attach context to an exception on the way out; no package imports, no opinions |
 | `relational/plan.py` | frozen logical-plan dataclasses |
 | `relational/frames.py` | the boundary — caller tables in, via the Arrow PyCapsule protocol |
 | `relational/compiler.py` | plan → lazy frames; pure, reads nothing |
 | `relational/chunking.py` | how a batched pass sizes its chunk: budget ÷ the width of one unit |
-| `_notes.py` | attach context to an exception on the way out; no package imports, no opinions |
 | `relational/status.py` | solve outcome on two axes; linopy's vocabulary, copied not imported |
 | `relational/labels.py` | which coordinate gets which solver index; three routes to one number, which must agree |
 | `relational/binding.py` | a caller's sources → `BoundSources`, the frozen frames every query is written against |
@@ -458,49 +441,25 @@ A fence says what may not happen; it does not say what belongs. The test is:
 
 Not "is it about syntax", not "does it run early" — *would a second opinion be
 wrong?* Every "one implementation each" rule in this file is that test applied:
-names resolve once (`resolution.py`) because two lanes resolving separately
-disagreed three ways; the helper set is closed (`helpers.py`) and a test proves
-both lanes implement exactly it; a primitive's dim rule lives only in
-`dimensions.py` and lowering **asks** for the verdict rather than deciding
-again; degree lives only in `degree.py` for the same reason.
+names resolve once (`resolution.py`), the helper set is closed (`helpers.py`)
+and a test proves both lanes implement exactly it, a primitive's dim rule lives
+only in `dimensions.py` with lowering **asking** for the verdict rather than
+deciding again, and degree lives only in `degree.py` — nothing about `x * y` is
+relational, and the ceiling doc says outright that **degree is not a property of
+the plan**. `piecewise.py` is in `language/` by the same test: a formulation
+emits declarations, and declarations are language.
 
-That last one was the counter-example that produced the rule. Degree 1 is the
-*first* clause of the ceiling and it lived in `lowering.py` — so the eager lane
-kept a hand-copy of one refusal sentence and delegated another to linopy, and
-one language rule had two spellings with only one of them tested. Nothing about
-`x * y` is relational; the ceiling doc says outright that **degree is not a
-property of the plan**. It was in a consumer because that is where it was first
-needed, which is how this kind of drift always starts.
-
-**`piecewise.py` was the same story, one layer up.** It sat flat, outside
-`language/`, on the grounds that it emitted declarations (language) but
-consulted `lowering.check_core_subset` to do it (plan) — so a construct the
-SPEC documents lived outside the directory that owns the language, a formulation
-running in *every* lane enforced what a **plan node** can represent, and
-`lowering.py` had to import it back lazily. One cycle, one misplaced file, one
-fence crossed, all from a single call.
-
-The call turned out to be about **degree**. Its two tested cases are `p ** 2`
-and `p * p`; everything else `check_core_subset` would have caught — dim rules,
-call shapes, unknown helpers — resolution and `dimensions.py` already answer.
-So `degree.check_expression` states it where degree lives, the error still names
-the link the user wrote rather than the `_link0` the expansion generates, and
-`piecewise.py` moved into `language/` where the SPEC always implied it was.
-The lazy import went with it: `DELIBERATE_LAZY_IMPORTS` is empty.
+The test cuts the other way too, which is what keeps it from swallowing
+everything. `lowering.py` legitimately refuses **plan shapes** — `shift(by=)`
+must be an integer literal, `group_sum(by=)` a declared coordinate — because
+those are about what a plan node can represent, and a second opinion about them
+is not a bug, it is the other lane's own business. What a consumer may not do is
+state a rule about the *language* that another consumer then has to restate.
 
 The corollary is what the top level is *for*. A module stays flat when it is
 legitimately **both** halves: `lowering.py` reads the AST and writes the plan,
 `sources.py` binds data to a validated schema, `api.py` runs the lot. That is a
-real category and it is now a small one — a flat module should be arguable, and
-`piecewise.py` was not.
-
-Applying the test to a consumer's own refusals splits them cleanly. `lowering.py`
-still refuses **plan shapes** — `shift(by=)` must be an integer literal, and
-`group_sum(by=)` a declared coordinate — because those are about what a plan
-node can represent, and a second opinion about them is not a bug, it is just the
-other lane's business. What it no longer does is state a rule about the
-*language* that another consumer then has to restate, or offer one for a
-formulation to borrow.
+real category and a small one — a flat module should be arguable.
 
 ### Naming across the layers
 
