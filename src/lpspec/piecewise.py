@@ -137,17 +137,22 @@ def _validate_block(schema: MathSchema, name: str, pw: PiecewiseBlock) -> tuple[
             if d not in frame:
                 frame.append(d)
 
-    for emitted in (f'{name}_lam', f'{name}_seg'):
-        if emitted in schema.variables:
-            raise PiecewiseExpansionError(f"{ctx}: emitted variable '{emitted}' collides with a declared variable")
-    for i in range(len(pw.links)):
-        if f'{name}_link{i}' in schema.constraints:
-            raise PiecewiseExpansionError(
-                f"{ctx}: emitted constraint '{name}_link{i}' collides with a declared constraint"
-            )
-    for emitted in (f'{name}_convexity', f'{name}_pick', f'{name}_adjacency'):
-        if emitted in schema.constraints:
-            raise PiecewiseExpansionError(f"{ctx}: emitted constraint '{emitted}' collides with a declared constraint")
+    # Every name the expansion will emit, checked against what the file already
+    # declares. One list per kind rather than one loop per name family: a new
+    # emitted declaration is then a name here, not a fourth loop to remember.
+    emitted_constraints = (
+        f'{name}_convexity',
+        f'{name}_pick',
+        f'{name}_adjacency',
+        *(f'{name}_link{i}' for i in range(len(pw.links))),
+    )
+    for kind, emitted, declared in (
+        ('variable', (f'{name}_lam', f'{name}_seg'), schema.variables),
+        ('constraint', emitted_constraints, schema.constraints),
+    ):
+        for one in emitted:
+            if one in declared:
+                raise PiecewiseExpansionError(f"{ctx}: emitted {kind} '{one}' collides with a declared {kind}")
     return tuple(frame)
 
 
