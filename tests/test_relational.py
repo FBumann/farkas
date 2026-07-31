@@ -36,7 +36,6 @@ from lpspec.relational.plan import (
     Variable,
     VariableDeclaration,
 )
-from lpspec.language.schema import MathSchema
 from tests.conftest import by_coord, solve_lp_file
 from tests.differential import RTOL, differential
 from tests.oracle import linopy, pd, transport_eager_objective, xr

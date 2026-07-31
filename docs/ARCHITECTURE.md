@@ -289,6 +289,7 @@ than discovered at solve time.
 | `language/expansion.py` | named-expression / macro substitution (pre-dispatch) |
 | `language/resolution.py` | one flat namespace; `NameNode` → typed `Variable`/`Parameter`/`Dimension` nodes |
 | `language/dimensions.py` | static dim-set checking over the resolved AST |
+| `language/degree.py` | degree 1: the ceiling's first clause, asked by both lanes and stated by neither |
 | `language/helpers.py` | the closed set of built-in operators: their *names* and *call shapes* — no registry |
 | `language/validation.py` | load-time: parse, expand, resolve, check everything |
 | `piecewise.py` | `piecewise:` → λ-formulation declarations + curvature guard |
@@ -324,13 +325,44 @@ AST and writes text, and reaches neither the plan nor any data.
 stepped over by naming a file differently.
 
 `language/` and `relational/` are the two halves of the waist and their fences
-point the same way — outward, at `errors.py`, the one leaf both may import. The
-modules left at the top level are the ones that are legitimately *both*:
-`lowering.py` reads the AST and writes the plan, `piecewise.py` emits
-declarations but consults the subset test to do it, `sources.py` binds data to
-a validated schema, and `api.py` runs the lot. A module that belongs to neither
-side is a module that has to sit on the line, and the flat namespace is where
-it sits.
+point the same way — outward, at `errors.py`, the one leaf both may import.
+
+### What counts as language
+
+A fence says what may not happen; it does not say what belongs. The test is:
+
+> **A rule is language iff two consumers answering it separately would be a
+> bug.**
+
+Not "is it about syntax", not "does it run early" — *would a second opinion be
+wrong?* Every "one implementation each" rule in this file is that test applied:
+names resolve once (`resolution.py`) because two lanes resolving separately
+disagreed three ways; the helper set is closed (`helpers.py`) and a test proves
+both lanes implement exactly it; a primitive's dim rule lives only in
+`dimensions.py` and lowering **asks** for the verdict rather than deciding
+again; degree lives only in `degree.py` for the same reason.
+
+That last one was the counter-example that produced the rule. Degree 1 is the
+*first* clause of the ceiling and it lived in `lowering.py` — so the eager lane
+kept a hand-copy of one refusal sentence and delegated another to linopy, and
+one language rule had two spellings with only one of them tested. Nothing about
+`x * y` is relational; the ceiling doc says outright that **degree is not a
+property of the plan**. It was in a consumer because that is where it was first
+needed, which is how this kind of drift always starts.
+
+The corollary is what the top level is *for*. A module stays flat when it is
+legitimately **both** halves: `lowering.py` reads the AST and writes the plan,
+`piecewise.py` emits declarations (language) but consults the subset test to do
+it (plan), `sources.py` binds data to a validated schema, `api.py` runs the lot.
+That is a real category, not a leftovers bin — and it is why `piecewise.py` is
+not in `language/` despite `piecewise:` being a construct the SPEC documents.
+
+Applying the test to a consumer's own refusals splits them cleanly. `lowering.py`
+still refuses **plan shapes** — `shift(by=)` must be an integer literal, and
+`group_sum(by=)` a declared coordinate — because those are about what a plan
+node can represent, and a second opinion about them is not a bug, it is just the
+other lane's business. What it no longer does is state a rule about the
+*language* that another consumer then has to restate.
 
 ### Naming across the layers
 
@@ -387,10 +419,11 @@ declared once) → eager helper → plan node + locality class → executor →
 lowering case → differential test on both sinks → SPEC §5/§7, and this file if
 structural.
 
-Two things are deliberately *not* per-primitive work, because they are one
+Three things are deliberately *not* per-primitive work, because they are one
 implementation each: a primitive's dim rule lives only in `language/dimensions.py` —
 both its dim *set* and its verdict on an operand that lacks the dim being
-reduced along, which lowering asks for rather than deciding again — and the
+reduced along, which lowering asks for rather than deciding again — its degree
+verdict lives only in `language/degree.py`, which both lanes ask; and the
 dense-label assignment that gives a coordinate its solver index lives only in
 `relational/labels.py`, shared by variables and constraint rows. What a
 lowering case still owns is what is about the plan: which node the call becomes,

@@ -53,7 +53,10 @@ stream first and read `.explain()`:
 This is the case analysis `_sum_fragment`, `_group_fragment` and
 `_translate_fragment` already implement — each rewriting one fragment on its
 own, which is what *pointwise* and *bounded-halo* mean in code — so a candidate
-fitting none of those shapes has no executor to be written into. Two limits: **degree is not a property of the plan**, and it
+fitting none of those shapes has no executor to be written into. Two limits: **degree is not a property of the plan** —
+it is decided on the core AST by `language/degree.py`, which both lanes ask and
+neither states, so reading it off a query would be reading the wrong artefact —
+and it
 presumes the terminal `sum(coeff)` over `(row, col)` stays the only aggregate a
 *term* passes through.
 A primitive is finished when `lowering.py` accepts it and the differential test

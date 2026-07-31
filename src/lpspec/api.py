@@ -36,7 +36,6 @@ from lpspec.language.schema import MathSchema
 from lpspec.language.validation import validate_expressions
 from lpspec.lowering import lower_program
 from lpspec.piecewise import expand_piecewise
-from lpspec.language.schema import MathSchema
 from lpspec.relational.executor import PolarsExecutor
 from lpspec.sources import tidy_sources
 
