@@ -114,6 +114,36 @@ def test_the_convention_is_actually_in_use():
     assert len(urls) >= 15, f'expected the docs to link out to the repo; found {len(urls)}'
 
 
+def test_every_figure_is_referenced_and_every_reference_resolves():
+    """Both directions, because a figure rots from either end.
+
+    A reference to a chart that was never written is a broken image on the
+    published page; a chart nobody references is what `docs/bench.svg` became
+    — drawn once for a PR in 2026, hardcoded for light mode, and still in the
+    tree three engines later. `bench.plot` writes this directory whole, so
+    anything in it that the docs do not name is stale by construction.
+
+    Figures come in light/dark pairs: mkdocs-material's palette toggle stamps
+    the host page, which an `<img>`-referenced SVG cannot see, so the page
+    carries both and the `#only-*` suffixes choose.
+    """
+    charts = DOCS / 'charts'
+    assert charts.is_dir(), 'docs/charts is gone — the benchmarks page embeds it'
+    referenced = set()
+    for page in DOCS.rglob('*.md'):
+        for match in re.finditer(r'\]\((charts/[^)\s]+?\.svg)(#only-(?:light|dark))?\)', page.read_text()):
+            referenced.add(match.group(1))
+            assert match.group(2), f'{page.name} embeds {match.group(1)} without a #only-light/#only-dark suffix'
+            assert (DOCS / match.group(1)).exists(), (
+                f'{page.name} references a figure that does not exist: {match.group(1)}'
+            )
+    on_disk = {f'charts/{p.name}' for p in charts.glob('*.svg')}
+    assert on_disk == referenced, f'figures nobody embeds: {sorted(on_disk - referenced)}'
+    for name in sorted(on_disk):
+        light = name.replace('-dark.svg', '-light.svg')
+        assert light in on_disk, f'{name} has no light twin — the toggle would leave a reader with nothing'
+
+
 def test_the_home_page_still_carries_its_math_block():
     """`tools.gallery_math --check` also fills the tabs on `docs/index.md`, and
     it fills what it finds — a page whose markers were dropped in an edit stops
