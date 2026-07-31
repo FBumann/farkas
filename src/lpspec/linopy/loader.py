@@ -156,13 +156,11 @@ def load_parameters(
     data = data or {}
     arrays: dict[str, xr.DataArray] = {}
 
-    # Step 2: check all declared parameters are provided
     for pname in schema.parameters:
         if pname not in data:
             msg = f"Parameter '{pname}' is required but was not provided in data.\nAdd '{pname}' to the data= argument."
             raise DataError(msg)
 
-    # Step 5: reject unknown data keys
     declared = set(schema.parameters)
     unknown = set(data) - declared
     if unknown:
@@ -174,18 +172,15 @@ def load_parameters(
         )
         raise DataError(msg)
 
-    # Coerce each parameter
     for pname, pdef in schema.parameters.items():
         raw = data[pname]
         arr = _coerce_to_dataarray(pname, raw, pdef.dims, master_coords)
         _validate_dims(pname, arr, pdef.dims)
         _validate_coords(pname, arr, master_coords)
 
-        # Expand scalars and reindex to master coords
         if pdef.dims:
             reindex_coords = {d: master_coords[d] for d in pdef.dims}
             if arr.ndim == 0:
-                # Broadcast scalar to full shape over declared dims
                 scalar_val = float(arr.values)
                 shape = tuple(len(master_coords[d]) for d in pdef.dims)
                 arr = xr.DataArray(
@@ -226,11 +221,9 @@ def _coerce_to_dataarray(
     master_coords: dict[str, pd.Index],
 ) -> xr.DataArray:
     """Coerce a user-provided value into an xr.DataArray."""
-    # Scalar
     if isinstance(raw, (int, float, np.integer, np.floating)):
         return xr.DataArray(float(raw))
 
-    # dict → pd.Series → DataArray
     if isinstance(raw, dict):
         if len(dims) != 1:
             msg = f"Parameter '{name}': dict input is only supported for 1-D parameters, but declared dims are {dims}."
@@ -239,7 +232,6 @@ def _coerce_to_dataarray(
         series.index.name = dims[0]
         raw = series  # fall through to Series handling
 
-    # pd.Series
     if isinstance(raw, pd.Series):
         if len(dims) != 1:
             msg = (
@@ -253,7 +245,6 @@ def _coerce_to_dataarray(
         _refuse_duplicate_index(name, raw.index, dims)
         return xr.DataArray.from_series(raw)
 
-    # pd.DataFrame
     if isinstance(raw, pd.DataFrame):
         if len(dims) != 2:
             msg = (
@@ -271,11 +262,9 @@ def _coerce_to_dataarray(
         stacked.name = name
         return xr.DataArray.from_series(stacked).unstack()
 
-    # xr.DataArray
     if isinstance(raw, xr.DataArray):
         return raw
 
-    # np.ndarray / list
     if isinstance(raw, (np.ndarray, list)):
         arr_np = np.asarray(raw)
         if arr_np.ndim == 0:

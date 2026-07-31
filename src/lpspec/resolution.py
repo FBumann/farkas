@@ -108,13 +108,12 @@ class Namespace:
         return None
 
     def _unknown(self, name: str, context: str, *, allow_dims: bool) -> str:
-        kinds = ['Variables', 'Parameters'] if not allow_dims else ['Parameters', 'Dimensions']
-        values = (
-            [sorted(self.variables), sorted(self.parameters)]
-            if not allow_dims
-            else [sorted(self.parameters), sorted(self.dimensions)]
+        shown = (
+            [('Parameters', self.parameters), ('Dimensions', self.dimensions)]
+            if allow_dims
+            else [('Variables', self.variables), ('Parameters', self.parameters)]
         )
-        listing = '\n'.join(f'  {k}: {v}' for k, v in zip(kinds, values, strict=True))
+        listing = '\n'.join(f'  {kind}: {sorted(names)}' for kind, names in shown)
         return f"{context}: '{name}' not found.\n{listing}\nCheck for typos, or ensure '{name}' is declared."
 
 
@@ -359,6 +358,32 @@ def resolve_where(
     return None if len(errors) > before else resolved
 
 
+def _declared_rhs_error(context: str, node: UnresolvedComparisonNode, value: str, kind: str) -> str:
+    """Why the right-hand side of a where-comparison may not name a declaration.
+
+    One refusal — the RHS is a literal — but three distinct reasons, and the
+    wording has to say which, since only the dimension case is a *silent* wrong
+    answer rather than an obvious one.
+    """
+    shown = f"'{node.name} {node.op} {value}'"
+    if kind == 'parameter':
+        return (
+            f'{context}: {shown} compares two parameters, which is not in the '
+            f'language — a where-comparison tests one parameter or dimension against '
+            f'a literal. Precompute the comparison as a boolean parameter in data '
+            f'prep and test that.'
+        )
+    if kind == 'variable':
+        return f'{context}: {shown} compares against variable {value!r}. A where mask is built before variables exist.'
+    return (
+        f'{context}: {shown} compares against dimension {value!r}, which the RHS reads '
+        f'as the literal coordinate {value!r} — so the predicate tests one dimension '
+        f"against another dimension's *name* and masks everything out. Comparing two "
+        f'dimensions to each other is not in the language; if {value!r} is a coordinate '
+        f'rather than the dimension, rename one of the two.'
+    )
+
+
 def _resolve_where(
     node: WhereNode, ns: Namespace, context: str, errors: list[str], self_variable: str | None = None
 ) -> WhereNode:
@@ -396,29 +421,8 @@ def _resolve_where(
         value = node.value
         # The grammar has no string quoting, so a bare-name RHS is ambiguous;
         # resolving it like any other name keeps the meaning declaration-independent.
-        if isinstance(value, str) and ns.kind(value) == 'parameter':
-            errors.append(
-                f"{context}: '{node.name} {node.op} {value}' compares two "
-                f'parameters, which is not in the language — a where-comparison '
-                f'tests one parameter or dimension against a literal. Precompute '
-                f'the comparison as a boolean parameter in data prep and test that.'
-            )
-            return node
-        if isinstance(value, str) and ns.kind(value) == 'variable':
-            errors.append(
-                f"{context}: '{node.name} {node.op} {value}' compares against "
-                f'variable {value!r}. A where mask is built before variables exist.'
-            )
-            return node
-        if isinstance(value, str) and ns.kind(value) == 'dimension':
-            errors.append(
-                f"{context}: '{node.name} {node.op} {value}' compares against dimension "
-                f'{value!r}, which the RHS reads as the literal coordinate {value!r} — so '
-                f"the predicate tests one dimension against another dimension's *name* "
-                f'and masks everything out. Comparing two dimensions to each other is not '
-                f'in the language; if {value!r} is a coordinate rather than the dimension, '
-                f'rename one of the two.'
-            )
+        if isinstance(value, str) and (rhs_kind := ns.kind(value)) is not None:
+            errors.append(_declared_rhs_error(context, node, value, rhs_kind))
             return node
 
         match ns.kind(node.name):

@@ -89,6 +89,20 @@ __all__ = [
 ]
 
 
+def did_you_mean(name: str, known: Iterable[str], *, label: str = 'Declared') -> str:
+    """The repair clause for an unrecognised name: the near miss, or the set.
+
+    Three places ask it — an unknown declaration name, an unknown YAML key, an
+    unknown symbol-table entry — and each frames it with a sentence of its own.
+    Only the clause is shared, because only the clause is the same question.
+    """
+    candidates = sorted(known)
+    near = difflib.get_close_matches(name, candidates, n=1, cutoff=0.6)
+    if near:
+        return f"Did you mean '{near[0]}'?"
+    return f'{label}: {", ".join(candidates) or "nothing"}.'
+
+
 def sparse_divisor_message(name: str, missing: int) -> str:
     """Why a divisor may not be sparse — one wording, both lanes.
 
@@ -206,6 +220,4 @@ def unknown_name_message(kind: str, name: str, known: Iterable[str]) -> str:
             f'{len(family)} begin with it — {", ".join(family)}.'
         )
 
-    near = difflib.get_close_matches(name, candidates, n=1, cutoff=0.6)
-    fix = f"Did you mean '{near[0]}'?" if near else f'Declared: {", ".join(candidates) or "nothing"}.'
-    return f"unknown {kind} '{name}'. {fix}"
+    return f"unknown {kind} '{name}'. {did_you_mean(name, candidates)}"

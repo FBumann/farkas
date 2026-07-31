@@ -155,10 +155,8 @@ ExpressionNode = ArithmeticNode | ComparisonNode
 
 def _build_grammar() -> pp.ParserElement:
     """Build and return the pyparsing grammar for math expressions."""
-    # Forward reference for recursive arithmetic
     arith = pp.Forward()
 
-    # Atoms
     # float, not int: NumberNode.value is declared float, so store one
     integer = pp.Regex(r'-?\d+').set_parse_action(lambda t: NumberNode(float(t[0])))
     real = pp.Regex(r'-?\d+\.\d*([eE][+-]?\d+)?').set_parse_action(lambda t: NumberNode(float(t[0])))
@@ -171,34 +169,28 @@ def _build_grammar() -> pp.ParserElement:
 
     name = pp.Regex(r'[a-zA-Z_][a-zA-Z0-9_]*')
 
-    # Function calls
     kwarg = (name + pp.Suppress('=') + (arith | name)).set_parse_action(lambda t: (t[0], t[1]))
     pos_arg = arith
     arg_list = pp.Optional(pp.DelimitedList(kwarg | pos_arg))
     func_call = (name + pp.Suppress('(') + arg_list + pp.Suppress(')')).set_parse_action(_make_func_call)
 
-    # Atom: function call, number, name, or parenthesized expression
     name_node = name.copy().set_parse_action(lambda t: NameNode(t[0]))
     atom = func_call | number | name_node | (pp.Suppress('(') + arith + pp.Suppress(')'))
 
-    # Unary
     unary = (pp.one_of('+ -') + atom).set_parse_action(lambda t: UnaryOperatorNode(t[0], t[1])) | atom
 
-    # Power (right-associative)
     power = unary + pp.ZeroOrMore(pp.Literal('**') + unary)
-    power.set_parse_action(_make_right_assoc)
+    power.set_parse_action(_make_right_assoc)  # right-associative
 
-    # Multiplication / Division (left-associative)
     mul_div = power + pp.ZeroOrMore(pp.one_of('* /') + power)
     mul_div.set_parse_action(_make_left_assoc)
 
-    # Addition / Subtraction (left-associative)
     add_sub = mul_div + pp.ZeroOrMore(pp.one_of('+ -') + mul_div)
     add_sub.set_parse_action(_make_left_assoc)
 
     arith <<= add_sub
 
-    # Comparison (optional, at most one)
+    # at most one comparison, and only at the top
     comparator = pp.one_of('<= >= ==')
     expr = (arith + comparator + arith).set_parse_action(lambda t: ComparisonNode(t[1], t[0], t[2])) | arith
 
@@ -251,7 +243,6 @@ def _make_right_assoc(tokens: pp.ParseResults) -> Any:
     return result
 
 
-# Module-level compiled grammar
 _GRAMMAR = _build_grammar()
 
 
