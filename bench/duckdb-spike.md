@@ -31,11 +31,12 @@ uv run python -m bench.run --arms lpspec duckdb \
 uv run python -m bench.report bench/results/duckdb-spike.jsonl --arms lpspec duckdb
 ```
 
-**Expect the in-tree engine to be slower than the recorded numbers**, and say so
-rather than quietly re-baselining: the port has no counterpart to
-`labels._factored` (§9), so masked models fall back to the counted path and pay
-an ordered window the shipped engine avoided. The committed results file is the
-*old* engine and is kept as the measurement the argument was built on.
+**The committed results file is the *old* engine**, kept as the measurement the
+argument was built on rather than re-baselined. The in-tree engine has since
+grown the `_factored` label path §9 recorded as missing — masked models no
+longer pay an ordered window over the whole coordinate product — which took the
+build on `dispatch/l` from 1.84 s to 0.69 s and on `nodal/l` from 1.09 s to
+0.53 s, against 0.59 s and 0.29 s on polars.
 
 ---
 
@@ -335,8 +336,11 @@ Where the tax actually falls:
   column lists on both sides, alias qualification and null-safe
   `IS NOT DISTINCT FROM` predicates where polars gets all three from
   column-name semantics. Every fragment composition pays it.
-- **`labels._factored`, 37 lines, no counterpart.** The one place polars is
-  *algorithmically* ahead rather than incidentally, and real work to port.
+- **`labels._factored`, 37 lines.** Was the one place polars was
+  *algorithmically* ahead rather than incidentally. Now ported, and the port
+  moved the *choice* — which of the three routes a mask allows — up into
+  `plan.free_prefix`, where it is a question about the plan that both engines
+  ask once rather than two implementations that could drift.
 - SQL **wins** on `_compare` (15 → 4) and on the semi-joins, where
   `WHERE EXISTS` says plainly what `how='semi'` needs a reader to know is not
   a join.
@@ -369,10 +373,10 @@ read-back are written against `ModelTables` and the label frames, so
 ~2,300-line figure priced a replacement; a *second* engine is a compiler and an
 assembler.
 
-**Still open, and the reason to re-read §7 before relying on it:**
-`labels._factored` has no duckdb counterpart, so masked models fall back to the
-counted path and pay an ordered window. The committed results predate the
-in-tree port and do not include that cost.
+**Read §7 as provenance, not as the current cost.** The committed results
+predate the in-tree port, and the port has been measured and improved since —
+the factored label path alone halves the build on every masked model. Re-run
+the command at the top before quoting a ratio.
 
 **Recommended next step, if this is live:** decide the write-path question
 first. If the answer is no, this closes for good and

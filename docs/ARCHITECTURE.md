@@ -348,7 +348,9 @@ in the lane is order-free, which is what lets the query planner rearrange it.
   depending on how much of the product survives the mask — arithmetic, factored,
   counted — and they must agree integer for integer. That agreement is why
   labelling is a module with stated inputs rather than three methods among
-  twenty: nothing else about a build can move an index.
+  twenty: nothing else about a build can move an index. **Which** of the three
+  is a property of the plan, not of an engine, so both engines ask
+  `plan.free_prefix` and only the executions are written twice.
 - The same order comes **back**: `primal` / `dual` / `to_parquet` sort on the
   label before handing rows over, the order the LP sink writes. Stated at the
   read rather than assumed, because a `where` decides which rows survive and a

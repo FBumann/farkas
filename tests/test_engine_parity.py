@@ -36,10 +36,19 @@ DISPATCH = {
     'load': pl.DataFrame({'snapshot': [0, 1, 2], 'value': [12.0, 8.0, 20.0]}),
 }
 
+#: The same model with a mask that *removes* something. `dispatch`'s
+#: `where: p_max > 0` reads only `generator`, so both engines label it by
+#: arithmetic over a ranked survivor set rather than by counting — and with
+#: every `p_max` positive that arithmetic is never asked a question a wrong
+#: answer would show up in. Zeroing one generator is what makes the label a
+#: claim: `gas` must be column 1 under every snapshot, not column 2.
+MASKED = DISPATCH | {'p_max': pl.DataFrame({'generator': ['wind', 'solar', 'gas'], 'value': [10.0, 0.0, 100.0]})}
+
 #: `storage` carries a cyclic `shift` — the operator a second engine is most
 #: likely to get subtly wrong, and the one the spike calls hardest to port.
 MODELS = [
     ('examples/dispatch.yaml', DISPATCH),
+    ('examples/dispatch.yaml', MASKED),
     ('examples/storage.yaml', DISPATCH),
 ]
 
