@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.58](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.57...v0.0.1-alpha.58) (2026-07-31)
+
+
+### Documentation
+
+* **bench:** re-measure at 98f382d, and correct a claim the harness bug made ([#441](https://github.com/FBumann/lpspec/issues/441)) ([6d0e195](https://github.com/FBumann/lpspec/commit/6d0e1955c3fda307cb3edcb6f18b67c3026eb08c))
+
 ## [0.0.1-alpha.57](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.56...v0.0.1-alpha.57) (2026-07-31)
 
 
