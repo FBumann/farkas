@@ -74,7 +74,7 @@ flowchart TB
     subgraph REL["relational/ — imports nothing from the package but errors.py"]
         direction TB
         PLAN["plan.py<br/>frozen logical plan"] --> ENG
-        BINDP["binding.py<br/>→ BoundSources, frozen"] --> ENG
+        BIND["binding.py<br/>→ BoundSources, frozen"] --> ENG
         ENGB["engine.py<br/>both sinks + the label read-back,<br/>written once"] --> ENG
         subgraph ENG["engines/ — one is chosen by LPSPEC_ENGINE"]
             direction TB
