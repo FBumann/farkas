@@ -13,9 +13,15 @@ method on the executor.
 
 from lpspec.relational.sinks.highs import build_highs, solve_direct
 from lpspec.relational.sinks.lp_file import write_lp_file
-from lpspec.relational.sinks.tables import ModelTables
+from lpspec.relational.sinks.tables import COLS, DTYPES, MATRIX, OBJ, ROWS, VTYPE, ModelTables
 
 __all__ = [
+    'COLS',
+    'DTYPES',
+    'MATRIX',
+    'OBJ',
+    'ROWS',
+    'VTYPE',
     'ModelTables',
     'build_highs',
     'solve_direct',

@@ -16,7 +16,7 @@ which is what :class:`~lpspec.relational.binding.BoundSources` says.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, get_args
+from typing import TYPE_CHECKING, Any
 
 import polars as pl
 
@@ -37,27 +37,11 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
 
-#: The four frames a sink reads, as schemas. Stated here because the executor
-#: is what fills them and an empty model still has to have them.
-_COLS = ('col', 'lb', 'ub', 'vtype')
-_OBJ = ('col', 'coeff')
-_ROWS = ('row', 'sense', 'rhs')
-_MATRIX = ('row', 'col', 'coeff')
-
-#: The dtype of each of those columns. ``vtype`` is an ``Enum`` over the
-#: variable types the plan declares, rather than a string: it holds one word
-#: per column and the same handful of words for the whole model, so as a string
-#: it stores that word once per row — 0.098 GB of the ``cols`` frame's 0.333 at
-#: 9.8M columns, against 0.010 as an Enum. The Enum also makes the vocabulary
-#: explicit, so a fourth variable type added to
-#: :data:`~lpspec.relational.plan.VariableType` and not reaching here fails
-#: where the column is built rather than in whichever sink first compares
-#: against a name it does not know.
-_DTYPES = {
-    'col': pl.Int64, 'row': pl.Int64,
-    'lb': pl.Float64, 'ub': pl.Float64, 'rhs': pl.Float64, 'coeff': pl.Float64,
-    'sense': pl.String, 'vtype': pl.Enum(get_args(plan.VariableType)),
-}  # fmt: skip
+#: The four frames a sink reads, and their dtypes — both stated by
+#: `sinks/tables.py`, which is what reads them. An engine fills the schema; it
+#: does not get to have one of its own.
+_COLS, _OBJ, _ROWS, _MATRIX = sinks.COLS, sinks.OBJ, sinks.ROWS, sinks.MATRIX
+_DTYPES = sinks.DTYPES
 
 
 #: Deprecated. The engine's failures are now split between

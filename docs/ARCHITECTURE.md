@@ -415,7 +415,7 @@ than discovered at solve time.
 | `relational/engines/polars/labels.py` | which coordinate gets which solver index; three routes to one number, which must agree |
 | `relational/engines/polars/executor.py` | assemble the model frames from the bound data |
 | `relational/result.py` | what a solve returned: status, objective, and the label joins that read values back |
-| `relational/sinks/tables.py` | what every sink reads and no more — the four frames plus the batching scalars; what an engine produces |
+| `relational/sinks/tables.py` | what every sink reads and no more — the four frames, their dtypes, and the batching scalars; what an engine produces |
 | `relational/sinks/` | how a built model leaves: `lp_file`, `solver_direct` (one module each, [README](https://github.com/FBumann/lpspec/blob/main/src/lpspec/relational/sinks/README.md)) |
 | `linopy/__init__.py` | opt-in shim: `build` / `extend` on a `linopy.Model` |
 | `linopy/loader.py` | data coercion to `xr.Dataset`, master coords |
