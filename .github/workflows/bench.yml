@@ -27,6 +27,15 @@ on:
   pull_request:
     types: [labeled]
 
+env:
+  # The regression slice of the ladder: one lane, the rungs small enough to run
+  # twice in a job. `--skip-gate` because a single-arm gate compares an
+  # objective with itself — the cross-lane check belongs to the published run.
+  SELECT: >-
+    --arms lpspec --sizes s m
+    --cases dispatch nodal transport profiled
+    --skip-gate
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -52,15 +61,17 @@ jobs:
       - run: uv sync --group bench
 
       # Generate the parquet inputs once, outside both measured passes, so
-      # neither arm is charged for it and both read byte-identical data.
+      # neither pass is charged for it and both read byte-identical data. The
+      # session fixture would do this anyway; doing it here keeps the base pass
+      # from being the one that pays.
       - name: warm the data cache
         run: |
           uv run --no-sync python - <<'PY'
           from bench.cases import CASES
-          from bench.regressions.test_build import WORKLOADS
 
-          for case, size in WORKLOADS:
-              CASES[case].data(CASES[case].shape(size))
+          for case in ('dispatch', 'nodal', 'transport', 'profiled'):
+              for size in ('s', 'm'):
+                  CASES[case].data(CASES[case].shape(size))
           PY
 
       # Vary the engine, hold the harness fixed. Checking out only src/ from the
@@ -69,11 +80,11 @@ jobs:
       - name: baseline — the engine as it is on the base branch
         run: |
           git checkout ${{ github.event.pull_request.base.sha }} -- src/
-          uv run --no-sync pytest bench/regressions --benchmark-memory --benchmark-autosave -q
+          uv run --no-sync pytest bench $SELECT --benchmark-memory --benchmark-autosave -q
           git checkout ${{ github.event.pull_request.head.sha }} -- src/
 
       - name: this PR's engine
-        run: uv run --no-sync pytest bench/regressions --benchmark-memory --benchmark-autosave -q
+        run: uv run --no-sync pytest bench $SELECT --benchmark-memory --benchmark-autosave -q
 
       # The table goes in the job summary whether or not the gate trips, because
       # "no regression" is also a result worth being able to read.
