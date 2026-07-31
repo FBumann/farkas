@@ -1225,3 +1225,32 @@ def test_every_multi_valued_coordinate_is_named_at_once():
 
     message = str(exc.value)
     assert "'from'" in message and "'to'" in message, f'both offenders must be named; got: {message}'
+
+
+def test_dense_columns_does_not_edit_the_model_it_projects():
+    """Two solvers, two spellings of infinity, one model — and it survives both.
+
+    `cols` has no `col` column: it is one row per column in label order, so the
+    vectors a solver sink is handed are *views* of the frame rather than the
+    scatter's fresh arrays. Replacing an infinity in place through one would
+    rewrite the built model to suit whichever solver asked last, and the second
+    ask would read bounds the first had already edited.
+    """
+    model = {
+        'dimensions': {'i': {'dtype': 'int', 'values': [0, 1]}},
+        'parameters': {'rhs': {'dims': ['i']}},
+        'variables': {'x': {'foreach': ['i'], 'bounds': {'lower': 0}}},  # no upper: +inf
+        'constraints': {'c': {'foreach': ['i'], 'expression': 'x >= rhs'}},
+        'objectives': {'o': {'sense': 'minimize', 'expression': 'sum(x, over=i)'}},
+    }
+    with lps.build(model, {'rhs': pl.DataFrame({'i': [0, 1], 'value': [1.0, 2.0]})}) as ex:
+        tables = ex._tables()
+        first, _, _, _ = tables.dense_columns(1e30)
+        ub_after_first = tables.cols['ub'].to_list()
+
+        _, second_ub, _, _ = tables.dense_columns(1e100)
+
+        assert ub_after_first == tables.cols['ub'].to_list(), 'the projection edited the model'
+        assert all(v == float('inf') for v in tables.cols['ub'].to_list()), 'the frame lost its infinities'
+        assert list(second_ub) == [1e100, 1e100], "the second solver got the first solver's infinity"
+        assert list(first) == [0.0, 0.0]

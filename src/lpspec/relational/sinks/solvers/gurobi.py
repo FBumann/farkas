@@ -1,16 +1,17 @@
-"""The ``gurobi`` solver: COO blocks straight into gurobipy.
+"""The ``gurobi`` solver: the model in two calls, straight into gurobipy.
 
 The same hand-off as :mod:`~lpspec.relational.sinks.solvers.highs`, reading the
 same ``dense_columns``, ``dense_rows`` and ``row_blocks``, so the two cannot
 disagree about the model they load. Two things differ:
 
 - **The matrix's currency.** HiGHS takes the three CSR arrays; gurobipy's
-  matrix API takes a matrix *object*, so a block is wrapped in a
-  ``scipy.sparse.csr_matrix`` over them — a view, not a copy. That wrapper is
-  why the ``[gurobi]`` extra carries scipy: the alternative is a Python call
-  per row.
-- **Columns arrive in one call.** ``addMConstr`` writes into one ``MVar``
-  spanning the model, so only the matrix is chunked.
+  matrix API takes a matrix *object*, so they are wrapped in a
+  ``scipy.sparse.csr_matrix`` — a view, not a copy. That wrapper is why the
+  ``[gurobi]`` extra carries scipy: the alternative is a Python call per row.
+- **Nothing is batched.** The columns cannot be, since ``addMConstr`` writes
+  into one ``MVar`` spanning the model — and the matrix *should* not be, which
+  is where this sink parts company with the HiGHS one. See
+  :meth:`~lpspec.relational.sinks.tables.ModelTables.row_blocks`.
 
 ``gurobipy`` and ``scipy`` are imported inside the functions, so importing
 this module stays free for a caller who never solves with it.
@@ -32,13 +33,6 @@ if TYPE_CHECKING:
 
     from lpspec.relational.sinks.tables import ModelTables
 
-
-#: Nonzeros per row block, spent through :mod:`~lpspec.relational.chunking`.
-#: Not independently tuned — the measurement is
-#: :data:`~lpspec.relational.sinks.solvers.highs.HANDOFF_BUDGET`'s, and holds
-#: because a block is the same filter over the same sorted frame; wrapping
-#: three arrays in a CSR view is constant work on top.
-HANDOFF_BUDGET = 100_000
 
 #: Gurobi status -> termination condition. Copied from linopy's own
 #: ``Gurobi.CONDITION_MAP`` bar three entries (:data:`_LINOPY_DIVERGENCES`);
@@ -85,8 +79,9 @@ def build_gurobi(
 
     :func:`~lpspec.relational.sinks.solvers.highs.build_highs`'s seam, drawn
     for its reason: the search is the same work whoever filled the model.
-    ``batch_rows`` is the budget in *nonzeros*, and stays a parameter so tests
-    can force ragged blocks.
+    ``batch_rows`` is a *nonzero* budget that splits the matrix across calls;
+    it defaults to one call — see
+    :meth:`~lpspec.relational.sinks.tables.ModelTables.row_blocks` for why.
 
     **The caller owns the model, so the environment follows it.** gurobipy has
     no ``Model.getEnv()``, so a caller handed only the model could never
@@ -155,17 +150,21 @@ def _load(
     import numpy as np
     import scipy.sparse
 
-    batch = HANDOFF_BUDGET if batch_rows is None else batch_rows
     environment = gurobipy.Env(params={'OutputFlag': 0, **dict(solver_options or {})})
     m = gurobipy.Model(env=environment)
 
     lb, ub, cost, integral = model.dense_columns(gurobipy.GRB.INFINITY)
-    x = m.addMVar(model.column_count, lb=lb, ub=ub, obj=cost, vtype=np.where(integral, 'I', 'C'))
+    # an LP pays 17% of the column hand-off for a vtype array of one repeated
+    # letter — 0.46 s against 0.38 s at 10^6 columns. linopy skips it the same way.
+    discrete: dict[str, Any] = {'vtype': np.where(integral, 'I', 'C')} if integral.any() else {}
+    x = m.addMVar(model.column_count, lb=lb, ub=ub, obj=cost, **discrete)
 
     sense, rhs = model.dense_rows(gurobipy.GRB.INFINITY)
     spelling = _spelled(gurobipy)
     blocks = []
-    for lo, hi, a, starts in model.row_blocks(batch):
+    # `batch_rows` straight through, un-defaulted: one call unless a caller
+    # asks otherwise, which is what #434 measured and `row_blocks` now states.
+    for lo, hi, a, starts in model.row_blocks(batch_rows):
         block = scipy.sparse.csr_matrix(
             (a['coeff'].to_numpy(), a['col'].to_numpy(), np.append(starts, a.height)),
             shape=(hi - lo, model.column_count),

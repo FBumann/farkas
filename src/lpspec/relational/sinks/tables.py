@@ -148,8 +148,16 @@ class ModelTables:
         rhs = _scattered(self.row_count, at, sided['rhs'].to_numpy(), -infinity)
         return sense, rhs
 
-    def row_blocks(self, budget: int) -> Iterator[RowBlock]:
+    def row_blocks(self, budget: int | None) -> Iterator[RowBlock]:
         """Each chunk of rows with the matrix entries it owns.
+
+        **``budget=None`` is one block, and that is a real answer rather than a
+        degenerate one.** Whether splitting pays is a property of the API being
+        fed, not of the model: HiGHS takes a chunk at a time and its budget
+        bounds the temporary, while Gurobi's ``addMConstr`` charges about 42 ns
+        per *model column* per call whatever the block holds — 0.23 s in one
+        call against 0.89 s in forty on the same matrix (#434). So the caller
+        says, and both answers come out of the same code.
 
         The matrix is ordered once, and a chunk is then a ``slice`` of it
         located by binary search on the label column — the range is contiguous
@@ -169,7 +177,8 @@ class ModelTables:
 
         ordered = self.matrix.sort('row')
         label = ordered['row']
-        for lo, hi in self.row_chunks_by_nonzeros(budget):
+        spans = [(0, self.row_count)] if budget is None else self.row_chunks_by_nonzeros(budget)
+        for lo, hi in spans:
             first = int(label.search_sorted(lo, 'left'))
             last = int(label.search_sorted(hi, 'left'))
             entries = ordered.slice(first, last - first)
