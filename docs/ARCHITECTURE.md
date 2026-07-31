@@ -25,8 +25,8 @@ below protects it.
 
 ```mermaid
 flowchart TB
-    Y[YAML file] -->|"parse + validate<br/>(schema.py, validation.py)"| MS[MathSchema]
-    MS -->|"expand macros: / expressions: (expansion.py)<br/>expand piecewise: blocks (piecewise.py)<br/>resolve names to typed nodes (resolution.py)<br/>check dim sets (dimensions.py)<br/>— backends never see any of them"| AST["core AST<br/>= the only contract between layers<br/>fully typed: names resolved, dims checked"]
+    Y[YAML file] -->|"parse + validate<br/>(language/schema.py, language/validation.py)"| MS[MathSchema]
+    MS -->|"expand macros: / expressions: (language/expansion.py)<br/>expand piecewise: blocks (piecewise.py)<br/>resolve names to typed nodes (language/resolution.py)<br/>check dim sets (language/dimensions.py)<br/>— backends never see any of them"| AST["core AST<br/>= the only contract between layers<br/>fully typed: names resolved, dims checked"]
     AST -->|"api.py: check / build / solve / write"| LOWER
     AST -.->|"lpspec.linopy<br/>(opt-in shim: build / extend)"| BUILD
     LOWER -->|"outside the language:<br/>LanguageError naming the construct"| ERR["load error<br/>(no fallback)"]
@@ -171,7 +171,12 @@ that made an implementation choice load-bearing in the language's rulebook.
    and the plan/query/xarray are backend-private. The AST crossing that seam is **fully
    resolved** — names are typed `Variable`/`Parameter`/`Dimension` nodes — so a backend cannot
    hold its own opinion about what a name refers to. Resolving independently is
-   how the two lanes silently disagreed about scoping before.
+   how the two lanes silently disagreed about scoping before. The waist is
+   closed from the front too: nothing under `src/lpspec/language/` imports
+   `lowering`, `piecewise`, `sources`, `api` or any consuming subpackage, so
+   what a model *means* cannot depend on what is done with it. That is the
+   mirror of rule 2 and it is enforced the same way, off the path
+   (`LANGUAGE_MAY_IMPORT`).
 2. **The engine knows nothing about linopy, xarray or YAML.**
    `src/lpspec/relational/` goes polars → highspy → solver, with linopy's
    semantics as a spec to match rather than code to share; it never sees the
@@ -271,21 +276,21 @@ than discovered at solve time.
 
 | Module | Role |
 |---|---|
-| `_yaml.py` | the only place a file is read: YAML 1.2 booleans, duplicate keys refused |
-| `schema.py` | pydantic schema incl. `expressions:` / `macros:` / `piecewise:` |
-| `expression_parser.py`, `where_parser.py` | text → core AST; grammar only, dependency-free |
-| `expansion.py` | named-expression / macro substitution (pre-dispatch) |
-| `resolution.py` | one flat namespace; `NameNode` → typed `Variable`/`Parameter`/`Dimension` nodes |
-| `dimensions.py` | static dim-set checking over the resolved AST |
-| `validation.py` | load-time: parse, expand, resolve, check everything |
+| `language/_yaml.py` | the only place a file is read: YAML 1.2 booleans, duplicate keys refused |
+| `language/schema.py` | pydantic schema incl. `expressions:` / `macros:` / `piecewise:` |
+| `language/expression_parser.py`, `language/where_parser.py` | text → core AST; grammar only, dependency-free |
+| `language/expansion.py` | named-expression / macro substitution (pre-dispatch) |
+| `language/resolution.py` | one flat namespace; `NameNode` → typed `Variable`/`Parameter`/`Dimension` nodes |
+| `language/dimensions.py` | static dim-set checking over the resolved AST |
+| `language/helpers.py` | the closed set of built-in operators: their *names* and *call shapes* — no registry |
+| `language/validation.py` | load-time: parse, expand, resolve, check everything |
 | `piecewise.py` | `piecewise:` → λ-formulation declarations + curvature guard |
 | `api.py` | native entry point: `check` / `build` / `solve` / `write`, linopy-free |
 | `typeset/` | **spike** — resolved AST → LaTeX / Typst / Markdown. A reader, not a lane: no model, no data, no plan ([README](https://github.com/FBumann/lpspec/blob/main/src/lpspec/typeset/README.md)) |
 | `__main__.py` | `python -m lpspec <format>` — a shell front for the verbs that bind no data |
 | `sources.py` | bind runtime data (parquet paths / in-memory tables) to a validated schema |
 | `lowering.py` | core AST → logical plan (defines the relational subset) |
-| `helpers.py` | the closed set of built-in operators: their *names* and *call shapes* — no registry |
-| `errors.py` | the exception hierarchy; the one module the engine may import |
+| `errors.py` | the exception hierarchy; the one module either fenced side may import |
 | `relational/plan.py` | frozen logical-plan dataclasses |
 | `relational/frames.py` | the boundary — caller tables in, via the Arrow PyCapsule protocol |
 | `relational/compiler.py` | plan → lazy frames; pure, reads nothing |
@@ -300,13 +305,23 @@ than discovered at solve time.
 | `linopy/builder.py` | eager backend: core AST → `linopy.Model` |
 | `linopy/semantics.py` | where this lane answers linopy's v1 arithmetic convention — one home, as linopy's own `semantics.py` is |
 
-Two subpackages, and the directory *is* the rule in both cases. Everything
-under `relational/` is the engine and imports nothing else from the package;
-everything under `linopy/` is the opt-in eager lane and is the only code
-allowed to import linopy or xarray; everything under `typeset/` reads the AST
-and writes text, and reaches neither the plan nor any data. `tests/test_architecture.py` reads
-membership off the path, so neither fence can be stepped over by naming a
-file differently.
+**Four subpackages, and the directory *is* the rule in every case.** Everything
+under `language/` produces the AST and may not reach a consumer of it;
+everything under `relational/` is the engine and imports nothing else from the
+package; everything under `linopy/` is the opt-in eager lane and is the only
+code allowed to import linopy or xarray; everything under `typeset/` reads the
+AST and writes text, and reaches neither the plan nor any data.
+`tests/test_architecture.py` reads membership off the path, so no fence can be
+stepped over by naming a file differently.
+
+`language/` and `relational/` are the two halves of the waist and their fences
+point the same way — outward, at `errors.py`, the one leaf both may import. The
+modules left at the top level are the ones that are legitimately *both*:
+`lowering.py` reads the AST and writes the plan, `piecewise.py` emits
+declarations but consults the subset test to do it, `sources.py` binds data to
+a validated schema, and `api.py` runs the lot. A module that belongs to neither
+side is a module that has to sit on the line, and the flat namespace is where
+it sits.
 
 ### Naming across the layers
 
@@ -316,7 +331,7 @@ suffix**, which is what keeps the three vocabularies from colliding:
 
 | Layer | Suffix | Example |
 |---|---|---|
-| YAML block (`schema.py`) | `Block` | `VariableBlock`, `PiecewiseBlock` |
+| YAML block (`language/schema.py`) | `Block` | `VariableBlock`, `PiecewiseBlock` |
 | Core AST (`*_parser.py`) | `Node` | `VariableNode`, `DimensionComparisonNode` |
 | Logical plan (`relational/plan.py`) | none / `Declaration` | `Variable`, `VariableDeclaration` |
 
@@ -364,7 +379,7 @@ lowering case → differential test on both sinks → SPEC §5/§7, and this fil
 structural.
 
 Two things are deliberately *not* per-primitive work, because they are one
-implementation each: a primitive's dim rule lives only in `dimensions.py` —
+implementation each: a primitive's dim rule lives only in `language/dimensions.py` —
 both its dim *set* and its verdict on an operand that lacks the dim being
 reduced along, which lowering asks for rather than deciding again — and the
 dense-label assignment that gives a coordinate its solver index lives only in

@@ -58,7 +58,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from lpspec._yaml import read_yaml
+from lpspec.language._yaml import read_yaml
 from lpspec.typeset import to_latex, to_markdown
 from tools.constructs import models
 

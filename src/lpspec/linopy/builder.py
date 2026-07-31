@@ -17,7 +17,7 @@ import xarray as xr
 
 from lpspec._notes import note
 from lpspec.errors import DataError, LanguageError, null_bounds_message
-from lpspec.expression_parser import (
+from lpspec.language.expression_parser import (
     ArithmeticNode,
     BinaryOperatorNode,
     ComparisonNode,
@@ -31,11 +31,9 @@ from lpspec.expression_parser import (
     UnaryOperatorNode,
     VariableNode,
 )
-from lpspec.helpers import EDGE_WRAP, unknown_helper_message
-from lpspec.linopy import semantics
-from lpspec.linopy.loader import check_divisors_cover
-from lpspec.resolution import Namespace, expression_of, where_of
-from lpspec.where_parser import (
+from lpspec.language.helpers import EDGE_WRAP, unknown_helper_message
+from lpspec.language.resolution import Namespace, expression_of, where_of
+from lpspec.language.where_parser import (
     AndNode,
     BooleanLiteralNode,
     DimensionComparisonNode,
@@ -48,6 +46,8 @@ from lpspec.where_parser import (
     VariableDefinedNode,
     WhereNode,
 )
+from lpspec.linopy import semantics
+from lpspec.linopy.loader import check_divisors_cover
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Hashable, Mapping
@@ -55,7 +55,7 @@ if TYPE_CHECKING:
     import linopy
     import pandas as pd
 
-    from lpspec.schema import MathSchema
+    from lpspec.language.schema import MathSchema
 
 # Mapping from YAML comparison operators to linopy sign strings
 _SIGN_MAP = {'==': '=', '<=': '<=', '>=': '>='}

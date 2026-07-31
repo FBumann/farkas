@@ -24,7 +24,7 @@ from lpspec.piecewise import validate_piecewise_data
 from lpspec.relational.frames import as_frame, labels_frame
 
 if TYPE_CHECKING:
-    from lpspec.schema import MathSchema
+    from lpspec.language.schema import MathSchema
 
 
 def tidy_sources(

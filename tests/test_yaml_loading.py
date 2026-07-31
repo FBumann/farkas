@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 import lpspec as lps
-from lpspec._yaml import read_yaml
-from lpspec.schema import MathSchema
+from lpspec.language._yaml import read_yaml
+from lpspec.language.schema import MathSchema
 
 MODEL = """dimensions:
   snapshot: {dtype: int, values: [0, 1]}

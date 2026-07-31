@@ -20,8 +20,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, assert_never
 
 from lpspec.errors import LanguageError
-from lpspec.expansion import parse_and_expand
-from lpspec.expression_parser import (
+from lpspec.language.expansion import parse_and_expand
+from lpspec.language.expression_parser import (
     ArithmeticNode,
     BinaryOperatorNode,
     ComparisonNode,
@@ -36,8 +36,8 @@ from lpspec.expression_parser import (
     UnaryOperatorNode,
     VariableNode,
 )
-from lpspec.helpers import BUILTINS, EDGE_WRAP, call_shape_error, edge_error, unknown_helper_message
-from lpspec.where_parser import (
+from lpspec.language.helpers import BUILTINS, EDGE_WRAP, call_shape_error, edge_error, unknown_helper_message
+from lpspec.language.where_parser import (
     AndNode,
     BooleanLiteralNode,
     DimensionComparisonNode,
@@ -55,7 +55,7 @@ from lpspec.where_parser import (
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
-    from lpspec.schema import MathSchema
+    from lpspec.language.schema import MathSchema
 
 
 class Namespace:

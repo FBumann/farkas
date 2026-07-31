@@ -10,13 +10,13 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from lpspec.dimensions import DimensionError, check_schema, dims_of
-from lpspec.resolution import Namespace, expression_of
+from lpspec.language.dimensions import DimensionError, check_schema, dims_of
+from lpspec.language.resolution import Namespace, expression_of
 from tests.conftest import override, schema_of
 from tools import constructs
 
 if TYPE_CHECKING:
-    from lpspec.schema import MathSchema
+    from lpspec.language.schema import MathSchema
 
 #: A *network* dispatch model: `conftest.DISPATCH_MODEL` plus buses, so
 #: `group_sum` and per-bus loads are in scope. The dim rules are mostly about

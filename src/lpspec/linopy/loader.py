@@ -9,7 +9,7 @@ import pandas as pd
 import xarray as xr
 
 from lpspec.errors import DataError, duplicate_coordinate_message, sparse_divisor_message
-from lpspec.expression_parser import (
+from lpspec.language.expression_parser import (
     BinaryOperatorNode,
     ComparisonNode,
     FunctionCallNode,
@@ -20,7 +20,7 @@ from lpspec.expression_parser import (
 )
 
 if TYPE_CHECKING:
-    from lpspec.schema import MathSchema
+    from lpspec.language.schema import MathSchema
 
 
 def build_master_coords(

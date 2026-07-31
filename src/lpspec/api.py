@@ -31,13 +31,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from lpspec._yaml import read_yaml
+from lpspec.language._yaml import read_yaml
+from lpspec.language.schema import MathSchema
+from lpspec.language.validation import validate_expressions
 from lpspec.lowering import lower_program
 from lpspec.piecewise import expand_piecewise
 from lpspec.relational.executor import PolarsExecutor, Result
-from lpspec.schema import MathSchema
 from lpspec.sources import tidy_sources
-from lpspec.validation import validate_expressions
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

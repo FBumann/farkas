@@ -42,13 +42,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from lpspec.dimensions import dims_of
 from lpspec.errors import LanguageError, PiecewiseExpansionError
-from lpspec.expression_parser import ComparisonNode, parse_expression
+from lpspec.language.dimensions import dims_of
+from lpspec.language.expression_parser import ComparisonNode, parse_expression
+from lpspec.language.resolution import Namespace, resolve_expression
+from lpspec.language.schema import MathSchema, PiecewiseBlock
 from lpspec.lowering import check_core_subset
 from lpspec.relational.frames import as_frame
-from lpspec.resolution import Namespace, resolve_expression
-from lpspec.schema import MathSchema, PiecewiseBlock
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

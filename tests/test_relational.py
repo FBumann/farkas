@@ -16,6 +16,7 @@ import pytest
 
 import lpspec as lps
 from lpspec.errors import DataError, LanguageError
+from lpspec.language.schema import MathSchema
 from lpspec.lowering import lower_program
 from lpspec.relational import (
     PolarsExecutor,
@@ -35,7 +36,6 @@ from lpspec.relational.plan import (
     Variable,
     VariableDeclaration,
 )
-from lpspec.schema import MathSchema
 from tests.conftest import solve_lp_file
 from tests.differential import RTOL, differential
 from tests.oracle import linopy, pd, transport_eager_objective, xr

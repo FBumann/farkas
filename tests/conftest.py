@@ -27,7 +27,7 @@ import numpy as np
 import pytest
 import yaml as pyyaml
 
-from lpspec.schema import MathSchema
+from lpspec.language.schema import MathSchema
 
 EXAMPLES_DIR = Path(__file__).parent.parent / 'examples'
 
@@ -126,14 +126,14 @@ def resolved(text, schema):
     this: a raw `parse_expression` result still holds NameNodes, and both
     backends now assert those never reach them (resolution.py).
     """
-    from lpspec.resolution import Namespace, expression_of
+    from lpspec.language.resolution import Namespace, expression_of
 
     return expression_of(text, schema, Namespace.of(schema), 't')
 
 
 def resolved_where(text, schema):
     """Parse + resolve a where string."""
-    from lpspec.resolution import Namespace, where_of
+    from lpspec.language.resolution import Namespace, where_of
 
     return where_of(text, Namespace.of(schema), 't')
 
