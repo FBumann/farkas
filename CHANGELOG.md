@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.1-alpha.38](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.37...v0.0.1-alpha.38) (2026-07-31)
+
+
+### Refactoring
+
+* **relational:** labels and the result are modules, not regions of the executor ([#368](https://github.com/FBumann/lpspec/issues/368)) ([7c8604a](https://github.com/FBumann/lpspec/commit/7c8604ae814f1cfaaaaf512c0bb42b4f808bed56))
+* three small simplifications in the eager lane and piecewise ([#366](https://github.com/FBumann/lpspec/issues/366)) ([b8a5d3e](https://github.com/FBumann/lpspec/commit/b8a5d3e56cd993f3b52505e0ed7e3469d087290f))
+
 ## [0.0.1-alpha.37](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.36...v0.0.1-alpha.37) (2026-07-31)
 
 
