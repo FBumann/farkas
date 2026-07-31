@@ -51,14 +51,13 @@ document must be a mapping.
 
 ## 2. Declarations
 
-**An empty dim list is the empty coordinate, everywhere it appears** — one
-value for a parameter's `dims: []`, one column for a variable's `foreach: []`,
-one row for a constraint's. Not a special case but the ordinary reading of a
-product over nothing, whose unit is a single coordinate rather than none. So a
-dummy dimension of size 1 is never how a scalar is written, and an objective —
-scalar by definition — needs no `foreach` at all. One gap: a scalar **variable**
-may not carry a `where` ([#340](https://github.com/FBumann/lpspec/issues/340)).
-Put the condition on the constraints that use it.
+**An empty dim list is the empty coordinate, everywhere it appears** — one value
+for a parameter's `dims: []`, one column for a variable's `foreach: []`, one row
+for a constraint's. That is the ordinary reading of a product over nothing, not
+a special case, so a dummy dimension of size 1 is never how a scalar is written.
+One gap: a scalar **variable** may not carry a `where`
+([#340](https://github.com/FBumann/lpspec/issues/340)) — put the condition on
+the constraints that use it.
 
 **`dimensions`** — the master coordinate index. Every dimension named anywhere
 must be declared. `dtype` ∈ {`float`, `int`, `str`, `datetime`}, default `str`.
@@ -82,20 +81,16 @@ dimensions:
     coords: {from: bus, to: bus}  # two coordinates onto one dimension
 ```
 
-The target must be a declared dimension, must not be the dimension carrying
-the coordinate, and a coordinate must not be named after a *different*
-dimension. A coordinate is single-valued per label, and its non-null values are
-checked to be coordinates of the target once data is bound (§8) — that check is
-what makes `group_sum` safe.
-
-A coordinate may be **partial**: a null value says the label belongs to no
-group, and `group_sum` places its terms nowhere. That is the same row-absence
-idiom the language uses everywhere else for "not present" — a generator on no
-bus, a line with one open end — and it is distinct from a *wrong* label, which
-is still an error. Null means "no group"; an unknown non-null value is a typo. A dimension declaring `coords` needs an index source
-carrying those columns; they are never inferred from the parameters that use
-the dimension, because inferring them would let a mistyped label extend the
-label space instead of being rejected.
+The target must be a declared dimension, must not be the dimension carrying the
+coordinate, and a coordinate must not be named after a *different* dimension. A
+coordinate is single-valued per label, and its non-null values are checked
+against the target once data is bound (§8) — the check that makes `group_sum`
+safe. A **partial** coordinate is legal: null says the label belongs to no group
+(a generator on no bus, a line with one open end) and `group_sum` places its
+terms nowhere, while an unknown *non-null* value is a typo and an error. A
+dimension declaring `coords` needs an index source carrying those columns; they
+are never inferred from the parameters that use the dimension, since inferring
+would let a mistyped label extend the label space instead of being rejected.
 
 **`parameters`** — declared shape only; data binds by name at run time (§8).
 `dims` required (`[]` is a scalar); `dtype` ∈ {`float`, `int`, `bool`, `str`},
@@ -111,23 +106,19 @@ default `float`.
 | `binary`, `integer` | bool | `false`; not both |
 
 Omitting a bound means unbounded on that side, as in
-`linopy.Model.add_variables` — non-negativity is written, not assumed. Bounds
-are a *narrower* language than expressions (a name or a number, never
-arithmetic) and the error says so rather than reporting a parse failure;
-expressions here are [#31](https://github.com/FBumann/lpspec/issues/31). A
-bound parameter's dims must not exceed `foreach`.
+`linopy.Model.add_variables` — non-negativity is written, not assumed. Bounds are
+a *narrower* language than expressions (a name or a number, never arithmetic) and
+the error says so rather than reporting a parse failure; expressions there are
+[#31](https://github.com/FBumann/lpspec/issues/31). A bound parameter's dims must
+not exceed `foreach`.
 
 **Equal bounds pin a variable**, which is how one declaration covers a quantity
-that is a decision in one model and data in another: declare it as a variable
-always, and bind `lower` and `upper` to the same value where it is fixed.
-`rate - relmax * size <= 0` is then one equation whether `size` is chosen or
-given, instead of a block per regime with pre-multiplied coefficients whose
-names encode the regime rather than the quantity. Presolve fixes and substitutes
-the pinned column, so the solver receives the LP the pre-multiplied form would
-have produced; the cost is the columns before presolve. Two limits: a pinned
-variable is still a variable, so `size * on` remains variable × variable and is
-refused (§5), and it cannot appear in another variable's `bounds`, which take a
-parameter or a number.
+that is a decision in one model and data in another: bind `lower` and `upper` to
+the same value where it is fixed, and `rate - relmax * size <= 0` is one equation
+whether `size` is chosen or given. Presolve substitutes the pinned column, so the
+solver receives the LP the pre-multiplied form would have produced. Two limits: a
+pinned variable is still a variable, so `size * on` is refused as variable ×
+variable (§5), and it cannot appear in another variable's `bounds`.
 
 **`constraints`** — **one rule per block**: `foreach` (required), an optional
 `where`, and one `expression` carrying exactly one of `<=`, `>=`, `==`. The
@@ -154,21 +145,18 @@ storage_balance_initial:
   expression: soc == soc_initial
 ```
 
-`shift` vacates the first snapshot and a vacated position is absent (§7), so
-that row drops without a `where` saying so. Spelling the carry-over `edge=wrap` and
-gating it with `where: "snapshot > 0"` builds the same rows here and a different
-model on a horizon that does not start at 0 — the gate hardcodes the origin,
-where the operator does not.
+`shift` vacates the first snapshot and a vacated position is absent (§7), so that
+row drops without a `where` saying so. Spelling it `edge=wrap` gated on
+`where: "snapshot > 0"` builds the same rows here and a *different* model on a
+horizon not starting at 0 — the gate hardcodes the origin, the operator does
+not.
 
-**`objectives`** — `sense` ∈ {`minimize`, `maximize`}, default `minimize`. An
-objective is a scalar by definition, so **every dim the expression carries is
-summed**; writing the sums out says nothing extra. Each *term* is summed over
-the dims **that term** carries, and is not repeated because another term
-carries a dim it does not: in `x * a + y * b` with `x, a` on `i` and `y, b` on
-`j`, the objective has `|i| + |j|` summands, never `|i| · |j|`.
-
-One `expression`, like a constraint — an objective was always one expression,
-and now it says so in its shape. Declaring more than one objective is a load
+**`objectives`** — one `expression`, like a constraint; `sense` ∈ {`minimize`,
+`maximize`}, default `minimize`; no `foreach`, since an objective is scalar by
+definition. **Every dim the expression carries is summed**, each *term* over the
+dims **that term** carries and not repeated because another term carries a dim it
+does not: in `x * a + y * b` with `x, a` on `i` and `y, b` on `j` there are
+`|i| + |j|` summands, never `|i| · |j|`. Declaring a second objective is a load
 error.
 
 ## 3. `expressions` and `macros`
@@ -347,8 +335,7 @@ row. So the two spellings below are different questions:
 | `sum(x, over=f) + sum(y, over=f)` | each operand over **its own** domain | `x[a] + x[b] + y[a]` |
 
 *The total of the net where the net is defined*, against *the total in minus the
-total out*. Rewriting the first into the second would read the absent `y[b]` as
-a zero — the honest consequence of `+` being addition on a partial domain.
+total out*. Rewriting one into the other reads the absent `y[b]` as a zero.
 
 ### Asking for the other reading
 
@@ -365,12 +352,9 @@ Each rule has a spelling for the opposite intent:
 
 **Only one of those is a fill** (law 8): the coordinate `shift` vacates is
 *created by the operator*, so there is no row a caller could have supplied.
-Everywhere else the value is expressible in the data, and §11 keeps it there —
-`.fillna(inf)` for a bound is one line in the caller, over a table that is one
-row per `foreach` coordinate anyway.
+Everywhere else the value is expressible in the data, and §11 keeps it there.
 
-This is linopy's v1 arithmetic convention, which both lanes are built against;
-`lpspec.linopy.semantics` is where the eager lane answers it.
+This is linopy's v1 arithmetic convention, which both lanes are built against.
 
 ### 6.1 Where strings
 
@@ -420,43 +404,29 @@ a comparison of dialects. Dimension arguments are name-checked at load time:
 | `shift(array, over=dim, by=n, edge=wrap)` | value at *t−n*, cyclic | coordinates fixed, values wrap; nothing is vacated |
 | `shift(array, over=dim, by=n, edge=v)` | value at *t−n* | vacated positions contribute the number **`v`** instead, and the row survives (`0` for a sum, `1` for a product) |
 
-**One operator, and `edge=` is the whole boundary question.** The three
-policies are values of one keyword rather than two keywords that can
-contradict each other, so "cyclic, and also fill what it vacates" has no
-spelling to be refused — a cyclic map vacates nothing, and the surface says so
-by construction.
+`array` is any node of the right dim set, so `shift` re-indexes a **parameter**
+as readily as a variable: `shift(dt, over=t, by=1, edge=0)` is the previous
+snapshot's duration, without shipping a pre-shifted copy of a table the model
+already has.
 
-`array` is any node of the right dim set, so `shift` re-indexes a
-**parameter** as readily as a variable: `shift(dt, over=t, by=1, edge=0)` is the
-previous snapshot's duration, and saves shipping a pre-shifted copy of a table
-the model already has.
+Four rules govern `edge=`, and all four are law 8 in this position:
 
-The position a shift leaves at the edge is **absent** in exactly §6's sense, so
-an acyclic recurrence has no row at its first coordinate rather than a row
-asserting the quantity starts at zero. An initial condition is then something
-the model states, under a complementary `where`, rather than something the
-language supplies unasked.
-
-A numeric `edge=` asks for a value back instead, and it is a **number rather
-than a flag because the identity is positional** (law 8): `lam <= seg +
-shift(seg, over=bp, by=1, edge=0)` bounds the first breakpoint by the first
-segment, where dropping the row would leave it unbounded; `x * shift(eff,
-over=t, by=1, edge=1)` leaves the first coordinate governed by its own bound,
-where `edge=0` would pin it. The library
-cannot see which position it is in and the model can — which is v1's own reason
-for refusing to fill on a caller's behalf.
-
-The same law bounds what a numeric `edge` may be. Over an expression carrying a
-**variable** the only representable value is `0`, since a vacated slot there
-contributes no term at all and a nonzero one would be a constant standing where
-a term was.
-
-**A bare `shift` over a variable-free expression is a load error.** Absence is a
-property of variables (§6); a parameter's missing row is a zero coefficient, so
-there is no absence for the vacated slot to carry and inventing a value there is
-what silently turned `x <= shift(dt, over=t, by=1)` into `x <= 0`. The error
-names the three things it could have meant: `edge=0`, a `where` that masks the
-coordinate out, or `edge=wrap` if the horizon is genuinely cyclic.
+- **Bare** — the vacated coordinate is absent in exactly §6's sense, so an
+  acyclic recurrence has no row at its first coordinate rather than a row
+  asserting the quantity starts at zero. An initial condition is then something
+  the model states, under a complementary `where`.
+- **Numeric** — asks for a value back, and it is a number rather than a flag
+  because the identity is positional: `0` for a sum, `1` for a product. The
+  library cannot see which position it is in and the model can.
+- **Over a variable, the only representable numeric edge is `0`** — a vacated
+  slot there contributes no term at all, and a nonzero one would be a constant
+  standing where a term was.
+- **A bare `shift` over a variable-free expression is a load error.** A
+  parameter's missing row is a zero coefficient (§6), so there is no absence for
+  the vacated slot to carry, and inventing one silently turns
+  `x <= shift(dt, over=t, by=1)` into `x <= 0`. The error names the three things
+  it could have meant: `edge=0`, a `where` masking the coordinate out, or
+  `edge=wrap`.
 
 Anything composable out of these belongs in `macros:`. Math that is not sayable
 at all goes to a declared `escape:` island
@@ -531,92 +501,9 @@ silent fallback, never a redirection to the other lane.
 
 ## 10. Python API
 
-Five verbs — `check`, `load_schema`, `build`, `solve`, `write` — and the
-exception tree rooted at `LinopyYamlError`: `LanguageError` (with `SchemaError`,
-`DimensionError`, `PiecewiseExpansionError`) for the model, `DataError` for what
-was bound to it.
-
-```python
-import lpspec as lps
-
-lps.check('model.yaml')  # parse → validate → lower, no data bound
-schema = lps.load_schema('model.yaml')  # MathSchema
-
-result = lps.solve('model.yaml', sources, solver_options={'time_limit': 60})
-result.status, result.termination_condition, result.objective
-result.is_ok  # linopy's rollup: not an error, abort or refusal
-result.has_primal  # narrower: are there values to read
-result.primal('p')  # tidy frame (dims…, value) — the native shape
-result.dual('power_balance')  # shadow prices, the same shape and the same join
-result.to_pandas('p')  # the same, as a DataFrame
-result.to_dataarray('p')  # the same, labelled: .sel / resample / plot
-result.to_dataset()  # every variable by default; names for a subset
-result.to_parquet(directory)  # streamed to disk, never through this process
-
-lps.write('model.yaml', sources, 'model.lp')  # sink chosen by the suffix
-```
-
-**Nothing has to be released.** The built model is frames this process owns, so
-`primal` and the `to_*` readers stay valid for as long as the `Result` does.
-`close()` and the context-manager protocol exist to hand a large model back
-early, not because forgetting them breaks anything. `lps.build` returns the
-executor when one build should feed more than one sink:
-
-```python
-ex = lps.build('model.yaml', sources)
-ex.write_lp('model.lp')
-result = ex.solve()
-```
-
-What `sources` accepts is §8. Nothing on this path imports linopy, and `primal`
-returns a `polars.DataFrame` — Arrow-backed, so it exports the same protocol the
-loader recognises. `to_pandas` and `to_dataarray` are the bridges out and need
-pandas / xarray, which ship with the `[linopy]` extra.
-
-The only build knob is `coords`, shared by all three entry points.
-**`solver_options` is separate and is not a build knob** — it is forwarded
-verbatim to the solver, the shape linopy takes (`{"time_limit": 60,
-"mip_rel_gap": 0.01}`); build knobs govern construction and never reach it.
-
-**`is_ok` is not `has_primal`.** `is_ok` is linopy's rollup of the termination
-condition; `has_primal` adds the solver's own verdict on whether an incumbent
-exists, and it is what every reader gates on. They differ exactly when a run
-stops early: a MIP that hits `time_limit` before finding any feasible point is
-`ok` with nothing to read. Reading anyway raises `NoSolutionError`, and
-`objective` is `nan`. `to_dataset` costs what it says — each variable arrives
-dense over its own dims, so anything but a small model should name a subset or
-use `to_parquet`. `dual` is the same label
-join against the constraint's row frame, and **raises rather than returning
-zeros** in either of the two ways it can come up empty: no values at all is
-`NoSolutionError`, the gate `primal` passes through too, while a solve that
-*did* leave values but no duals — any integer or binary variable makes them
-undefined — raises `LinopyYamlError`, because the primals are still readable
-and only this quantity is missing. Duals exist only on the `solver_direct`
-path — a model written to LP and solved elsewhere never passes back through
-here. Reduced costs and slacks ride the same join and are not exposed yet.
-`.lp` is the only sink `write` supports today; `.mps` raises
-`NotImplementedError`.
-
-**Linopy shim** (`lpspec.linopy`, `[linopy]` extra) — two *pure producers*,
-YAML in, model out, nothing retained:
-
-```python
-from lpspec import linopy as lpspec_linopy
-
-m = lpspec_linopy.build('model.yaml', data={...}, coords={...})  # -> linopy.Model
-lpspec_linopy.extend(m, 'ramp.yaml', data={...})  # mutates m in place
-```
-
-`build` returns a plain `linopy.Model` — no accessor, no attached schema, no
-patched attributes — so nothing is lost across `pickle`, `deepcopy` or
-`to_netcdf`; to inspect the math, re-read the file with `lps.load_schema`.
-`extend` may reference variables already on the model (they come from the model
-argument, not from Python-side history), while the YAML must still declare every
-parameter *and dimension* it uses — the declaration is required, the `values:`
-are not, since they can come from the model. Coords precedence for `extend`: the `coords=` kwarg, then
-coords inferred from the model's variables, then `values:` in the YAML, then
-error — a `values:` contradicting the model's existing coordinate is an error,
-not a silent override. There is no `register()` decorator and no helper registry.
+How to *run* a model is [docs/api.md](api.md) — five verbs, the result readers
+and the linopy shim. It is a separate page because it is not part of the
+language: nothing there changes what a file means.
 
 ## 11. Out of scope
 
