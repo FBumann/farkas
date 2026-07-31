@@ -37,22 +37,47 @@ the current cost: five changes since the port have moved the build phase a long
 way, and the `_factored` label path §9 recorded as missing is only the first of
 them.
 
-Where it stands, build phase, minimum of three repeats, `duckdb ÷ polars`:
+## Where it stands, 2026-07-31
 
-| | at the port | now |
+Build phase, `duckdb ÷ polars`, minimum of three repeats, both sinks, machine
+load 3–6 on 8 cores. `bench/results/engines*.jsonl` is the provenance; **the
+noise floor is printed per row there** and every ratio below clears it.
+
+| | `m` | `l` |
 |---|---:|---:|
-| `dispatch/l` | 3.03× | **0.55×** |
-| `nodal/l` | 3.65× | **1.06×** |
-| `transport/l` | 2.20× | 1.39× |
+| `dispatch` | 2.7–2.9× | 2.2× |
+| `fleet` | 2.3–2.5× | 2.3–2.4× |
+| `nodal` | 3.4–3.5× | 1.9–2.0× |
+| `profiled` | 2.4× | 1.5–1.6× |
+| `sector` | 3.8–4.0× | 2.9–3.0× |
+| `transport` | 2.0–2.2× | 1.5× |
 
-Peak follows the same way at that rung — 0.88–0.92× on `dispatch` and `nodal`
-against 1.2–1.5× before. The exception is `transport` on the write path
-(1.45×), which is the price of deriving label relations rather than writing
-them down: three derivations of a 7M-row relation are alive at once inside its
-`UNION ALL`, and it buys 23% of that case's build.
+**duckdb is slower everywhere, and it is not lighter.** Peak lands between
+0.83× and 1.46× — lighter on `dispatch`, `fleet` and `nodal`, heavier on
+`profiled`, `sector` and `transport`. The top rung says the same thing
+(`dispatch/xl`, 40M columns: 1.57 s against 0.83 s, peak 0.95×), and so does a
+mask-density sweep from d100 to d08 (2.3–3.4× at every density, peak 0.80–1.13×).
 
-**Below `l` the ratio inverts** and duckdb is 1.6–2.5× slower: what is left is
-per-statement overhead, which is fixed and therefore dominates a small model.
+That is a reversal, and a recent one. Five duckdb optimisations (#403, #404,
+#405, #407, #411) took its `dispatch/l` build down 62% and had it *ahead* at
+the top of the ladder — and then five polars ones (#408, #412, #413, #414,
+#415) cut that engine's `dispatch/xl` build from 6.84 s to 0.83 s. Nothing
+here regressed. The other engine moved further.
+
+**The memory ceiling was measured, and it is not an engine question.** duckdb
+has the knob — `SET memory_limit`, spilling past it — and it does not bind:
+`dispatch/xl`, 40M columns, engine capped at 500 MB, builds unchanged and peaks
+at 2.98 GB, of which **2.61 GB is the four frames**. The engine's own working
+set was already under the cap (§9's label relations are views now, not tables).
+Peak is the output, so a declared bound is a `ModelTables` question — one that
+produces its chunks rather than holding them — and the same change on either
+engine.
+
+**What is still untested rather than refuted:** every rung on this ladder fits
+in RAM, so the original argument — a model that does not — has not been
+measured either way. §9's recommendation to decide the write-path question
+first still stands, and the answer it was expecting is no longer the obvious
+one.
 
 ---
 

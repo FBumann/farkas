@@ -151,11 +151,26 @@ way to say "build this within N gigabytes or fail".
 `LPSPEC_ENGINE=duckdb` **is not the answer**, and that is worth knowing before
 this track is picked up. The figure this section used to quote — 2.1–4.2x less
 memory on the write path — was measured on the engine the in-tree one was
-ported from, and the port has never reproduced it: at the top of the ladder
-(`dispatch/xl`, 40M columns) the two peak within 2% of each other
+ported from, and the port has never reproduced it: across six cases and both
+sinks its peak lands between 0.83x and 1.46x of the default engine's, lighter
+on three cases and heavier on three
 ([bench/duckdb-spike.md](https://github.com/FBumann/lpspec/blob/main/bench/duckdb-spike.md)).
-What the second engine buys at that rung is *speed* — a build in 2.66 s against
-6.84 s — which is a different question from the one this section asks.
+It is not a smaller build; it is a differently-shaped one.
+
+**But it locates the ceiling, which is worth more than a ratio.** duckdb *does*
+have the knob this section asks for — `SET memory_limit`, and it spills past
+it. Setting it shows the knob is aimed at the wrong half: `dispatch/xl`, 40M
+columns, with the engine capped at **500 MB**, builds unchanged and peaks at
+**2.98 GB — of which 2.61 GB is the four frames themselves.** The engine's own
+working set was already under the cap. Peak is the *output*, not the
+computation, and no engine-side limit can reach it.
+
+So a declared bound is a **sink-contract** question rather than an engine one,
+on either engine. The sinks are already chunked — `lp_file` at `EMIT_BUDGET`,
+`solver_direct` by nonzeros through `row_chunks_by_nonzeros` — and both are
+handed a fully materialised `ModelTables` to slice. A `ModelTables` that
+produced its chunks instead of holding them would bound the write path to one
+chunk plus the labels, and it is the same change whichever engine fills it.
 
 What remains is a declared bound, and the honest version is partition-wise
 execution, which the locality closure already guarantees is safe. Measured on
