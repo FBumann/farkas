@@ -14,6 +14,8 @@ stay small enough for it — a few hundred columns, where the limit is 2000.
 from __future__ import annotations
 
 import builtins
+import gc
+import weakref
 from typing import Any
 
 import polars as pl
@@ -194,6 +196,21 @@ def test_build_gurobi_loads_the_model_and_stops() -> None:
         assert m.NumIntVars == tables.cols.filter(pl.col('vtype') != 'continuous').height
         assert m.ModelSense == gurobipy.GRB.MAXIMIZE
         assert m.SolCount == 0
+
+
+def test_nothing_keeps_a_built_model_alive() -> None:
+    """The precondition for releasing the licence a built model holds.
+
+    :func:`build_gurobi` hands ownership over and disposes the environment
+    through a finalizer on the model, so anything in this package still
+    referencing that model would hold a Gurobi licence open for the life of
+    the process. The one-shot :func:`solve_gurobi` path does not depend on
+    this — it disposes both in a ``finally``.
+    """
+    with lps.build(MIP, DATA['MIP']) as ex:
+        reference = weakref.ref(build_gurobi(ex._tables()))
+    gc.collect()
+    assert reference() is None, 'a built gurobi model outlived its caller — its environment cannot be released'
 
 
 def test_the_objective_constant_rides_on_the_model_not_the_answer() -> None:

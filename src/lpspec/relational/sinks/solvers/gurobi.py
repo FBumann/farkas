@@ -18,6 +18,7 @@ this module stays free for a caller who never solves with it.
 
 from __future__ import annotations
 
+import weakref
 from typing import TYPE_CHECKING, Any
 
 import polars as pl
@@ -85,8 +86,18 @@ def build_gurobi(
     for its reason: the search is the same work whoever filled the model.
     ``batch_rows`` is the budget in *nonzeros*, and stays a parameter so tests
     can force ragged blocks.
+
+    **The caller owns the model, so the environment follows it.** gurobipy has
+    no ``Model.getEnv()``, so a caller handed only the model could never
+    release the licence it holds; a finalizer disposes the environment when
+    the model is collected, which under refcounting is when the caller drops
+    it. That is one thing to own rather than two, and it is why this returns a
+    model rather than a pair. (linopy's equivalent — a solver model detached
+    from its `Solver` — leaves the environment to gurobipy to free whenever.)
     """
-    return _load(model, batch_rows, solver_options)[0]
+    m, _x, _blocks, environment = _load(model, batch_rows, solver_options)
+    weakref.finalize(m, environment.dispose)
+    return m
 
 
 def solve_gurobi(
