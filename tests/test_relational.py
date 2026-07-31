@@ -716,6 +716,39 @@ def test_infinite_bounds_survive_the_handoff(dispatch_data):
         assert ex.solve().is_ok
 
 
+def test_a_solution_is_read_back_in_label_order_without_sorting_for_it():
+    """The order is produced by the labeller, so the read-back only reads it.
+
+    Seeding the vector with an ``arange`` makes every value its own label, so a
+    read-back in label order comes out ascending — which is the contract
+    `sol.primal` states, asserted directly rather than through the sort that
+    used to establish it. The mask puts the variable on the factored path and
+    the constraint on the counted one, so neither is ordered by being a scan.
+
+    The plan assertion is the other half: re-imposing the order is not wrong,
+    it moved a full copy of the coordinates — 681 MB reading `dispatch/l` back
+    — at the moment the solver's own model is still resident.
+    """
+    model = {
+        'dimensions': {'t': {'dtype': 'int', 'values': [0, 1, 2, 3]}, 'g': {'values': ['a', 'b', 'c']}},
+        'parameters': {'cap': {'dims': ['g']}, 'load': {'dims': ['t']}},
+        'variables': {'p': {'foreach': ['t', 'g'], 'where': 'cap > 0', 'bounds': {'lower': 0, 'upper': 'cap'}}},
+        'constraints': {'meet': {'foreach': ['t'], 'where': 'load > 0', 'expression': 'sum(p, over=g) >= load'}},
+        'objectives': {'o': {'sense': 'minimize', 'expression': 'sum(sum(p, over=g), over=t)'}},
+    }
+    sources = {
+        'cap': pl.DataFrame({'g': ['a', 'b', 'c'], 'value': [5.0, 0.0, 7.0]}),
+        'load': pl.DataFrame({'t': [0, 1, 2, 3], 'value': [1.0, 0.0, 2.0, 3.0]}),
+    }
+    with lps.build(model, sources) as ex:
+        primal = pl.Series('value', np.arange(ex._n_cols, dtype=np.float64))
+        dual = pl.Series('value', np.arange(ex._n_rows, dtype=np.float64))
+        variable = ex._solution_frame('p', primal)
+        assert 'SORT' not in variable.explain(optimized=False), 'the labeller already ordered this'
+        assert variable.collect()['value'].to_list() == list(range(len(primal))), 'primal not in label order'
+        assert ex._dual('meet', dual)['value'].to_list() == list(range(len(dual))), 'dual not in label order'
+
+
 @pytest.mark.parametrize('length', [2, 5], ids=['short', 'long'])
 def test_a_solver_vector_that_does_not_span_the_model_is_refused(monkeypatch, length):
     """A wrong length is a different model's answer, not a short one.
