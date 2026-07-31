@@ -118,8 +118,8 @@ flowchart TB
     classDef plan fill:#fdf4e8,stroke:#b7791f,stroke-width:1.5px,stroke-dasharray:5 4,color:#111
     classDef waist fill:#e9edfa,stroke:#4a5fc1,stroke-width:3px,color:#111
     classDef fam fill:#fcfcfb,stroke:#c9c5be,color:#111
-    class Y,R1,R2,R3,C1,C2,A1,S1 built
-    class C3,S2,S3,A2,A3 plan
+    class Y,R1,R2,R3,C1,C2,A1,S1,S2 built
+    class C3,S3,A2,A3 plan
     class AST waist
     class RUN,CHECK,SHOW,ANS fam
 ```
@@ -127,7 +127,7 @@ flowchart TB
 **Solid is what ships today; dashed is what the shape makes cheap.** None of the
 dashed boxes is a rewrite — each reads the same AST the engine reads, so a
 renderer is a tree walk, a check is a pass with no data bound, and a new output
-format is one function in `relational/sinks/`. `latex.py` is that claim cashed:
+format is one function in `relational/sinks/`. `typeset/` is that claim cashed:
 a **spike** that typesets any model the lanes can build, in one walk of the
 resolved AST, holding no opinion the lanes do not already hold — including a
 `piecewise:` block, which prints as the λ-formulation it expands to rather than
@@ -136,7 +136,10 @@ read off the model: a symbol table is presentation, so it is a sidecar file
 (`examples/symbols/`) rather than keys on `MathSchema`, and a model with no
 table still renders. It splits the way `relational/sinks/` does — one walk over
 the AST, one module per output format — so a format is a spelling table rather
-than a second walk that could disagree about what the model says. Two properties carry it: **data
+than a second walk that could disagree about what the model says.
+`python -m lpspec <format>` is the shell front for it, one verb per entry in
+`typeset.FORMATS` rather than a list that could fall behind: a consumer that
+needs no data needs no runner. Two properties carry it: **data
 enters at exactly one place**, which is why checking a model costs seconds and
 needs nothing but the file; and the waist is **closed**, which is what the
 ceiling in [docs/design/ceiling.md](design/ceiling.md) protects — a new consumer
@@ -268,6 +271,7 @@ than discovered at solve time.
 
 | Module | Role |
 |---|---|
+| `_yaml.py` | the only place a file is read: YAML 1.2 booleans, duplicate keys refused |
 | `schema.py` | pydantic schema incl. `expressions:` / `macros:` / `piecewise:` |
 | `expression_parser.py`, `where_parser.py` | text → core AST; grammar only, dependency-free |
 | `expansion.py` | named-expression / macro substitution (pre-dispatch) |
@@ -275,8 +279,9 @@ than discovered at solve time.
 | `dimensions.py` | static dim-set checking over the resolved AST |
 | `validation.py` | load-time: parse, expand, resolve, check everything |
 | `piecewise.py` | `piecewise:` → λ-formulation declarations + curvature guard |
-| `api.py` | native entry point: `check` / `solve` / `write`, linopy-free |
-| `typeset/` | **spike** — resolved AST → LaTeX / Typst. A reader, not a lane: no model, no data, no plan ([README](https://github.com/FBumann/lpspec/blob/main/src/lpspec/typeset/README.md)) |
+| `api.py` | native entry point: `check` / `build` / `solve` / `write`, linopy-free |
+| `typeset/` | **spike** — resolved AST → LaTeX / Typst / Markdown. A reader, not a lane: no model, no data, no plan ([README](https://github.com/FBumann/lpspec/blob/main/src/lpspec/typeset/README.md)) |
+| `__main__.py` | `python -m lpspec <format>` — a shell front for the verbs that bind no data |
 | `sources.py` | bind runtime data (parquet paths / in-memory tables) to a validated schema |
 | `lowering.py` | core AST → logical plan (defines the relational subset) |
 | `helpers.py` | the closed set of built-in operators: their *names* and *call shapes* — no registry |
@@ -288,6 +293,7 @@ than discovered at solve time.
 | `relational/status.py` | solve outcome on two axes; linopy's vocabulary, copied not imported |
 | `relational/executor.py` | bind sources, assign labels, assemble the model frames |
 | `relational/data_validation.py` | is the bound data usable — one row per coordinate, labels that exist, single-valued coords |
+| `relational/sinks/tables.py` | what every sink reads and no more — the four frames plus the batching scalars |
 | `relational/sinks/` | how a built model leaves: `lp_file`, `solver_direct` (one module each, [README](https://github.com/FBumann/lpspec/blob/main/src/lpspec/relational/sinks/README.md)) |
 | `linopy/__init__.py` | opt-in shim: `build` / `extend` on a `linopy.Model` |
 | `linopy/loader.py` | data coercion to `xr.Dataset`, master coords |
