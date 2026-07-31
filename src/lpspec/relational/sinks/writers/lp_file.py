@@ -57,9 +57,11 @@ def write_lp_file(model: ModelTables, path: str | Path) -> None:
 
     path = Path(path)
     objective = model.obj.lazy().sort('col').select(_term(pl.col('coeff'), pl.col('col')))
+    # `cols` is positional, so the index is added inside the streamed pipeline
+    # rather than sorted out of a column the model carried all along.
     bounds = (
         model.cols.lazy()
-        .sort('col')
+        .with_row_index('col')
         .select(
             pl.concat_str(
                 _bound(pl.col('lb'), '-infinity').alias('lb'),
@@ -89,7 +91,7 @@ def write_lp_file(model: ModelTables, path: str | Path) -> None:
         _sink(bounds, f)
 
         for variable_type, keyword in (('binary', 'binary'), ('integer', 'general')):
-            chosen = model.cols.lazy().filter(pl.col('vtype') == variable_type).sort('col')
+            chosen = model.cols.lazy().with_row_index('col').filter(pl.col('vtype') == variable_type)
             if chosen.select(pl.len()).collect().item() == 0:
                 continue
             f.write(f'\n{keyword}\n'.encode())

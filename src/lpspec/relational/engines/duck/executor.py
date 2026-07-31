@@ -340,7 +340,12 @@ class DuckExecutor(Engine):
         labelled = Rel(f'SELECT * FROM {q(name)}', (*v.dims, 'var_label'))
 
         bounded = self._q.bounds(labelled, v)
-        sql = f'SELECT var_label AS col, lb::DOUBLE AS lb, ub::DOUBLE AS ub FROM {bounded.alias("b")}'
+        # **`ORDER BY`, and no `col`.** `cols` is read positionally now
+        # (`sinks/tables.py`), so a row's place in this frame is its solver
+        # column index. The polars engine gets that order from the emission
+        # order of a cross join and only *verifies* it; SQL promises no order
+        # at all, so here it is asked for outright.
+        sql = f'SELECT lb::DOUBLE AS lb, ub::DOUBLE AS ub FROM {bounded.alias("b")} ORDER BY var_label'
         # `vtype` is attached here rather than selected as a literal in SQL:
         # one word per column is one *copy* of that word per row over the wire,
         # and the frame's stated dtype is an Enum holding four bytes.

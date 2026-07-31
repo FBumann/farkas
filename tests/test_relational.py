@@ -37,6 +37,7 @@ from lpspec.relational.plan import (
     Variable,
     VariableDeclaration,
 )
+from lpspec.relational.sinks import SOLVERS
 from tests.conftest import by_coord, solve_lp_file
 from tests.differential import RTOL, differential
 from tests.oracle import linopy, pd, transport_eager_objective, xr
@@ -715,6 +716,36 @@ def test_infinite_bounds_survive_the_handoff(dispatch_data):
         assert ex.solve().is_ok
 
 
+@pytest.mark.parametrize('solver_name', sorted(SOLVERS))
+@pytest.mark.parametrize('batch_rows', [1, 2, 7, 100_000], ids=['one', 'two', 'odd', 'whole'])
+def test_a_row_with_no_terms_keeps_its_seat_at_any_chunking(solver_name, batch_rows):
+    """Rows reach a solver by position, so an empty one still occupies one.
+
+    `where: "t > 0"` leaves `balance` at `t = 0` with nothing to sum, and this
+    lane keeps the row: `0 == 5` is infeasible and says so. Both solvers now
+    take the row bounds from a dense vector and slice it per chunk, which is
+    the same hand-off only if every label in the range has a seat — a row that
+    fell out of the frame would take a comparison nothing can fail, leave the
+    constraint unenforced, and the model would come back solved against a
+    model that cannot be.
+
+    Ragged batches because the range loop is where a seat would be lost, and a
+    round number is the one split that hides an off-by-one. Both solvers,
+    because the seating is now theirs jointly rather than either one's.
+    """
+    model = {
+        'dimensions': {'t': {'dtype': 'int', 'values': [0, 1, 2]}, 'g': {'values': ['a', 'b']}},
+        'parameters': {'load': {'dims': ['t']}},
+        'variables': {'p': {'foreach': ['t', 'g'], 'where': 't > 0', 'bounds': {'lower': 0, 'upper': 100}}},
+        'constraints': {'balance': {'foreach': ['t'], 'expression': 'sum(p, over=g) == load'}},
+        'objectives': {'o': {'sense': 'minimize', 'expression': 'sum(sum(p, over=g), over=t)'}},
+    }
+    with lps.build(model, {'load': pl.DataFrame({'t': [0, 1, 2], 'value': [5.0, 4.0, 6.0]})}) as ex:
+        assert sorted(set(ex._tables().matrix['row'].to_list())) == [1, 2], 'row 0 is the orphan under test'
+        solution = ex.solve(batch_rows=batch_rows, solver_name=solver_name)
+        assert solution.termination_condition == 'infeasible'
+
+
 def test_row_chunks_are_bounded_by_nonzeros_not_by_rows():
     """A chunk of rows is a chunk of *entries*, and only entries are residency.
 
@@ -1223,3 +1254,44 @@ def test_dense_columns_does_not_edit_the_model_it_projects():
         assert all(v == float('inf') for v in tables.cols['ub'].to_list()), 'the frame lost its infinities'
         assert list(second_ub) == [1e100, 1e100], "the second solver got the first solver's infinity"
         assert list(first) == [0.0, 0.0]
+
+
+@pytest.mark.parametrize('where', [None, 'cap > 0'])
+def test_cols_is_positional_so_a_row_index_is_its_solver_column(where):
+    """Every row of `cols` sits at its own label, masked or not.
+
+    `cols` carries no `col`: it is one row per column in label order, so a
+    row's position *is* the solver's index. Both arithmetic label paths get
+    that order from the emission order of a **cross join**, which is a property
+    of polars rather than of this package — so it is checked here against the
+    label frame, which knows the answer independently.
+
+    Two dims on purpose: one dim is a scan and cannot be out of order, so a
+    single-dim model would pass whatever the product did. Bounds are distinct
+    per coordinate for the same reason — a frame permuted by a mask, a join, or
+    a change in someone else's engine still has the right *multiset* of bounds
+    and the wrong row for every one of them.
+    """
+    caps = [
+        {'i': i, 'j': j, 'value': 0.0 if where and (i, j) == (1, 'b') else float(10 * i + ord(j))}
+        for i in range(4)
+        for j in ('a', 'b', 'c')
+    ]
+    model = {
+        'dimensions': {'i': {'dtype': 'int', 'values': list(range(4))}, 'j': {'values': ['a', 'b', 'c']}},
+        'parameters': {'cap': {'dims': ['i', 'j']}},
+        'variables': {'x': {'foreach': ['i', 'j'], 'bounds': {'lower': 0, 'upper': 'cap'}}},
+        'constraints': {'c': {'foreach': ['i', 'j'], 'expression': 'x <= cap'}},
+        'objectives': {'o': {'sense': 'maximize', 'expression': 'sum(sum(x, over=j), over=i)'}},
+    }
+    if where:
+        model['variables']['x']['where'] = where
+
+    with lps.build(model, {'cap': pl.DataFrame(caps)}) as ex:
+        tables = ex._tables()
+        assert 'col' not in tables.cols.columns, 'cols carries an index it does not need'
+        assert tables.cols.height == tables.column_count
+
+        labels = ex._variables['x'].collect().sort('var_label')
+        expected = labels.join(pl.DataFrame(caps), on=['i', 'j'], how='left')['value'].to_list()
+        assert tables.cols['ub'].to_list() == expected, 'a bound is attached to the wrong column'

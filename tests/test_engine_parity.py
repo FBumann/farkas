@@ -74,7 +74,9 @@ def using(engine: str):
 
 def _frames(tables) -> dict[str, pl.DataFrame]:
     return {
-        'cols': tables.cols.sort('col'),
+        # `cols` is positional — one row per column in label order — so
+        # sorting it would hide exactly the disagreement this compares
+        'cols': tables.cols,
         'rows': tables.rows.sort('row'),
         'matrix': tables.matrix.sort('row', 'col'),
         'obj': tables.obj.sort('col'),

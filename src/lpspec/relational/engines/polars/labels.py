@@ -93,7 +93,7 @@ class Labeller:
                 frame = self._q.frame(dims, None)
                 rows = math.prod(self._card[d] for d in dims)
                 labelled = frame.select(*dims, self.row_major(dims, start).alias(label))
-                return labelled.collect(engine='streaming'), start + rows
+                return _in_label_order(labelled.collect(engine='streaming'), label), start + rows
 
             free = plan.free_prefix(dims, plan.predicate_dims(where, self._param_dims))
             if free:
@@ -164,16 +164,15 @@ class Labeller:
             return empty, start
 
         labelled = (
-            self._q.frame(head, None)
-            .select(*head, self.row_major(head, 0).alias('__position'))
-            .join(survivors.lazy(), how='cross')
+            survivors.lazy()
+            .join(self._q.frame(head, None).select(*head, self.row_major(head, 0).alias('__position')), how='cross')
             .select(
                 *dims,
                 (pl.lit(start, dtype=pl.Int64) + pl.col('__position') * width + pl.col('__rank')).alias(label),
             )
             .collect(engine='streaming')
         )
-        return labelled, start + labelled.height
+        return _in_label_order(labelled, label), start + labelled.height
 
     def row_major(self, dims: tuple[str, ...], start: int) -> pl.Expr:
         """Row-major position in *dims*' coordinate product, offset by *start*.
@@ -193,3 +192,23 @@ class Labeller:
             position = position + pl.col(_ordinal(d)) * stride
             stride *= self._card[d]
         return position
+
+
+def _in_label_order(frame: pl.DataFrame, label: str) -> pl.DataFrame:
+    """*frame* in label order — checked, not assumed.
+
+    **The order is free but it is not ours.** Both arithmetic paths get it from
+    the emission order of a cross join, and polars' streaming engine walks one
+    right-major, which is why the product is folded in reverse
+    (`compiler._coordinate_product`). That is an implementation detail of a
+    dependency, and a label is arithmetic on ordinals rather than a position —
+    so a change there would not corrupt a *label*. It would silently stop the
+    frame being sorted, and `cols` is read positionally.
+
+    So the claim is verified. `is_sorted` is a linear scan over a column the
+    frame already holds; the sort behind it is the correctness floor and is
+    expected never to run.
+    """
+    if frame.height and not frame[label].is_sorted():
+        return frame.sort(label)
+    return frame
