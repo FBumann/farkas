@@ -107,62 +107,22 @@ you write once is the same model that gets checked, solved, typeset and read
 back.
 
 ```mermaid
-flowchart TB
-    Y(["your math, written once — one YAML file"])
-
-    Y --> AST
-
-    AST["the whole model, typed and checked<br/>before a byte of data is read<br/><b>lps.load_schema → MathSchema</b>"]
-
-    AST --> SHOW
-    AST --> CHECK
-    AST --> RUN
-
-    subgraph SHOW["show it — no data, no solver"]
-        direction TB
-        S1(["typeset the math for a paper or a review<br/><b>lps.to_latex · to_typst · to_markdown</b><br/>how names print: <b>SymbolTable</b>"])
-        S2(["drive it from the command line<br/><b>python -m lpspec &lt;format&gt;</b>"])
-        S3(["watch what a build is doing"])
-    end
-
-    subgraph CHECK["check it — no data, no solver"]
-        direction TB
-        C1(["will this build, and is the math sayable?<br/><b>lps.check</b>"])
-        C2(["do the dimensions line up?<br/><b>lps.check</b> — same pass, same answer"])
-        C3(["will that solver take it, and how big is it?"])
-    end
-
-    subgraph RUN["run it — the only part that touches your data"]
-        direction TB
-        R1(["stream it straight into a solver<br/><b>lps.solve</b> · <b>lps.build</b> for several sinks"])
-        R2(["write an LP file for anything else<br/><b>lps.write</b>"])
-        R3(["put the same math on a linopy model<br/><b>lpspec.linopy.build · .extend</b>"])
-    end
-
-    R1 --> ANS
-
-    subgraph ANS["your answers, as tables you can join"]
-        direction TB
-        A1(["values and shadow prices, by name<br/><b>result.objective · .primal · .dual</b><br/>bridges out: <b>.to_pandas · .to_parquet</b>"])
-        A2(["derived results and diagnostics"])
-        A3(["change a number, re-solve, keep the labels"])
-    end
-
+flowchart LR
+    Y(["your math, written once<br/>one YAML file"]) --> AST
+    AST["<b>the whole model</b><br/>typed and checked before<br/>a byte of data is read"]
+    AST --> SHOW["<b>show it</b><br/>typeset · CLI"]
+    AST --> CHECK["<b>check it</b><br/>will this build?"]
+    AST --> RUN["<b>run it</b><br/>solver · LP file · linopy"]
+    RUN --> ANS(["<b>your answers</b><br/>tables you can join"])
     classDef built fill:#eef6ee,stroke:#3a7d44,stroke-width:1.5px,color:#111
-    classDef plan fill:#fdf4e8,stroke:#b7791f,stroke-width:1.5px,stroke-dasharray:5 4,color:#111
     classDef waist fill:#e9edfa,stroke:#4a5fc1,stroke-width:3px,color:#111
-    classDef fam fill:#fcfcfb,stroke:#c9c5be,color:#111
-    class Y,R1,R2,R3,C1,C2,A1,S1,S2 built
-    class C3,S3,A2,A3 plan
+    class Y,SHOW,CHECK,RUN,ANS built
     class AST waist
-    class RUN,CHECK,SHOW,ANS fam
 ```
 
-**Solid is what ships today; dashed is what the shape makes cheap** — which is
-also to say the solid boxes are the ones with a name in them. That is the whole
-Python surface bar the error hierarchy, which is cross-cutting rather than a
-box; [the table below](#the-python-surface) is the same set, listed. None of the
-dashed boxes is a rewrite — each reads the same AST the engine reads, so a
+**Each box is a family, and [the table below](#the-python-surface) is its
+members** — including the ones nobody has built, which is the point: none of
+them is a rewrite. Each reads the same AST the engine reads, so a
 renderer is a tree walk, a check is a pass with no data bound, and a new output
 format is one function in `relational/sinks/`. `typeset/` is that claim cashed:
 a **spike** that typesets any model the lanes can build, in one walk of the
@@ -194,19 +154,26 @@ is free, a new primitive is taxed. What is planned, and why, is
 ### The Python surface
 
 **Sixteen names, and that is the feature.** The model is the YAML file; Python
-is how you *run* it, so the surface is the diagram above written out — one
-group per box, nothing that constructs math, nothing that reaches the plan.
+is how you *run* it — so the whole surface is the diagram above written out,
+with nothing that constructs math and nothing that reaches the plan. Names are
+`lpspec.` unless shown otherwise; *italic rows are the ones the shape makes
+cheap and nobody has built.*
 
-| | `lpspec.` | |
+| | you want to | the call |
 |---|---|---|
-| **run it** | `solve` · `build` · `write` · `check` | the four verbs; `check` binds no data |
-| **load it** | `load_schema` · `MathSchema` | parse and validate; the schema is the contract under the YAML |
-| **show it** | `to_latex` · `to_typst` · `to_markdown` · `SymbolTable` | one per format, plus how names print |
-| **catch it** | `LinopyYamlError` · `LanguageError` · `DataError` · `DimensionError` · `SchemaError` · `PiecewiseExpansionError` | one hierarchy, split model from run |
-
-Plus two on the opt-in shim — `lpspec.linopy.build` and `.extend` — and the
-methods of what `solve` hands back (`Result`: `objective`, `primal`, `dual`,
-`to_pandas` / `to_dataarray` / `to_parquet`, the status pair, `close`).
+| **load it** | parse and validate, and stop there | `load_schema` → `MathSchema` |
+| **show it** | typeset for a paper or a review | `to_latex` · `to_typst` · `to_markdown` (spelling: `SymbolTable`) |
+| | drive it from a shell | `python -m lpspec <format>` |
+| | *watch what a build is doing* | |
+| **check it** | will this build, do the dimensions line up | `check` — one pass, both answers |
+| | *will that solver take it, and how big is it* | |
+| **run it** | stream it straight into a solver | `solve`, or `build` to drive several sinks off one build |
+| | write an LP file for anything else | `write` |
+| | put the same math on a `linopy.Model` | `lpspec.linopy.build` · `.extend` |
+| **read it** | values, shadow prices, the objective | `result.objective` · `.primal` · `.dual`, plus the status pair |
+| | bridge out to another library | `.to_pandas` · `.to_dataarray` · `.to_parquet` |
+| | *derived results; re-solve with new numbers, same labels* | |
+| **catch it** | tell a bad model from bad data | `LinopyYamlError` ⊃ `LanguageError` · `DataError` · `DimensionError` · `SchemaError` · `PiecewiseExpansionError` |
 
 `tests/test_architecture.py` pins all of it: `__all__` must match the table,
 **and** no public non-module attribute may exist outside it. Both directions,
