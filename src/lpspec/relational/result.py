@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     import pandas as pd
     import polars as pl
 
-    from lpspec.relational.executor import PolarsExecutor
+    from lpspec.relational.engines.polars.executor import PolarsExecutor
     from lpspec.relational.status import SolveStatus
 
 

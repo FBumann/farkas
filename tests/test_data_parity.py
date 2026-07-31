@@ -3,7 +3,7 @@
 `test_resolution_parity.py` does this for the language: the same YAML is
 accepted or refused identically, because hard rule 3 says both lanes accept
 exactly the same language. Nothing said the same about the same **data**, and
-the checks are written twice — 15 `DataError` sites in `relational/executor.py`
+the checks are written twice — 15 `DataError` sites in `relational/engines/polars/executor.py`
 against 16 in `linopy/loader.py`, with only the wording of two of them shared
 (#351). Two of the six cases below diverged when this table was written:
 

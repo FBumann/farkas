@@ -389,7 +389,7 @@ def test_every_plan_node_is_handled_by_the_compiler():
     """
     import lpspec.relational.plan as plan
 
-    compiler_src = (PKG / 'relational' / 'compiler.py').read_text()
+    compiler_src = (PKG / 'relational' / 'engines' / 'polars' / 'compiler.py').read_text()
     for base in (plan.Expression, plan.Predicate):
         unhandled = [c.__name__ for c in base.__subclasses__() if f'plan.{c.__name__}' not in compiler_src]
         assert not unhandled, f'plan.{base.__name__} nodes unknown to the compiler: {unhandled}'

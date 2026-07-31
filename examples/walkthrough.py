@@ -30,7 +30,7 @@ import lpspec as lps
 from lpspec.language.expansion import parse_and_expand
 from lpspec.language.expression_parser import parse_expression
 from lpspec.lowering import lower_program
-from lpspec.relational.executor import PolarsExecutor
+from lpspec.relational.engines.polars.executor import PolarsExecutor
 from lpspec.sources import tidy_sources
 
 HERE = Path(__file__).parent
@@ -113,7 +113,7 @@ def main() -> None:
     print('    ^ frozen dataclasses, no macro, no YAML, no linopy, no engine')
 
     # ------------------------------------------------------------------
-    banner(4, 'plan + data -> the model frames', 'relational/executor.py')
+    banner(4, 'plan + data -> the model frames', 'relational/engines/polars/executor.py')
     # First stage to see a number. Sources are adapted to tidy frames
     # (dims..., value) and the executor assembles the model from them.
     #

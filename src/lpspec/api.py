@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING, Any
 
 from lpspec.language.validation import load_schema
 from lpspec.lowering import lower_program
-from lpspec.relational.executor import PolarsExecutor
+from lpspec.relational.engines.polars.executor import PolarsExecutor
 from lpspec.sources import tidy_sources
 
 if TYPE_CHECKING:
