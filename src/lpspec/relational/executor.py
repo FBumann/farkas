@@ -23,7 +23,7 @@ import polars as pl
 from lpspec.errors import (
     DataError,
     LanguageError,
-    LinopyYamlError,
+    LpspecError,
     null_bounds_message,
     sparse_divisor_message,
 )
@@ -66,7 +66,7 @@ _DTYPES = {
 #: engine cannot build) and :class:`~lpspec.errors.DataError` (a source is
 #: missing or the wrong shape). This alias is their common base, so an existing
 #: ``except RelationalBuildError`` keeps catching everything it used to.
-RelationalBuildError = LinopyYamlError
+RelationalBuildError = LpspecError
 
 
 class PolarsExecutor:

@@ -165,7 +165,7 @@ def test_macros_and_named_expressions_are_expanded_away(fmt: Format):
 @EVERY_FORMAT
 def test_an_invalid_model_fails_the_same_way_check_does(fmt: Format):
     broken = {**DISPATCH, 'objectives': {'total_cost': {'expression': 'p * nonexistent'}}}
-    with pytest.raises(lps.LinopyYamlError):
+    with pytest.raises(lps.LpspecError):
         typeset(broken, fmt)
 
 

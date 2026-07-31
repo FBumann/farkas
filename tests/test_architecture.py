@@ -290,7 +290,7 @@ PUBLIC_API = {
     'load it': {'load_schema', 'MathSchema'},
     'show it': {'to_latex', 'to_markdown', 'to_typst', 'SymbolTable'},
     'catch it': {
-        'LinopyYamlError',
+        'LpspecError',
         'LanguageError',
         'DataError',
         'DimensionError',

@@ -152,14 +152,14 @@ def test_error_hierarchy_is_one_catchable_tree():
     from lpspec.relational import RelationalBuildError
 
     for cls in (lps.LanguageError, lps.DataError):
-        assert issubclass(cls, lps.LinopyYamlError)
+        assert issubclass(cls, lps.LpspecError)
     for cls in (lps.SchemaError, lps.DimensionError, lps.PiecewiseExpansionError):
         assert issubclass(cls, lps.LanguageError)
     assert not issubclass(lps.DataError, lps.LanguageError)
-    assert issubclass(lps.LinopyYamlError, ValueError)
+    assert issubclass(lps.LpspecError, ValueError)
 
     # the retired name still catches everything it used to
-    assert RelationalBuildError is lps.LinopyYamlError
+    assert RelationalBuildError is lps.LpspecError
 
 
 def test_multi_file_composition_reserved(dispatch_yaml):

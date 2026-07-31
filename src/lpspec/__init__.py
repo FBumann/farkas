@@ -23,7 +23,7 @@ from lpspec.errors import (
     DataError,
     DimensionError,
     LanguageError,
-    LinopyYamlError,
+    LpspecError,
     PiecewiseExpansionError,
     SchemaError,
 )
@@ -34,7 +34,7 @@ __all__ = [
     'DataError',
     'DimensionError',
     'LanguageError',
-    'LinopyYamlError',
+    'LpspecError',
     'MathSchema',
     'PiecewiseExpansionError',
     'SchemaError',

@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 import polars as pl
 
-from lpspec.errors import LinopyYamlError
+from lpspec.errors import LpspecError
 from lpspec.relational.status import SolveStatus
 
 if TYPE_CHECKING:
@@ -212,7 +212,7 @@ def _loaded(h: Any, status: Any, what: str) -> None:
     import highspy
 
     if status == highspy.HighsStatus.kError:
-        raise LinopyYamlError(
+        raise LpspecError(
             f'the solver refused a batch of {what}: {h.modelStatusToString(h.getModelStatus())!r}. '
             f'Nothing was loaded, so any answer would describe a different model. '
             f'This is an engine bug rather than a problem with the model — please report it.'

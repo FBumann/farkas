@@ -13,8 +13,8 @@ The split that matters is **the model versus the run**:
 * :class:`DataError` — the file is fine; what was bound to it is not. An
   unbound source, a column that does not carry the declared dims.
 
-Everything subclasses :class:`LinopyYamlError`, which subclasses
-``ValueError`` — so code that catches ``ValueError`` today keeps working.
+Everything subclasses :class:`LpspecError`, which subclasses ``ValueError`` —
+so code that catches ``ValueError`` today keeps working.
 
 One gap, on purpose: ``schema.py``'s field validators keep raising plain
 ``ValueError``, because pydantic collects those into its own
@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 
-class LinopyYamlError(ValueError):
+class LpspecError(ValueError):
     """Base class for every error this package raises on purpose."""
 
 
@@ -43,7 +43,7 @@ class LinopyYamlError(ValueError):
 # ---------------------------------------------------------------------------
 
 
-class LanguageError(LinopyYamlError):
+class LanguageError(LpspecError):
     """The model is not sayable in the language, or does not obey its rules."""
 
 
@@ -64,11 +64,11 @@ class PiecewiseExpansionError(LanguageError):
 # ---------------------------------------------------------------------------
 
 
-class DataError(LinopyYamlError):
+class DataError(LpspecError):
     """Data bound to a valid model is missing or the wrong shape."""
 
 
-class NoSolutionError(LinopyYamlError):
+class NoSolutionError(LpspecError):
     """The solve returned no values to read — infeasible, unbounded, errored.
 
     Neither the model nor the data was wrong; the answer is that there is no
@@ -82,7 +82,7 @@ __all__ = [
     'DataError',
     'DimensionError',
     'LanguageError',
-    'LinopyYamlError',
+    'LpspecError',
     'NoSolutionError',
     'PiecewiseExpansionError',
     'SchemaError',

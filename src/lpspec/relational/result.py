@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from lpspec.errors import LinopyYamlError, NoSolutionError
+from lpspec.errors import LpspecError, NoSolutionError
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -116,11 +116,11 @@ class Result:
         return zeros: no values at all is
         :class:`~lpspec.errors.NoSolutionError`, while primals without duals —
         any integer variable makes them undefined — raises
-        :class:`~lpspec.errors.LinopyYamlError`. Duals exist only on this sink.
+        :class:`~lpspec.errors.LpspecError`. Duals exist only on this sink.
         """
         self._require_solution(f"the dual of '{name}'")
         if self._dual_values is None:
-            raise LinopyYamlError(self._executor._no_duals_reason(self.termination_condition))
+            raise LpspecError(self._executor._no_duals_reason(self.termination_condition))
         return self._executor._dual(name, self._dual_values)
 
     def to_pandas(self, name: str) -> pd.DataFrame:
