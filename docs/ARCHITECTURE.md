@@ -62,7 +62,7 @@ flowchart TB
     AST --> WALK
     AST -.->|"opt-in: lpspec.linopy"| BUILD
 
-    DATA[("your data<br/>parquet · any Arrow table · pandas")] --> SRC
+    DATA[("your data<br/>parquet · polars · any Arrow table")] --> SRC
     DATA -.->|"opt-in: data="| LOAD
 
     LOWER["<b>lowering.py</b> — flat<br/>AST → plan; the subset test"]
@@ -140,7 +140,7 @@ flowchart LR
     AST --> SHOW["<b>show it</b><br/>typeset · CLI<br/><i>no data, no solver</i>"]
     AST --> CHECK["<b>check it</b><br/>parse → expand → validate → lower<br/><i>no data, no solver</i>"]
     AST --> RUN["<b>run it</b><br/>solver · LP file · linopy"]
-    DATA[("your data<br/>parquet · any Arrow table")] --> RUN
+    DATA[("your data<br/>parquet · polars · any Arrow table")] --> RUN
     RUN --> ANS(["<b>your answers</b><br/>tables you can join"])
     classDef built fill:#eef6ee,stroke:#3a7d44,stroke-width:1.5px,color:#111
     classDef waist fill:#e9edfa,stroke:#4a5fc1,stroke-width:3px,color:#111
