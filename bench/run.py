@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
 import re
 import subprocess
@@ -52,9 +53,14 @@ if TYPE_CHECKING:
 RESULTS = Path(__file__).resolve().parent / 'results'
 CACHE = Path(__file__).resolve().parent / '.cache'
 
+#: Engine arms. An arm named here is the `lpspec` lane built by that engine,
+#: reached by setting `LPSPEC_ENGINE` for the child — the same switch a caller
+#: has, so the harness measures the shipped mechanism rather than a private one.
+#: `lpspec` is the default engine and sets nothing.
+ENGINE_ARMS = {'duckdb': 'duckdb'}
 GATE_RTOL = 1e-9
 _EXCEPTION = re.compile(r'^[\w.]*(Error|Exception)\b')
-TRACKED = ('lpspec', 'linopy', 'highspy', 'polars', 'pandas', 'numpy', 'xarray', 'pyarrow')
+TRACKED = ('lpspec', 'linopy', 'duckdb', 'highspy', 'polars', 'pandas', 'numpy', 'xarray', 'pyarrow')
 
 
 def _commit(root: Path) -> str | None:
@@ -107,12 +113,19 @@ def fingerprint() -> dict[str, Any]:
     }
 
 
-def _child(args: list[str], timeout: float) -> dict[str, Any]:
+def _child(args: list[str], timeout: float, engine: str | None = None) -> dict[str, Any]:
     """Run one measurement in its own process and parse its single JSON line.
 
     One process per measurement, always: peak RSS is a high-water mark, so two
-    measurements in one process report the larger of them twice.
+    measurements in one process report the larger of them twice. That is also
+    what makes `LPSPEC_ENGINE` the right way to reach a second engine here —
+    the child is already its own process, so the environment is per-measurement
+    with nothing to reset.
     """
+    env = dict(os.environ)
+    env.pop('LPSPEC_ENGINE', None)
+    if engine is not None:
+        env['LPSPEC_ENGINE'] = engine
     proc = subprocess.run(
         [sys.executable, '-m', 'bench._run_case', *args],
         capture_output=True,
@@ -120,6 +133,7 @@ def _child(args: list[str], timeout: float) -> dict[str, Any]:
         timeout=timeout,
         cwd=Path(__file__).resolve().parent.parent,
         check=False,
+        env=env,
     )
     if proc.returncode != 0:
         # a failure is a result: an OOM at a given budget is exactly the kind of
@@ -158,13 +172,14 @@ def loops(case: str, sizes: list[str], arms: list[str], opts: argparse.Namespace
                     '--size',
                     size,
                     '--arm',
-                    arm,
+                    'lpspec' if arm in ENGINE_ARMS else arm,
                     '--cache',
                     str(CACHE),
                     '--builds',
                     str(opts.builds),
                 ],
                 opts.timeout,
+                ENGINE_ARMS.get(arm),
             )
             record |= {'record': 'loop', 'case': case, 'size': size, 'arm': arm}
             first = record.get('first_build_seconds')
@@ -187,10 +202,14 @@ def gate(case: str, timeout: float, arms: Sequence[str] = ('lpspec', 'linopy')) 
     check the first two answer to.
     """
     size = CASES[case].ladder[0].label
-    results = {
-        arm: _child(['solve', '--case', case, '--size', size, '--arm', arm, '--cache', str(CACHE)], timeout)
-        for arm in arms
-    }
+    results = {}
+    for arm in arms:
+        child_arm = 'lpspec' if arm in ENGINE_ARMS else arm
+        results[arm] = _child(
+            ['solve', '--case', case, '--size', size, '--arm', child_arm, '--cache', str(CACHE)],
+            timeout,
+            ENGINE_ARMS.get(arm),
+        )
     failed = {arm: r['error'] for arm, r in results.items() if 'error' in r}
     if failed:
         return {'record': 'gate', 'case': case, 'size': size, 'passed': False, 'reason': failed, 'detail': results}
@@ -222,7 +241,7 @@ def timings(case: str, sizes: list[str], arms: list[str], opts: argparse.Namespa
                         '--size',
                         size,
                         '--arm',
-                        arm,
+                        'lpspec' if arm in ENGINE_ARMS else arm,
                         '--sink',
                         sink,
                         '--cache',
@@ -230,7 +249,7 @@ def timings(case: str, sizes: list[str], arms: list[str], opts: argparse.Namespa
                     ]
                     if arm == 'linopy' and sink == 'lp':
                         args += ['--io-api', opts.io_api]
-                    record = _child(args, opts.timeout)
+                    record = _child(args, opts.timeout, ENGINE_ARMS.get(arm))
                     # stamped by the parent so a *failed* run is still fully
                     # identified — a failure is a result here
                     record |= {
@@ -264,7 +283,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         '--sizes', nargs='+', default=['xs', 's', 'm'], help="rung labels, or 'all' for every rung a case has"
     )
-    ap.add_argument('--arms', nargs='+', default=['lpspec', 'linopy'])
+    ap.add_argument('--arms', nargs='+', default=['lpspec', 'linopy'], choices=('lpspec', 'linopy', *ENGINE_ARMS))
     ap.add_argument('--repeat', type=int, default=1)
     ap.add_argument(
         '--builds',

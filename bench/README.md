@@ -69,6 +69,18 @@ than a rival dialect.
 Not measured, deliberately: solve time (that is HiGHS, identical either way, and
 it would swamp the build), and anything about expressiveness.
 
+### The `duckdb` arm
+
+`--arms lpspec duckdb` times the same lane on the other engine. It is not a
+third code path: the arm runs the `lpspec` arm with `LPSPEC_ENGINE` set for
+that child, which is the switch a caller has — so the harness measures the
+shipped mechanism rather than one only it knows about. One process per
+measurement is what makes an environment variable the right tool here; there is
+nothing to reset afterwards.
+
+Needs the extra (`uv sync --extra duckdb`). The findings are in
+[duckdb-spike.md](duckdb-spike.md).
+
 ## Why it is built this way
 
 **One process per measurement.** Peak RSS is a property of a process. A second
