@@ -60,7 +60,11 @@ def _run_lpspec(
     case: Case, paths: dict[str, str], lp: Path, phases: Phases, opts: argparse.Namespace
 ) -> dict[str, Any]:
     import lpspec as lps
-    from lpspec.relational.sinks.solvers.highs import build_highs
+
+    if opts.sink == 'gurobi':
+        from lpspec.relational.sinks.solvers.gurobi import build_gurobi as build_solver
+    else:
+        from lpspec.relational.sinks.solvers.highs import build_highs as build_solver
 
     # The parameter/dimension split is harness bookkeeping — it re-parses the
     # YAML only because the runner, not lpspec, decides which parquet file is
@@ -74,12 +78,13 @@ def _run_lpspec(
     if opts.sink == 'lp':
         ex.write(lp)
     else:
-        # the hand-off, and nothing past it. `run()` is never called: the
-        # simplex is the same work whoever filled the model, so timing it would
-        # swamp the phase this harness exists to measure and publish a number
-        # about HiGHS under our name. `build_highs` is the seam that stops
-        # there — linopy's `to_highspy()` is the same seam on the other side.
-        _handle = build_highs(ex._tables())
+        # the hand-off, and nothing past it. `run()` / `optimize()` is never
+        # called: the search is the same work whoever filled the model, so
+        # timing it would swamp the phase this harness exists to measure and
+        # publish a number about the solver under our name. `build_highs` and
+        # `build_gurobi` are the seams that stop there — `to_highspy()` and
+        # `to_gurobipy()` are the same seams on linopy's side.
+        _handle = build_solver(ex._tables())
     phases.mark('emit')
 
     # Read after the clock stops: counts are the harness's, not the engine's.
@@ -116,9 +121,17 @@ def _run_linopy(
         # stdout
         m.to_file(lp, io_api=opts.io_api, progress=False)
     else:
-        # the same seam as the lpspec arm: both end holding a populated
-        # `highspy.Highs` with `run()` never called
-        _handle = m.to_highspy()
+        # The same seam as the lpspec arm: both end holding a populated solver
+        # model with the search never started.
+        #
+        # `set_names=False` is what makes them the same artifact. linopy names
+        # every variable and constraint by default and this sink names none, so
+        # the default call would time a *feature* neither arm's model needs to
+        # be solved — and it is not a rounding error: naming is 82% of the
+        # HiGHS hand-off (0.11s against 0.02s at 200k variables) and 35% of the
+        # Gurobi one. Leaving it in would report our own lead as several times
+        # what it is.
+        _handle = m.to_gurobipy(set_names=False) if opts.sink == 'gurobi' else m.to_highspy(set_names=False)
     phases.mark('emit')
     counts = {'columns': int(m.nvars), 'rows': int(m.ncons), 'nonzeros': None}
     return {'phases': phases.times, 'counts': counts}
@@ -225,8 +238,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         '--sink',
         default='lp',
-        choices=('lp', 'highs'),
-        help='where the built model goes: an LP file, or straight into HiGHS',
+        choices=('lp', 'highs', 'gurobi'),
+        help='where the built model goes: an LP file, or straight into a solver',
     )
     ap.add_argument('--cache', type=Path, default=None)
     opts = ap.parse_args(argv)

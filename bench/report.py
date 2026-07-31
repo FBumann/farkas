@@ -99,9 +99,16 @@ _SEAM = {
     'lp': 'lpspec writes the LP file, linopy through its `lp-polars` writer.',
     'highs': (
         'Both arms end holding a populated `highspy.Highs` with `run()` never '
-        'called: lpspec through `build_highs`, linopy through `to_highspy()`. '
-        'The simplex is the same work whoever filled the model, so timing it '
-        'would say nothing about the lane that filled it.'
+        'called: lpspec through `build_highs`, linopy through '
+        '`to_highspy(set_names=False)`. The simplex is the same work whoever '
+        'filled the model, so timing it would say nothing about the lane that '
+        'filled it.'
+    ),
+    'gurobi': (
+        'Both arms end holding a populated `gurobipy.Model` with `optimize()` '
+        'never called: lpspec through `build_gurobi`, linopy through '
+        '`to_gurobipy(set_names=False)`. Opt-in — it needs the `[gurobi]` '
+        'extra — and the same discipline as the `highs` sink.'
     ),
 }
 
