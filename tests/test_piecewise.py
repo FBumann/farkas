@@ -19,13 +19,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from lpspec.language.piecewise import PiecewiseExpansionError, expand_piecewise
 from lpspec.lowering import lower_program
-from lpspec.piecewise import (
-    PiecewiseExpansionError,
-    expand_piecewise,
-    validate_piecewise_data,
-)
-from lpspec.sources import tidy_sources
+from lpspec.sources import tidy_sources, validate_piecewise_data
 from tests.conftest import override, raw_of, schema_of
 from tests.differential import differential
 from tests.oracle import lpspec_linopy, pd

@@ -31,50 +31,21 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from lpspec.language._yaml import read_yaml
-from lpspec.language.schema import MathSchema
-from lpspec.language.validation import validate_expressions
+from lpspec.language.validation import load_schema
 from lpspec.lowering import lower_program
-from lpspec.piecewise import expand_piecewise
 from lpspec.relational.executor import PolarsExecutor
 from lpspec.sources import tidy_sources
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from lpspec.language.schema import MathSchema
     from lpspec.relational.result import Result
 
-
-def load_schema(model: str | Path | dict[str, Any] | MathSchema) -> MathSchema:
-    """Load and validate a model definition.
-
-    Accepts a YAML file path, an already-parsed dict, or a ``MathSchema``.
-    Validation is complete at this point: schema shape, every expression and
-    where string, every named expression and macro template — and every
-    declaration a formulation emits, since those are language too. That is why
-    expansion runs *before* validation here, the order the linopy lane already
-    uses: validating the file as written checks a strict subset of the model
-    that gets built.
-
-    Returns the schema *as the file declares it*, with ``piecewise:`` blocks
-    intact — expansion is idempotent and each lane redoes it, while the
-    curvature data guard needs the blocks themselves
-    (``validate_piecewise_data``).
-    """
-    if isinstance(model, (list, tuple)):
-        msg = (
-            'composing multiple YAML files into one program is not implemented '
-            'yet — track https://github.com/FBumann/lpspec/issues/30'
-        )
-        raise NotImplementedError(msg)
-    if isinstance(model, MathSchema):
-        schema = model
-    elif isinstance(model, dict):
-        schema = MathSchema(**model)
-    else:
-        schema = MathSchema(**read_yaml(Path(model)))
-    validate_expressions(expand_piecewise(schema))
-    return schema
+#: Re-exported: parsing and validating a model is the *language's* job, and a
+#: consumer that binds no data (``typeset``) must be able to reach it without
+#: reaching the runner. Callers keep saying ``lps.load_schema``.
+__all__ = ['build', 'check', 'load_schema', 'solve', 'write']
 
 
 def check(model: str | Path | dict[str, Any] | MathSchema) -> MathSchema:

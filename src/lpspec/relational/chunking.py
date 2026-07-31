@@ -2,8 +2,10 @@
 
 One rule, in one place: a pass has a *budget* in elements and walks *units*
 that each carry ``width`` of them, so it takes ``budget // width`` units at a
-time. Three passes need this — label assignment over a leading dim, the
-constraint text, the solver hand-off — and they differ only in what a unit is.
+time. The passes that need it — the constraint text and the solver hand-off,
+both reaching it through :class:`~lpspec.relational.sinks.tables.ModelTables`
+— differ only in what a unit is: a row costs its average nonzeros, a column
+costs one.
 
 The width is the part that gets forgotten, and forgetting it does not look
 like a bug. ``solver_direct`` chunked the constraint matrix by rows with no

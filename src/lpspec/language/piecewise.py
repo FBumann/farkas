@@ -33,25 +33,32 @@ expressions lie on the piecewise curve exactly. Without it (``convex:
 true``), they range over the convex hull of the breakpoints — the correct
 relaxation for convex/concave curves under optimisation pressure.
 
-Link expressions must use the core language subset (their dims are inferred
-through the lowering machinery), which they need anyway to run on both
-backends.
+A link expression is judged against the *language* before it is expanded —
+resolved, degree-checked (:mod:`~lpspec.language.degree`), and its dims taken
+from :mod:`~lpspec.language.dimensions`. Judging it here rather than leaving
+it to a lane is what keeps ``p * p`` named against the link the user wrote
+instead of against ``curve_link0``, a declaration they never saw.
+
+It is deliberately *not* checked against what a plan node can represent. This
+module runs in every lane, including the ones that build no plan, and a
+refusal about plan shapes is the consuming lane's business
+(docs/ARCHITECTURE.md, "What counts as language"). Asking lowering for that
+verdict is what tied this file to an engine — for a message whose real
+payload was degree, which is language and now says so.
+
+The curvature guard is not here either: convexity is a property of the
+breakpoint *values*, so it needs data and lives in :mod:`lpspec.sources`.
+What remains is expansion, and expansion is language.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
-
 from lpspec.errors import LanguageError, PiecewiseExpansionError
+from lpspec.language.degree import check_expression
 from lpspec.language.dimensions import dims_of
 from lpspec.language.expression_parser import ComparisonNode, parse_expression
 from lpspec.language.resolution import Namespace, resolve_expression
 from lpspec.language.schema import MathSchema, PiecewiseBlock
-from lpspec.lowering import check_core_subset
-from lpspec.relational.frames import as_frame
-
-if TYPE_CHECKING:
-    from collections.abc import Mapping
 
 
 def expand_piecewise(schema: MathSchema) -> MathSchema:
@@ -171,11 +178,14 @@ def _declared_order(schema: MathSchema, dims: frozenset[str]) -> list[str]:
 
 
 def _expr_dims(schema: MathSchema, text: str, ctx: str) -> frozenset[str]:
-    """Dims of an affine link expression, checked to be in the core subset.
+    """Dims of an affine link expression.
 
-    Lowering is the subset test — it is what raises on a link the engine has
-    no plan node for — and ``dimensions`` is the dim set, which is a language
-    property rather than a lowering by-product.
+    The frame a block is emitted over is the union of its links' dims, so the
+    dim set has to be known *here*, before any declaration exists to carry it.
+    ``dimensions`` is the one implementation of that question, and asking it
+    is the whole of what this needs: whether the engine has a plan node for
+    the expression is a different question, asked later by whichever lane
+    builds a plan.
     """
     ast = parse_expression(text)
     if isinstance(ast, ComparisonNode):
@@ -186,94 +196,9 @@ def _expr_dims(schema: MathSchema, text: str, ctx: str) -> frozenset[str]:
         raise PiecewiseExpansionError('\n'.join(errors))
     assert not isinstance(resolved, ComparisonNode)
     try:
-        check_core_subset(resolved, schema, ctx)
+        check_expression(resolved, ctx)
         return dims_of(resolved, schema, ctx)
     except LanguageError as exc:
         raise PiecewiseExpansionError(
-            f'{ctx}: link expression {text!r} is not a core-subset affine expression: {exc}'
+            f'{ctx}: link expression {text!r} is not a valid affine expression: {exc}'
         ) from exc
-
-
-def validate_piecewise_data(schema: MathSchema, values: Mapping[str, Any] | Any) -> None:
-    """Data-time guard for ``convex: true`` blocks (SPEC §3.6).
-
-    The hull relaxation is silently wrong for curves of mixed curvature, and
-    ill-defined when the x-breakpoints are not strictly monotone — with the
-    breakpoint values in hand (which the schema never has), both are
-    checkable. *values* maps parameter names to whatever its lane holds: the
-    tidy ``pyarrow.Table`` / parquet path of
-    :func:`~lpspec.lowering.tidy_sources`, or the linopy lane's
-    ``xr.Dataset``. Blocks whose parameters are missing, or bound to a path
-    (not readable in process), are skipped; a missing parameter errors
-    elsewhere.
-    """
-    import numpy as np
-
-    for name, pw in schema.piecewise.items():
-        if not pw.convex:
-            continue
-        try:  # only convex curvature checks need xarray (broadcast over dims)
-            import xarray as xr
-        except ImportError as exc:
-            msg = (
-                f"piecewise '{name}': convex curvature validation currently "
-                f'requires xarray — pip install "lpspec[linopy]" '
-                f'(see issue #27: make this check numpy-only)'
-            )
-            raise ModuleNotFoundError(msg) from exc
-        ctx = f"piecewise '{name}'"
-        (x_link, y_link) = pw.links  # convex requires exactly two links
-        try:
-            xa = _as_dataarray(schema, x_link[1], values)
-            ya = _as_dataarray(schema, y_link[1], values)
-        except KeyError:
-            continue
-        xa, ya = xr.broadcast(xa, ya)
-        other = [d for d in xa.dims if d != pw.over]
-        stacked_x = xa.transpose(*other, pw.over).values.reshape(-1, xa.sizes[pw.over])
-        stacked_y = ya.transpose(*other, pw.over).values.reshape(-1, ya.sizes[pw.over])
-        for xs, ys in zip(stacked_x, stacked_y, strict=False):
-            dx = np.diff(xs)
-            if not (dx > 0).all():
-                raise PiecewiseExpansionError(
-                    f"{ctx}: convex: true requires strictly increasing breakpoints in '{x_link[1]}' (got {xs.tolist()})"
-                )
-            curvature = np.diff(np.diff(ys) / dx)
-            tol = 1e-9 * max(1.0, float(np.abs(ys).max()))
-            if (curvature > tol).any() and (curvature < -tol).any():
-                raise PiecewiseExpansionError(
-                    f'{ctx}: convex: true is not exact for the mixed-curvature '
-                    f"curve in '{y_link[1]}' — the hull relaxation would silently "
-                    f'cut corners; drop convex: true to use the exact MILP form'
-                )
-
-
-def _as_dataarray(schema: MathSchema, pname: str, values: Mapping[str, Any] | Any) -> Any:
-    """One source as a DataArray indexed by its declared dims.
-
-    Two shapes reach here: the linopy lane hands over its ``xr.Dataset``
-    entries directly, and the relational lane hands over the tidy frames
-    :func:`sources.tidy_sources` normalised. The hop out costs no dependency
-    the caller has not taken — asking for a curvature check already requires
-    xarray, which brings pandas — but the check still wants to be numpy-only
-    (issue #27), which would retire this function.
-    """
-    import xarray as xr
-
-    if pname not in values:
-        raise KeyError(pname)
-    obj = values[pname]
-    if isinstance(obj, xr.DataArray):
-        return obj
-    dims = list(schema.parameters[pname].dims)
-    frame = as_frame(obj, tuple(dims))
-    if frame is None or not dims or 'value' not in frame.collect_schema().names():
-        raise KeyError(pname)  # a parquet path, or nothing to lay out: skip
-    import pandas as pd
-
-    # column by column through numpy: a whole-frame conversion would reach for
-    # pyarrow, and this check already costs the caller xarray without adding a
-    # third library to it
-    tidy = frame.select([*dims, 'value']).collect()
-    columns = {name: tidy[name].to_numpy() for name in tidy.columns}
-    return xr.DataArray.from_series(pd.DataFrame(columns).set_index(dims)['value'])
