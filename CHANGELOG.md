@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.52](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.51...v0.0.1-alpha.52) (2026-07-31)
+
+
+### Features
+
+* **sinks:** gurobi, and the two families it revealed ([#418](https://github.com/FBumann/lpspec/issues/418)) ([8730498](https://github.com/FBumann/lpspec/commit/8730498a6f9f38c09041d152ce39bc66c499a31f))
+
 ## [0.0.1-alpha.51](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.50...v0.0.1-alpha.51) (2026-07-31)
 
 
