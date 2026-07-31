@@ -665,6 +665,12 @@ def _propagate_absence(compiled: CompiledExpression) -> CompiledExpression:
     restriction naming a dim a fragment does not have cannot speak about it, and
     a constant part lacking the summed dims is refused by ``_sum_fragment``
     before it gets here.
+
+    The restriction is a **semi-join, so the presence frame is not deduplicated
+    first**. A semi-join asks whether a key occurs, and occurring twice is still
+    occurring — the distinct changes no row and costs a hash pass over every
+    coordinate the variable has. On `dispatch/l` that pass was a third of the
+    restriction.
     """
     restrictions = [
         (p.presence_dims or p.dims, p.presence) for p in (*compiled.terms, *compiled.consts) if p.presence is not None
@@ -676,7 +682,7 @@ def _propagate_absence(compiled: CompiledExpression) -> CompiledExpression:
         frame = p.frame
         for on, presence in restrictions:
             if all(d in p.dims for d in on):
-                frame = frame.join(presence.select(list(on)).unique(), on=list(on), how='semi')
+                frame = frame.join(presence.select(list(on)), on=list(on), how='semi')
         return replace(p, frame=frame)
 
     return _map_fragments(compiled, restrict)

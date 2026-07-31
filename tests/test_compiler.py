@@ -170,6 +170,32 @@ def test_sum_drops_the_dim_it_sums_over_without_aggregating():
     assert 'AGGREGATE' not in query(fragment.frame)
 
 
+def test_a_reduction_restricts_by_existence_and_does_not_deduplicate():
+    """A semi-join asks whether a key occurs, so nothing distinguishes first.
+
+    A distinct on the right of one changes no row: occurring twice is still
+    occurring. It costs a hash pass over every coordinate the variable has,
+    which on `dispatch/l` was a third of the restriction — and it is invisible
+    from the answer, since both plans return the same frame.
+    """
+    masked = plan.Program(
+        parameters=PROGRAM.parameters,
+        variables=(
+            plan.VariableDeclaration(
+                'p', ('snapshot', 'generator'), where=plan.ParameterComparison('available', '>', 0.0)
+            ),
+        ),
+        constraints=(),
+        objective=PROGRAM.objective,
+        dimensions=PROGRAM.dimensions,
+    )
+    restricting = PolarsCompiler(masked, bound(), VARIABLES)
+    fragment = restricting.expression(plan.Sum(plan.Variable('p'), ('generator',)), 'test').terms[0]
+
+    assert 'SEMI JOIN' in query(fragment.frame)
+    assert 'UNIQUE' not in query(fragment.frame)
+
+
 def test_sum_over_an_absent_dim_scales_by_that_dims_cardinality():
     """Eager parity: summing a snapshot-only term over `generator` repeats it."""
     inner = plan.Sum(plan.Variable('p'), ('generator',))
