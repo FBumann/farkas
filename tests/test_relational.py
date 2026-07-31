@@ -505,6 +505,47 @@ def _objective_of(program, sources):
         return dict(zip(obj['col'].to_list(), obj['coeff'].to_list(), strict=True)), obj.height
 
 
+def test_a_mask_a_missing_value_can_satisfy_keeps_the_rows_with_no_value():
+    """`not` and `or` select rows the mask's own join must not have dropped.
+
+    A mask's parameters are joined for, and under a plain conjunction that join
+    can be an inner one: a coordinate the parameter has no row for fails the
+    conjunct anyway, so keeping it only widens the frame the filter then
+    narrows. Under `not` or `or` a missing value is what makes the mask *true*,
+    and an inner join would have thrown the row away before the filter could
+    say so.
+
+    Every mask in the suite was a conjunction before this, so nothing else here
+    distinguishes the two joins.
+    """
+    model = {
+        'dimensions': {'i': {'dtype': 'int', 'values': [0, 1, 2, 3]}},
+        'parameters': {'a': {'dims': ['i']}, 'b': {'dims': ['i']}},
+        'variables': {
+            'absent': {'foreach': ['i'], 'where': 'not a', 'bounds': {'lower': 0, 'upper': 1}},
+            'either': {'foreach': ['i'], 'where': 'a > 0 or b > 0', 'bounds': {'lower': 0, 'upper': 1}},
+            'both': {'foreach': ['i'], 'where': 'a and a > 0', 'bounds': {'lower': 0, 'upper': 1}},
+            'mixed': {'foreach': ['i'], 'where': 'a and not b', 'bounds': {'lower': 0, 'upper': 1}},
+        },
+        'objectives': {'o': {'sense': 'minimize', 'expression': 'sum(absent, over=i)'}},
+    }
+    sources = {
+        'a': pl.DataFrame({'i': [0, 1], 'value': [5.0, -1.0]}),
+        'b': pl.DataFrame({'i': [2], 'value': [7.0]}),
+    }
+    with lps.build(model, sources) as ex:
+        surviving = {
+            name: sorted(ex._variables[name].select('i').collect().to_series().to_list())
+            for name in ('absent', 'either', 'both', 'mixed')
+        }
+    assert surviving == {
+        'absent': [2, 3],  # a is missing there, which is the whole condition
+        'either': [0, 2],  # i=2 has no `a` at all and qualifies on `b`
+        'both': [0],
+        'mixed': [0, 1],  # `a` is certain, `b` is not
+    }
+
+
 def test_every_declaration_owns_a_contiguous_run_of_labels():
     """What reading a solve back by position rests on.
 

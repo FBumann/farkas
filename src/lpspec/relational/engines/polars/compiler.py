@@ -31,6 +31,8 @@ from lpspec.relational import plan
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
+    from polars._typing import JoinStrategy
+
     from lpspec.relational.engines.polars.binding import BoundSources
 
 
@@ -204,13 +206,19 @@ class PolarsCompiler:
         frame_dims: tuple[str, ...],
         alias: str,
         subject: str,
+        how: JoinStrategy = 'left',
     ) -> pl.LazyFrame:
-        """Left-join *param* onto *frame*, its value column renamed to *alias*.
+        """Join *param* onto *frame*, its value column renamed to *alias*.
 
         A parameter carrying a dim the frame lacks would be reduced over it,
         widening a mask or picking an arbitrary bound, so that is refused.
         *subject* is the caller's word for it, since naming the declaration is
         most of the value.
+
+        *how* is ``left`` for a bound, where a missing value is a fact the
+        caller has to report rather than a row to drop. A mask that cannot be
+        satisfied without the value asks for ``inner`` — see
+        :func:`_certain_parameters`.
         """
         declaration = self.program.parameter(param)
         extra = set(declaration.dims) - set(frame_dims)
@@ -219,7 +227,7 @@ class PolarsCompiler:
         table = self.parameters[param].rename({'value': alias})
         if not declaration.dims:
             return frame.join(table, how='cross')
-        return frame.join(table, on=list(declaration.dims), how='left')
+        return frame.join(table, on=list(declaration.dims), how=how)
 
     # ------------------------------------------------------------------
     # predicates (where masks — row absence)
@@ -232,8 +240,16 @@ class PolarsCompiler:
 
         Walking joins the parameters, so the condition is built first and the
         frame read after — one expression would return the pre-walk frame.
+
+        **A name the mask is certain of is joined rather than left-joined**, and
+        a variable it is certain of is semi-joined and never read. The rows a
+        left join keeps here are rows the filter then drops, so all it adds is
+        the width of the product they are dropped from: on `sector/l` the
+        balance mask keeps 1M coordinates out of 5M, and finding them cost
+        0.106 s through a left join against 0.082 s through an inner one.
         """
 
+        certain = _certain_parameters(pred)
         joined: set[str] = set()
         carrier = frame
 
@@ -241,7 +257,8 @@ class PolarsCompiler:
             nonlocal carrier
             alias = f'__where {param}__'
             if alias not in joined:
-                carrier = self.parameter_join(carrier, param, dims, alias, f"where-parameter '{param}'")
+                how: JoinStrategy = 'inner' if param in certain else 'left'
+                carrier = self.parameter_join(carrier, param, dims, alias, f"where-parameter '{param}'", how)
                 joined.add(alias)
             return alias
 
@@ -262,13 +279,18 @@ class PolarsCompiler:
                 return col.is_not_null() & col.is_finite()
             if isinstance(p, plan.VariableDefined):
                 # Not a column test: existence lives in the variable's own frame,
-                # so it is marked by a semi-join and then read as a flag. The join
-                # is on the variable's dims, which the dim rule has already
-                # checked are inside this frame.
+                # so it is joined for rather than read. The join is on the
+                # variable's dims, which the dim rule has already checked are
+                # inside this frame.
                 nonlocal carrier
+                on = list(self.program.variable(p.variable).dims)
                 flag = f'__where defined {p.variable}__'
+                if p.variable in certain:
+                    if flag not in joined:
+                        carrier = carrier.join(self.variables[p.variable].select(*on), on=on, how='semi')
+                        joined.add(flag)
+                    return pl.lit(value=True)
                 if flag not in joined:
-                    on = list(self.program.variable(p.variable).dims)
                     marked = (
                         self.variables[p.variable].select(*on).unique().with_columns(pl.lit(value=True).alias(flag))
                     )
@@ -618,6 +640,30 @@ def _relabel(label_dims: frozenset[str], over: str, into: str) -> frozenset[str]
     if over not in label_dims:
         return label_dims
     return label_dims - {over} | {into}
+
+
+def _certain_parameters(pred: plan.Predicate) -> frozenset[str]:
+    """The names every row surviving *pred* is guaranteed to have a value for.
+
+    Read down the ``And`` spine from the root and no further. A name in any
+    top-level conjunct must be present in a surviving row, because that conjunct
+    has to hold on its own and every atom over a name is false where the name is
+    missing — a comparison against null is null, and :func:`_falsy_if_null`
+    reads null as false. Where else the name appears cannot take that back:
+    ``a and (b > 0 or not a)`` is unsatisfiable, and dropping the rows with no
+    ``a`` is exactly right.
+
+    Stopping at ``Or`` and ``Not`` is the whole of the caution. Under either, a
+    missing value can be what makes the mask *true* — ``not a`` selects
+    precisely the rows an inner join would have dropped.
+    """
+    if isinstance(pred, plan.And):
+        return _certain_parameters(pred.left) | _certain_parameters(pred.right)
+    if isinstance(pred, (plan.ParameterComparison, plan.ParameterDefined)):
+        return frozenset({pred.parameter})
+    if isinstance(pred, plan.VariableDefined):
+        return frozenset({pred.variable})
+    return frozenset()
 
 
 def _falsy_if_null(condition: pl.Expr) -> pl.Expr:
