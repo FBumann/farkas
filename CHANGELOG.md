@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.54](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.53...v0.0.1-alpha.54) (2026-07-31)
+
+
+### Performance
+
+* **sinks:** a row is seated the way a column is, for both solvers ([#421](https://github.com/FBumann/lpspec/issues/421)) ([31ba48c](https://github.com/FBumann/lpspec/commit/31ba48cd94deb6559ddf305b6763656e3499f9b5))
+
 ## [0.0.1-alpha.53](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.52...v0.0.1-alpha.53) (2026-07-31)
 
 
