@@ -109,6 +109,9 @@ class DuckExecutor(Engine):
         #: the contiguous run of labels each declaration was given — what
         #: `Engine._read_back` slices a solver vector by, on both engines
         self._blocks: dict[str, tuple[int, int]] = {}
+        #: `(head, kept, ranked table, width)` when the last label frame
+        #: factored — `None` otherwise. Read only by `_repeating_bounds`.
+        self._rectangle: tuple[tuple[str, ...], tuple[str, ...], str, int] | None = None
         self._n_cols = 0
         self._n_rows = 0
         self._obj_const = 0.0
@@ -332,6 +335,9 @@ class DuckExecutor(Engine):
             f'FROM {product.alias("h")} CROSS JOIN {q(ranked)} AS s'
         )
         rows = math.prod(self._q.cardinality[d] for d in head) * width
+        #: the rectangle, kept for `_repeating_bounds` — a caller that only
+        #: reads the trailing dims can be answered once and repeated
+        self._rectangle = (head, kept, ranked, width)
         return self._relation(sql, 'lbl', materialise=False), start + rows
 
     def _height(self, table: str) -> int:
@@ -344,18 +350,21 @@ class DuckExecutor(Engine):
     def _build_variable(self, v: plan.VariableDeclaration) -> pl.DataFrame:
         """One variable's labelled relation, and its share of ``cols``."""
         start = self._n_cols
+        self._rectangle = None
         name, self._n_cols = self._label_frame(v.dims, v.where, 'var_label', start)
         self._var_tables[v.name] = name
         self._blocks[v.name] = (start, self._n_cols - start)
         labelled = Rel(f'SELECT * FROM {q(name)}', (*v.dims, 'var_label'))
 
-        bounded = self._q.bounds(labelled, v)
-        # **`ORDER BY`, and no `col`.** `cols` is read positionally now
-        # (`sinks/tables.py`), so a row's place in this frame is its solver
-        # column index. The polars engine gets that order from the emission
-        # order of a cross join and only *verifies* it; SQL promises no order
-        # at all, so here it is asked for outright.
-        sql = f'SELECT lb::DOUBLE AS lb, ub::DOUBLE AS ub FROM {bounded.alias("b")} ORDER BY var_label'
+        # **`cols` has no `col`, so a row's place in this frame is its solver
+        # column index** (`sinks/tables.py`). The polars engine gets that order
+        # from the emission order of a cross join and only *verifies* it; SQL
+        # promises no order at all, so here it is produced deliberately —
+        # cheaply where the bounds repeat, and by sorting where they do not.
+        sql = self._repeating_bounds(v) or (
+            f'SELECT lb::DOUBLE AS lb, ub::DOUBLE AS ub '
+            f'FROM {self._q.bounds(labelled, v).alias("b")} ORDER BY var_label'
+        )
         # `vtype` is attached here rather than selected as a literal in SQL:
         # one word per column is one *copy* of that word per row over the wire,
         # and the frame's stated dtype is an Enum holding four bytes.
@@ -364,6 +373,37 @@ class DuckExecutor(Engine):
         if bad:
             raise DataError(null_bounds_message(v.name, bad))
         return cols
+
+    def _repeating_bounds(self, v: plan.VariableDeclaration) -> str | None:
+        """Bounds in label order without a sort, when the same run repeats.
+
+        A factored label frame is a rectangle: every leading coordinate carries
+        the *same* surviving set in the same order. So if the bounds read only
+        the trailing dims, the whole column is one short run repeated once per
+        leading coordinate — build the run, and expand it.
+
+        `unnest` of a list is that expansion, and it is not merely cheaper than
+        the sort it replaces, it is cheaper than the cross join: 0.12 s against
+        0.43 s at 10M columns, where an *unordered* join of the same shape is
+        0.11 s. Ordering stops costing anything at all.
+
+        `None` when the shape does not apply — an unfactored frame, or a bound
+        that reads a leading dim and therefore does not repeat. The caller
+        sorts, which is always correct and sometimes all that is available.
+        """
+        if self._rectangle is None:
+            return None
+        head, kept, ranked, _ = self._rectangle
+        reads = {p for e in (v.lower, v.upper) for p in _parameters(e)}
+        if any(not set(self._q.program.parameter(p).dims) <= set(kept) for p in reads):
+            return None
+
+        run = self._q.bounds(Rel(f'SELECT * FROM {q(ranked)}', (*kept, '__rank')), v)
+        lists = f'SELECT list(lb ORDER BY "__rank") AS lbs, list(ub ORDER BY "__rank") AS ubs FROM {run.alias("r")}'
+        return (
+            f'SELECT unnest(k.lbs)::DOUBLE AS lb, unnest(k.ubs)::DOUBLE AS ub '
+            f'FROM {self._q.frame(head, None).alias("h")}, ({lists}) AS k'
+        )
 
     def _build_constraint(self, c: plan.ConstraintDeclaration) -> tuple[pl.DataFrame, pl.DataFrame | None]:
         """One constraint as its ``rows`` and its share of the matrix."""
@@ -473,6 +513,14 @@ class DuckExecutor(Engine):
         self._blocks.clear()
         self._compiler = None
         self._con.close()
+
+
+def _parameters(expression: plan.Expression) -> set[str]:
+    """Every parameter name under *expression*."""
+    found = {expression.name} if isinstance(expression, plan.Parameter) else set()
+    for child in plan.children(expression):
+        found |= _parameters(child)
+    return found
 
 
 def _stack(frames: list[pl.DataFrame], columns: tuple[str, ...]) -> pl.DataFrame:
