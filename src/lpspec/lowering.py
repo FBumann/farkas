@@ -47,6 +47,7 @@ from lpspec.language.expression_parser import (
     VariableNode,
 )
 from lpspec.language.helpers import BUILTIN_NAMES, call_shape_error, edge_error
+from lpspec.language.piecewise import expand_piecewise
 from lpspec.language.resolution import Namespace, expression_of, where_of
 from lpspec.language.where_parser import (
     AndNode,
@@ -71,8 +72,6 @@ _SENSES = {'==', '<=', '>='}
 
 def lower_program(schema: MathSchema) -> plan.Program:
     """Compile a validated :class:`MathSchema` into a :class:`Program`."""
-    from lpspec.piecewise import expand_piecewise
-
     schema = expand_piecewise(schema)
     ns = Namespace.of(schema)
     parameters = tuple(plan.ParameterDeclaration(name, tuple(pdef.dims)) for name, pdef in schema.parameters.items())
@@ -134,19 +133,6 @@ def lower_program(schema: MathSchema) -> plan.Program:
         plan.DimensionDeclaration(dname, tuple(ddef.coords.items())) for dname, ddef in schema.dimensions.items()
     )
     return plan.Program(parameters, tuple(variables), tuple(constraints), objective, dimensions)
-
-
-def check_core_subset(node: ArithmeticNode, schema: MathSchema, context: str) -> None:
-    """Raise :class:`LanguageError` unless *node* has a plan node.
-
-    The subset test *is* the lowering — there is no second definition of what
-    the engine accepts, which is what stops the two from drifting. This is the
-    same call with the result discarded, offered as a public name so that
-    ``piecewise.py`` can check a link expression against the language while
-    the error still points at the text the user wrote, rather than at the
-    declaration the formulation went on to generate.
-    """
-    _lower_expr(node, schema, context)
 
 
 # ---------------------------------------------------------------------------

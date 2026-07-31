@@ -74,7 +74,7 @@ def test_runtime_lane_never_imports_linopy_or_xarray():
 #: an eager-only function living in a language module is what put
 #: ``evaluate_where`` in ``where_parser.py`` for as long as it did.
 LAZY_ORACLE_ALLOWED = {
-    'piecewise.py': 'convex curvature validation needs xarray broadcast (issue #27: make it numpy-only)',
+    'sources.py': 'convex curvature validation needs xarray broadcast (issue #27: make it numpy-only)',
 }
 
 
@@ -194,6 +194,93 @@ def test_language_never_reaches_a_consumer():
     )
 
 
+#: What ``typeset/`` may reach. The language and nothing else: a renderer reads
+#: the AST and writes text, so it must not be able to acquire an opinion an
+#: engine holds. ``lpspec.errors`` for the exception hierarchy, as everywhere.
+TYPESET_MAY_IMPORT = ENGINE_MAY_IMPORT
+
+
+def test_typeset_reads_the_language_and_reaches_no_engine():
+    """The fourth fence — the one that was prose only.
+
+    ``typeset/`` is the proof that a consumer of the AST is cheap: it renders
+    any model the lanes can build, from one walk, holding no opinion they do
+    not already hold. That claim is only worth anything if it *cannot* reach
+    the plan, a sink, a solver or a dataframe — so ``import lpspec.typeset``
+    must not drag in an engine. It used to, through ``api.load_schema``, and
+    nothing failed; the module map said otherwise and no test read it.
+
+    Membership is off the path, like the other three, so a new renderer cannot
+    land outside the fence by being spelled differently.
+    """
+    offenders = {}
+    for path in (PKG / 'typeset').rglob('*.py'):
+        if '__pycache__' in path.parts:
+            continue
+        bad = []
+        for node in ast.walk(ast.parse(path.read_text())):  # lazy imports included — the rule is total
+            names = (
+                [a.name for a in node.names]
+                if isinstance(node, ast.Import)
+                else [node.module]
+                if isinstance(node, ast.ImportFrom) and node.module
+                else []
+            )
+            bad += [
+                n
+                for n in names
+                if n.startswith('lpspec')
+                and not n.startswith(('lpspec.language', 'lpspec.typeset'))
+                and n not in TYPESET_MAY_IMPORT
+            ]
+        if bad:
+            offenders[str(path.relative_to(PKG))] = sorted(set(bad))
+    assert not offenders, (
+        f'typeset reaches past the language: {offenders} — a renderer reads the AST '
+        f'and writes text; it may not reach a plan, a sink, a solver or a dataframe'
+    )
+
+
+def test_typesets_import_closure_needs_no_third_party_engine():
+    """The same fence, transitively — the half a one-hop name check misses.
+
+    A renderer that imports only ``language/`` still pays for polars if some
+    language module does. So this walks the *closure* of module-level imports
+    from ``typeset/`` and asserts no engine third-party lands in it: what a
+    consumer binding no data costs is the point of the fence, not which names
+    it happens to spell.
+
+    Deliberately not observed via ``import lpspec.typeset`` in a subprocess:
+    importing a submodule runs ``lpspec/__init__.py``, which eagerly exposes
+    ``build``/``solve`` and so loads the runner whatever this subpackage does.
+    That is a property of the top-level namespace, not of ``typeset/``.
+    """
+    heavy = {'polars', 'highspy', 'numpy', 'pandas'} | FORBIDDEN_RUNTIME
+    by_module = {
+        f'lpspec.{p.relative_to(PKG).with_suffix("").as_posix().replace("/", ".").removesuffix(".__init__")}': p
+        for p in _all_modules()
+    }
+    seen, stack, reached = set(), ['lpspec.typeset'], {}
+    while stack:
+        mod = stack.pop()
+        if mod in seen or mod not in by_module:
+            continue
+        seen.add(mod)
+        for imported in _module_level_imports(by_module[mod]):
+            if imported in heavy:
+                reached.setdefault(imported, []).append(mod)
+        # module-level `from lpspec.x import y` edges, resolved to modules
+        for node in ast.walk(ast.parse(by_module[mod].read_text())):
+            if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith('lpspec'):
+                stack.append(node.module)
+            elif isinstance(node, ast.Import):
+                stack += [a.name for a in node.names if a.name.startswith('lpspec')]
+    assert not reached, (
+        f'the typeset import closure reaches an engine dependency: {reached} — '
+        f'typesetting a model must not cost a dataframe library or a solver binding'
+    )
+
+
 def test_expansion_has_no_mutable_module_state():
     """Hard rule 5: YAML files are self-contained — nothing importable may
     accumulate state that changes what a file means."""
@@ -304,20 +391,17 @@ def test_every_schema_model_is_strict():
 
 
 #: Every in-function ``lpspec`` import in the package, with why it is one.
-#: A lazy import is a real tool here — it is how the one genuine cycle is
-#: broken — which is exactly why the decorative ones had to go: a reader
-#: cannot tell load-bearing from leftover if both are present.
-DELIBERATE_LAZY_IMPORTS = {
-    ('lowering.py', 'lpspec.piecewise'): (
-        'formulations expand before lowering, and expanding needs the subset '
-        'test that lowering defines — piecewise imports lowering at module '
-        'level, so this direction has to stay lazy'
-    ),
-}
+#: Empty, and that is the claim: the layers are ordered with no exception at
+#: all. The one entry this used to hold broke a real cycle — ``piecewise``
+#: consulted the plan's subset test while lowering had to expand before it
+#: could lower. Expansion no longer asks the plan anything, so the cycle is
+#: gone rather than deferred, and a lazy import here is once again only ever
+#: a leftover.
+DELIBERATE_LAZY_IMPORTS: dict[tuple[str, str], str] = {}
 
 
 def test_lazy_intra_package_imports_are_all_declared():
-    """Hard rule 1, mechanically: the layers are ordered, bar one declared edge.
+    """Hard rule 0, mechanically: the layers are ordered, with no exception.
 
     An undeclared in-function import is either a cycle nobody noticed or a
     leftover. Both are worth a line of explanation, so both fail here.
