@@ -1254,3 +1254,44 @@ def test_dense_columns_does_not_edit_the_model_it_projects():
         assert all(v == float('inf') for v in tables.cols['ub'].to_list()), 'the frame lost its infinities'
         assert list(second_ub) == [1e100, 1e100], "the second solver got the first solver's infinity"
         assert list(first) == [0.0, 0.0]
+
+
+@pytest.mark.parametrize('where', [None, 'cap > 0'])
+def test_cols_is_positional_so_a_row_index_is_its_solver_column(where):
+    """Every row of `cols` sits at its own label, masked or not.
+
+    `cols` carries no `col`: it is one row per column in label order, so a
+    row's position *is* the solver's index. Both arithmetic label paths get
+    that order from the emission order of a **cross join**, which is a property
+    of polars rather than of this package — so it is checked here against the
+    label frame, which knows the answer independently.
+
+    Two dims on purpose: one dim is a scan and cannot be out of order, so a
+    single-dim model would pass whatever the product did. Bounds are distinct
+    per coordinate for the same reason — a frame permuted by a mask, a join, or
+    a change in someone else's engine still has the right *multiset* of bounds
+    and the wrong row for every one of them.
+    """
+    caps = [
+        {'i': i, 'j': j, 'value': 0.0 if where and (i, j) == (1, 'b') else float(10 * i + ord(j))}
+        for i in range(4)
+        for j in ('a', 'b', 'c')
+    ]
+    model = {
+        'dimensions': {'i': {'dtype': 'int', 'values': list(range(4))}, 'j': {'values': ['a', 'b', 'c']}},
+        'parameters': {'cap': {'dims': ['i', 'j']}},
+        'variables': {'x': {'foreach': ['i', 'j'], 'bounds': {'lower': 0, 'upper': 'cap'}}},
+        'constraints': {'c': {'foreach': ['i', 'j'], 'expression': 'x <= cap'}},
+        'objectives': {'o': {'sense': 'maximize', 'expression': 'sum(sum(x, over=j), over=i)'}},
+    }
+    if where:
+        model['variables']['x']['where'] = where
+
+    with lps.build(model, {'cap': pl.DataFrame(caps)}) as ex:
+        tables = ex._tables()
+        assert 'col' not in tables.cols.columns, 'cols carries an index it does not need'
+        assert tables.cols.height == tables.column_count
+
+        labels = ex._variables['x'].collect().sort('var_label')
+        expected = labels.join(pl.DataFrame(caps), on=['i', 'j'], how='left')['value'].to_list()
+        assert tables.cols['ub'].to_list() == expected, 'a bound is attached to the wrong column'
