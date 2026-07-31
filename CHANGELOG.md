@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.46](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.45...v0.0.1-alpha.46) (2026-07-31)
+
+
+### Features
+
+* rename LinopyYamlError to LpspecError ([#394](https://github.com/FBumann/lpspec/issues/394)) ([5f72731](https://github.com/FBumann/lpspec/commit/5f72731d4a4c3a8203ac9977891f4518214e18ab))
+
 ## [0.0.1-alpha.45](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.44...v0.0.1-alpha.45) (2026-07-31)
 
 
