@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.44](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.43...v0.0.1-alpha.44) (2026-07-31)
+
+
+### Documentation
+
+* fix five stale claims, and cut what git already remembers ([#386](https://github.com/FBumann/lpspec/issues/386)) ([6562c15](https://github.com/FBumann/lpspec/commit/6562c15044c2277e32914a9a9794ee6ab2ef3f02))
+
 ## [0.0.1-alpha.43](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.42...v0.0.1-alpha.43) (2026-07-31)
 
 
