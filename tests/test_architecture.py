@@ -380,8 +380,7 @@ def test_expansion_has_no_mutable_module_state():
 
 
 #: The two sink families. The directory *is* the family, so a member cannot
-#: land in the wrong one by being spelled differently — the same rule the four
-#: subpackage fences use.
+#: land in the wrong one by being spelled differently.
 SINKS = PKG / 'relational' / 'sinks'
 
 
@@ -389,59 +388,41 @@ def _family(name: str) -> set[str]:
     return {p.stem for p in (SINKS / name).glob('*.py') if p.stem != '__init__'}
 
 
-def test_a_solver_is_a_module_named_for_it_and_a_line_in_the_registry():
+def test_each_sink_family_is_its_directory_and_its_registry():
     """One shape per family, checked off the path.
 
     A solver is four things that must agree: a module under ``solvers/`` named
-    for the solver, a ``solve_<name>``, a ``build_<name>`` load-only seam, and
-    the key ``SOLVERS`` maps to the first of those. Agreement is what makes
-    adding one mechanical — there is nothing above the module to teach, and
-    nothing to remember but the name.
+    for the solver, a ``solve_<name>``, a ``build_<name>`` seam for `bench/`,
+    and the ``SOLVERS`` key. Writers are keyed by suffix instead, but the rule
+    is the same. Agreement is what makes adding one mechanical — nothing above
+    the module to teach, nothing to remember but the name.
     """
     import importlib
 
-    from lpspec.relational.sinks import SOLVERS
+    from lpspec.relational.sinks import PLANNED_WRITERS, SOLVERS, WRITERS
 
-    modules = _family('solvers')
-    assert set(SOLVERS) == modules, (
-        f'solver modules and SOLVERS keys disagree: {modules ^ set(SOLVERS)} — '
-        f'a module here is a solver, and a solver is a line in the registry'
-    )
-    for name in sorted(modules):
+    solvers = _family('solvers')
+    assert set(SOLVERS) == solvers, f'solver modules and SOLVERS keys disagree: {solvers ^ set(SOLVERS)}'
+    for name in sorted(solvers):
         module = importlib.import_module(f'lpspec.relational.sinks.solvers.{name}')
         assert SOLVERS[name] is getattr(module, f'solve_{name}'), f'SOLVERS[{name!r}] is not {name}.solve_{name}'
-        assert hasattr(module, f'build_{name}'), (
-            f'{name} has no build_{name}: the load-only seam is what `bench/` measures, '
-            f'and a solver without one can only be timed with its own search included'
-        )
+        assert hasattr(module, f'build_{name}'), f'{name} has no build_{name}: the load-only seam `bench/` measures'
 
-
-def test_a_writer_is_a_module_in_the_family_and_a_suffix_in_the_registry():
-    """Writers are chosen by suffix rather than by name, so the registry is
-    keyed by one — but the family rule is the same, and a format that is
-    planned rather than present says so in its own table."""
-    from lpspec.relational.sinks import PLANNED_WRITERS, WRITERS
-
-    modules = _family('writers')
-    assert {w.__module__.rsplit('.', 1)[-1] for w in WRITERS.values()} == modules
-    assert all(suffix.startswith('.') for suffix in (*WRITERS, *PLANNED_WRITERS)), 'writers are keyed by file suffix'
+    assert {w.__module__.rsplit('.', 1)[-1] for w in WRITERS.values()} == _family('writers')
+    assert all(s.startswith('.') for s in (*WRITERS, *PLANNED_WRITERS)), 'writers are keyed by file suffix'
     assert not set(WRITERS) & set(PLANNED_WRITERS), 'a format is either written or planned, never both'
 
 
 def test_no_sink_reaches_a_sibling():
     """The fence that keeps an optional dependency optional.
 
-    ``gurobipy`` is the ``gurobi`` module's alone, and stays that way only
-    because no other sink imports it — directly or by importing the module
-    that does. Each leaf reads ``tables.py`` and nothing else in the family,
-    which is also why a solver cannot quietly grow a second opinion about how
-    a model is written out.
+    ``gurobipy`` stays the ``gurobi`` module's alone only because no other
+    sink imports it, directly or by importing the module that does. Each leaf
+    reads ``tables.py`` and nothing else in the family.
     """
     offenders = {}
     for family in ('solvers', 'writers'):
         for path in sorted((SINKS / family).glob('*.py')):
-            if path.stem == '__init__':
-                continue
             reached = {
                 node.module
                 for node in ast.walk(ast.parse(path.read_text()))
@@ -450,7 +431,7 @@ def test_no_sink_reaches_a_sibling():
                 and node.module.startswith('lpspec.relational.sinks.')
                 and not node.module.endswith('.tables')
             }
-            if reached:
+            if reached and path.stem != '__init__':
                 offenders[f'{family}/{path.name}'] = sorted(reached)
     assert not offenders, (
         f'sink modules reaching a sibling: {offenders} — a sink reads tables.py and its own '

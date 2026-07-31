@@ -371,25 +371,22 @@ per sink (see "Capability is not the ceiling"); that unevenness is what
 than discovered at solve time.
 
 **A sink is one of two things, and the directory says which.** A **solver**
-runs the tables and returns an answer; a **writer** renders them to a file.
-That is the whole taxonomy, and everything else follows from it: a solver is
-chosen by **name** at the call (`solver_name='gurobi'`), a writer by the
-output's **suffix**, because a file's format is a property of the file while
+runs the tables and returns an answer, chosen by **name** at the call
+(`solver_name='gurobi'`); a **writer** renders them to a file, chosen by the
+output's **suffix** — because a file's format is a property of the file, while
 which solver runs is a property of nothing but the call. Both sets are closed
-dict literals (`SOLVERS`, `WRITERS`) — no YAML key names a solver, and nothing
+dict literals (`SOLVERS`, `WRITERS`): no YAML key names a solver, and nothing
 installed may change what either resolves to.
 
 The split is a directory rather than a convention for the reason `engines/` is:
 **how many solvers there are will change, and what a solver has to answer will
 not.** A new one is a module named for it and a line in `SOLVERS` — no method
-on the executor, no branch in `api.py`, no name added to the Python surface.
-What members share is the projection of `cols` and `obj` onto the solver's
-column index, which lives on `ModelTables` so two solvers cannot drift into
-loading different models; what they never share is hand-off code, because the
-currencies differ (HiGHS takes the three CSR arrays, gurobipy a matrix object)
-and because `gurobipy` must stay off the import path of a caller who does not
-use it. Having a second solver is also what makes Track 3's uneven capability
-table concrete rather than hypothetical.
+on the executor, no branch in `api.py`, no name on the Python surface. Members
+share the projection of `cols` and `obj` onto the solver's column index, which
+lives on `ModelTables` so two solvers cannot drift into loading different
+models; they never share hand-off code, because the currencies differ (HiGHS
+takes the three CSR arrays, gurobipy a matrix object) and because `gurobipy`
+must stay off the import path of a caller who does not use it.
 
 ## Module map
 

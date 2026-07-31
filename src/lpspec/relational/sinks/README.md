@@ -1,37 +1,23 @@
 # Sinks
 
-How a built model leaves the engine. These are the boxes downstream of the
-executor in [docs/ARCHITECTURE.md](../../../../docs/ARCHITECTURE.md)'s pipeline.
+How a built model leaves the engine — the boxes downstream of the executor in
+[docs/ARCHITECTURE.md](../../../../docs/ARCHITECTURE.md)'s pipeline, which
+carries the argument for the split. This page is the membership list.
 
-**Two families, and that is the whole mental model.** A **solver** takes the
-tables and runs them; a **writer** takes the tables and renders them to a file.
-Everything else about a sink follows from which of the two it is.
+**Two families.** A **solver** takes the tables and runs them; a **writer**
+takes the tables and renders them to a file. Everything else follows.
 
 | | solvers/ | writers/ |
 |---|---|---|
-| takes | `ModelTables` | `ModelTables` |
-| returns | `(status, objective, primal, dual)` | nothing; a file exists |
+| answers | `(tables, batch_rows, options) -> (status, objective, primal, dual)` | `(tables, path) -> None` |
 | chosen by | **name**, at the call — `solver_name='gurobi'` | **suffix**, from the output — `model.lp` |
-| registry | `SOLVERS`, keyed by solver name | `WRITERS`, keyed by suffix |
+| registry | `SOLVERS`, closed | `WRITERS` + `PLANNED_WRITERS`, closed |
 | members | `highs.py` (`highspy`, ships), `gurobi.py` (`[gurobi]`: `gurobipy`, `scipy`) | `lp_file.py` (nothing beyond polars) |
-| planned | — | `mps`, declared in `PLANNED_WRITERS` |
 
-`tables.py` sits above both and is what they read. Neither family imports the
-other, and no member imports a sibling — `tests/test_architecture.py` reads all
-of that off the path.
-
-## Why the split is a directory
-
-Because how many solvers there are will change, and what a solver has to answer
-will not. A directory that grows one module per member makes the growing side
-mechanical: a new solver is a module named for it and a line in `SOLVERS`, with
-nothing above it to teach. The same reasoning made `engines/` a directory —
-*the engine is a directory, not a convention*.
-
-It also puts the fence where the optional dependencies are. `gurobipy` and
-`scipy` belong to `solvers/gurobi.py` alone, and a caller solving with HiGHS or
-writing LP files must not import them; one module per member plus "no member
-reaches a sibling" is what makes that true rather than intended.
+`tables.py` is what both read. Neither family imports the other and no member
+imports a sibling — `tests/test_architecture.py` reads all of that off the
+path, which is what keeps `gurobipy` off the import path of a caller who
+solves with HiGHS.
 
 ## The contract
 
@@ -46,62 +32,33 @@ how they are drained. That is the point: adding `mps` is a new module in
 `writers/`, not another method on `PolarsExecutor`.
 
 The one thing sinks may share is a *projection* of those frames, never a step
-of the work: `ModelTables.dense_columns` scatters `cols` and `obj` onto the
-solver's own column index, and both solvers read it. It takes the solver's
-spelling of infinity as an argument, because that is the only thing they
-disagree about — and it lives on the tables so "both load the same model,
-integer for integer" is true by construction rather than by two copies staying
-in step.
-
-## Both registries are closed
-
-`SOLVERS` and `WRITERS` are dict literals, not something an installed package
-can add to — `helpers.BUILTINS`' rule one level down. For solvers that matters
-most: which solver runs is the **caller's** choice at the call and never the
-file's. No YAML key names a solver, a model means the same thing whichever one
-takes it, and an installed plugin that could change what `solver_name='x'`
-resolves to is hard rule 5's failure mode in miniature.
-
-Solver options ride along verbatim in the chosen solver's own vocabulary —
-`{'time_limit': 60}` for HiGHS, `{'TimeLimit': 60}` for Gurobi — and a name the
-solver rejects surfaces as the solver's own complaint. Translating between them
-would mean holding an opinion about every option either solver has.
+of the work — `ModelTables.dense_columns`, which both solvers read.
 
 ## Adding one
 
-**A solver:**
-
-1. `solvers/<name>.py`, named for the solver. Define `solve_<name>` with the
-   family's shape and `build_<name>`, the load-only seam `bench/` measures.
-2. One line in `SOLVERS`.
-3. Import the solver **inside the function**, and declare an extra for it. The
-   module boundary is the fence; the lazy import is what keeps importing this
-   package free for callers who will never use that solver.
-4. Copy linopy's status map for it, and pin the copy against linopy in
-   `tests/test_solve_status.py` — including anywhere you deliberately diverge,
-   which is declared rather than silent.
-5. Stream. Hand the solver slices of what the labels already laid out; nothing
-   here may materialise the model a second time.
+**A solver:** `solvers/<name>.py` named for the solver, defining `solve_<name>`
+and the `build_<name>` seam `bench/` measures, plus one line in `SOLVERS`.
+Import the solver **inside the function** and declare an extra for it — the
+module boundary is the fence, the lazy import is what keeps this package free
+to import for callers who will never use it. Copy linopy's status map for it
+and pin the copy in `tests/test_solve_status.py`, including anywhere you
+deliberately diverge.
 
 **A writer:** `writers/<format>.py`, one line in `WRITERS` keyed by suffix,
-moved out of `PLANNED_WRITERS` if it was there. Sink a lazy frame; see *stable
-output* below.
+moved out of `PLANNED_WRITERS` if it was there.
 
-Nothing else changes in either case — no method on the executor, no branch in
-`api.py`, no name added to the Python surface.
+Either way: stream — nothing here may materialise the model a second time —
+and nothing above changes. No method on the executor, no branch in `api.py`,
+no name on the Python surface.
 
 ## When Track 3 lands
 
 [Track 3](../../../../docs/ROADMAP.md#track-3--capabilities-and-the-degree-line)
 gives each sink a declared capability table so `check(model, sink=...)` can
-answer "will this sink take it". Two notes for whoever writes it:
-
-- The capability table belongs next to the sink it describes, in that sink's
-  module. The family `__init__` collects them; it does not own them.
-- The table stops being uniform at exactly the seam this directory already
-  draws: SOS is native in `gurobi`, a text section in `lp_file`, and absent in
-  `highs`. That unevenness is the reason the track exists, and it is now in the
-  tree rather than hypothetical.
+answer "will this sink take it". The table belongs in the sink's own module,
+collected by the family `__init__` rather than owned by it — and it stops
+being uniform at exactly the seam this directory draws: SOS is native in
+`gurobi`, a text section in `lp_file`, absent in `highs`.
 
 ## Stable output
 

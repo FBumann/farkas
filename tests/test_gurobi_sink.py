@@ -83,41 +83,37 @@ MODELS = {'LP': LP, 'MAX': MAX, 'MIP': MIP}
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize('name', sorted(MODELS))
-def test_gurobi_and_highs_agree_on_the_objective(name: str) -> None:
-    """The claim the second sink has to earn before anything else."""
+@pytest.mark.parametrize(
+    ('name', 'variable', 'constraint'), [('LP', 'p', 'meet'), ('MAX', 'p', 'lim'), ('MIP', 'x', None)]
+)
+def test_gurobi_and_highs_agree(name: str, variable: str, constraint: str | None) -> None:
+    """The claim the second solver has to earn, on all three quantities.
+
+    Coordinates as well as values, since a sink that loaded the columns in a
+    different order would still reach the same objective on these models — and
+    duals under ``maximize``, where a sign convention could differ and nothing
+    else in the suite would notice.
+    """
     with lps.solve(MODELS[name], DATA[name]) as highs, lps.solve(MODELS[name], DATA[name], solver_name='gurobi') as gb:
         assert gb.termination_condition == highs.termination_condition
         assert gb.objective == pytest.approx(highs.objective)
 
-
-@pytest.mark.parametrize(('name', 'variable'), [('LP', 'p'), ('MAX', 'p'), ('MIP', 'x')])
-def test_gurobi_and_highs_agree_on_the_primal(name: str, variable: str) -> None:
-    """Coordinates as well as values: a sink that loaded the columns in a
-    different order would still reach the same objective on these models."""
-    with lps.solve(MODELS[name], DATA[name]) as highs, lps.solve(MODELS[name], DATA[name], solver_name='gurobi') as gb:
         expected, got = highs.primal(variable), gb.primal(variable)
         assert got.columns == expected.columns
         assert got.drop('value').equals(expected.drop('value'))
         assert got['value'].to_list() == pytest.approx(expected['value'].to_list())
 
-
-@pytest.mark.parametrize(('name', 'constraint'), [('LP', 'meet'), ('MAX', 'lim')])
-def test_gurobi_and_highs_agree_on_the_duals(name: str, constraint: str) -> None:
-    """Including under ``maximize``, where a sign convention could differ and
-    nothing else in the suite would notice."""
-    with lps.solve(MODELS[name], DATA[name]) as highs, lps.solve(MODELS[name], DATA[name], solver_name='gurobi') as gb:
-        assert gb.dual(constraint)['value'].to_list() == pytest.approx(highs.dual(constraint)['value'].to_list())
+        if constraint:
+            assert gb.dual(constraint)['value'].to_list() == pytest.approx(highs.dual(constraint)['value'].to_list())
 
 
 @pytest.mark.parametrize('port', sorted(REFERENCES), ids=str)
 def test_every_port_reaches_its_reference_optimum_on_gurobi(port: str) -> None:
-    """``test_ports.py``'s corpus, solved by the other sink.
+    """``test_ports.py``'s corpus, solved by the other solver.
 
-    The one assertion here that no part of this package produced: each optimum
-    was published with the model or computed by somebody else's code. A sink
-    that mis-loads the matrix — a block boundary off by a row, a sense
-    inverted — reaches a number, and this is what that number is compared to.
+    The one assertion here no part of this package produced. A sink that
+    mis-loads the matrix — a block boundary off by a row, a sense inverted —
+    still reaches *a* number; this is what that number is checked against.
     """
     reference = REFERENCES[port]
     with lps.solve(PORTS / f'{port}.yaml', sources(port), solver_name='gurobi') as solution:
@@ -126,10 +122,9 @@ def test_every_port_reaches_its_reference_optimum_on_gurobi(port: str) -> None:
 
 
 def test_block_boundaries_do_not_move_the_answer() -> None:
-    """``batch_rows=1`` forces one block per row, so every CSR view is built
-    at a boundary. The model is one the ports do not cover: several rows of
-    different widths, where an off-by-one in ``indptr`` shifts coefficients
-    into the neighbouring row instead of dropping them."""
+    """``batch_rows=1`` forces one block per row, so every CSR view is built at
+    a boundary — where an off-by-one in ``indptr`` shifts coefficients into the
+    neighbouring row rather than dropping them."""
     with lps.build(LP, DATA['LP']) as ex:
         whole = ex.solve(solver_name='gurobi')
         ragged = ex.solve(batch_rows=1, solver_name='gurobi')
@@ -153,8 +148,8 @@ def test_an_infeasible_solve_reports_both_axes_in_gurobis_wording() -> None:
 
 
 def test_a_mixed_integer_model_has_no_duals() -> None:
-    """Gurobi refuses ``Pi`` rather than returning zeros, and the sink passes
-    the refusal on as the ``None`` that makes ``dual`` explain itself."""
+    """Gurobi refuses ``Pi`` rather than returning zeros; the sink passes the
+    refusal on as the ``None`` that makes ``dual`` explain itself."""
     with lps.solve(MIP, DATA['MIP'], solver_name='gurobi') as solution:
         assert solution.has_primal
         with pytest.raises(LpspecError, match='mixed-integer'):
@@ -178,7 +173,7 @@ def test_solver_options_reach_gurobi() -> None:
 
 
 def test_build_gurobi_loads_the_model_and_stops() -> None:
-    """`bench/`'s seam: the same hand-off with no search behind it, so what it
+    """`bench/`'s seam: the hand-off with no search behind it, so what it
     reports is what was loaded rather than what was solved."""
     with lps.build(MIP, DATA['MIP']) as ex:
         tables = ex._tables()
@@ -191,24 +186,24 @@ def test_build_gurobi_loads_the_model_and_stops() -> None:
 
 def test_the_objective_constant_rides_on_the_model_not_the_answer() -> None:
     """Gurobi has ``ObjCon``, so the constant is part of the model it holds —
-    which is what makes :func:`build_gurobi` a complete hand-off rather than a
-    model plus a number the caller has to remember to add back."""
+    which makes the build seam a complete hand-off rather than a model plus a
+    number to remember."""
     with lps.build(MAX, DATA['MAX']) as ex:
         assert build_gurobi(ex._tables()).ObjCon == pytest.approx(5.0)
 
 
 def test_the_set_of_solver_sinks_is_closed() -> None:
-    """A name outside it is an error naming the alternatives, not a fallback
-    to the default — picking a different solver than the one asked for is the
-    one answer that cannot be right."""
+    """A name outside it is an error naming the alternatives, never a fallback:
+    solving with a solver other than the one asked for is the one answer that
+    cannot be right."""
     with pytest.raises(LpspecError, match='unknown solver'):
         lps.solve(LP, DATA['LP'], solver_name='cplex')
     assert set(SOLVERS) == {'highs', 'gurobi'}
 
 
 def test_the_missing_extra_is_named() -> None:
-    """What a caller without gurobipy meets. Both halves are named, because
-    the absent one is as often scipy."""
+    """What a caller without gurobipy meets — both halves named, since the
+    absent one is as often scipy."""
     real_import = builtins.__import__
 
     def refuse(name: str, *args: Any, **kwargs: Any) -> Any:

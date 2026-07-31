@@ -1,21 +1,12 @@
-"""The solver family: the tables in, an answer out.
+"""The solver family: the tables in, an answer out. See ../README.md.
 
-One module per solver, **named for the solver** — the way ``engines/`` is
-named for its engine. Nothing here is named for the mechanism, because every
-member uses the same one: the tables go over as arrays, never as text.
-
-Every member answers one shape::
+One module per solver, **named for the solver** — nothing here is named for
+the mechanism, because every member uses the same one. Each answers::
 
     (tables, batch_rows, solver_options) -> (status, objective, primal, dual)
 
 plus a ``build_<solver>`` that loads the model and stops, which is the seam
-`bench/` measures — the search is the same work whoever filled the model.
-``tests/test_architecture.py`` checks the shape off the path, so a module in
-this directory cannot quietly answer a different one.
-
-A member imports its own solver lazily and no sibling ever: the module
-boundary is the fence that keeps ``gurobipy`` off the import path of a caller
-who solves with HiGHS.
+`bench/` measures. ``tests/test_architecture.py`` checks that off the path.
 """
 
 from __future__ import annotations
@@ -42,15 +33,10 @@ if TYPE_CHECKING:
 
 __all__ = ['SOLVERS', 'solver']
 
-#: Every solver a caller may name, and **the set is closed** — a dict literal,
-#: not a registry something installed can add to. Which solver runs is the
-#: caller's choice at the call and never the file's: no YAML key names one, and
-#: a model means the same thing whichever takes it. An installed package that
-#: could change what ``solver_name='x'`` resolves to is hard rule 5's failure
-#: mode one level down.
-#:
-#: Names are the solvers' own, lowercased. How many there are will change; what
-#: a member has to answer will not.
+#: Every solver a caller may name, and **closed** — a dict literal, not a
+#: registry something installed can add to. Which solver runs is the caller's
+#: choice at the call and never the file's, so an installed package that could
+#: change what ``solver_name='x'`` resolves to is hard rule 5 one level down.
 SOLVERS: Mapping[str, Solve] = {
     'highs': solve_highs,
     'gurobi': solve_gurobi,
@@ -58,13 +44,7 @@ SOLVERS: Mapping[str, Solve] = {
 
 
 def solver(name: str) -> Solve:
-    """The solver called *name*.
-
-    The lookup lives with the family so the closed set and the message for a
-    name outside it stay next to what they are about. The message names every
-    alternative, because the set is small and knowing it is the answer to the
-    question being asked.
-    """
+    """The solver called *name*, or an error listing every alternative."""
     try:
         return SOLVERS[name]
     except KeyError:

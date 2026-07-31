@@ -3,11 +3,10 @@
 Four frames plus the scalars a writer needs to size its batching. A sink that
 needs a fifth thing states it here, where both sides can see it.
 
-Also the one *projection* of those frames more than one sink needs — the
-columns laid out on the solver's own index (:meth:`ModelTables.dense_columns`).
-It belongs to the contract rather than to either solver sink, because two
-sinks computing it separately could disagree about the model they loaded, and
-that is precisely the thing neither may do.
+Also the one *projection* of them more than one sink needs
+(:meth:`ModelTables.dense_columns`). It belongs to the contract rather than to
+either solver, because two sinks computing it separately could disagree about
+the model they loaded — the one thing neither may do.
 """
 
 from __future__ import annotations
@@ -68,28 +67,22 @@ class ModelTables:
     def dense_columns(self, infinity: float) -> tuple[Any, Any, Any, Any]:
         """``(lb, ub, cost, integral)`` as numpy vectors over the solver's index.
 
-        Here rather than in a sink because both solver sinks need exactly
-        this, and "the two build the same model integer for integer" is a
-        claim better held by construction than by two copies staying in step.
-        *infinity* is the one thing they disagree on — HiGHS and Gurobi spell
-        an absent bound as different numbers — so it is asked for rather than
-        assumed, and the vectors come back ready to hand over unedited.
+        *infinity* is the solver's own spelling of an absent bound — the one
+        thing the two disagree on — so it is asked for rather than assumed and
+        the vectors come back ready to hand over unedited.
 
         ``col`` is dense ``0..n-1``, so it *is* the position a value has to end
         up at: lining a frame up with the solver's index is a scatter, and
-        neither the join that fills the objective's gaps nor the sort that puts
-        the bounds in order has anything to do that this does not. The frame
-        those two produced had to be collected whole before the first batch
-        could be handed over, which cost more than the model does.
+        neither the join that fills the objective's gaps nor the sort that
+        orders the bounds does anything this does not. That pair had to be
+        collected whole before the first batch could go over, which cost more
+        than the model does. A column with no row is left free rather than
+        holding whatever the allocator returned.
 
-        A column the tables somehow have no row for is left free rather than
-        left holding whatever the allocator returned.
-
-        **Nothing textual crosses into numpy.** A polars ``String`` column
-        converts by boxing every value as a Python object, so a comparison
-        against ``'continuous'`` is made in polars and only its answer — a
-        bool — is handed over. At 10M columns the same test costs 0.95 s
-        across the boundary and 0.04 s on this side of it.
+        **Nothing textual crosses into numpy.** A polars ``String`` converts by
+        boxing every value as a Python object, so the test against
+        ``'continuous'`` is made in polars and only its answer crosses: 0.04 s
+        against 0.95 s at 10M columns.
         """
         import numpy as np
 

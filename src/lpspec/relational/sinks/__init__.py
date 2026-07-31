@@ -1,16 +1,10 @@
-"""Sinks: how a built model leaves the engine.
+"""Sinks: how a built model leaves the engine. See README.md.
 
 **Two families, and that is the whole mental model.** A *solver* takes the
-tables and runs them; a *writer* takes the tables and renders them to a file.
-Everything else about a sink follows from which of the two it is — how it is
-chosen (by name at the call, or by the output's suffix), what it returns
-(an answer, or nothing), and where its module lives.
-
-The families are directories, not a convention: ``solvers/`` holds one module
-per solver and ``writers/`` one per format, and
-``tests/test_architecture.py`` reads the family off the path. Which is what
-makes the growing one cheap — a new solver is a module and a line in
-``SOLVERS``, with nothing above it to teach.
+tables and runs them (``solvers/``, chosen by name); a *writer* takes the
+tables and renders them to a file (``writers/``, chosen by suffix). The
+families are directories rather than a convention, so
+``tests/test_architecture.py`` reads membership off the path.
 
 ``tables.py`` is what both read, and neither family imports the other. This
 module is the seam a caller uses: the contract, and the two lookups.
