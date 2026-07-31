@@ -149,33 +149,38 @@ def figures(results: Path) -> list[tuple[str, Any]]:
             scheme,
         )
 
-    def phases(scheme: svg.Scheme) -> str:
-        wanted = [
+    def sinks(scheme: svg.Scheme) -> str:
+        """The `l` rung, every destination, both arms.
+
+        This replaces a phase breakdown the harness no longer produces: #448
+        made `test_emit` one number for build-and-hand-over, and the only other
+        measurement is a *warm* in-process rebuild, so there is no honest way
+        to split the bar any more. What three sinks make askable instead is
+        where the advantage sits per destination — the LP file, HiGHS, Gurobi —
+        which the ratio tables answer one cell at a time.
+        """
+        rows = [
             r
             for r in bench_results.records(results)
-            if r.get('record') == 'timing' and r.get('sink') == 'highs' and r.get('size') == 'l' and 'error' not in r
+            if r.get('record') == 'timing' and r.get('size') == 'l' and 'error' not in r
         ]
-        # teardown is ~10us at every rung: a legend entry for a segment that
-        # never draws is noise, and `import` is excluded as the tables exclude it
-        order = ('build', 'emit')
         groups = []
-        for case in sorted({r['case'] for r in wanted}):
-            arms = []
-            for arm in ('lpspec', 'linopy'):
-                best_run = min(
-                    (r for r in wanted if r['case'] == case and r['arm'] == arm),
-                    key=lambda r: r['wall_seconds'],
-                    default=None,
-                )
-                if best_run:
-                    arms.append((NAME[arm], [(p, best_run['phases'].get(p, 0.0)) for p in order]))
-            if arms:
-                groups.append((case, arms))
+        for case in sorted({r['case'] for r in rows}):
+            bars_ = []
+            for sink in ('lp', 'highs', 'gurobi'):
+                for arm in ('lpspec', 'linopy'):
+                    hits = [
+                        r['wall_seconds'] for r in rows if r['case'] == case and r['sink'] == sink and r['arm'] == arm
+                    ]
+                    if hits:
+                        bars_.append((f'{sink} · {NAME[arm]}', [('wall', min(hits))]))
+            if bars_:
+                groups.append((case, bars_))
         return svg.bars(
             groups,
-            order,
+            ('wall seconds',),
             scheme,
-            caption='Where the time goes at the `l` rung — import excluded, it is paid once per process.',
+            caption='The l rung, every sink. Minimum of the timed rounds; the search is never started.',
             provenance=stamp,
         )
 
@@ -183,7 +188,7 @@ def figures(results: Path) -> list[tuple[str, Any]]:
         ('wall', lines('wall', 's', 'wall seconds', 'Wall time to a loaded solver. Both axes are log.')),
         ('peak', lines('peak', 'GB', 'peak RSS (GB)', 'Peak resident memory for the same builds. Both axes are log.')),
         ('cases', cases),
-        ('phases', phases),
+        ('sinks', sinks),
     ]
 
 

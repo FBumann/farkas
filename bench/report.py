@@ -102,7 +102,7 @@ FIGURES = (
     ('wall', 'Wall time to a loaded solver, by model size'),
     ('peak', 'Peak resident memory, by model size'),
     ('cases', 'Every model in the corpus, through the highs sink'),
-    ('phases', 'Where the time goes at the l rung'),
+    ('sinks', 'The l rung through every sink, both arms'),
 )
 
 

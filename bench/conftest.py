@@ -70,10 +70,16 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 #: `pytest-benchmem` is one of them: a fix to its isolated pass moves `rss`
 #: without a line of lpspec changing, so a result file that does not name the
 #: version that measured it cannot be compared across such a release.
+#:
+#: `gurobipy` and `scipy` for the same reason one level out: the `gurobi` sink
+#: is measurable now, and a published ratio through a solver has to say which
+#: solver — scipy being what carries the matrix into it.
 TRACKED = (
     'lpspec',
     'linopy',
     'highspy',
+    'gurobipy',
+    'scipy',
     'polars',
     'pandas',
     'numpy',

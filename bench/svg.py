@@ -267,7 +267,7 @@ def bars(
     the chart the tables cannot be read for at all, since they publish one
     total per row.
     """
-    pad_l, pad_r, pad_t, pad_b = 92, 132, 34, 56
+    pad_l, pad_r, pad_t, pad_b = 124, 132, 34, 56
     row_h, row_gap, group_gap, head_h = 24, 8, 20, 22
     rows = sum(len(g[1]) for g in groups)
     height = pad_t + rows * (row_h + row_gap) + len(groups) * (group_gap + head_h) + pad_b
