@@ -200,9 +200,12 @@ that made an implementation choice load-bearing in the language's rulebook.
 
 ## The relational lane
 
-**Three modules, one per box above.** `compiler.py` turns plan nodes into lazy
+**One module per box above.** `compiler.py` turns plan nodes into lazy
 frames and reads nothing; `executor.py` binds the data and fills the model
-frames; `sinks/` drains them. The split is what makes the admissibility test
+frames; `sinks/` drains them. Two more sit beside the executor rather than
+inside it, because each answers a question the executor merely *uses*:
+`labels.py` decides which coordinate gets which solver index, and `result.py`
+is what a caller reads a solve back through. The split is what makes the admissibility test
 below something you can perform rather than reason about — build a
 `PolarsCompiler`, hand it a node, read `.explain()` (`tests/test_compiler.py`
 does exactly that, over empty frames: a schema is all it takes to compile a
@@ -224,9 +227,13 @@ re-solve is cheap and structural editing is out of scope.
 
 Labels are also **row-major over the coordinate product**, and that is a
 contract rather than a side effect of how they are computed: it is what makes a
-build reproducible run to run. `_label_frame` reaches it three ways depending on
+build reproducible run to run. `Labeller.frame` reaches it three ways depending on
 how much of the product survives the mask — arithmetic, factored, counted — and
-they must agree integer for integer, because a label *is* a solver index.
+they must agree integer for integer, because a label *is* a solver index. That
+three-way agreement is why labelling is a module (`relational/labels.py`) and
+not three methods among twenty: its inputs are stated — the query, the
+dimension cardinalities, the program — so nothing else about a build can move
+an index.
 
 **The plan is affine-by-design.** No node introduces variables or constraints as a
 side effect of an expression; formulations are model *transformations*. Variable
@@ -239,7 +246,7 @@ is explicitly rejected: that duplicates the library this package consumes.
 column index and `row` is its row index, so both are assigned by sorting the
 masked coordinate product on its dimensions' declared ordinals and numbering
 the result. Variables and constraint rows are the same operation over different
-frames and it is written once (`_label_frame`) — twice is how the two would
+frames and it is written once (`Labeller.frame`) — twice is how the two would
 come to disagree about which coordinate gets which index. Everything else
 is order-free, which is what lets the query planner rearrange it.
 
@@ -291,7 +298,9 @@ than discovered at solve time.
 | `relational/compiler.py` | plan → lazy frames; pure, reads nothing |
 | `relational/chunking.py` | how a batched pass sizes its chunk: budget ÷ the width of one unit |
 | `relational/status.py` | solve outcome on two axes; linopy's vocabulary, copied not imported |
-| `relational/executor.py` | bind sources, assign labels, assemble the model frames |
+| `relational/labels.py` | which coordinate gets which solver index; three routes to one number, which must agree |
+| `relational/executor.py` | bind sources, assemble the model frames |
+| `relational/result.py` | what a solve returned: status, objective, and the label joins that read values back |
 | `relational/data_validation.py` | is the bound data usable — one row per coordinate, labels that exist, single-valued coords |
 | `relational/sinks/tables.py` | what every sink reads and no more — the four frames plus the batching scalars |
 | `relational/sinks/` | how a built model leaves: `lp_file`, `solver_direct` (one module each, [README](https://github.com/FBumann/lpspec/blob/main/src/lpspec/relational/sinks/README.md)) |
@@ -368,6 +377,6 @@ implementation each: a primitive's dim rule lives only in `dimensions.py` —
 both its dim *set* and its verdict on an operand that lacks the dim being
 reduced along, which lowering asks for rather than deciding again — and the
 dense-label assignment that gives a coordinate its solver index lives only in
-`PolarsExecutor._label_frame`, shared by variables and constraint rows. What a
+`relational/labels.py`, shared by variables and constraint rows. What a
 lowering case still owns is what is about the plan: which node the call becomes,
 and the shapes that node cannot represent.
