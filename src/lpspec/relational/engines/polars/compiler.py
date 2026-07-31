@@ -31,6 +31,8 @@ from lpspec.relational import plan
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
+    from polars._typing import JoinStrategy
+
     from lpspec.relational.binding import BoundSources
 
 
@@ -83,6 +85,18 @@ class TermFragment:
     ``None`` means "nothing to report" — a constant fragment has no variable, and
     a reduction clears it, because ``sum`` skips absent slots rather than
     propagating them (v1 ``convention.rst`` §13).
+    """
+    variable: str | None = None
+    """The variable whose labels :attr:`frame` carries; ``None`` for a const part.
+
+    An affine fragment holds at most one, because ``Add`` splits into fragments
+    and ``Multiply`` refuses a second — so this is a name, not a set.
+
+    It is what lets two fragments be compared without reading either. Labels are
+    dense and assigned one declaration at a time, so *distinct variables occupy
+    disjoint label ranges*: two fragments naming different variables cannot put
+    a row on the same solver column however they were reshaped, and the
+    terminal aggregate that would collapse them has nothing to do.
     """
     presence_dims: tuple[str, ...] | None = None
     """The columns :attr:`presence` is keyed by; ``None`` means :attr:`dims`.
@@ -192,13 +206,19 @@ class PolarsCompiler:
         frame_dims: tuple[str, ...],
         alias: str,
         subject: str,
+        how: JoinStrategy = 'left',
     ) -> pl.LazyFrame:
-        """Left-join *param* onto *frame*, its value column renamed to *alias*.
+        """Join *param* onto *frame*, its value column renamed to *alias*.
 
         A parameter carrying a dim the frame lacks would be reduced over it,
         widening a mask or picking an arbitrary bound, so that is refused.
         *subject* is the caller's word for it, since naming the declaration is
         most of the value.
+
+        *how* is ``left`` for a bound, where a missing value is a fact the
+        caller has to report rather than a row to drop. A mask that cannot be
+        satisfied without the value asks for ``inner`` — see
+        :func:`_certain_parameters`.
         """
         declaration = self.program.parameter(param)
         extra = set(declaration.dims) - set(frame_dims)
@@ -207,7 +227,7 @@ class PolarsCompiler:
         table = self.parameters[param].rename({'value': alias})
         if not declaration.dims:
             return frame.join(table, how='cross')
-        return frame.join(table, on=list(declaration.dims), how='left')
+        return frame.join(table, on=list(declaration.dims), how=how)
 
     # ------------------------------------------------------------------
     # predicates (where masks — row absence)
@@ -220,8 +240,16 @@ class PolarsCompiler:
 
         Walking joins the parameters, so the condition is built first and the
         frame read after — one expression would return the pre-walk frame.
+
+        **A name the mask is certain of is joined rather than left-joined**, and
+        a variable it is certain of is semi-joined and never read. The rows a
+        left join keeps here are rows the filter then drops, so all it adds is
+        the width of the product they are dropped from: on `sector/l` the
+        balance mask keeps 1M coordinates out of 5M, and finding them cost
+        0.106 s through a left join against 0.082 s through an inner one.
         """
 
+        certain = _certain_parameters(pred)
         joined: set[str] = set()
         carrier = frame
 
@@ -229,7 +257,8 @@ class PolarsCompiler:
             nonlocal carrier
             alias = f'__where {param}__'
             if alias not in joined:
-                carrier = self.parameter_join(carrier, param, dims, alias, f"where-parameter '{param}'")
+                how: JoinStrategy = 'inner' if param in certain else 'left'
+                carrier = self.parameter_join(carrier, param, dims, alias, f"where-parameter '{param}'", how)
                 joined.add(alias)
             return alias
 
@@ -250,13 +279,18 @@ class PolarsCompiler:
                 return col.is_not_null() & col.is_finite()
             if isinstance(p, plan.VariableDefined):
                 # Not a column test: existence lives in the variable's own frame,
-                # so it is marked by a semi-join and then read as a flag. The join
-                # is on the variable's dims, which the dim rule has already
-                # checked are inside this frame.
+                # so it is joined for rather than read. The join is on the
+                # variable's dims, which the dim rule has already checked are
+                # inside this frame.
                 nonlocal carrier
+                on = list(self.program.variable(p.variable).dims)
                 flag = f'__where defined {p.variable}__'
+                if p.variable in certain:
+                    if flag not in joined:
+                        carrier = carrier.join(self.variables[p.variable].select(*on), on=on, how='semi')
+                        joined.add(flag)
+                    return pl.lit(value=True)
                 if flag not in joined:
-                    on = list(self.program.variable(p.variable).dims)
                     marked = (
                         self.variables[p.variable].select(*on).unique().with_columns(pl.lit(value=True).alias(flag))
                     )
@@ -381,6 +415,7 @@ class PolarsCompiler:
             frame,
             True,
             label_dims=frozenset(dims),
+            variable=name,
             presence=presence,
             presence_dims=dims if masked else None,
         )
@@ -436,7 +471,9 @@ class PolarsCompiler:
         # summing over a partly-masked dim is well defined and reports nothing.
         # Constructed rather than `replace`d for exactly that: `presence` has to
         # be *dropped* here, and carrying it would be the silent default.
-        return TermFragment(keep, frame, p.is_term, p.survives_dropping(dropped), p.label_dims - dropped)
+        return TermFragment(
+            keep, frame, p.is_term, p.survives_dropping(dropped), p.label_dims - dropped, variable=p.variable
+        )
 
     def _group_fragment(self, p: TermFragment, g: plan.GroupSum, context: str) -> TermFragment:
         """Relabel dim ``over`` to ``into`` through a declared coordinate.
@@ -462,7 +499,9 @@ class PolarsCompiler:
         keyed = p.keyed and g.over in p.label_dims
         # a group is a sum, so §13 applies here as well: absence does not escape
         # it, which is why this constructs rather than `replace`s — see _sum_fragment
-        return TermFragment((*keep, g.into), frame, p.is_term, keyed, _relabel(p.label_dims, g.over, g.into))
+        return TermFragment(
+            (*keep, g.into), frame, p.is_term, keyed, _relabel(p.label_dims, g.over, g.into), variable=p.variable
+        )
 
     def _translate_fragment(self, p: TermFragment, s: plan.Translate, context: str) -> TermFragment:
         """A pointwise remap of the dim through its ord: a row at *o*
@@ -603,6 +642,30 @@ def _relabel(label_dims: frozenset[str], over: str, into: str) -> frozenset[str]
     return label_dims - {over} | {into}
 
 
+def _certain_parameters(pred: plan.Predicate) -> frozenset[str]:
+    """The names every row surviving *pred* is guaranteed to have a value for.
+
+    Read down the ``And`` spine from the root and no further. A name in any
+    top-level conjunct must be present in a surviving row, because that conjunct
+    has to hold on its own and every atom over a name is false where the name is
+    missing — a comparison against null is null, and :func:`_falsy_if_null`
+    reads null as false. Where else the name appears cannot take that back:
+    ``a and (b > 0 or not a)`` is unsatisfiable, and dropping the rows with no
+    ``a`` is exactly right.
+
+    Stopping at ``Or`` and ``Not`` is the whole of the caution. Under either, a
+    missing value can be what makes the mask *true* — ``not a`` selects
+    precisely the rows an inner join would have dropped.
+    """
+    if isinstance(pred, plan.And):
+        return _certain_parameters(pred.left) | _certain_parameters(pred.right)
+    if isinstance(pred, (plan.ParameterComparison, plan.ParameterDefined)):
+        return frozenset({pred.parameter})
+    if isinstance(pred, plan.VariableDefined):
+        return frozenset({pred.variable})
+    return frozenset()
+
+
 def _falsy_if_null(condition: pl.Expr) -> pl.Expr:
     """*condition* with null read as false: a missing parameter row must
     exclude the coordinate rather than propagate. Masks are row absence."""
@@ -648,19 +711,35 @@ def _propagate_absence(compiled: CompiledExpression) -> CompiledExpression:
     restriction naming a dim a fragment does not have cannot speak about it, and
     a constant part lacking the summed dims is refused by ``_sum_fragment``
     before it gets here.
+
+    **A fragment is never restricted by its own presence**, which is the whole
+    of what the *other* in "each one's absence says nothing about the other"
+    means. A fragment's rows and its presence are built from one frame and
+    rewritten in step — a product joins the rows and leaves the coordinates, a
+    translation remaps both, a fill adds to both — so the rows are inside the
+    coordinates by construction and the join can only return them all. Under a
+    mask over a single term, which is the ordinary case, that made the whole
+    pass a semi-join of a frame against itself: 0.31 s over 10M rows on
+    `dispatch/l`, returning the 10M it was given.
+
+    The restriction is a **semi-join, so the presence frame is not deduplicated
+    first**. A semi-join asks whether a key occurs, and occurring twice is still
+    occurring — the distinct changes no row and costs a hash pass over every
+    coordinate the variable has.
     """
-    restrictions = [
-        (p.presence_dims or p.dims, p.presence) for p in (*compiled.terms, *compiled.consts) if p.presence is not None
-    ]
-    if not restrictions:
+    absent = [p for p in (*compiled.terms, *compiled.consts) if p.presence is not None]
+    if not absent:
         return compiled
 
     def restrict(p: TermFragment) -> TermFragment:
         frame = p.frame
-        for on, presence in restrictions:
+        for source in absent:
+            if source is p or source.presence is None:
+                continue
+            on = list(source.presence_dims or source.dims)
             if all(d in p.dims for d in on):
-                frame = frame.join(presence.select(list(on)).unique(), on=list(on), how='semi')
-        return replace(p, frame=frame)
+                frame = frame.join(source.presence.select(on), on=on, how='semi')
+        return p if frame is p.frame else replace(p, frame=frame)
 
     return _map_fragments(compiled, restrict)
 

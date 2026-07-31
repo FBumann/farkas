@@ -22,6 +22,7 @@ from lpspec.relational import (
     PolarsExecutor,
     chunking,
 )
+from lpspec.relational.engines.polars.executor import _needs_aggregate
 from lpspec.relational.plan import (
     Constant,
     ConstraintDeclaration,
@@ -504,6 +505,87 @@ def _objective_of(program, sources):
         return dict(zip(obj['col'].to_list(), obj['coeff'].to_list(), strict=True)), obj.height
 
 
+def test_a_mask_a_missing_value_can_satisfy_keeps_the_rows_with_no_value():
+    """`not` and `or` select rows the mask's own join must not have dropped.
+
+    A mask's parameters are joined for, and under a plain conjunction that join
+    can be an inner one: a coordinate the parameter has no row for fails the
+    conjunct anyway, so keeping it only widens the frame the filter then
+    narrows. Under `not` or `or` a missing value is what makes the mask *true*,
+    and an inner join would have thrown the row away before the filter could
+    say so.
+
+    Every mask in the suite was a conjunction before this, so nothing else here
+    distinguishes the two joins.
+    """
+    model = {
+        'dimensions': {'i': {'dtype': 'int', 'values': [0, 1, 2, 3]}},
+        'parameters': {'a': {'dims': ['i']}, 'b': {'dims': ['i']}},
+        'variables': {
+            'absent': {'foreach': ['i'], 'where': 'not a', 'bounds': {'lower': 0, 'upper': 1}},
+            'either': {'foreach': ['i'], 'where': 'a > 0 or b > 0', 'bounds': {'lower': 0, 'upper': 1}},
+            'both': {'foreach': ['i'], 'where': 'a and a > 0', 'bounds': {'lower': 0, 'upper': 1}},
+            'mixed': {'foreach': ['i'], 'where': 'a and not b', 'bounds': {'lower': 0, 'upper': 1}},
+        },
+        'objectives': {'o': {'sense': 'minimize', 'expression': 'sum(absent, over=i)'}},
+    }
+    sources = {
+        'a': pl.DataFrame({'i': [0, 1], 'value': [5.0, -1.0]}),
+        'b': pl.DataFrame({'i': [2], 'value': [7.0]}),
+    }
+    with lps.build(model, sources) as ex:
+        surviving = {
+            name: sorted(ex._variables[name].select('i').collect().to_series().to_list())
+            for name in ('absent', 'either', 'both', 'mixed')
+        }
+    assert surviving == {
+        'absent': [2, 3],  # a is missing there, which is the whole condition
+        'either': [0, 2],  # i=2 has no `a` at all and qualifies on `b`
+        'both': [0],
+        'mixed': [0, 1],  # `a` is certain, `b` is not
+    }
+
+
+def test_every_declaration_owns_a_contiguous_run_of_labels():
+    """What reading a solve back by position rests on.
+
+    A solver vector is positional in the same index the labels are, so a
+    declaration's share of it is a slice — but only if its labels are a dense
+    run and the runs tile the whole index. Both are true of every path
+    `Labeller.frame` takes, and neither is visible from the frames: a block
+    that started one late would report a neighbour's numbers under this
+    declaration's coordinates, with nothing out of range and nothing null.
+    """
+    model = {
+        'dimensions': {'i': {'dtype': 'int', 'values': [0, 1, 2]}, 'j': {'values': ['a', 'b']}},
+        'parameters': {'cap': {'dims': ['i']}},
+        'variables': {
+            'x': {'foreach': ['i'], 'bounds': {'lower': 0, 'upper': 'cap'}},
+            'y': {'foreach': ['i', 'j'], 'bounds': {'lower': 0}},
+            'z': {'foreach': ['j'], 'bounds': {'lower': 0}},
+        },
+        'constraints': {
+            'c1': {'foreach': ['i'], 'expression': 'x >= cap'},
+            'c2': {'foreach': ['i', 'j'], 'expression': 'y >= 0'},
+        },
+        'objectives': {'o': {'sense': 'minimize', 'expression': 'sum(x, over=i)'}},
+    }
+    with lps.build(model, {'cap': pl.DataFrame({'i': [0, 1, 2], 'value': [1.0, 2.0, 3.0]})}) as ex:
+        tables = ex._tables()
+        for names, total, frames, label in (
+            (['x', 'y', 'z'], tables.column_count, ex._variables, 'var_label'),
+            (['c1', 'c2'], tables.row_count, ex._constraints, 'row'),
+        ):
+            at = 0
+            for name in names:
+                start, height = ex._blocks[name]
+                assert start == at, f'{name} does not start where the previous declaration ended'
+                labels = frames[name].select(label).collect().to_series()
+                assert sorted(labels) == list(range(start, start + height)), f'{name} is not a dense run'
+                at += height
+            assert at == total, 'the runs do not tile the index'
+
+
 def test_the_matrix_aggregate_runs_on_what_repeats_and_not_on_what_might():
     """Both branches of the collapse, on models that differ only in overlap.
 
@@ -535,6 +617,40 @@ def test_the_matrix_aggregate_runs_on_what_repeats_and_not_on_what_might():
         matrix = ex._tables().matrix
         assert matrix.height == 2, 'one cell per row after the collapse'
         assert matrix['coeff'].to_list() == [4.0, 4.0]
+
+
+def test_stacking_distinct_variables_asks_for_no_aggregate():
+    """The static answer itself, which no end-to-end assertion can reach.
+
+    `test_the_matrix_aggregate_runs_on_what_repeats_and_not_on_what_might`
+    pins the *rows*, and both branches produce the same ones — a build that
+    sorts every nonzero to collapse nothing is indistinguishable from one that
+    never sorted. So the question of whether the aggregate was asked for has
+    to be put to `_needs_aggregate` directly.
+
+    Reading the count alone answers 'yes' to every multi-term constraint,
+    which is most of them.
+    """
+    dims = {'i': {'dtype': 'int', 'values': [0, 1]}}
+    variables = {'x': {'foreach': ['i'], 'bounds': {'lower': 0}}, 'y': {'foreach': ['i'], 'bounds': {'lower': 0}}}
+    sources = {'rhs': pl.DataFrame({'i': [0, 1], 'value': [4.0, 6.0]})}
+
+    def fragments(expression):
+        program = lower_program(
+            MathSchema(
+                dimensions=dims,
+                parameters={'rhs': {'dims': ['i']}},
+                variables=variables,
+                constraints={'c': {'foreach': ['i'], 'expression': f'{expression} >= rhs'}},
+                objectives={'o': {'sense': 'minimize', 'expression': 'sum(x, over=i)'}},
+            )
+        )
+        with PolarsExecutor() as ex:
+            ex.build(program, sources)
+            return ex._q.expression(program.constraints[0].lhs, 'test').terms
+
+    assert not _needs_aggregate(fragments('x + y'))
+    assert _needs_aggregate(fragments('x + 3 * x'))
 
 
 def test_the_objective_skips_the_aggregate_only_when_a_column_cannot_repeat():

@@ -62,6 +62,7 @@ class PolarsExecutor(Engine):
         self._bound: BoundSources | None = None
         self._var_frames: dict[str, pl.LazyFrame] = {}
         self._row_frames: dict[str, pl.LazyFrame] = {}
+        self._blocks: dict[str, tuple[int, int]] = {}
         self._cols: pl.DataFrame | None = None
         self._obj: pl.DataFrame | None = None
         self._rows: pl.DataFrame | None = None
@@ -148,8 +149,10 @@ class PolarsExecutor(Engine):
     def _build_variable(self, v: plan.VariableDeclaration) -> pl.DataFrame:
         """One variable's labelled frame, and its share of ``cols``."""
 
-        labelled, self._n_cols = self._label.frame(v.dims, v.where, 'var_label', self._n_cols)
+        start = self._n_cols
+        labelled, self._n_cols = self._label.frame(v.dims, v.where, 'var_label', start)
         self._var_frames[v.name] = labelled.lazy()
+        self._blocks[v.name] = (start, labelled.height)
 
         bounded = self._q.bounds(labelled.lazy(), v)
         cols = bounded.select(
@@ -189,9 +192,11 @@ class PolarsExecutor(Engine):
                 )
 
         restrictions = _absence_restrictions([p for p, _ in terms])
-        labelled, self._n_rows = self._label.frame(c.dims, c.where, 'row', self._n_rows, restrictions)
+        start = self._n_rows
+        labelled, self._n_rows = self._label.frame(c.dims, c.where, 'row', start, restrictions)
         frame = labelled.lazy()
         self._row_frames[c.name] = frame  # kept for the dual read-back
+        self._blocks[c.name] = (start, labelled.height)
 
         accumulated = pl.lit(0.0, dtype=pl.Float64)
         carrier = frame
@@ -298,6 +303,7 @@ class PolarsExecutor(Engine):
         self._cols = self._obj = self._rows = self._matrix = None
         self._var_frames.clear()
         self._row_frames.clear()
+        self._blocks.clear()
         # `BoundSources` is frozen, so it cannot be emptied in place the way the
         # registries above can: what frees the bound frames is dropping every
         # reference to them, and the compiler holds one.
@@ -312,10 +318,18 @@ def _needs_aggregate(terms: Sequence[TermFragment], *, projected: bool = False) 
     Named for the answer, not the condition: an inverted test here is a wrong
     model rather than a slow one.
 
-    Two fragments may both carry the same variable — ``x + 2 * x`` is one row
-    each and one column — and a single fragment that is not
-    :attr:`~lpspec.relational.engines.polars.compiler.TermFragment.keyed` already holds a
-    label twice.
+    Two things can put a label twice into the stack, and they are asked
+    separately. A single fragment that is not
+    :attr:`~lpspec.relational.engines.polars.compiler.TermFragment.keyed`
+    already holds one twice on its own. Two fragments collide only if they
+    carry the *same* variable — ``x + 2 * x`` is one row each and one column —
+    because labels are dense and assigned a declaration at a time, so distinct
+    variables cannot reach a shared one however either fragment was reshaped.
+
+    That second half is what makes the ordinary multi-term constraint free.
+    ``reserve_up + reserve_down <= p_max`` stacks two fragments, and reading
+    only their count says the aggregate is reachable — which on the `fleet`
+    rungs means sorting every nonzero in the model to collapse nothing.
 
     *projected* is what the two call sites do not share. The matrix keeps a
     fragment's dims: a constraint's ``row`` is a function of dims that include
@@ -337,10 +351,10 @@ def _needs_aggregate(terms: Sequence[TermFragment], *, projected: bool = False) 
     the same change measured at nothing — the value is engine-specific even
     though the reasoning is not (#161).
     """
-    if len(terms) != 1:
+    if any(not t.survives_dropping(set(t.dims) if projected else set()) for t in terms):
         return True
-    (term,) = terms
-    return not term.survives_dropping(set(term.dims) if projected else set())
+    carried = [t.variable for t in terms]
+    return len(set(carried)) != len(carried)
 
 
 def _has_repeated_entry(matrix: pl.DataFrame) -> bool:

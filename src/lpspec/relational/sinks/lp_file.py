@@ -114,7 +114,10 @@ def _constraint_blocks(model: ModelTables, lo: int, hi: int) -> pl.LazyFrame:
     amount of sorting the *rows* afterwards fixes the order *within* one.
 
     A row with no terms still needs a line a solver can parse, and the anti-join
-    is what a group-by gave for free.
+    is what a group-by gave for free — anti rather than a count, because the
+    question is whether the row has *a* term and not how many, so the matrix
+    goes in as it is. Distinguishing its repeated ``row`` values would be a
+    hash pass over every nonzero in the chunk to reach the same answer.
     """
     rows = model.rows.lazy().filter(pl.col('row').is_between(lo, hi, closed='left'))
     matrix = model.matrix.lazy().filter(pl.col('row').is_between(lo, hi, closed='left'))
@@ -123,7 +126,7 @@ def _constraint_blocks(model: ModelTables, lo: int, hi: int) -> pl.LazyFrame:
         pl.lit(_HEADER, dtype=pl.Int64).alias('ord'),
         pl.concat_str(pl.lit('c').alias('c'), _digits(pl.col('row')), pl.lit(':').alias('colon')).alias('line'),
     )
-    placeholder = rows.join(matrix.select('row').unique(), on='row', how='anti').select(
+    placeholder = rows.join(matrix.select('row'), on='row', how='anti').select(
         'row',
         pl.lit(_PLACEHOLDER, dtype=pl.Int64).alias('ord'),
         pl.lit('+0 x0').alias('line'),

@@ -96,6 +96,9 @@ class DuckExecutor(Engine):
         self._name_dims: dict[str, tuple[str, ...]] = {}
         self._var_labels = _Labels(self._con, self._var_tables)
         self._row_labels = _Labels(self._con, self._row_tables)
+        #: the contiguous run of labels each declaration was given — what
+        #: `Engine._read_back` slices a solver vector by, on both engines
+        self._blocks: dict[str, tuple[int, int]] = {}
         self._n_cols = 0
         self._n_rows = 0
         self._obj_const = 0.0
@@ -330,8 +333,10 @@ class DuckExecutor(Engine):
 
     def _build_variable(self, v: plan.VariableDeclaration) -> pl.DataFrame:
         """One variable's labelled relation, and its share of ``cols``."""
-        name, self._n_cols = self._label_frame(v.dims, v.where, 'var_label', self._n_cols)
+        start = self._n_cols
+        name, self._n_cols = self._label_frame(v.dims, v.where, 'var_label', start)
         self._var_tables[v.name] = name
+        self._blocks[v.name] = (start, self._n_cols - start)
         labelled = Rel(f'SELECT * FROM {q(name)}', (*v.dims, 'var_label'))
 
         bounded = self._q.bounds(labelled, v)
@@ -360,8 +365,10 @@ class DuckExecutor(Engine):
                 )
 
         restrictions = _absence_restrictions([p for p, _ in terms])
-        name, self._n_rows = self._label_frame(c.dims, c.where, 'row', self._n_rows, restrictions)
+        start = self._n_rows
+        name, self._n_rows = self._label_frame(c.dims, c.where, 'row', start, restrictions)
         self._row_tables[c.name] = name
+        self._blocks[c.name] = (start, self._n_rows - start)
         frame = Rel(f'SELECT * FROM {q(name)}', (*c.dims, 'row'))
 
         carrier = frame
@@ -448,6 +455,7 @@ class DuckExecutor(Engine):
         self._cols = self._obj = self._rows = self._matrix = None
         self._var_labels.clear()
         self._row_labels.clear()
+        self._blocks.clear()
         self._compiler = None
         self._con.close()
 
