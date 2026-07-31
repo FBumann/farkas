@@ -1,11 +1,19 @@
-# Spike: what a duckdb engine would cost now
+# The duckdb engine: what it costs, and what it buys
 
-**Status:** costing exercise, not a proposal. Prices a reversal of `c11a0dd`
-(PR #189, 2026-07-28). Nothing here argues for making it — the question is what
-it would touch and what it would break, so that a future decision is made
-against a number rather than a memory. That is the same reason this harness
-exists at all: the decision has already flipped once, and the reasoning for it
-did not survive on its own.
+**Status: settled, and this is the provenance.** `LPSPEC_ENGINE=duckdb`
+selects the engine in `relational/engines/duck/`; the numbers the package
+claims for it — in `pyproject.toml`, in the engine's own docstring, in SPEC —
+are the ones below.
+
+It began as a costing exercise for reversing `c11a0dd` (PR #189, 2026-07-28),
+which is why it reads like one: the question was what a duckdb engine would
+*touch* and *break*. The answer turned out to be "less than the line count
+suggests", and the outcome was neither a reversal nor a rejection — both
+engines ship, and a caller picks. §9 is where that lands.
+
+Kept in this shape on purpose. The engine decision has flipped once already and
+the reasoning did not survive on its own; a claim nobody can re-run is a claim
+with a shelf life.
 
 **Method:** the tree read module by module for the blast radius; the two
 engines measured head to head on the full ladder.
@@ -344,13 +352,27 @@ three point the same way:
    top rung, and the gap widens with the model.** On the solver path it is
    1.15–1.35× and once *negative*.
 
-So the trade is no longer "slower and lighter, plus a knob". It is: **on the
-write path, a bounded build that costs 1.6–2.4× wall clock; on the solve path,
-almost nothing for 2–3×.** Which means the decision is not about the engine at
-all — it is about whether `lps.write` to a file someone else solves is a use
-case worth an engine for. That is a product question, and the numbers above are
-what it should be answered against rather than the ones in #189's headline,
-which measured the other path.
+So the trade is not "slower and lighter, plus a knob". It is: **on the write
+path, a much smaller build for 1.6–2.4× wall clock; on the solve path, almost
+nothing for 2–3×.**
+
+**What was done about it.** Neither reversal nor rejection: both engines ship
+and the caller chooses, because the answer depends on which path a given
+workload is on and nothing in the library can know that. `LPSPEC_ENGINE` and
+not a parameter — an engine cannot change the answer, only what computing it
+costs, so it does not belong in the call that produces one.
+
+That decision cost far less than §9's estimate implied, because most of an
+executor turned out not to be engine work: both sinks and the whole solution
+read-back are written against `ModelTables` and the label frames, so
+`relational/engine.py` holds them once and an engine supplies four things. The
+~2,300-line figure priced a replacement; a *second* engine is a compiler and an
+assembler.
+
+**Still open, and the reason to re-read §7 before relying on it:**
+`labels._factored` has no duckdb counterpart, so masked models fall back to the
+counted path and pay an ordered window. The committed results predate the
+in-tree port and do not include that cost.
 
 **Recommended next step, if this is live:** decide the write-path question
 first. If the answer is no, this closes for good and

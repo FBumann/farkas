@@ -75,10 +75,11 @@ flowchart TB
         direction TB
         PLAN["plan.py<br/>frozen logical plan"] --> ENG
         BINDP["binding.py<br/>→ BoundSources, frozen"] --> ENG
-        subgraph ENG["engines/polars/ — swapped by engine=; engines/duck/ is the other"]
+        ENGB["engine.py<br/>both sinks + the label read-back,<br/>written once"] --> ENG
+        subgraph ENG["engines/ — one is chosen by LPSPEC_ENGINE"]
             direction TB
-            COMP["compiler.py<br/>plan → lazy frames · reads nothing"] --> EXEC
-            COMP --> EXEC["executor.py + labels.py<br/>assemble the model frames"]
+            POL["polars/ (default)<br/>compiler · executor · labels"]
+            DUCK["duck/ (opt-in extra)<br/>plan → SQL"]
         end
         ENG --> TABLES["sinks/tables.py<br/>cols · obj · rows · A"]
         TABLES --> LPS["sinks/lp_file.py<br/>(mps planned)"]
@@ -261,15 +262,22 @@ choice load-bearing in the language's rulebook.
 2. **The engine knows nothing about linopy, xarray or YAML.** `relational/` goes
    plan → engine → highspy → solver, with linopy's semantics as a spec to match
    rather than code to share; it never sees the schema, the AST, or the eager
-   builder. **The engine is a directory, not a convention:** `engines/polars/`
-   is one implementation, and everything above it — `plan.py`, `sinks/`,
-   `status.py`, `chunking.py`, `frames.py` — is what any implementation answers
-   to. An engine package is named for its engine; nothing *inside* one is.
+   builder. **An engine is a directory, not a convention:** `engines/polars/`
+   and `engines/duck/` are implementations, and everything above them —
+   `plan.py`, `engine.py`, `sinks/`, `binding.py`, `status.py`, `chunking.py`,
+   `frames.py` — is what an implementation answers to. An engine package is
+   named for its engine; nothing *inside* one is.
    Enforced *more* strictly than stated — it imports nothing from the
    package at all, bar declared dependency-free leaves (`errors.py`, in
    `ENGINE_MAY_IMPORT`), because a near-zero import surface is what keeps the
    subpackage extractable. Widening that list is a decision, not an accident.
-3. **One language, two lanes — not fast-vs-slow versions of each other.** The
+3. **One language, two lanes — not fast-vs-slow versions of each other.** A
+   *lane* consumes the AST and owns everything below it; an *engine* consumes
+   the plan and fills `ModelTables`. They are different axes and the words are
+   not interchangeable: the relational lane has two engines (`polars`,
+   `duckdb`), and linopy is a lane and could not be an engine — it never sees
+   the plan, produces no `ModelTables`, and `extend` attaches to a model that
+   already exists. The
    streaming engine builds models declared in YAML; the linopy lane attaches YAML
    math to a `linopy.Model` already in memory. **Both accept exactly the same
    language**, and no helper registry exists that could create a divergence —
@@ -415,8 +423,9 @@ than discovered at solve time.
 **Four subpackages, and the directory *is* the rule in every case.** Everything
 under `language/` produces the AST and may not reach a consumer of it;
 everything under `relational/` is the relational lane and imports nothing else
-from the package, with a second boundary inside it — `engines/` holds
-implementations, the rest of `relational/` is what they implement; everything
+from the package, with a second boundary inside it — `engines/` holds the two
+implementations, the rest of `relational/` is what they implement, and which
+one runs is `LPSPEC_ENGINE` rather than anything a model can say; everything
 under `linopy/` is the opt-in eager lane and is the only code allowed to import
 linopy or xarray; everything under `typeset/` reads the
 AST and writes text, and reaches neither the plan nor any data.

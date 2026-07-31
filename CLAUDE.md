@@ -4,10 +4,18 @@
 
 `lpspec` is a YAML-based math definition layer for LP/MILP. It lets users define
 optimisation problems declaratively in YAML and build them at runtime — natively on the
-relational engine (polars → solver or LP file), which is the product path and needs no
+relational lane (→ solver or LP file), which is the product path and needs no
 [linopy](https://github.com/PyPSA/linopy); or through the opt-in `lpspec.linopy` shim,
 which puts the same math onto a `linopy.Model` that already exists in memory. Both lanes
 accept exactly the same language; there is no routing and no fallback.
+
+The relational lane has **two engines**, `polars` (default) and `duckdb` (opt-in
+`[duckdb]` extra), chosen by `LPSPEC_ENGINE` and never by the library. They
+build the same model integer for integer, so the choice is a cost one — not a
+third lane, and not something a YAML file can express. *Lane* and *engine* are
+different axes: linopy is a lane and cannot be an engine (it never sees the
+plan). `pytest --engine duckdb` runs the whole suite on the second one, and CI
+does.
 
 Four docs, kept short on purpose — **reference pages carry rules, design notes carry arguments**. If a change makes one longer, check whether it belongs in another:
 
