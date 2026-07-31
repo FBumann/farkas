@@ -1,18 +1,21 @@
 """Polars executor: fill the model frames, then hand them to a sink.
 
-Owns the *data* — sources, dim frames, labels, the four model frames, and the
-join that reads solution values back. Owns neither the query
-(:mod:`lpspec.relational.compiler`) nor the exit (:mod:`.sinks`). The lane is
-described in docs/ARCHITECTURE.md.
+Owns the *assembly* — turning each declaration into rows of the four model
+frames, and holding them until a sink drains them. Owns none of the three
+questions it asks on the way: what the data is
+(:mod:`lpspec.relational.binding`), what a query over it looks like
+(:mod:`lpspec.relational.compiler`), which coordinate gets which solver index
+(:mod:`lpspec.relational.labels`). The lane is described in
+docs/ARCHITECTURE.md.
 
-Labels are :mod:`lpspec.relational.labels`: ``var_label`` *is* the solver's
-column index and ``row`` its row index, and the three ways of reaching one have
-to agree integer for integer, which is a job of its own.
+The two registries it does own are the ones that fill *during* assembly — the
+variable and constraint frames — because a declaration built later has to see
+what earlier ones produced. Everything binding produced is frozen by contrast,
+which is what :class:`~lpspec.relational.binding.BoundSources` says.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
 import polars as pl
@@ -24,14 +27,15 @@ from lpspec.errors import (
     null_bounds_message,
     sparse_divisor_message,
 )
-from lpspec.relational import data_validation, plan, sinks
+from lpspec.relational import plan, sinks
+from lpspec.relational.binding import BoundSources, bind
 from lpspec.relational.compiler import PolarsCompiler, TermFragment
-from lpspec.relational.frames import as_frame
 from lpspec.relational.labels import Labeller
 from lpspec.relational.result import Result
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
+    from pathlib import Path
 
 
 #: The four frames a sink reads, as schemas. Stated here because the executor
@@ -57,12 +61,6 @@ _DTYPES = {
 }  # fmt: skip
 
 
-#: Scratch column carrying a source row's position while first-occurrence
-#: order is computed. The spaces make it unrepresentable as a declared name, so
-#: it cannot collide with a column the caller's index already has.
-_ROW_POSITION = '__row position__'
-
-
 #: Deprecated. The engine's failures are now split between
 #: :class:`~lpspec.errors.LanguageError` (the program says something the
 #: engine cannot build) and :class:`~lpspec.errors.DataError` (a source is
@@ -78,12 +76,9 @@ class PolarsExecutor:
         self._program: plan.Program | None = None
         self._compiler: PolarsCompiler | None = None
         self._labels: Labeller | None = None
-        self._parameters: dict[str, pl.LazyFrame] = {}
-        self._dimensions: dict[str, pl.LazyFrame] = {}
+        self._bound: BoundSources | None = None
         self._variables: dict[str, pl.LazyFrame] = {}
         self._constraints: dict[str, pl.LazyFrame] = {}
-        self._bool_params: set[str] = set()
-        self._dim_card: dict[str, int] = {}
         self._cols: pl.DataFrame | None = None
         self._obj: pl.DataFrame | None = None
         self._rows: pl.DataFrame | None = None
@@ -98,35 +93,22 @@ class PolarsExecutor:
     # ------------------------------------------------------------------
 
     def build(self, program: plan.Program, sources: Mapping[str, Any]) -> None:
-        """Load sources, create dim/parameter frames, variables, constraints.
+        """Bind *sources*, then build every declaration into the model frames.
 
-        The compiler comes after the data, because two of its answers depend on
-        it. Declarations are built one at a time and concatenated at the end:
+        The compiler comes after the binding, because two of its answers are
+        read off the data — a dim's size and whether a parameter is boolean.
+        Declarations are then built one at a time and concatenated at the end:
         their rows are independent, which is what lets the model be four frames
         rather than a graph.
         """
 
         self._program = program
-
-        # Dimensions with an index of their own come first, so a parameter's
-        # labels can be checked against them in the pass that binds it rather
-        # than in a second one over the same rows. The rest are *derived* from
-        # the parameters, so they cannot be built until those exist — and a
-        # derived dimension has no strangers to find.
-        self._create_sourced_dim_frames(program, sources)
-        for p in program.parameters:
-            self._create_param_frame(p, sources)
-        self._create_dim_frames(program, sources)
-
-        self._compiler = PolarsCompiler(
-            program,
-            dict(self._dim_card),
-            frozenset(self._bool_params),
-            self._parameters,
-            self._dimensions,
-            self._variables,
-        )
-        self._labels = Labeller(self._compiler, self._dim_card, program)
+        self._bound = bind(program, sources)
+        # The variable frames are passed apart from the bound data on purpose:
+        # they are the one registry still being filled, appearing as each
+        # declaration is built so a constraint compiled afterwards can see them.
+        self._compiler = PolarsCompiler(program, self._bound, self._variables)
+        self._labels = Labeller(self._compiler, self._bound.cardinality, program)
 
         cols = [self._build_variable(v) for v in program.variables]
         built = [self._build_constraint(c) for c in program.constraints]
@@ -146,38 +128,6 @@ class PolarsExecutor:
     def _label(self) -> Labeller:
         assert self._labels is not None, 'build() has not run'
         return self._labels
-
-    # ------------------------------------------------------------------
-    # sources
-    # ------------------------------------------------------------------
-
-    def _create_param_frame(self, p: plan.ParameterDeclaration, sources: Mapping[str, Any]) -> None:
-        """Bind one parameter's source and register it as a tidy frame."""
-
-        if p.name not in sources:
-            raise DataError(f"no source bound for parameter '{p.name}'")
-        frame = self._source_frame(p.name, sources[p.name])
-        wanted = [*p.dims, 'value']
-        missing = set(wanted) - set(frame.collect_schema().names())
-        if missing:
-            raise DataError(
-                f"source for parameter '{p.name}' is missing columns {sorted(missing)} "
-                f"(need dims {list(p.dims)} plus 'value')"
-            )
-        # streaming here and nowhere else in this file: this is the one
-        # collect whose result is model-sized, so it is the one the engine
-        # choice moves. `collect()` defaults to the in-memory engine — unlike
-        # `sink_csv`, whose default resolves to streaming — and switching every
-        # collect costs 29% on a small join-heavy model to save the same 0.15 GB
-        # this one saves alone.
-        frame = frame.select(wanted).collect(engine='streaming').lazy()
-        # before the cast, not after: a dictionary-encoded column compares on
-        # its codes, and widening it to strings first doubles the check
-        data_validation.check_one_row_per_coordinate(p, frame, self._dimensions)
-        frame = _plain_strings(frame, p.dims)
-        if frame.collect_schema()['value'] == pl.Boolean:
-            self._bool_params.add(p.name)
-        self._parameters[p.name] = frame
 
     def _check_no_undefined_divisor(self, name: str, matrix: pl.DataFrame, *expressions: plan.Expression) -> None:
         """A null coefficient means a divisor had no value where the model divided.
@@ -199,134 +149,6 @@ class PolarsExecutor:
         if undefined:
             params = sorted(plan.divisor_parameters(*expressions))
             raise DataError(f'{name}: {sparse_divisor_message(", ".join(params), int(undefined))}')
-
-    def _source_frame(self, name: str, source: Any) -> pl.LazyFrame:
-
-        if isinstance(source, (str, Path)):
-            return pl.scan_parquet(source)
-        frame = as_frame(source)
-        if frame is not None:
-            return frame
-        raise DataError(
-            f"source for '{name}' must be a parquet path or a table polars can "
-            f'read — polars, pyarrow, pandas (got {type(source).__name__})'
-        )
-
-    @staticmethod
-    def _declared_dims(program: plan.Program) -> set[str]:
-        dims: set[str] = set()
-        for v in program.variables:
-            dims.update(v.dims)
-        for c in program.constraints:
-            dims.update(c.dims)
-        for p in program.parameters:
-            dims.update(p.dims)
-        return dims
-
-    def _register_dim(self, d: str, table: pl.LazyFrame) -> None:
-        materialised = table.collect()
-        self._dimensions[d] = materialised.lazy()
-        self._dim_card[d] = materialised.height
-
-    def _create_sourced_dim_frames(self, program: plan.Program, sources: Mapping[str, Any]) -> None:
-        """Every dimension carrying its own index, before any parameter binds."""
-        for d in sorted(self._declared_dims(program)):
-            if d in sources:
-                coordinates = sorted(dict(program.dimension(d).coordinates))
-                self._register_dim(d, self._explicit_dim_frame(d, sources[d], coordinates))
-
-    def _create_dim_frames(self, program: plan.Program, sources: Mapping[str, Any]) -> None:
-        """Build every dimension's frame, then check its coordinates.
-
-        A dimension with no explicit index has no declared order, so its labels
-        are sorted. Containment runs once every frame exists: it stops a
-        mistyped coordinate from vanishing in the join that places its terms,
-        leaving a model that builds and solves without them.
-        """
-
-        dims = self._declared_dims(program)
-        for d in sorted(dims):
-            if d in self._dimensions:  # built by `_create_sourced_dim_frames`
-                continue
-            coordinates = dict(program.dimension(d).coordinates)
-            if d in sources:
-                table = self._explicit_dim_frame(d, sources[d], sorted(coordinates))
-            else:
-                if coordinates:
-                    raise DataError(
-                        f"dimension '{d}' declares coordinates {sorted(coordinates)} but has "
-                        f"no index source. Pass one under key '{d}' (a parquet path or frame "
-                        f'carrying columns {[d, *sorted(coordinates)]}) — a coordinate cannot '
-                        f'be inferred from the parameters that happen to use the dimension.'
-                    )
-                params = [p for p in program.parameters if d in p.dims]
-                if not params:
-                    raise DataError(
-                        f"dimension '{d}' has no source: no parameter carries it and "
-                        f"no explicit index was provided under key '{d}'"
-                    )
-                stacked = pl.concat([self._parameters[p.name].select(pl.col(d).alias('val')) for p in params])
-                table = stacked.unique().sort('val').with_row_index('ord').with_columns(pl.col('ord').cast(pl.Int64))
-            self._register_dim(d, table)
-
-        for d in sorted(dims):
-            for cname, target in sorted(program.dimension(d).coordinates):
-                if target not in self._dim_card:
-                    raise DataError(
-                        f"dimension '{d}' coordinate '{cname}' targets '{target}', which "
-                        f'no declaration in this model uses, so it has no coordinate set '
-                        f'to check against'
-                    )
-                data_validation.check_coordinate_containment(d, cname, target, self._dimensions)
-
-    def _explicit_dim_frame(self, d: str, source: Any, names: list[str]) -> pl.LazyFrame:
-        """A dimension's ``(val, ord, coordinates…)`` from a caller's index.
-
-        Ordinals follow the source's own order, so ``roll``/``shift`` moves by
-        position exactly as the eager lane does even for string labels. A
-        label's position is the row it first appears at.
-        """
-
-        if isinstance(source, (str, Path)):
-            frame = pl.scan_parquet(source)
-        else:
-            frame = as_frame(source)
-            if frame is None:
-                raise DataError(
-                    f"explicit index for dimension '{d}' must be a table polars can read "
-                    f"with a '{d}' column, or a parquet path"
-                )
-        available = frame.collect_schema().names()
-        if d not in available:
-            raise DataError(
-                f"explicit index for dimension '{d}' must be a table polars can read "
-                f"with a '{d}' column, or a parquet path (has {available})"
-            )
-        missing = [c for c in names if c not in available]
-        if missing:
-            raise DataError(
-                f"index for dimension '{d}' is missing declared coordinate column(s) {missing} (has {available})"
-            )
-        # One pass, and one collect. The single-valued check needs an
-        # `n_unique` per coordinate grouped by `d`, which is the aggregate this
-        # is already running — so the counts ride in it rather than costing a
-        # `group_by` each, over a frame that is a scan and would be re-read
-        # every time (#273).
-        grouped = (
-            frame.select(d, *names)
-            .with_row_index(_ROW_POSITION)
-            .group_by(d)
-            .agg(
-                pl.col(_ROW_POSITION).min(),
-                *(pl.col(c).first() for c in names),
-                *data_validation.nunique_exprs(names),
-            )
-            .sort(_ROW_POSITION)
-            .with_row_index('ord')
-            .collect()
-        )
-        data_validation.check_coordinates_single_valued(d, names, grouped)
-        return grouped.lazy().select(pl.col(d).alias('val'), pl.col('ord').cast(pl.Int64), *names)
 
     # ------------------------------------------------------------------
     # declarations
@@ -584,8 +406,12 @@ class PolarsExecutor:
         self._cols = self._obj = self._rows = self._matrix = None
         self._variables.clear()
         self._constraints.clear()
-        self._parameters.clear()
-        self._dimensions.clear()
+        # `BoundSources` is frozen, so it cannot be emptied in place the way the
+        # registries above can: what frees the bound frames is dropping every
+        # reference to them, and the compiler holds one.
+        self._bound = None
+        self._compiler = None
+        self._labels = None
 
     def __enter__(self) -> PolarsExecutor:
         return self
@@ -648,25 +474,6 @@ def _has_repeated_entry(matrix: pl.DataFrame) -> bool:
         return False
     repeated = (pl.col('row') == pl.col('row').shift(1)) & (pl.col('col') == pl.col('col').shift(1))
     return bool(matrix.select(repeated.any()).item())
-
-
-def _plain_strings(frame: pl.LazyFrame, dims: tuple[str, ...]) -> pl.LazyFrame:
-    """Dim columns as plain strings, whatever encoding the source used.
-
-    A dictionary-encoded parquet column reads back as ``Categorical``, which is
-    what pandas writes for any repeated label and what any sane writer produces
-    for a 12M-row table of node names. polars will not join ``Categorical``
-    against ``String`` — the dim frames are built from the declared coordinate
-    values and are plain — so the two would have to agree by luck.
-
-    Casting the *source* side rather than the dim side is deliberate: the dim
-    frame is the authority on what a coordinate is, and a source is whatever a
-    caller happened to hand over.
-    """
-    categorical = [d for d, dtype in frame.collect_schema().items() if d in dims and dtype in (pl.Categorical, pl.Enum)]
-    if not categorical:
-        return frame
-    return frame.with_columns(pl.col(d).cast(pl.String) for d in categorical)
 
 
 def _stack(frames: list[pl.DataFrame], columns: tuple[str, ...]) -> pl.DataFrame:

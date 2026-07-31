@@ -35,8 +35,9 @@ flowchart TB
         direction TB
         LOWER["lowering.py"] --> PLAN["logical plan<br/>(relational/plan.py)"]
         PLAN --> COMP["compiler.py<br/>plan → lazy frames<br/>pure: nothing is read"]
-        DR[("data<br/>parquet paths / any Arrow table")] --> EXEC
-        COMP --> EXEC["executor.py<br/>bind sources, label, assemble<br/>the model frames"]
+        DR[("data<br/>parquet paths / any Arrow table")] --> BIND["binding.py<br/>sources → BoundSources<br/>frozen once bound"]
+        BIND --> EXEC
+        COMP --> EXEC["executor.py<br/>label, assemble<br/>the model frames"]
         EXEC --> LPS["lp_file sink (sinks/lp_file.py)<br/>portability, debugging<br/>(mps planned)"]
         EXEC --> DIRECT["solver_direct sink (sinks/highs.py)<br/>COO batches → highspy → HiGHS"]
         DIRECT --> SOL["solution tables<br/>(label join, never dense)"]
@@ -200,17 +201,26 @@ that made an implementation choice load-bearing in the language's rulebook.
 
 ## The relational lane
 
-**One module per box above.** `compiler.py` turns plan nodes into lazy
-frames and reads nothing; `executor.py` binds the data and fills the model
-frames; `sinks/` drains them. Two more sit beside the executor rather than
-inside it, because each answers a question the executor merely *uses*:
-`labels.py` decides which coordinate gets which solver index, and `result.py`
-is what a caller reads a solve back through. The split is what makes the admissibility test
+**One module per box above.** `binding.py` turns a caller's sources into the
+frames the engine reads; `compiler.py` turns plan nodes into lazy frames and
+reads nothing; `executor.py` fills the model frames; `sinks/` drains them. Two
+more sit beside the executor rather than inside it, because each answers a
+question the executor merely *uses*: `labels.py` decides which coordinate gets
+which solver index, and `result.py` is what a caller reads a solve back
+through. The split is what makes the admissibility test
 below something you can perform rather than reason about — build a
 `PolarsCompiler`, hand it a node, read `.explain()` (`tests/test_compiler.py`
 does exactly that, over empty frames: a schema is all it takes to compile a
 query). It is also why a new sink is a function in one file instead of another
 method on the executor.
+
+**What binding produces is a value.** `BoundSources` is frozen — parameters,
+dimensions, their cardinalities, and which parameters are boolean — because a
+query is written against data that has stopped changing. The variable frames
+are passed *beside* it and stay mutable, since a variable frame appears as its
+declaration is built and a constraint compiled afterwards has to see it. That
+is the one live registry in the lane, and keeping it out of the carrier is
+what makes it visible in a signature rather than only in a docstring.
 
 **Tidy tables.** Parameters are `(dims…, value)`; a variable frame is
 `(dims…, var_label)`, one row per *existing* variable; a linear expression is
@@ -299,7 +309,8 @@ than discovered at solve time.
 | `relational/chunking.py` | how a batched pass sizes its chunk: budget ÷ the width of one unit |
 | `relational/status.py` | solve outcome on two axes; linopy's vocabulary, copied not imported |
 | `relational/labels.py` | which coordinate gets which solver index; three routes to one number, which must agree |
-| `relational/executor.py` | bind sources, assemble the model frames |
+| `relational/binding.py` | a caller's sources → `BoundSources`, the frozen frames every query is written against |
+| `relational/executor.py` | assemble the model frames from the bound data |
 | `relational/result.py` | what a solve returned: status, objective, and the label joins that read values back |
 | `relational/data_validation.py` | is the bound data usable — one row per coordinate, labels that exist, single-valued coords |
 | `relational/sinks/tables.py` | what every sink reads and no more — the four frames plus the batching scalars |
