@@ -85,6 +85,11 @@ class Labeller:
         remove rows — but which rows is not known until data is read, and that
         is what costs the two fast paths, so the caller passes them only when a
         variable in the equation is actually masked.
+
+        Being semi-joins is also why nothing deduplicates them: a semi-join
+        asks whether a key occurs, and a key occurring twice still occurs, so
+        the distinct would change no row and cost a hash pass over every
+        coordinate the variable has.
         """
         if not restrictions:
             if where is None:
@@ -99,7 +104,7 @@ class Labeller:
 
         restricted = self._q.frame(dims, where)
         for on, presence in restrictions:
-            restricted = restricted.join(presence.unique(), on=list(on), how='semi')
+            restricted = restricted.join(presence.select(list(on)), on=list(on), how='semi')
 
         materialised = (
             restricted.sort([_ordinal(d) for d in dims])
