@@ -297,6 +297,29 @@ def test_a_variable_and_its_shape_operators_stay_keyed():
         assert compiler().expression(node, 'test').terms[0].keyed, node
 
 
+def test_a_term_names_its_variable_through_every_operator():
+    """What lets two fragments be compared without reading either.
+
+    `keyed` says a fragment cannot repeat a label on its own; this says which
+    labels it could possibly hold, and the two together are what the assembly
+    reads to decide whether its terminal aggregate has anything to collapse.
+    An operator that drops the name is not wrong — the aggregate runs — it
+    just puts every constraint back on the sorting path.
+    """
+    for node in (
+        plan.Variable('p'),
+        plan.Sum(plan.Variable('p'), ('generator',)),
+        plan.GroupSum(plan.Variable('p'), over='generator', coordinate='bus', into='bus'),
+        plan.Translate(plan.Variable('p'), 'snapshot', by=1),
+        plan.Multiply(plan.Variable('p'), plan.Parameter('cost')),
+        plan.Divide(plan.Variable('p'), plan.Parameter('cost')),
+        -plan.Variable('p'),
+    ):
+        assert compiler().expression(node, 'test').terms[0].variable == 'p', node
+
+    assert compiler().expression(plan.Parameter('cost'), 'test').consts[0].variable is None
+
+
 def test_summing_a_constant_part_over_a_dim_stops_it_being_keyed():
     """The exception, and the reason the flag is not just "is it a term".
 

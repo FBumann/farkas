@@ -84,6 +84,18 @@ class TermFragment:
     a reduction clears it, because ``sum`` skips absent slots rather than
     propagating them (v1 ``convention.rst`` §13).
     """
+    variable: str | None = None
+    """The variable whose labels :attr:`frame` carries; ``None`` for a const part.
+
+    An affine fragment holds at most one, because ``Add`` splits into fragments
+    and ``Multiply`` refuses a second — so this is a name, not a set.
+
+    It is what lets two fragments be compared without reading either. Labels are
+    dense and assigned one declaration at a time, so *distinct variables occupy
+    disjoint label ranges*: two fragments naming different variables cannot put
+    a row on the same solver column however they were reshaped, and the
+    terminal aggregate that would collapse them has nothing to do.
+    """
     presence_dims: tuple[str, ...] | None = None
     """The columns :attr:`presence` is keyed by; ``None`` means :attr:`dims`.
 
@@ -381,6 +393,7 @@ class PolarsCompiler:
             frame,
             True,
             label_dims=frozenset(dims),
+            variable=name,
             presence=presence,
             presence_dims=dims if masked else None,
         )
@@ -436,7 +449,9 @@ class PolarsCompiler:
         # summing over a partly-masked dim is well defined and reports nothing.
         # Constructed rather than `replace`d for exactly that: `presence` has to
         # be *dropped* here, and carrying it would be the silent default.
-        return TermFragment(keep, frame, p.is_term, p.survives_dropping(dropped), p.label_dims - dropped)
+        return TermFragment(
+            keep, frame, p.is_term, p.survives_dropping(dropped), p.label_dims - dropped, variable=p.variable
+        )
 
     def _group_fragment(self, p: TermFragment, g: plan.GroupSum, context: str) -> TermFragment:
         """Relabel dim ``over`` to ``into`` through a declared coordinate.
@@ -462,7 +477,9 @@ class PolarsCompiler:
         keyed = p.keyed and g.over in p.label_dims
         # a group is a sum, so §13 applies here as well: absence does not escape
         # it, which is why this constructs rather than `replace`s — see _sum_fragment
-        return TermFragment((*keep, g.into), frame, p.is_term, keyed, _relabel(p.label_dims, g.over, g.into))
+        return TermFragment(
+            (*keep, g.into), frame, p.is_term, keyed, _relabel(p.label_dims, g.over, g.into), variable=p.variable
+        )
 
     def _translate_fragment(self, p: TermFragment, s: plan.Translate, context: str) -> TermFragment:
         """A pointwise remap of the dim through its ord: a row at *o*

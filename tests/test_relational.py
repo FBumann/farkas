@@ -22,6 +22,7 @@ from lpspec.relational import (
     PolarsExecutor,
     chunking,
 )
+from lpspec.relational.engines.polars.executor import _needs_aggregate
 from lpspec.relational.plan import (
     Constant,
     ConstraintDeclaration,
@@ -535,6 +536,40 @@ def test_the_matrix_aggregate_runs_on_what_repeats_and_not_on_what_might():
         matrix = ex._tables().matrix
         assert matrix.height == 2, 'one cell per row after the collapse'
         assert matrix['coeff'].to_list() == [4.0, 4.0]
+
+
+def test_stacking_distinct_variables_asks_for_no_aggregate():
+    """The static answer itself, which no end-to-end assertion can reach.
+
+    `test_the_matrix_aggregate_runs_on_what_repeats_and_not_on_what_might`
+    pins the *rows*, and both branches produce the same ones — a build that
+    sorts every nonzero to collapse nothing is indistinguishable from one that
+    never sorted. So the question of whether the aggregate was asked for has
+    to be put to `_needs_aggregate` directly.
+
+    Reading the count alone answers 'yes' to every multi-term constraint,
+    which is most of them.
+    """
+    dims = {'i': {'dtype': 'int', 'values': [0, 1]}}
+    variables = {'x': {'foreach': ['i'], 'bounds': {'lower': 0}}, 'y': {'foreach': ['i'], 'bounds': {'lower': 0}}}
+    sources = {'rhs': pl.DataFrame({'i': [0, 1], 'value': [4.0, 6.0]})}
+
+    def fragments(expression):
+        program = lower_program(
+            MathSchema(
+                dimensions=dims,
+                parameters={'rhs': {'dims': ['i']}},
+                variables=variables,
+                constraints={'c': {'foreach': ['i'], 'expression': f'{expression} >= rhs'}},
+                objectives={'o': {'sense': 'minimize', 'expression': 'sum(x, over=i)'}},
+            )
+        )
+        with PolarsExecutor() as ex:
+            ex.build(program, sources)
+            return ex._q.expression(program.constraints[0].lhs, 'test').terms
+
+    assert not _needs_aggregate(fragments('x + y'))
+    assert _needs_aggregate(fragments('x + 3 * x'))
 
 
 def test_the_objective_skips_the_aggregate_only_when_a_column_cannot_repeat():
