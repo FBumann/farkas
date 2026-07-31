@@ -25,14 +25,27 @@ would otherwise be measured with a warm buffer pool, and it is what makes the
 whole-process ``rss`` available alongside the memray peak, so the two can be
 watched for divergence.
 
-Not collected by ``uv run pytest`` — ``testpaths`` is ``tests``. Run:
+**One suite, three instruments.** These are plain ``pytest-benchmark`` tests, so
+the fixture they ask for is whichever plugin is loaded — and that is the reason
+there is no second set of benchmarks anywhere in this repository:
 
     uv sync --group bench
-    uv run pytest bench/regressions --benchmark-memory
+    uv run pytest bench/regressions --benchmark-memory   # + memray peak, + rss
 
     # against a stored baseline, failing on a regression
     uv run pytest bench/regressions --benchmark-memory-compare=NNNN \\
         --benchmark-memory-compare-fail=mean:10%
+
+    uv sync --no-default-groups --group codspeed
+    uv run pytest bench/regressions --codspeed           # what CI measures
+
+``--benchmark-memory`` patches the stock fixture and reads the ``benchmem``
+marker below, so memray and ``rss`` arrive with no change to the test;
+``--codspeed`` replaces the same fixture with CodSpeed's, and the marker goes
+inert. What must not vary between them is the *workload*, and it cannot — there
+is one of it.
+
+Not collected by ``uv run pytest`` — ``testpaths`` is ``tests``.
 
 **Whatever `lps.build` builds with.** Nothing here names an engine, so
 ``LPSPEC_ENGINE`` selects one and the same two commands answer the same
@@ -57,31 +70,38 @@ from bench.workloads import build_and_hand_over, build_and_write, split_sources
 WORKLOADS = [('dispatch', 's'), ('dispatch', 'm'), ('nodal', 'm'), ('transport', 'm'), ('profiled', 'm')]
 
 
-def _check(benchmark_memory: Any, columns: int, shape: Shape) -> None:
+def _check(benchmark: Any, columns: int, shape: Shape) -> None:
     """A benchmark that silently built the wrong model is worse than none.
 
     The published ladder has a parity gate against linopy; this has an
     arithmetic one, which is all a single-lane suite can afford.
+
+    The dims are attached only when the fixture carries them. CodSpeed's has no
+    ``extra_info`` — it reports to a service rather than to a JSON file — and an
+    assertion that held under one instrument and raised under another would be
+    the one thing this file exists to prevent.
     """
     assert columns > 0
     assert columns <= shape.nominal_variables
-    benchmark_memory.extra_info['columns'] = columns
-    benchmark_memory.extra_info['live_fraction'] = columns / shape.nominal_variables
+    info = getattr(benchmark, 'extra_info', None)
+    if info is not None:
+        info['columns'] = columns
+        info['live_fraction'] = columns / shape.nominal_variables
 
 
 @pytest.mark.benchmem(isolate=True)
 @pytest.mark.parametrize(('case_name', 'size'), WORKLOADS, ids=lambda v: str(v))
-def test_build_and_write(benchmark_memory, case_name: str, size: str) -> None:
+def test_build_and_write(benchmark, case_name: str, size: str) -> None:
     case = CASES[case_name]
     shape = case.shape(size)
     # the same split the published harness uses, imported rather than restated
     sources, coords = split_sources(case, case.data(shape))
-    _check(benchmark_memory, benchmark_memory(build_and_write, case_name, sources, coords), shape)
+    _check(benchmark, benchmark(build_and_write, case_name, sources, coords), shape)
 
 
 @pytest.mark.benchmem(isolate=True)
 @pytest.mark.parametrize(('case_name', 'size'), WORKLOADS, ids=lambda v: str(v))
-def test_build_and_hand_over(benchmark_memory, case_name: str, size: str) -> None:
+def test_build_and_hand_over(benchmark, case_name: str, size: str) -> None:
     """Kept a separate test rather than a parametrisation of the one above.
 
     ``--benchmark-memory-compare`` matches stored baselines by test id, so
@@ -91,4 +111,4 @@ def test_build_and_hand_over(benchmark_memory, case_name: str, size: str) -> Non
     case = CASES[case_name]
     shape = case.shape(size)
     sources, coords = split_sources(case, case.data(shape))
-    _check(benchmark_memory, benchmark_memory(build_and_hand_over, case_name, sources, coords), shape)
+    _check(benchmark, benchmark(build_and_hand_over, case_name, sources, coords), shape)
