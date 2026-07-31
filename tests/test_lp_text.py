@@ -155,6 +155,18 @@ def test_one_model_writes_the_same_bytes_every_time(tmp_path: Path) -> None:
 
     assert len(set(written)) == 1, 'the same model wrote different bytes'
 
+    # A second *build*, not a second write: three writes share one matrix, so
+    # they cannot see an engine that hands its rows back in a different order
+    # each time. Ordering the matrix inside the engine would hide that; the
+    # sink carrying its own sort key is what actually makes it true.
+    for _ in range(2):
+        with lps.build(schema, data) as rebuilt:
+            lp = tmp_path / 'rebuilt.lp'
+            rebuilt.write_lp(lp)
+            assert hashlib.sha256(lp.read_bytes()).hexdigest() == written[0], (
+                'two builds of one model wrote different bytes'
+            )
+
 
 def test_section_keywords_survive_sections_far_larger_than_a_buffer(tmp_path: Path) -> None:
     """The sink writes the keywords itself and polars writes the sections.
