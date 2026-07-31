@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.43](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.42...v0.0.1-alpha.43) (2026-07-31)
+
+
+### Documentation
+
+* **ceiling:** the plan cannot loop, the process can — scope the refusal ([#378](https://github.com/FBumann/lpspec/issues/378)) ([55d238c](https://github.com/FBumann/lpspec/commit/55d238c524d50d1980c6b367dd8a6e11c8c221f4))
+
 ## [0.0.1-alpha.42](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.41...v0.0.1-alpha.42) (2026-07-31)
 
 
