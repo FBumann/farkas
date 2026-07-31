@@ -56,6 +56,41 @@ def test_every_bound_source_is_a_table_and_not_a_registered_frame(duck) -> None:
     assert named <= tables, f'{sorted(named - tables)} are registered frames, not tables'
 
 
+def _labels_in_catalog(ex) -> set[str]:
+    """The label relations this build wrote down, as opposed to derived."""
+    tables = {name for (name,) in ex._con.execute('SELECT table_name FROM duckdb_tables()').fetchall()}
+    return {n for n in (*ex._var_tables.values(), *ex._row_tables.values()) if n in tables}
+
+
+def test_an_arithmetic_label_is_derived_and_a_counted_one_is_written_down(duck, monkeypatch) -> None:
+    """Materialise the window, not the rectangle.
+
+    A label relation is read three or four times downstream, which sounds like
+    a table. But the *counted* label needs an ordered window over the whole
+    coordinate product and is worth paying for once, while an arithmetic one is
+    a cross join of two small relations — cheaper to answer three times than to
+    write ten million rows down once. Both are named relations and nothing
+    above this can tell which.
+
+    Pinned because the cost is invisible at test sizes: a table here builds the
+    right model and costs 62% of the build on `dispatch/l`.
+    """
+    assert _labels_in_catalog(duck) == set(), 'an unmasked label was materialised'
+
+    # a mask reading the leading dim leaves no free prefix, so it is counted
+    counted = {
+        **MODEL,
+        'variables': {'x': {'foreach': ['i'], 'where': 'b > 0', 'bounds': {'lower': 0, 'upper': 'b'}}},
+    }
+    monkeypatch.setenv(engines.ENV_VAR, 'duckdb')
+    with lps.build(counted, SOURCES) as ex:
+        # the constraint counts too: a masked variable in the equation takes
+        # its row with it, and which rows survive is not known until it is read
+        assert _labels_in_catalog(ex) == {ex._var_tables['x'], ex._row_tables['c']}, (
+            'a counted label was not materialised'
+        )
+
+
 def test_nothing_stays_registered_after_a_build(duck) -> None:
     """The copy is a step, not a second home for the data.
 
