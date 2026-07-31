@@ -1,15 +1,18 @@
-"""What "the build" means — one definition, for every harness that measures it.
+"""What "the build" means, for the harnesses that can share a definition of it.
 
-Three harnesses now ask three different questions (bench/README.md), and each
-takes its own metric with its own instrument: ``bench/run.py`` spawns a process
-per measurement and reads ``ru_maxrss``, ``bench/regressions/`` runs memray in a
-forked interpreter, ``bench/codspeed/`` tracks allocations in this one. None of
-those can share a *measurement*.
+Two harnesses ask different questions (bench/README.md) with different metrics:
+``bench/run.py`` spawns a process per measurement and reads ``ru_maxrss``;
+``bench/regressions/`` runs memray in a forked interpreter, and CodSpeed
+measures those same tests in CI. None of them can share a *measurement*.
 
-They can and must share the **workload**. Two suites reporting on "the build"
-have to mean the same thing by it or their numbers cannot be read against each
-other — and the drift would be invisible, because each would still be
-internally consistent. So the verbs live here, and the harnesses only wrap them.
+**How much they share is uneven, and worth stating exactly.**
+``bench/regressions/`` — under either instrument — calls the verbs below, so
+the memray gate and the CodSpeed report cannot drift from each other. The
+published ladder shares only :func:`split_sources`: ``_run_case.py`` marks a
+phase clock between the build and the hand-off, so its copy of those two calls
+is inline by necessity rather than by neglect. Read a ladder number and a
+regression number as measuring the same *thing*, not as produced by the same
+line of code.
 
 Kept lpspec-free at import time on purpose: the library is imported inside the
 verbs, not at module scope. ``bench/regressions/`` sends these to a fresh
@@ -42,6 +45,17 @@ def split_sources(case: Case, paths: dict[str, str]) -> tuple[dict[str, str], di
     schema = pyyaml.safe_load(case.model.read_text())
     params = set(schema.get('parameters', {}))
     dims = set(schema.get('dimensions', {}))
+    # A path the model declares nothing for would otherwise be dropped in
+    # silence, and the case measured building a model that never saw it. The
+    # way this happens is a stale parquet in the case's cache directory: the
+    # generator's output is globbed on a cache hit, so a file an older
+    # generator wrote outlives the declaration it was written for.
+    undeclared = sorted(set(paths) - params - dims)
+    if undeclared:
+        raise ValueError(
+            f'{case.name}: {undeclared} declared as neither parameter nor dimension in '
+            f'{case.model} — the build would not see it. Stale files under bench/.cache/?'
+        )
     return (
         {k: v for k, v in paths.items() if k in params},
         {k: v for k, v in paths.items() if k in dims},

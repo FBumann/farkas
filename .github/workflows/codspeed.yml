@@ -57,6 +57,11 @@ jobs:
       id-token: write  # OIDC auth with CodSpeed — no upload token
     steps:
       - uses: actions/checkout@v7
+        with:
+          # nothing after this step talks to git, and the measured command is a
+          # benchmark run under a third-party action — so the token has no
+          # reason to be sitting in .git/config while it does
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v7
         with:
           # the floor, and the only version CI tests — see ci.yml
