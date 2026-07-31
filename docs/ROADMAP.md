@@ -70,6 +70,23 @@ coordinate-aligned, objective only, convex-guarded — aligned products are a
 pointwise self-join; general bilinear coupling is a cross join with |terms|²
 rows and is excluded permanently.
 
+**Sequencing, not a verdict.** The cost side is small and the oracle is free —
+linopy's `QuadraticExpression` builds the comparison, which is normally the
+expensive half of a new primitive. What is unsettled is not whether quadratic is
+worth having but **where it can land**: HiGHS refuses `Hessian + integrality`,
+and `binary:`, `integer:` and nonconvex `piecewise:` all ship today, so on the
+default path quadratic conflicts with features already in the language. That
+makes two things prerequisites rather than quadratic work — Track 4 declaring
+the conjunction exclusion, and a second solver bound to `solver_direct` that has
+no such exclusion (Gurobi, [#106](https://github.com/FBumann/lpspec/issues/106)).
+Landing the primitive first ships math the default solver refuses.
+
+The live argument — in particular whether *coordinate-aligned* is the right
+restriction, or whether the real axis is **is the coupling declared as data?** —
+is in [#261](https://github.com/FBumann/lpspec/issues/261) and
+[#84](https://github.com/FBumann/lpspec/issues/84), which supersede the two
+paragraphs above. This section states the sequencing; those state the math.
+
 ## Track 1 — language primitives (taxed)
 
 | # | Primitive | Proposed surface | Unlocks | Locality | Status |
@@ -83,12 +100,49 @@ rows and is excluded permanently.
 | 7 | Bounds as expressions | — | signs, bidirectional flows, component libraries | pointwise | #31 |
 | 8 | Namespacing / qualified names | — | component libraries | n/a | #29 |
 | 9 | Compose-then-build (schema merge) | — | one lower/stream pass over merged libraries | n/a | #30 |
+| 10 | Cumulative sum, data only | `cumsum(p, over=dim)` over a variable-free expression | investment schedules, cumulative budgets and caps — today a data-prep round trip for one column | coordinate-space | small |
+| 11 | Semi-continuous variables | `semi_continuous: true` beside `binary`/`integer` | "off, or between min-stable and max" without the big-M pair it is written as today | n/a | small |
 
 Items 1–4 are one piece of work — indexed access plus the masks that make it
 usable — and are the difference between "dispatch and balances" and "network and
 multi-period math". Item 2 is the adjoint of `group_sum`: same mapping table,
 join without the aggregate. Calliope spells 1 and 2 as `x[dim=value]`; we do not,
 because a dimension in a *kwarg key* cannot be parameterised by a macro.
+
+**The window family is three questions, not one.** They are worth separating
+because only the third is expensive, and the row in
+[Deliberate non-primitives](#deliberate-non-primitives) used to price all three
+as if they were the third:
+
+- **`diff`** is `x - shift(x, over=d, by=1)`. It needs nothing — it is a macro
+  today, and `edge=` already answers what happens at the boundary.
+- **Fixed-width windows** (item 4) are bounded-halo, the same locality class as
+  `shift`, whose cyclic form already ships. Admissible, and gated only on item 3.
+- **`cumsum`** splits on what it reduces. Over a **variable-free** expression it
+  is one data column with no term expansion — free, and item 10 above. Over a
+  **variable** the window is *t* rather than a constant, so row *t* carries *t*
+  terms: an 8760-snapshot horizon emits ~38M nonzeros where the state-variable
+  recurrence emits ~26k.
+
+That last number is the whole argument, and it is **not a build cost**. Our own
+throughput is ours to fix and must never gate what the language can say. But a
+construct that inflates the *emitted* model is paid by the solver, on every
+solve, and no engineering on this side reduces it later. So `cumsum` over a
+variable is not refused on locality grounds — it is **priced**, and the open
+question is the mechanism: the label budget of
+[#38](https://github.com/FBumann/lpspec/issues/38) is a cap on rows and columns
+declared before the work runs, which is exactly the shape needed here, and
+generalising it from escape islands to any superlinear construct would make the
+size visible at load time rather than discovered in the solver. Deciding that
+also decides how much job is left for an island at all.
+
+Item 11 is the cheapest thing on this table and the only one blocked by nothing:
+HiGHS carries `kSemiContinuous` and `kSemiInteger` natively, so unlike SOS
+(#23) and quadratic it needs no Track 4 finding on the default sink; linopy has
+`Model.semi_continuous`, so the oracle already covers it; and it adds a
+declaration flag, not a plan node — no expression grammar, no lowering case
+beyond the column type. The LP-file sink needs its own bound section, which is
+where the work actually is.
 
 ## Tracks 2–3 — untaxed
 
@@ -113,6 +167,22 @@ exception noted under 2b.
   exception on this track: adding slacks means **new variables**, so it needs a
   schema-level expansion pass the way `piecewise:` does, and is taxed like a
   primitive rather than free ([#80](https://github.com/FBumann/lpspec/issues/80)).
+
+  **The REPL gap is verbs, not structure.** Anyone arriving from linopy loses
+  the ability to hold a model in a session and poke at it, and that reads as the
+  larger loss — but the substrate here is *better*, not worse: a built model is
+  four polars frames, which answers "what is in row 12" with a filter, where a
+  labelled `Dataset` answers it with a scatter. What is missing is that nothing
+  on the built object reads them back. `lps.build()` already hands back the live
+  executor; it just has nothing readable on it. Every verb worth having is a
+  query over frames that already exist — render a **bound** row with its labels
+  and coefficients (`typeset/` renders the *declaration*, which is the other
+  half), preview which rows survive a `where` before solving, evaluate an
+  expression against bound data, coefficient ranges and model statistics. All of
+  it is **read-only**: it inspects a built model and never declares one, which
+  is the line that keeps this from becoming the Python modeling API rule 6
+  refuses. That line is what makes the whole block cheap, and it should be
+  stated in the first issue rather than defended in each one.
 - **2c — value-only re-solve.** In scope, because `var_label` *is* the solver
   column index with no remapping: changing a bound or an RHS is a label query
   plus `changeColsBounds`/`changeRowsBounds`, which is what rolling horizon,
@@ -127,6 +197,18 @@ exception noted under 2b.
   ([#82](https://github.com/FBumann/lpspec/issues/82)). Structural editing
   stays out — it invalidates the label contract. Related gap: warm starts, which
   `solver_direct` would need to set through highspy.
+
+  **Integrality is label-preserving too**, and rides the same contract for free.
+  Relaxing a MILP is one call in linopy (`Variable.relax()`); here it is a second
+  YAML file or an edit, which is why "is my model even feasible as an LP" is
+  harder than it should be. But `var_label` is a `ROW_NUMBER()` over the rows
+  surviving the `where` mask, and integrality does not decide which rows exist —
+  so `changeColsIntegrality` is exactly as safe as `changeColsBounds`, with none
+  of the caveats above about `where`-read parameters or a changed `group_sum`.
+  It belongs on the solver session ([#204](https://github.com/FBumann/lpspec/issues/204))
+  as a sibling of value rebinding, not in the language: relax-and-fix, rounding
+  heuristics and LP bounds on a MILP are all *how you solve* a model, not what
+  the model says.
 - **3 — AST consumers** (#21): **math → LaTeX** (a tree walk, no data — the
   product *is* the declarative math, so it should render as typeset
   documentation), CLI `check`/`solve`/`write` (#35), observability (#34).
@@ -190,7 +272,8 @@ shapes escape.
 |---|---|---|---|
 | Quadratic / bilinear terms | degree pinned at 1 | `piecewise:` (`convex: true`) or the epigraph pattern | **banned today**, blocked by the QP∧MILP exclusion on the default solver — a Track 4 capability question, and the bigger diff of the two (new plan node, lowering, convexity guard) |
 | SOS / indicator (#23) | the default solver has no such concept | `piecewise:` λ-formulation (SOS2's usual purpose); big-M for indicator, given bounds | **banned today**, and the *easier* one: `lp_file` carries it as a text section and Gurobi natively — it needs Track 4, not a new invariant |
-| Cumulative / running sums, normalisations | **global** — breaks partition-wise execution | state-variable recurrence (a storage SOC balance *is* the rewrite) | billed — but the rewrite is still right at scale, O(T) vs O(T²) |
+| Running sum over a **variable** | not locality — the *emitted* model is O(T²) rows | state-variable recurrence (a storage SOC balance *is* the rewrite) | priced, not banned — see [the window family](#track-1--language-primitives-taxed) |
+| Normalisations (`x / sum(x)`) | degree, not locality — a variable divisor is refused by law 9 | fix the denominator as a parameter, or state the ratio as a constraint | billed |
 | Conditionals, iteration, data-dependent structure | destroys the closed AST | `where` masks + `foreach` dims; computation → data prep | billed — inside an island only |
 | Resampling, clustering, IO, units | data layer, not math | preprocess; pass a parameter | n/a — free in Python already |
 | Domain helpers (`reduce_carrier_dim`) | encodes one domain into the language | component libraries over generic primitives | n/a |
@@ -213,13 +296,20 @@ and integer variables; piecewise as N links with per-link signs, convex mode and
 `active` gating; non-cyclic `shift`; load-time validation of every expression,
 where string and *uncalled* macro template.
 
-**Behind:** Track 1 items 1–6, plus Tracks 2 and 3. Where linopy stays ahead it
-is not expressiveness but the post-solve object (labelled DataArrays vs our tidy
-tables — `to_dataarray` bridges), debugging (IIS via Gurobi, `print()` of a row,
-against our status code — until Track 2b exists), and lifecycle (mutate,
-re-solve, warm start, callbacks vs our build-and-solve). None are ceiling
-questions; all are cheaper here once written, which is why they need scheduling
-rather than assuming they follow from the architecture.
+**Behind:** Track 1 items 1–6 and 10–11, plus Tracks 2 and 3. Where linopy stays
+ahead it is not expressiveness but the post-solve object (labelled DataArrays vs
+our tidy tables — `to_dataarray` bridges), debugging (IIS via Gurobi, `print()`
+of a row, against our status code — until Track 2b exists), lifecycle (mutate,
+re-solve, warm start, `relax`/`fix`, callbacks vs our build-and-solve), solver
+breadth (ten backends and four handoffs vs HiGHS-direct plus LP files, #106),
+and one variable type we simply do not have (`semi_continuous`, item 11). None
+are ceiling questions; all are cheaper here once written, which is why they need
+scheduling rather than assuming they follow from the architecture.
+
+The ranking that follows from this page, if it is read as a whole: indexed
+access (items 1–4) blocks whole model classes today; the Track 2b verbs block
+using the engine at 3am; solver breadth blocks arrival from linopy at all; and
+items 10–11 are cheap, unblocked and unscheduled.
 
 **Solvers we actually speak:** HiGHS through `solver_direct`, Gurobi planned on
 the same path, LP files for everything else. Stated because anyone arriving from

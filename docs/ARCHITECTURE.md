@@ -28,6 +28,23 @@ know nothing of each other. Each box below is a directory, and its subtitle is
 the import rule `tests/test_architecture.py` enforces off the path — so a
 module cannot step over a fence by being spelled differently.
 
+**The two dashed boxes are outside every fence, and that is the point.**
+`lowering.py` and `sources.py` are the seam: one turns the AST into a plan, the
+other turns a caller's tables into the frames a plan is executed against, and
+neither belongs to the side it hands to. Drawing them inside `relational/`
+would be a lie about the fence — the engine imports nothing from the package,
+while both of these read the schema.
+
+**Data enters below the seam, and each lane coerces its own.** It reaches
+`sources.py` for a native build and `linopy/loader.py` for the shim, and those
+are separate paths on purpose: one produces tidy polars frames, the other an
+`xr.Dataset`, and neither is a shape the other could use. The single thing
+they share is the `convex:` curvature guard, which needs values rather than a
+schema and so lives with the data (`sources.py`) where both can call it. What
+matters for the waist is the direction: data goes no further **up** than these
+two. Nothing above the seam has ever seen a value, which is what makes
+`show it` and `check it` free.
+
 ```mermaid
 flowchart TB
     Y[YAML file] --> LANG
@@ -45,12 +62,20 @@ flowchart TB
     AST --> WALK
     AST -.->|"opt-in: lpspec.linopy"| BUILD
 
+    DATA[("your data<br/>parquet · polars · any Arrow table")] --> SRC
+    DATA -.->|"opt-in: data="| LOAD
+
+    LOWER["<b>lowering.py</b> — flat<br/>AST → plan; the subset test"]
+    SRC["<b>sources.py</b> — flat<br/>data → the tidy frames, by name"]
+
+    LOWER --> PLAN
+    SRC --> BIND
+    LOWER -->|"outside the plan:<br/>LanguageError naming the construct"| ERR["load error<br/>(no fallback)"]
+
     subgraph REL["relational/ — imports nothing from the package but errors.py"]
         direction TB
-        LOWER["lowering.py<br/><i>(flat: reads AST, writes plan)</i>"] --> PLAN["plan.py<br/>frozen logical plan"]
-        PLAN --> COMP["compiler.py<br/>plan → lazy frames · reads nothing"]
-        DR[("data<br/>parquet / any Arrow table<br/><i>sources.py, flat</i>")] --> BIND["binding.py<br/>→ BoundSources, frozen"]
-        BIND --> EXEC
+        PLAN["plan.py<br/>frozen logical plan"] --> COMP["compiler.py<br/>plan → lazy frames · reads nothing"]
+        BIND["binding.py<br/>→ BoundSources, frozen"] --> EXEC
         COMP --> EXEC["executor.py + labels.py<br/>assemble the model frames"]
         EXEC --> TABLES["sinks/tables.py<br/>cols · obj · rows · A"]
         TABLES --> LPS["sinks/lp_file.py<br/>(mps planned)"]
@@ -69,25 +94,27 @@ flowchart TB
         BUILD --> MODEL[linopy.Model] --> SOLVE["linopy solve / writers"]
     end
 
-    LOWER -->|"outside the plan:<br/>LanguageError naming the construct"| ERR["load error<br/>(no fallback)"]
-
     classDef laneL fill:#fdf6ec,stroke:#b7791f,stroke-width:2px,color:#111
     classDef laneR fill:#f0f7f0,stroke:#3a7d44,stroke-width:2px,color:#111
     classDef laneE fill:#eef1fb,stroke:#4a5fc1,stroke-width:2px,color:#111
     classDef laneT fill:#f7f0f7,stroke:#8b3a7d,stroke-width:2px,color:#111
     classDef waist fill:#e9edfa,stroke:#4a5fc1,stroke-width:3px,color:#111
+    classDef flat fill:#fffdf5,stroke:#8a8578,stroke-width:2px,stroke-dasharray:4 3,color:#111
+    classDef data fill:#fdf4e8,stroke:#b7791f,stroke-width:1.5px,color:#111
     class LANG laneL
     class REL laneR
     class EAGER laneE
     class TS laneT
     class AST waist
+    class LOWER,SRC flat
+    class DATA data
 ```
 
 Only six modules sit outside a fence, and each is legitimately **both** halves:
-`lowering.py` reads the AST and writes the plan, `sources.py` binds data to a
-validated schema, `api.py` runs the lot, `errors.py` is the leaf every fence
-points at, and `__main__.py` / `_notes.py` are plumbing. That is a category,
-not a leftovers bin — see [What counts as language](#what-counts-as-language).
+the two drawn above, plus `api.py`, which runs the lot, `errors.py`, the leaf
+every fence points at, and `__main__.py` / `_notes.py`, which are plumbing.
+That is a category, not a leftovers bin — see
+[What counts as language](#what-counts-as-language).
 
 Eligibility is decided by **attempting the lowering** — `lower_program` returns
 a `Program` or raises `lps.LanguageError` — so it cannot drift from what the
@@ -107,62 +134,33 @@ you write once is the same model that gets checked, solved, typeset and read
 back.
 
 ```mermaid
-flowchart TB
-    Y(["your math, written once — one YAML file"])
-
-    Y --> AST
-
-    AST["the whole model, typed and checked<br/>before a byte of data is read<br/><b>lps.load_schema → MathSchema</b>"]
-
-    AST --> SHOW
-    AST --> CHECK
-    AST --> RUN
-
-    subgraph SHOW["show it — no data, no solver"]
-        direction TB
-        S1(["typeset the math for a paper or a review<br/><b>lps.to_latex · to_typst · to_markdown</b><br/>how names print: <b>SymbolTable</b>"])
-        S2(["drive it from the command line<br/><b>python -m lpspec &lt;format&gt;</b>"])
-        S3(["watch what a build is doing"])
-    end
-
-    subgraph CHECK["check it — no data, no solver"]
-        direction TB
-        C1(["will this build, and is the math sayable?<br/><b>lps.check</b>"])
-        C2(["do the dimensions line up?<br/><b>lps.check</b> — same pass, same answer"])
-        C3(["will that solver take it, and how big is it?"])
-    end
-
-    subgraph RUN["run it — the only part that touches your data"]
-        direction TB
-        R1(["stream it straight into a solver<br/><b>lps.solve</b> · <b>lps.build</b> for several sinks"])
-        R2(["write an LP file for anything else<br/><b>lps.write</b>"])
-        R3(["put the same math on a linopy model<br/><b>lpspec.linopy.build · .extend</b>"])
-    end
-
-    R1 --> ANS
-
-    subgraph ANS["your answers, as tables you can join"]
-        direction TB
-        A1(["values and shadow prices, by name<br/><b>result.objective · .primal · .dual</b><br/>bridges out: <b>.to_pandas · .to_parquet</b>"])
-        A2(["derived results and diagnostics"])
-        A3(["change a number, re-solve, keep the labels"])
-    end
-
+flowchart LR
+    Y(["your math, written once<br/>one YAML file"]) --> AST
+    AST["<b>the whole model</b> — <code>MathSchema</code><br/>names typed, dims checked, degree judged<br/><i>before a byte of data is read</i>"]
+    AST --> SHOW["<b>show it</b><br/>typeset · CLI<br/><i>no data, no solver</i>"]
+    AST --> CHECK["<b>check it</b><br/>parse → expand → validate → lower<br/><i>no data, no solver</i>"]
+    AST --> RUN["<b>run it</b><br/>solver · LP file · linopy"]
+    DATA[("your data<br/>parquet · polars · any Arrow table")] --> RUN
+    RUN --> ANS(["<b>your answers</b><br/>tables you can join"])
     classDef built fill:#eef6ee,stroke:#3a7d44,stroke-width:1.5px,color:#111
-    classDef plan fill:#fdf4e8,stroke:#b7791f,stroke-width:1.5px,stroke-dasharray:5 4,color:#111
     classDef waist fill:#e9edfa,stroke:#4a5fc1,stroke-width:3px,color:#111
-    classDef fam fill:#fcfcfb,stroke:#c9c5be,color:#111
-    class Y,R1,R2,R3,C1,C2,A1,S1,S2 built
-    class C3,S3,A2,A3 plan
+    classDef data fill:#fdf4e8,stroke:#b7791f,stroke-width:1.5px,color:#111
+    class Y,SHOW,CHECK,RUN,ANS built
     class AST waist
-    class RUN,CHECK,SHOW,ANS fam
+    class DATA data
 ```
 
-**Solid is what ships today; dashed is what the shape makes cheap** — which is
-also to say the solid boxes are the ones with a name in them. That is the whole
-Python surface bar the error hierarchy, which is cross-cutting rather than a
-box; [the table below](#the-python-surface) is the same set, listed. None of the
-dashed boxes is a rewrite — each reads the same AST the engine reads, so a
+**Only one arrow carries data, and it arrives after the model is already
+judged.** That is the contract the waist is: `MathSchema` is complete —
+names typed, dims checked, degree decided — before a source is bound, so
+`show it` and `check it` are not cut-down versions of a build, they are the
+same model with the data arrow missing. `check` is the build's own front half
+run to completion (parse → expand → validate → lower) and stopped before
+binding, which is why it is a CI verb and costs seconds.
+
+**Each box is a family, and [the table below](#the-python-surface) is its
+members** — including the ones nobody has built, which is the point: none of
+them is a rewrite. Each reads the same AST the engine reads, so a
 renderer is a tree walk, a check is a pass with no data bound, and a new output
 format is one function in `relational/sinks/`. `typeset/` is that claim cashed:
 a **spike** that typesets any model the lanes can build, in one walk of the
@@ -194,19 +192,42 @@ is free, a new primitive is taxed. What is planned, and why, is
 ### The Python surface
 
 **Sixteen names, and that is the feature.** The model is the YAML file; Python
-is how you *run* it, so the surface is the diagram above written out — one
-group per box, nothing that constructs math, nothing that reaches the plan.
+is how you *run* it — so the whole surface is the diagram above written out,
+with nothing that constructs math and nothing that reaches the plan. Names are
+`lpspec.` unless shown otherwise. **Data?** is the column that matters: a verb
+that says *no* needs nothing but the file, which is what makes it a CI verb.
+*Italic rows are the ones the shape makes cheap and nobody has built.*
 
-| | `lpspec.` | |
-|---|---|---|
-| **run it** | `solve` · `build` · `write` · `check` | the four verbs; `check` binds no data |
-| **load it** | `load_schema` · `MathSchema` | parse and validate; the schema is the contract under the YAML |
-| **show it** | `to_latex` · `to_typst` · `to_markdown` · `SymbolTable` | one per format, plus how names print |
-| **catch it** | `LinopyYamlError` · `LanguageError` · `DataError` · `DimensionError` · `SchemaError` · `PiecewiseExpansionError` | one hierarchy, split model from run |
+| | you want to | the call | data? |
+|---|---|---|---|
+| **load it** | parse and validate, and stop there | `load_schema` → `MathSchema` | no |
+| **show it** | typeset for a paper or a review | `to_latex` · `to_typst` · `to_markdown` (spelling: `SymbolTable`) | no |
+| | drive it from a shell | `python -m lpspec <format>` | no |
+| | *watch what a build is doing* | | |
+| **check it** | will this build, is the math sayable, do the dims line up | `check` — parse → expand → validate → lower, one pass, every answer | no |
+| | *will that solver take it, and how big is it* | | |
+| **run it** | stream it straight into a solver | `solve`, or `build` to drive several sinks off one build | **yes** |
+| | write an LP file for anything else | `write` | **yes** |
+| | put the same math on a `linopy.Model` | `lpspec.linopy.build` · `.extend` (`data=`, its own coercion) | **yes** |
+| **read it** | values, shadow prices, the objective | `result.objective` · `.primal` · `.dual`, plus the status pair | — |
+| | bridge out to another library | `.to_pandas` · `.to_dataarray` · `.to_parquet` | — |
+| | *derived results; re-solve with new numbers, same labels* | | |
+| **catch it** | tell a bad model from bad data | `LinopyYamlError` ⊃ `LanguageError` · `DataError` · `DimensionError` · `SchemaError` · `PiecewiseExpansionError` | — |
 
-Plus two on the opt-in shim — `lpspec.linopy.build` and `.extend` — and the
-methods of what `solve` hands back (`Result`: `objective`, `primal`, `dual`,
-`to_pandas` / `to_dataarray` / `to_parquet`, the status pair, `close`).
+**What the data arrow carries.** `solve` / `write` / `build` take
+`(model, sources)`; the shim takes `data=`. Either way it is a mapping, and
+**binding is by name at both levels**: every declared parameter must appear as
+a key or it is a `DataError` naming it, and inside a table the columns must be
+the parameter's declared dims. A value is a parquet path (scanned, never read
+here), any table exporting the Arrow PyCapsule protocol, or — for a parameter
+with no dims — a bare number. `coords=` supplies a dimension's labels when the
+file does not list them and no parameter table implies them.
+
+The one positional fallback is deliberate and narrow: a pandas Series whose
+index levels are *unnamed* takes the declared dims in order. Named levels are
+left alone and bind by name, because renaming them would transpose the data
+whenever two dims share a label space — silently, and past anything downstream
+that could catch it.
 
 `tests/test_architecture.py` pins all of it: `__all__` must match the table,
 **and** no public non-module attribute may exist outside it. Both directions,
@@ -285,8 +306,9 @@ that made an implementation choice load-bearing in the language's rulebook.
 
 ## The relational lane
 
-**The spine is one module per box above.** `binding.py` turns a caller's
-sources into the frames the engine reads; `compiler.py` turns plan nodes into
+**The spine is one module per box above.** `binding.py` takes the tidy frames
+`sources.py` handed over the seam and freezes them into what every query is
+written against; `compiler.py` turns plan nodes into
 lazy frames and reads nothing; `executor.py` fills the model frames; `sinks/`
 drains them. Two more sit beside the executor rather than inside it, because
 each answers a question the executor merely *uses*: `labels.py` decides which
