@@ -1,8 +1,8 @@
 """The ``gurobi`` solver: the model in two calls, straight into gurobipy.
 
-Reads the same ``dense_columns`` as
-:mod:`~lpspec.relational.sinks.solvers.highs`, so the two cannot disagree
-about the model they load. Two things differ:
+The same hand-off as :mod:`~lpspec.relational.sinks.solvers.highs`, reading the
+same ``dense_columns``, ``dense_rows`` and ``row_blocks``, so the two cannot
+disagree about the model they load. Two things differ:
 
 - **The matrix's currency.** HiGHS takes the three CSR arrays; gurobipy's
   matrix API takes a matrix *object*, so they are wrapped in a
@@ -11,7 +11,7 @@ about the model they load. Two things differ:
 - **Nothing is batched.** The columns cannot be, since ``addMConstr`` writes
   into one ``MVar`` spanning the model — and the matrix *should* not be, which
   is where this sink parts company with the HiGHS one. See
-  :func:`_row_blocks`.
+  :meth:`~lpspec.relational.sinks.tables.ModelTables.row_blocks`.
 
 ``gurobipy`` and ``scipy`` are imported inside the functions, so importing
 this module stays free for a caller who never solves with it.
@@ -25,10 +25,11 @@ from typing import TYPE_CHECKING, Any
 import polars as pl
 
 from lpspec.errors import LpspecError
+from lpspec.relational.sinks.tables import SENSE_CODES
 from lpspec.relational.status import SolveStatus
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping
+    from collections.abc import Mapping
 
     from lpspec.relational.sinks.tables import ModelTables
 
@@ -79,7 +80,8 @@ def build_gurobi(
     :func:`~lpspec.relational.sinks.solvers.highs.build_highs`'s seam, drawn
     for its reason: the search is the same work whoever filled the model.
     ``batch_rows`` is a *nonzero* budget that splits the matrix across calls;
-    it defaults to one call, and see :func:`_row_blocks` for why.
+    it defaults to one call — see
+    :meth:`~lpspec.relational.sinks.tables.ModelTables.row_blocks` for why.
 
     **The caller owns the model, so the environment follows it.** gurobipy has
     no ``Model.getEnv()``, so a caller handed only the model could never
@@ -157,15 +159,17 @@ def _load(
     discrete: dict[str, Any] = {'vtype': np.where(integral, 'I', 'C')} if integral.any() else {}
     x = m.addMVar(model.column_count, lb=lb, ub=ub, obj=cost, **discrete)
 
-    senses = np.array([gurobipy.GRB.LESS_EQUAL, gurobipy.GRB.GREATER_EQUAL, gurobipy.GRB.EQUAL], dtype='<U1')
+    sense, rhs = model.dense_rows(gurobipy.GRB.INFINITY)
+    spelling = _spelled(gurobipy)
     blocks = []
-    for rows, a in _row_blocks(model, batch_rows):
-        starts = np.searchsorted(a['row'].to_numpy(), rows['row'].to_numpy())
+    # `batch_rows` straight through, un-defaulted: one call unless a caller
+    # asks otherwise, which is what #434 measured and `row_blocks` now states.
+    for lo, hi, a, starts in model.row_blocks(batch_rows):
         block = scipy.sparse.csr_matrix(
             (a['coeff'].to_numpy(), a['col'].to_numpy(), np.append(starts, a.height)),
-            shape=(rows.height, model.column_count),
+            shape=(hi - lo, model.column_count),
         )
-        blocks.append(m.addMConstr(block, x, senses[rows['op'].to_numpy()], rows['rhs'].to_numpy()))
+        blocks.append(m.addMConstr(block, x, spelling[sense[lo:hi]], rhs[lo:hi]))
 
     if model.objective_sense == 'max':
         m.ModelSense = gurobipy.GRB.MAXIMIZE
@@ -174,40 +178,27 @@ def _load(
     return m, x, blocks, environment
 
 
-def _row_blocks(model: ModelTables, batch_rows: int | None) -> Iterator[tuple[pl.DataFrame, pl.DataFrame]]:
-    """The matrix as ``(rows, entries)`` pairs — **one pair unless asked**.
+#: Our spelling of a comparison against Gurobi's, by ``GRB`` attribute name —
+#: a name rather than a value because ``gurobipy`` is an optional import and
+#: this is module level.
+_GUROBI_SENSE = {'<=': 'LESS_EQUAL', '>=': 'GREATER_EQUAL', '==': 'EQUAL'}
 
-    Where the HiGHS sink batches by default, this one does not, and the
-    difference is measured rather than inherited. ``addMConstr`` costs about
-    42 ns per *model* column per call, whatever the block holds: at 400k
-    columns that is 17 ms of overhead per extra call, so splitting a 2M-nonzero
-    matrix into 20 blocks took 0.55 s against 0.23 s in one, and 40 blocks took
-    0.89 s. The cost scales with the model's width, so the wider the model the
-    worse batching is.
 
-    Batching bought nothing back. It cannot bound the peak here — Gurobi
-    accumulates the whole model as it goes, so the only thing a block saves is
-    one block-sized temporary: 0.62 GB against 0.65 GB on that model, for twice
-    the hand-off time.
+def _spelled(gurobipy: Any) -> Any:
+    """:data:`SENSE_CODES` as the characters ``addMConstr`` wants, by code.
 
-    ``batch_rows`` still splits when a caller asks, which is how the tests
-    exercise block boundaries — the arithmetic that puts a row's entries in the
-    right ``indptr`` slot is worth a test even when nothing runs it by default.
+    Built from the mapping rather than written out in its order, so the two
+    cannot come to disagree: a wrong order here is a model whose comparisons
+    are silently permuted, which every solver would answer confidently. A
+    sense added to :data:`SENSE_CODES` and not to :data:`_GUROBI_SENSE` raises
+    instead.
     """
-    ordered_rows = model.rows.sort('row').select(
-        'row',
-        pl.col('sense').replace_strict({'<=': 0, '>=': 1, '==': 2}, return_dtype=pl.UInt8).alias('op'),
-        'rhs',
-    )
-    ordered_matrix = model.matrix.sort('row')
-    if batch_rows is None:
-        yield ordered_rows, ordered_matrix
-        return
-    for lo, hi in model.row_chunks_by_nonzeros(batch_rows):
-        yield (
-            ordered_rows.filter(pl.col('row').is_between(lo, hi, closed='left')),
-            ordered_matrix.filter(pl.col('row').is_between(lo, hi, closed='left')),
-        )
+    import numpy as np
+
+    spelling = np.empty(len(SENSE_CODES), dtype='<U1')
+    for sense, code in SENSE_CODES.items():
+        spelling[code] = getattr(gurobipy.GRB, _GUROBI_SENSE[sense])
+    return spelling
 
 
 def _gurobipy() -> Any:
