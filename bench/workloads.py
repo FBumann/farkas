@@ -68,11 +68,20 @@ def _engine(engine: str | None) -> None:
     """Select the engine the way a caller does, in this process.
 
     ``LPSPEC_ENGINE`` is the switch lpspec ships; setting it here rather than
-    reaching for a private selector is what makes the duckdb arm a measurement
-    of the shipped mechanism. Safe because the verb owns its process — there is
-    nothing to reset afterwards.
+    reaching for a private selector is what makes a second engine's arm a
+    measurement of the shipped mechanism.
+
+    **The default arm clears it rather than leaving it alone.** Under the old
+    runner each measurement owned its process and there was nothing to reset —
+    the sentence that said so outlived the runner it described. One pytest
+    session is one interpreter, so a set-only version leaks: the first arm that
+    names an engine selects it for every arm after it, and a two-engine
+    comparison measures one engine against itself at ratios near 1.00 that look
+    like a result.
     """
-    if engine is not None:
+    if engine is None:
+        os.environ.pop('LPSPEC_ENGINE', None)
+    else:
         os.environ['LPSPEC_ENGINE'] = engine
 
 
