@@ -29,9 +29,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, assert_never
 
-from lpspec.dimensions import dims_of
 from lpspec.errors import LanguageError
-from lpspec.expression_parser import (
+from lpspec.language.dimensions import dims_of
+from lpspec.language.expression_parser import (
     ArithmeticNode,
     BinaryOperatorNode,
     ComparisonNode,
@@ -45,10 +45,9 @@ from lpspec.expression_parser import (
     UnaryOperatorNode,
     VariableNode,
 )
-from lpspec.helpers import BUILTIN_NAMES, call_shape_error, edge_error
-from lpspec.relational import plan
-from lpspec.resolution import Namespace, expression_of, where_of
-from lpspec.where_parser import (
+from lpspec.language.helpers import BUILTIN_NAMES, call_shape_error, edge_error
+from lpspec.language.resolution import Namespace, expression_of, where_of
+from lpspec.language.where_parser import (
     AndNode,
     BooleanLiteralNode,
     DimensionComparisonNode,
@@ -61,9 +60,10 @@ from lpspec.where_parser import (
     VariableDefinedNode,
     WhereNode,
 )
+from lpspec.relational import plan
 
 if TYPE_CHECKING:
-    from lpspec.schema import MathSchema
+    from lpspec.language.schema import MathSchema
 
 _SENSES = {'==', '<=', '>='}
 

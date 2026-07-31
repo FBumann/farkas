@@ -47,8 +47,10 @@ except ModuleNotFoundError as exc:  # linopy / xarray absent
 
 
 from lpspec._notes import note
-from lpspec._yaml import read_yaml
 from lpspec.errors import LanguageError
+from lpspec.language._yaml import read_yaml
+from lpspec.language.schema import MathSchema
+from lpspec.language.validation import validate_expressions
 from lpspec.linopy.builder import build_model
 from lpspec.linopy.loader import (
     build_dim_coords,
@@ -57,8 +59,6 @@ from lpspec.linopy.loader import (
     load_parameters,
 )
 from lpspec.piecewise import expand_piecewise, validate_piecewise_data
-from lpspec.schema import MathSchema
-from lpspec.validation import validate_expressions
 
 # **This lane speaks v1, and the option is global, so importing sets it.**
 #

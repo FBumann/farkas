@@ -148,10 +148,56 @@ def test_engine_is_isolated():
     assert not offenders, f'engine reaches outside its subpackage: {offenders}'
 
 
+#: What ``language/`` may reach: itself, and the same dependency-free leaves the
+#: engine may reach. Both fences point at ``errors.py`` for the same reason —
+#: one exception hierarchy, owned by neither side. Widening this is a decision,
+#: exactly as widening ``ENGINE_MAY_IMPORT`` is.
+LANGUAGE_MAY_IMPORT = ENGINE_MAY_IMPORT
+
+
+def test_language_never_reaches_a_consumer():
+    """Hard rule 1, the other direction: the waist is closed from the front.
+
+    Hard rule 2 keeps the engine from seeing the schema or the AST. This is its
+    mirror: what a model *means* may not depend on what any consumer does with
+    it, so nothing under ``language/`` imports ``lowering``, ``piecewise``,
+    ``sources``, ``api``, or the relational / linopy / typeset subpackages.
+
+    That is what makes ``lps.check()`` a pass with no data and no plan, and a
+    second consumer cheap rather than a second opinion. Membership is read off
+    the path, so a new front-end module cannot land outside the fence by being
+    spelled differently.
+    """
+    offenders = {}
+    for path in (PKG / 'language').rglob('*.py'):
+        if '__pycache__' in path.parts:
+            continue
+        bad = []
+        for node in ast.walk(ast.parse(path.read_text())):  # lazy imports included — the rule is total
+            names = (
+                [a.name for a in node.names]
+                if isinstance(node, ast.Import)
+                else [node.module]
+                if isinstance(node, ast.ImportFrom) and node.module
+                else []
+            )
+            bad += [
+                n
+                for n in names
+                if n.startswith('lpspec') and not n.startswith('lpspec.language') and n not in LANGUAGE_MAY_IMPORT
+            ]
+        if bad:
+            offenders[str(path.relative_to(PKG))] = sorted(set(bad))
+    assert not offenders, (
+        f'the language reaches forward to a consumer: {offenders} — a front-end module '
+        f'may not depend on what is done with the AST it produces'
+    )
+
+
 def test_expansion_has_no_mutable_module_state():
     """Hard rule 5: YAML files are self-contained — nothing importable may
     accumulate state that changes what a file means."""
-    tree = ast.parse((PKG / 'expansion.py').read_text())
+    tree = ast.parse((PKG / 'language' / 'expansion.py').read_text())
     mutable = []
     for node in tree.body:
         if isinstance(node, (ast.Assign, ast.AnnAssign)):
@@ -193,7 +239,7 @@ def test_both_lanes_implement_exactly_the_closed_helper_set():
     Read statically: ``linopy/builder.py`` imports xarray at module level (it
     is linopy lane), and this check must still run on a bare install.
     """
-    from lpspec.helpers import BUILTIN_NAMES
+    from lpspec.language.helpers import BUILTIN_NAMES
 
     tree = ast.parse((PKG / 'linopy' / 'builder.py').read_text())
     table = next(
@@ -244,7 +290,7 @@ def test_every_schema_model_is_strict():
     """A schema model that inherits BaseModel directly silently drops unknown
     keys, which turns a typo into a different model. Strictness lives on
     ``_StrictBlock``, so the check is that nothing bypasses it."""
-    tree = ast.parse((PKG / 'schema.py').read_text())
+    tree = ast.parse((PKG / 'language' / 'schema.py').read_text())
     loose = [
         node.name
         for node in tree.body

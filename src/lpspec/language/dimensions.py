@@ -40,7 +40,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, assert_never
 
 from lpspec.errors import DimensionError
-from lpspec.expression_parser import (
+from lpspec.language.expression_parser import (
     ArithmeticNode,
     BinaryOperatorNode,
     ComparisonNode,
@@ -55,8 +55,8 @@ from lpspec.expression_parser import (
     UnaryOperatorNode,
     VariableNode,
 )
-from lpspec.resolution import Namespace, expression_of, where_of
-from lpspec.where_parser import (
+from lpspec.language.resolution import Namespace, expression_of, where_of
+from lpspec.language.where_parser import (
     AndNode,
     BooleanLiteralNode,
     DimensionComparisonNode,
@@ -73,7 +73,7 @@ from lpspec.where_parser import (
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from lpspec.schema import MathSchema
+    from lpspec.language.schema import MathSchema
 
 
 def dims_of(

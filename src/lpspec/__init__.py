@@ -27,7 +27,7 @@ from lpspec.errors import (
     PiecewiseExpansionError,
     SchemaError,
 )
-from lpspec.schema import MathSchema
+from lpspec.language.schema import MathSchema
 from lpspec.typeset import SymbolTable, to_latex, to_markdown, to_typst
 
 __all__ = [

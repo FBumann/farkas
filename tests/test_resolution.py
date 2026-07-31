@@ -11,13 +11,13 @@ from typing import TYPE_CHECKING
 import pytest
 
 from lpspec.errors import LanguageError
+from lpspec.language.resolution import Namespace, expression_of, where_of
+from lpspec.language.validation import validate_expressions
 from lpspec.lowering import lower_program
-from lpspec.resolution import Namespace, expression_of, where_of
-from lpspec.validation import validate_expressions
 from tests.conftest import DISPATCH_MODEL, schema_of
 
 if TYPE_CHECKING:
-    from lpspec.schema import MathSchema
+    from lpspec.language.schema import MathSchema
 
 
 def _schema(**overrides) -> MathSchema:
@@ -30,7 +30,7 @@ def _schema(**overrides) -> MathSchema:
 
 
 def test_no_unresolved_name_survives_the_pass():
-    from lpspec.expression_parser import NameNode
+    from lpspec.language.expression_parser import NameNode
 
     schema = _schema()
     ast = expression_of('sum(p * cost, over=generator) == load', schema, Namespace.of(schema), 't')
@@ -49,7 +49,7 @@ def test_no_unresolved_name_survives_the_pass():
 
 
 def test_names_are_typed_by_kind():
-    from lpspec.expression_parser import DimensionNode, ParameterNode, VariableNode
+    from lpspec.language.expression_parser import DimensionNode, ParameterNode, VariableNode
 
     schema = _schema()
     ast = expression_of('sum(p * cost, over=generator)', schema, Namespace.of(schema), 't')

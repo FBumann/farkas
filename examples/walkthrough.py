@@ -27,8 +27,8 @@ from pathlib import Path
 import polars as pl
 
 import lpspec as lps
-from lpspec.expansion import parse_and_expand
-from lpspec.expression_parser import parse_expression
+from lpspec.language.expansion import parse_and_expand
+from lpspec.language.expression_parser import parse_expression
 from lpspec.lowering import lower_program
 from lpspec.relational.executor import PolarsExecutor
 from lpspec.sources import tidy_sources

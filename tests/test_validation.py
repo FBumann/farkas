@@ -6,8 +6,8 @@ import datetime
 
 import pytest
 
-from lpspec.schema import MathSchema
-from lpspec.validation import validate_expressions
+from lpspec.language.schema import MathSchema
+from lpspec.language.validation import validate_expressions
 from tests.oracle import linopy, lpspec_linopy, pd
 
 

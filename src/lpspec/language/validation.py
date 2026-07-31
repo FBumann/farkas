@@ -23,10 +23,10 @@ import datetime
 from types import MappingProxyType
 from typing import TYPE_CHECKING, assert_never
 
-from lpspec.dimensions import check_schema
 from lpspec.errors import SchemaError
-from lpspec.expansion import expand, parse_and_expand, parse_template
-from lpspec.expression_parser import (
+from lpspec.language.dimensions import check_schema
+from lpspec.language.expansion import expand, parse_and_expand, parse_template
+from lpspec.language.expression_parser import (
     ArithmeticNode,
     BinaryOperatorNode,
     ComparisonNode,
@@ -40,14 +40,14 @@ from lpspec.expression_parser import (
     UnaryOperatorNode,
     VariableNode,
 )
-from lpspec.helpers import BUILTINS, unknown_helper_message
-from lpspec.resolution import Namespace, resolve_expression, resolve_where
-from lpspec.where_parser import parse_where
+from lpspec.language.helpers import BUILTINS, unknown_helper_message
+from lpspec.language.resolution import Namespace, resolve_expression, resolve_where
+from lpspec.language.where_parser import parse_where
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from lpspec.schema import MathSchema
+    from lpspec.language.schema import MathSchema
 
 
 def validate_expressions(
