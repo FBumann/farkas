@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.41](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.40...v0.0.1-alpha.41) (2026-07-31)
+
+
+### Documentation
+
+* **architecture:** show the public surface, and pin it ([#375](https://github.com/FBumann/lpspec/issues/375)) ([bdb6b11](https://github.com/FBumann/lpspec/commit/bdb6b11c6a50d4657b0a525b7d20bbae1022be5c))
+
 ## [0.0.1-alpha.40](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.39...v0.0.1-alpha.40) (2026-07-31)
 
 
