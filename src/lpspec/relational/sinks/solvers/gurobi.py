@@ -128,19 +128,24 @@ def _load(
     ``x.X`` and ``block.Pi`` are numpy arrays; ``getVars()`` / ``getConstrs()``
     would build one Python object per column and row to reach the same numbers.
     The environment comes back because gurobipy has no ``Model.getEnv()``, and
-    whoever disposes the model has to dispose it too. ``OutputFlag`` is an
-    *environment* parameter because that is what suppresses the start-up
-    banner; ``solver_options`` lands after, and so can put the log back.
+    whoever disposes the model has to dispose it too.
+
+    **Options go on the environment, not the model.** A licence parameter —
+    ``WLSAccessID``, ``ComputeServer``, ``TokenServer`` — can only be set
+    before an environment starts, and ``setParam`` on the model refuses it
+    with *unable to modify parameter after environment started*. So a
+    Compute-Server or WLS user could not reach this sink at all. Everything
+    else is unaffected: an environment's parameters are the defaults of every
+    model built on it, and an unknown name still raises at the same point.
+    ``OutputFlag`` leads so a caller can put the log back by passing their own.
     """
     gurobipy = _gurobipy()
     import numpy as np
     import scipy.sparse
 
     batch = HANDOFF_BUDGET if batch_rows is None else batch_rows
-    environment = gurobipy.Env(params={'OutputFlag': 0})
+    environment = gurobipy.Env(params={'OutputFlag': 0, **dict(solver_options or {})})
     m = gurobipy.Model(env=environment)
-    for option, value in (solver_options or {}).items():
-        m.setParam(option, value)
 
     lb, ub, cost, integral = model.dense_columns(gurobipy.GRB.INFINITY)
     x = m.addMVar(model.column_count, lb=lb, ub=ub, obj=cost, vtype=np.where(integral, 'I', 'C'))

@@ -171,6 +171,19 @@ def test_solver_options_reach_gurobi() -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_solver_options_land_on_the_environment() -> None:
+    """Where a licence parameter has to go.
+
+    ``WLSAccessID`` / ``ComputeServer`` / ``TokenServer`` can only be set
+    before an environment starts, so applying options to the *model* — as this
+    sink first did — locks out every Compute-Server and WLS user. Asserted
+    through an ordinary parameter, since a licence one would need a licence:
+    the model sees it as its default, which is what environment-level means.
+    """
+    with lps.build(MIP, DATA['MIP']) as ex:
+        assert build_gurobi(ex._tables(), solver_options={'TimeLimit': 5.0}).Params.TimeLimit == 5.0
+
+
 def test_build_gurobi_loads_the_model_and_stops() -> None:
     """`bench/`'s seam: the hand-off with no search behind it, so what it
     reports is what was loaded rather than what was solved."""
