@@ -74,10 +74,12 @@ flowchart TB
     subgraph REL["relational/ — imports nothing from the package but errors.py"]
         direction TB
         PLAN["plan.py<br/>frozen logical plan"] --> ENG
-        subgraph ENG["engines/polars/ — the only part a second engine replaces"]
+        BIND["binding.py<br/>→ BoundSources, frozen"] --> ENG
+        ENGB["engine.py<br/>both sinks + the label read-back,<br/>written once"] --> ENG
+        subgraph ENG["engines/ — one is chosen by LPSPEC_ENGINE"]
             direction TB
-            COMP["compiler.py<br/>plan → lazy frames · reads nothing"] --> EXEC
-            BIND["binding.py<br/>→ BoundSources, frozen"] --> EXEC["executor.py + labels.py<br/>assemble the model frames"]
+            POL["polars/ (default)<br/>compiler · executor · labels"]
+            DUCK["duck/ (opt-in extra)<br/>plan → SQL"]
         end
         ENG --> TABLES["sinks/tables.py<br/>cols · obj · rows · A"]
         TABLES --> LPS["sinks/writers/<br/>a file, chosen by suffix<br/>lp_file (mps planned)"]
@@ -260,15 +262,22 @@ choice load-bearing in the language's rulebook.
 2. **The engine knows nothing about linopy, xarray or YAML.** `relational/` goes
    plan → engine → a solver sink → solver, with linopy's semantics as a spec to match
    rather than code to share; it never sees the schema, the AST, or the eager
-   builder. **The engine is a directory, not a convention:** `engines/polars/`
-   is one implementation, and everything above it — `plan.py`, `sinks/`,
-   `status.py`, `chunking.py`, `frames.py` — is what any implementation answers
-   to. An engine package is named for its engine; nothing *inside* one is.
+   builder. **An engine is a directory, not a convention:** `engines/polars/`
+   and `engines/duck/` are implementations, and everything above them —
+   `plan.py`, `engine.py`, `sinks/`, `binding.py`, `status.py`, `chunking.py`,
+   `frames.py` — is what an implementation answers to. An engine package is
+   named for its engine; nothing *inside* one is.
    Enforced *more* strictly than stated — it imports nothing from the
    package at all, bar declared dependency-free leaves (`errors.py`, in
    `ENGINE_MAY_IMPORT`), because a near-zero import surface is what keeps the
    subpackage extractable. Widening that list is a decision, not an accident.
-3. **One language, two lanes — not fast-vs-slow versions of each other.** The
+3. **One language, two lanes — not fast-vs-slow versions of each other.** A
+   *lane* consumes the AST and owns everything below it; an *engine* consumes
+   the plan and fills `ModelTables`. They are different axes and the words are
+   not interchangeable: the relational lane has two engines (`polars`,
+   `duckdb`), and linopy is a lane and could not be an engine — it never sees
+   the plan, produces no `ModelTables`, and `extend` attaches to a model that
+   already exists. The
    streaming engine builds models declared in YAML; the linopy lane attaches YAML
    math to a `linopy.Model` already in memory. **Both accept exactly the same
    language**, and no helper registry exists that could create a divergence —
@@ -340,7 +349,9 @@ in the lane is order-free, which is what lets the query planner rearrange it.
   depending on how much of the product survives the mask — arithmetic, factored,
   counted — and they must agree integer for integer. That agreement is why
   labelling is a module with stated inputs rather than three methods among
-  twenty: nothing else about a build can move an index.
+  twenty: nothing else about a build can move an index. **Which** of the three
+  is a property of the plan, not of an engine, so both engines ask
+  `plan.free_prefix` and only the executions are written twice.
 - The same order comes **back**: `primal` / `dual` / `to_parquet` sort on the
   label before handing rows over, the order the LP sink writes. Stated at the
   read rather than assumed, because a `where` decides which rows survive and a
@@ -410,16 +421,20 @@ must stay off the import path of a caller who does not use it.
 | `errors.py` | the exception hierarchy; the one module either fenced side may import |
 | `_notes.py` | attach context to an exception on the way out; no package imports, no opinions |
 | `relational/plan.py` | frozen logical-plan dataclasses — what an engine consumes |
+| `relational/engine.py` | the engine base: what one must supply, and the sinks and label joins it gets for free |
+| `relational/engines/__init__.py` | name → engine, a closed set; `lps.build(engine=...)` resolves through it |
+| `relational/binding.py` | a caller's sources → `BoundSources`, the frozen frames every engine is written against |
+| `relational/data_validation.py` | is the bound data usable — one row per coordinate, labels that exist, single-valued coords |
+| `relational/engines/duck/compiler.py` | plan → SQL; the duckdb twin of the polars compiler |
+| `relational/engines/duck/executor.py` | assemble the model frames through duckdb |
 | `relational/frames.py` | the boundary — caller tables in, via the Arrow PyCapsule protocol |
 | `relational/engines/polars/compiler.py` | plan → lazy frames; pure, reads nothing |
 | `relational/chunking.py` | how a batched pass sizes its chunk: budget ÷ the width of one unit |
 | `relational/status.py` | solve outcome on two axes; linopy's vocabulary, copied not imported |
 | `relational/engines/polars/labels.py` | which coordinate gets which solver index; three routes to one number, which must agree |
-| `relational/engines/polars/binding.py` | a caller's sources → `BoundSources`, the frozen frames every query is written against |
 | `relational/engines/polars/executor.py` | assemble the model frames from the bound data |
 | `relational/result.py` | what a solve returned: status, objective, and the label joins that read values back |
-| `relational/engines/polars/data_validation.py` | is the bound data usable — one row per coordinate, labels that exist, single-valued coords |
-| `relational/sinks/tables.py` | what every sink reads and no more — the four frames plus the batching scalars, and their projection onto the solver's column index; what an engine produces |
+| `relational/sinks/tables.py` | what every sink reads and no more — the four frames, their dtypes and the batching scalars, and their projection onto the solver's column index; what an engine produces |
 | `relational/sinks/` | how a built model leaves, in two families: `solvers/` (one module per solver, chosen by name) and `writers/` (one per format, chosen by suffix) — [README](https://github.com/FBumann/lpspec/blob/main/src/lpspec/relational/sinks/README.md) |
 | `linopy/__init__.py` | opt-in shim: `build` / `extend` on a `linopy.Model` |
 | `linopy/loader.py` | data coercion to `xr.Dataset`, master coords |
@@ -429,8 +444,9 @@ must stay off the import path of a caller who does not use it.
 **Four subpackages, and the directory *is* the rule in every case.** Everything
 under `language/` produces the AST and may not reach a consumer of it;
 everything under `relational/` is the relational lane and imports nothing else
-from the package, with a second boundary inside it — `engines/` holds
-implementations, the rest of `relational/` is what they implement; everything
+from the package, with a second boundary inside it — `engines/` holds the two
+implementations, the rest of `relational/` is what they implement, and which
+one runs is `LPSPEC_ENGINE` rather than anything a model can say; everything
 under `linopy/` is the opt-in eager lane and is the only code allowed to import
 linopy or xarray; everything under `typeset/` reads the
 AST and writes text, and reaches neither the plan nor any data.

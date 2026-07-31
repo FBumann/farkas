@@ -33,26 +33,47 @@ uv run python -m bench.report bench/results/duckdb-spike.jsonl --arms lpspec duc
 
 **The committed results file is the *old* engine**, kept as the measurement the
 argument was built on rather than re-baselined. §7's ratios are provenance, not
-the current cost: five changes since the port have moved the build phase a long
-way, and the `_factored` label path §9 recorded as missing is only the first of
-them.
+the current cost.
 
-Where it stands, build phase, minimum of three repeats, `duckdb ÷ polars`:
+## Where it stands, measured at `e42b9a0`
 
-| | at the port | now |
-|---|---:|---:|
-| `dispatch/l` | 3.03× | **0.55×** |
-| `nodal/l` | 3.65× | **1.06×** |
-| `transport/l` | 2.20× | 1.39× |
+All six cases, both sinks, `l` rung, three repeats on a clean tree; the noise
+floor per row is in `bench/results/engines.jsonl` beside the numbers.
 
-Peak follows the same way at that rung — 0.88–0.92× on `dispatch` and `nodal`
-against 1.2–1.5× before. The exception is `transport` on the write path
-(1.45×), which is the price of deriving label relations rather than writing
-them down: three derivations of a 7M-row relation are alive at once inside its
-`UNION ALL`, and it buys 23% of that case's build.
+| `duckdb ÷ polars`, `l` | build | peak | wall |
+|---|---:|---:|---:|
+| `sector` lp | 3.39× | 1.28× | 2.19× |
+| `nodal` lp | 2.61× | 1.08× | 1.40× |
+| `fleet` lp | 2.14× | **0.91×** | 1.42× |
+| `dispatch` lp | 2.21× | 1.05× | 1.07× |
+| `transport` lp | 1.62× | 1.46× | 1.27× |
+| `profiled` lp | 1.32× | 1.59× | 1.21× |
 
-**Below `l` the ratio inverts** and duckdb is 1.6–2.5× slower: what is left is
-per-statement overhead, which is fixed and therefore dominates a small model.
+**Slower on all twelve rungs, and heavier on eight of them.** It is lighter only
+on `fleet` and on `nodal` through the solver. The objectives are bit-identical
+either way — the parity gate passes at 0.0 relative on all six cases, which is
+the claim this engine was built to make and the one thing that has not moved.
+
+**Two things widened this, and one of them is not the engine's fault.** Five
+optimisations landed on the polars engine while this one sat on a branch
+(#408, #412, #413, #414, #415), and then two more (#421, #433). `cols` going
+positional is the instructive one: on polars the order falls out of a cross
+join's emission order and costs nothing, while here it needs an `ORDER BY`,
+which roughly doubled `dispatch/l`'s build the day it landed. **A shared
+contract can be cheap for one engine and not the other, and the gap widens with
+neither engine regressing.** That is a structural fact about shipping two, and
+it is worth more than any single row above.
+
+**The memory ceiling is not an engine question**, which this engine is the
+reason we know. duckdb has the knob — `SET memory_limit`, spilling past it — and
+it does not bind: `dispatch/xl`, 40M columns, capped at 500 MB, builds unchanged
+and peaks at 2.98 GB, of which **2.61 GB is the four frames**. Its own working
+set was already under the cap. Peak is the output, so a declared bound is a
+`ModelTables` question and the same one on either engine.
+
+**Still untested rather than refuted:** every rung here fits in RAM, so the
+argument this engine was built on — a model that does not — has not been
+measured either way.
 
 ---
 
