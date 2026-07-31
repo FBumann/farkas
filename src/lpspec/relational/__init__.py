@@ -19,11 +19,8 @@ import site says which layer the caller is reaching into.
 raises ``lpspec.errors.LanguageError`` and ``DataError``; catch those.
 """
 
-from lpspec.relational.executor import (
-    PolarsExecutor,
-    RelationalBuildError,
-    Result,
-)
+from lpspec.relational.executor import PolarsExecutor, RelationalBuildError
+from lpspec.relational.result import Result
 
 __all__ = [
     'PolarsExecutor',

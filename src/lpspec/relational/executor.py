@@ -5,16 +5,13 @@ join that reads solution values back. Owns neither the query
 (:mod:`lpspec.relational.compiler`) nor the exit (:mod:`.sinks`). The lane is
 described in docs/ARCHITECTURE.md.
 
-**Labels are the one place order is load-bearing.** ``var_label`` *is* the
-solver column index and ``row`` its row index, so both come from
-:meth:`PolarsExecutor._label_frame` — written once, because two copies would
-disagree about which coordinate gets which index.
+Labels are :mod:`lpspec.relational.labels`: ``var_label`` *is* the solver's
+column index and ``row`` its row index, and the three ways of reaching one have
+to agree integer for integer, which is a job of its own.
 """
 
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
@@ -24,20 +21,18 @@ from lpspec.errors import (
     DataError,
     LanguageError,
     LinopyYamlError,
-    NoSolutionError,
     null_bounds_message,
     sparse_divisor_message,
 )
 from lpspec.relational import data_validation, plan, sinks
-from lpspec.relational.compiler import UNIT, PolarsCompiler, TermFragment, _ordinal
+from lpspec.relational.compiler import PolarsCompiler, TermFragment
 from lpspec.relational.frames import as_frame
+from lpspec.relational.labels import Labeller
+from lpspec.relational.result import Result
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    import pandas as pd
-
-    from lpspec.relational.status import SolveStatus
 
 #: The four frames a sink reads, as schemas. Stated here because the executor
 #: is what fills them and an empty model still has to have them.
@@ -76,174 +71,13 @@ _ROW_POSITION = '__row position__'
 RelationalBuildError = LinopyYamlError
 
 
-@dataclass
-class Result:
-    """What a solve returned — the outcome, and access to any values.
-
-    Named for linopy's envelope rather than its ``Solution``: it is returned
-    when the solve produced *nothing*, so "solution" would be a lie in exactly
-    the case a caller most needs to notice.
-
-    **No lifetime to manage.** The model is frames this process owns, so the
-    readers stay valid as long as the object does; :meth:`close` releases a
-    large one early but nothing breaks without it.
-
-    **Its values are its own.** The result holds the solver's vectors rather
-    than reading them back off the executor, so a later solve on the same
-    executor cannot rewrite what an earlier result reports. Only the label
-    frames — which the coordinates are joined against, and which a re-solve
-    does not touch — are shared. Holding them costs nothing until the caller
-    retains several results, which is the point: a sweep, a rolling horizon
-    and Benders all keep one per iteration.
-    """
-
-    _status: SolveStatus
-    _objective: float
-    _executor: PolarsExecutor
-    _primal_values: pl.DataFrame | None = None
-    _dual_values: pl.DataFrame | None = None
-
-    @property
-    def status(self) -> str:
-        """Coarse outcome: ``ok`` / ``warning`` / ``error`` / ``aborted`` / ``unknown``."""
-        return self._status.status
-
-    @property
-    def termination_condition(self) -> str:
-        """What the solver said — ``optimal``, ``infeasible``, ``time_limit``…"""
-        return self._status.termination_condition
-
-    @property
-    def is_ok(self) -> bool:
-        """linopy's rollup: not an error, an abort or a refusal."""
-        return self._status.is_ok
-
-    @property
-    def has_primal(self) -> bool:
-        """Whether there are values to read — what the accessors gate on.
-
-        Narrower than :attr:`is_ok`: a run stopped at a time limit before any
-        incumbent is ``ok`` with nothing to read.
-        """
-        return self._status.is_readable
-
-    @property
-    def objective(self) -> float:
-        """The objective value, or ``nan`` when there is no solution."""
-        return self._objective
-
-    def _require_solution(self, what: str) -> None:
-        if self._status.is_readable:
-            return
-        raise NoSolutionError(
-            f'cannot read {what}: the solve terminated {self.termination_condition!r} '
-            f'({self._status.solver_wording}), so there are no values to read. Test '
-            f'`has_primal` first. This raises rather than returning, because the solver '
-            f'hands back a full-length vector of zeros either way and it is '
-            f'indistinguishable from an answer.'
-        )
-
-    def primal(self, name: str) -> pl.DataFrame:
-        """The tidy solution of *name* — ``(dims…, value)``.
-
-        Rows come back in **label order**: row-major over the variable's
-        coordinate product, the same order the LP sink writes and the one
-        ``var_label`` already encodes. So two reads agree, two runs of one
-        model agree, and a solution file can be diffed.
-        """
-        self._require_solution(f"the primal of '{name}'")
-        return self._executor._primal(name, self._primal_values)
-
-    def dual(self, name: str) -> pl.DataFrame:
-        """Shadow prices of constraint *name*: ``(dims…, value)``.
-
-        :meth:`primal`'s join against the row frame rather than a column one,
-        in that method's order.
-
-        The two empty cases are different failures and both raise rather than
-        return zeros: no values at all is
-        :class:`~lpspec.errors.NoSolutionError`, while primals without duals —
-        any integer variable makes them undefined — raises
-        :class:`~lpspec.errors.LinopyYamlError`. Duals exist only on this sink.
-        """
-        self._require_solution(f"the dual of '{name}'")
-        if self._dual_values is None:
-            raise LinopyYamlError(self._executor._no_duals_reason(self.termination_condition))
-        return self._executor._dual(name, self._dual_values)
-
-    def to_pandas(self, name: str) -> pd.DataFrame:
-        """:meth:`primal` as a tidy :class:`pandas.DataFrame`.
-
-        Needs pandas, which ships with the ``[linopy]`` extra. Built column by
-        column, since polars' own ``to_pandas`` reaches for pyarrow.
-        """
-        import pandas as pd
-
-        self._require_solution(f"the primal of '{name}'")
-        frame = self._executor._primal(name, self._primal_values)
-        return pd.DataFrame({column: frame[column].to_numpy() for column in frame.columns})
-
-    def to_dataarray(self, name: str) -> Any:
-        """``primal(name)`` as a labelled :class:`xarray.DataArray`.
-
-        The bridge to array post-processing — ``.sel``, resampling, duration
-        curves. Needs the ``[linopy]`` extra; a masked coordinate has no row
-        and comes back NaN.
-        """
-        frame = self.to_pandas(name)
-        dims = [c for c in frame.columns if c != 'value']
-        if not dims:
-            return frame['value'].to_xarray().rename(name)
-        return frame.set_index(dims).to_xarray()['value'].rename(name)
-
-    def to_dataset(self, *names: str) -> Any:
-        """Variables as one :class:`xarray.Dataset`; all of them by default.
-
-        Costs what it says: each variable arrives dense over its own dims,
-        whatever the mask removed, and all of them at once. On a large model,
-        name the few you need or use :meth:`to_parquet`.
-        """
-        assert self._executor._program is not None
-        wanted = names or tuple(v.name for v in self._executor._program.variables)
-        first, *rest = wanted
-        dataset = self.to_dataarray(first).to_dataset(name=first)
-        for name in rest:
-            dataset[name] = self.to_dataarray(name)
-        return dataset
-
-    def to_parquet(self, directory: str | Path) -> dict[str, Path]:
-        """One parquet file per variable, ``(dims…, value)``. Returns name → path.
-
-        Sunk straight to disk, never copied into a second representation, in
-        :meth:`primal`'s order — so the same model and data write the same
-        bytes.
-        """
-        self._require_solution('the solution')
-        return self._executor._solution_to_parquet(Path(directory), self._primal_values)
-
-    def close(self) -> None:
-        """Release the built model early. Optional — see the class docstring.
-
-        Drops this result's own values as well as the shared model, so closing
-        still frees everything one solve allocated; a sibling result keeps its.
-        """
-        self._primal_values = self._dual_values = None
-        self._executor.close()
-
-    def __enter__(self) -> Result:
-        return self
-
-    def __exit__(self, *exc: object) -> Literal[False]:
-        self.close()
-        return False
-
-
 class PolarsExecutor:
     """Build a :class:`Program` into polars frames, then sink it."""
 
     def __init__(self) -> None:
         self._program: plan.Program | None = None
         self._compiler: PolarsCompiler | None = None
+        self._labels: Labeller | None = None
         self._parameters: dict[str, pl.LazyFrame] = {}
         self._dimensions: dict[str, pl.LazyFrame] = {}
         self._variables: dict[str, pl.LazyFrame] = {}
@@ -292,6 +126,7 @@ class PolarsExecutor:
             self._dimensions,
             self._variables,
         )
+        self._labels = Labeller(self._compiler, self._dim_card, program)
 
         cols = [self._build_variable(v) for v in program.variables]
         built = [self._build_constraint(c) for c in program.constraints]
@@ -306,6 +141,11 @@ class PolarsExecutor:
     def _q(self) -> PolarsCompiler:
         assert self._compiler is not None, 'build() has not run'
         return self._compiler
+
+    @property
+    def _label(self) -> Labeller:
+        assert self._labels is not None, 'build() has not run'
+        return self._labels
 
     # ------------------------------------------------------------------
     # sources
@@ -488,157 +328,6 @@ class PolarsExecutor:
         data_validation.check_coordinates_single_valued(d, names, grouped)
         return grouped.lazy().select(pl.col(d).alias('val'), pl.col('ord').cast(pl.Int64), *names)
 
-    def _label_frame(
-        self,
-        dims: tuple[str, ...],
-        where: plan.Predicate | None,
-        label: str,
-        start: int,
-        restrictions: Sequence[tuple[tuple[str, ...], pl.LazyFrame]] = (),
-    ) -> tuple[pl.DataFrame, int]:
-        """The masked coord product of *dims* with a dense *label* from *start*.
-
-        Variables and constraint rows are the same operation, so it is written
-        once. A label follows declaration order, which is what lets it *be* the
-        solver's own index with no remapping.
-
-        The mask chooses the path. **Unmasked**, every coordinate exists, so a
-        row's label is its position in the product — arithmetic on the dim
-        ordinals, with no sort and nothing to count. **Masked**, which rows
-        survive is not known until the predicate has run, so the position has
-        to be counted, and that costs a sort — unless the mask *factors*, which
-        is :meth:`_factored`.
-
-        Both return ``(dims…, label)`` in that column order. A mask that
-        removes nothing has to be indistinguishable from no mask, down to the
-        schema.
-
-        *restrictions* are variable-presence frames a constraint row must be
-        contained in: absence propagates into a comparison and drops the row
-        (v1 ``convention.rst`` §6, §12). They are semi-joins, so they can only
-        remove rows — but which rows is not known until data is read, and that
-        is what costs the two fast paths, so the caller passes them only when a
-        variable in the equation is actually masked (:func:`_absence_restrictions`).
-        """
-        if not restrictions:
-            if where is None:
-                frame = self._q.frame(dims, None)
-                rows = math.prod(self._dim_card[d] for d in dims)
-                labelled = frame.select(*dims, self._row_major(dims, start).alias(label))
-                return labelled.collect(engine='streaming'), start + rows
-
-            free = _free_prefix(dims, _predicate_dims(where, self._param_dims()))
-            if free:
-                return self._factored(dims, free, where, label, start)
-
-        restricted = self._q.frame(dims, where)
-        for on, presence in restrictions:
-            restricted = restricted.join(presence.unique(), on=list(on), how='semi')
-
-        materialised = (
-            restricted.sort([_ordinal(d) for d in dims])
-            # No dims means the carrier is `UNIT`: selecting nothing would drop
-            # the one row this path exists to count.
-            .select(*(dims or (UNIT,)))
-            .with_row_index(label, offset=start)
-            .select(*dims, pl.col(label).cast(pl.Int64))
-            .collect(engine='streaming')
-        )
-        return materialised, start + materialised.height
-
-    def _param_dims(self) -> dict[str, tuple[str, ...]]:
-        """The dims each name in a where is read through.
-
-        Parameters by their ``dims`` and variables by their ``foreach``: a bare
-        name in a where may be either, and the label planner only asks "which
-        dims does this mask touch". One flat mapping, because the language has
-        one flat namespace and the two cannot collide.
-        """
-        assert self._program is not None, 'build() has not run'
-        dims = {p.name: p.dims for p in self._program.parameters}
-        dims.update({v.name: v.dims for v in self._program.variables})
-        return dims
-
-    def _factored(
-        self,
-        dims: tuple[str, ...],
-        free: int,
-        where: plan.Predicate,
-        label: str,
-        start: int,
-    ) -> tuple[pl.DataFrame, int]:
-        """Labels for a mask that reads none of the first *free* dims.
-
-        A mask that cannot see the leading dims removes the same coordinates
-        under every one of their values, so the survivors are a rectangle: the
-        full product of the leading dims against one surviving set. Ranking
-        that set costs a sort of the *set*, not of the product — on `dispatch`
-        it is a sort of the generators rather than of 10M
-        ``(snapshot, generator)`` pairs.
-
-        The label is then arithmetic again, through the same
-        :meth:`_row_major` the unmasked path uses: row-major over the leading
-        dims, times the width of the surviving set, plus a survivor's rank
-        within it. That is the same number the sort would have counted, because
-        for each leading coordinate the same survivors appear in the same order.
-
-        The prefix has to be *leading* rather than merely absent from the mask:
-        a label follows declaration order, and only a prefix leaves the
-        surviving set contiguous within it.
-        """
-
-        head, kept = dims[:free], dims[free:]
-        survivors = (
-            self._q.frame(kept, where)
-            .sort([_ordinal(d) for d in kept])
-            .select(*kept)
-            .with_row_index('__rank')
-            .collect(engine='streaming')
-        )
-        width = survivors.height
-        if width == 0:
-            # nothing survived anywhere, so there is no rectangle to describe.
-            # The counted path returns the right columns and dtypes for free.
-            empty = (
-                self._q.frame(dims, where)
-                .select(*dims)
-                .with_row_index(label, offset=start)
-                .select(*dims, pl.col(label).cast(pl.Int64))
-                .collect(engine='streaming')
-            )
-            return empty, start
-
-        labelled = (
-            self._q.frame(head, None)
-            .select(*head, self._row_major(head, 0).alias('__position'))
-            .join(survivors.lazy(), how='cross')
-            .select(
-                *dims,
-                (pl.lit(start, dtype=pl.Int64) + pl.col('__position') * width + pl.col('__rank')).alias(label),
-            )
-            .collect(engine='streaming')
-        )
-        return labelled, start + labelled.height
-
-    def _row_major(self, dims: tuple[str, ...], start: int) -> pl.Expr:
-        """Row-major position in *dims*' coordinate product, offset by *start*.
-
-        The trailing dim has stride 1 and every other is the product of the
-        cardinalities to its right, so the position is a dot product against the
-        ordinals the frame already carries — no ordering imposed, because the
-        answer does not depend on the order rows arrive in.
-
-        Both arithmetic paths of :meth:`_label_frame` reach a label through
-        this, written once for the reason the label itself is: two copies would
-        come to disagree about which coordinate gets which solver index.
-        """
-
-        stride, position = 1, pl.lit(start, dtype=pl.Int64)
-        for d in reversed(dims):
-            position = position + pl.col(_ordinal(d)) * stride
-            stride *= self._dim_card[d]
-        return position
-
     # ------------------------------------------------------------------
     # declarations
     # ------------------------------------------------------------------
@@ -646,7 +335,7 @@ class PolarsExecutor:
     def _build_variable(self, v: plan.VariableDeclaration) -> pl.DataFrame:
         """One variable's labelled frame, and its share of ``cols``."""
 
-        labelled, self._n_cols = self._label_frame(v.dims, v.where, 'var_label', self._n_cols)
+        labelled, self._n_cols = self._label.frame(v.dims, v.where, 'var_label', self._n_cols)
         self._variables[v.name] = labelled.lazy()
 
         bounded = self._q.bounds(labelled.lazy(), v)
@@ -687,7 +376,7 @@ class PolarsExecutor:
                 )
 
         restrictions = _absence_restrictions([p for p, _ in terms])
-        labelled, self._n_rows = self._label_frame(c.dims, c.where, 'row', self._n_rows, restrictions)
+        labelled, self._n_rows = self._label.frame(c.dims, c.where, 'row', self._n_rows, restrictions)
         frame = labelled.lazy()
         self._constraints[c.name] = frame  # kept for the dual read-back
 
@@ -980,56 +669,6 @@ def _plain_strings(frame: pl.LazyFrame, dims: tuple[str, ...]) -> pl.LazyFrame:
     return frame.with_columns(pl.col(d).cast(pl.String) for d in categorical)
 
 
-def _predicate_dims(where: plan.Predicate, param_dims: Mapping[str, tuple[str, ...]]) -> frozenset[str]:
-    """Which dims *where* reads.
-
-    A parameter is read through its own dims, a dimension comparison through
-    the dim it names, and a constant reads nothing. Anything unrecognised
-    returns every dim it could possibly touch by returning ``None``'s
-    counterpart — there is no such case today, and a new predicate that forgot
-    to answer here would silently mislabel a model, so it raises instead.
-    """
-    if isinstance(where, plan.BooleanConstant):
-        return frozenset()
-    if isinstance(where, plan.DimensionComparison):
-        return frozenset({where.dimension})
-    if isinstance(where, (plan.ParameterComparison, plan.ParameterDefined)):
-        dims = frozenset(param_dims.get(where.parameter, ()))
-        # a parameter compared against another parameter reads both
-        value = getattr(where, 'value', None)
-        if isinstance(value, str) and value in param_dims:
-            dims |= frozenset(param_dims[value])
-        return dims
-    if isinstance(where, plan.VariableDefined):
-        # Read through the variable's own foreach, exactly as a parameter is
-        # read through its dims. `_free_prefix` then keeps its arithmetic path
-        # for the leading dims this mask cannot see, as for any other predicate.
-        return frozenset(param_dims.get(where.variable, ()))
-    if isinstance(where, (plan.And, plan.Or)):
-        return _predicate_dims(where.left, param_dims) | _predicate_dims(where.right, param_dims)
-    if isinstance(where, plan.Not):
-        return _predicate_dims(where.operand, param_dims)
-    raise LanguageError(
-        f'{type(where).__name__} is a predicate the label planner does not know how to read; '
-        'add it to _predicate_dims before using it in a where'
-    )
-
-
-def _free_prefix(dims: tuple[str, ...], touched: frozenset[str]) -> int:
-    """How many leading dims the mask does not read.
-
-    Leading, not merely absent: a label follows declaration order, so only a
-    prefix leaves the surviving set contiguous under each of its coordinates.
-    Returns 0 when the mask reads the first dim, which is the case that has to
-    count its survivors the slow way.
-    """
-    free = 0
-    while free < len(dims) and dims[free] not in touched:
-        free += 1
-    # every remaining dim is masked-or-not; the split only helps if something is left
-    return free if free < len(dims) else 0
-
-
 def _stack(frames: list[pl.DataFrame], columns: tuple[str, ...]) -> pl.DataFrame:
     """Concatenate *frames*, or an empty frame of *columns* when there are none.
 
@@ -1056,7 +695,7 @@ def _absence_restrictions(terms: Sequence[TermFragment]) -> list[tuple[tuple[str
 
     **A fragment with nothing to restrict is skipped**, and that is load-bearing
     rather than tidy: a restriction is data — which rows survive is unknown until
-    the presence frames are read — so it costs ``_label_frame`` both of its
+    the presence frames are read — so it costs ``Labeller.frame`` both of its
     arithmetic paths. An unmasked variable's presence is its whole coordinate
     product and would remove nothing, so it never gets to impose that cost.
     """

@@ -34,13 +34,15 @@ from typing import TYPE_CHECKING, Any
 from lpspec._yaml import read_yaml
 from lpspec.lowering import lower_program
 from lpspec.piecewise import expand_piecewise
-from lpspec.relational.executor import PolarsExecutor, Result
+from lpspec.relational.executor import PolarsExecutor
 from lpspec.schema import MathSchema
 from lpspec.sources import tidy_sources
 from lpspec.validation import validate_expressions
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+    from lpspec.relational.result import Result
 
 
 def load_schema(model: str | Path | dict[str, Any] | MathSchema) -> MathSchema:
