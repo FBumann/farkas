@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.47](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.46...v0.0.1-alpha.47) (2026-07-31)
+
+
+### Refactoring
+
+* **relational:** the contract at the top, engines one level down ([#395](https://github.com/FBumann/lpspec/issues/395)) ([fb4b2de](https://github.com/FBumann/lpspec/commit/fb4b2de62b6d7607a95dae05d0b1f6b6df13e2bc))
+
 ## [0.0.1-alpha.46](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.45...v0.0.1-alpha.46) (2026-07-31)
 
 
