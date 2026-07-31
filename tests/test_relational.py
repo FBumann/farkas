@@ -505,6 +505,46 @@ def _objective_of(program, sources):
         return dict(zip(obj['col'].to_list(), obj['coeff'].to_list(), strict=True)), obj.height
 
 
+def test_every_declaration_owns_a_contiguous_run_of_labels():
+    """What reading a solve back by position rests on.
+
+    A solver vector is positional in the same index the labels are, so a
+    declaration's share of it is a slice — but only if its labels are a dense
+    run and the runs tile the whole index. Both are true of every path
+    `Labeller.frame` takes, and neither is visible from the frames: a block
+    that started one late would report a neighbour's numbers under this
+    declaration's coordinates, with nothing out of range and nothing null.
+    """
+    model = {
+        'dimensions': {'i': {'dtype': 'int', 'values': [0, 1, 2]}, 'j': {'values': ['a', 'b']}},
+        'parameters': {'cap': {'dims': ['i']}},
+        'variables': {
+            'x': {'foreach': ['i'], 'bounds': {'lower': 0, 'upper': 'cap'}},
+            'y': {'foreach': ['i', 'j'], 'bounds': {'lower': 0}},
+            'z': {'foreach': ['j'], 'bounds': {'lower': 0}},
+        },
+        'constraints': {
+            'c1': {'foreach': ['i'], 'expression': 'x >= cap'},
+            'c2': {'foreach': ['i', 'j'], 'expression': 'y >= 0'},
+        },
+        'objectives': {'o': {'sense': 'minimize', 'expression': 'sum(x, over=i)'}},
+    }
+    with lps.build(model, {'cap': pl.DataFrame({'i': [0, 1, 2], 'value': [1.0, 2.0, 3.0]})}) as ex:
+        tables = ex._tables()
+        for names, total, frames, label in (
+            (['x', 'y', 'z'], tables.column_count, ex._variables, 'var_label'),
+            (['c1', 'c2'], tables.row_count, ex._constraints, 'row'),
+        ):
+            at = 0
+            for name in names:
+                start, height = ex._blocks[name]
+                assert start == at, f'{name} does not start where the previous declaration ended'
+                labels = frames[name].select(label).collect().to_series()
+                assert sorted(labels) == list(range(start, start + height)), f'{name} is not a dense run'
+                at += height
+            assert at == total, 'the runs do not tile the index'
+
+
 def test_the_matrix_aggregate_runs_on_what_repeats_and_not_on_what_might():
     """Both branches of the collapse, on models that differ only in overlap.
 
