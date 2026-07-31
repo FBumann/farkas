@@ -56,7 +56,7 @@ Write the math in YAML, bind data at runtime, solve.
 
     ---
 
-    The ceiling is a closure (affine ∩ relational ∩ local), not a feature race.
+    The ceiling is a closure (relational ∩ local), not a feature race.
     Genuinely unsayable math goes in an `escape:` island — visible in the file,
     billed before it runs.
 

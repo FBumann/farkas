@@ -120,7 +120,7 @@ what it costs.
   macro template is parsed and name-checked before a single source is bound.
   Errors name the problem and its rewrite; nothing falls back silently.
 - **A finite language with a priced way out** — the ceiling is a closure
-  (affine ∩ relational ∩ local), not a feature race; genuinely unsayable math
+  (relational ∩ local), not a feature race; genuinely unsayable math
   goes in an `escape:` island, visible in the file and billed before it runs.
 
 The second use case is bolting YAML math onto a Python-built model. Packages

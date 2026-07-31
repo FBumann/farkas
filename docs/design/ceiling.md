@@ -28,21 +28,27 @@ goes in a *value* position like `over=`/`by=`, never a kwarg key; the
 `shift(x, over=snapshot, by=1)` takes its dimension in a kwarg *value*, so a
 macro can pass one as a formal — the dim-as-key design that could not is gone.
 
-A candidate primitive is admissible iff it is all three of **degree 1 (affine)**
-— `variable × parameter`, never `variable × variable`, the one axis that is a
-scope choice rather than a consequence of streaming
-([ROADMAP](../ROADMAP.md#the-degree-axis)); **relational** — filter / join /
-group-by-aggregate over tidy tables; and **local** — *pointwise* or
+A candidate primitive is admissible iff it is **relational** — filter / join /
+group-by-aggregate over tidy tables — and **local**, meaning *pointwise* or
 *bounded-halo*, which compose under partition-wise execution where *global*
 operators do not. Locality is judged in **data space**: reductions over a
 *coordinate* space ("the last snapshot") read only the small, already
 materialised dim tables and stay admissible even though they look global.
 
-**Read the verdict off the plan.** Rules 2 and 3 are one question asked twice,
-and the compiler already answers it — write the candidate's query over the term
-stream first and read `.explain()`:
+**Degree is not the third rule**, and stating it as one was a mistake this page
+made for a while. Nothing about `variable × variable` is non-relational or
+non-local — a coordinate-aligned product is a pointwise self-join. Degree 1 is
+where the language *is*, not where it must stay: what actually gates quadratic is
+**what a sink can ingest**, which is the second axis below, and the sequence is
+[ROADMAP Track 3](../ROADMAP.md#track-3--capabilities-and-the-degree-line). The
+same is true of SOS, indicator and semi-continuous. Read this page as the
+*streamability* closure and nothing more.
 
-| Shape of the emitted query | Locality | Rules 2–3 |
+**Read the verdict off the plan.** Relational and local are one question asked
+twice, and the compiler already answers it — write the candidate's query over
+the term stream first and read `.explain()`:
+
+| Shape of the emitted query | Locality | Admissible? |
 |---|---|---|
 | filter on a column already in the frame | pointwise | admissible |
 | equi-join against a parameter or mapping table | pointwise | admissible |
@@ -53,14 +59,13 @@ stream first and read `.explain()`:
 This is the case analysis `_sum_fragment`, `_group_fragment` and
 `_translate_fragment` already implement — each rewriting one fragment on its
 own, which is what *pointwise* and *bounded-halo* mean in code — so a candidate
-fitting none of those shapes has no executor to be written into. Two limits: **degree is not a property of the plan** —
-it is decided on the core AST by `language/degree.py`, which both lanes ask and
-neither states, so reading it off a query would be reading the wrong artefact —
-and it
+fitting none of those shapes has no executor to be written into. One limit: it
 presumes the terminal `sum(coeff)` over `(row, col)` stays the only aggregate a
-*term* passes through.
-A primitive is finished when `lowering.py` accepts it and the differential test
-against the linopy oracle passes.
+*term* passes through. Degree is decided elsewhere and deliberately — on the
+core AST by `language/degree.py`, which both lanes ask and neither states — so
+reading it off a query would be reading the wrong artefact. A primitive is
+finished when `lowering.py` accepts it and the differential test against the
+linopy oracle passes.
 
 **The ceiling is a claim, so it needs evidence.** In
 [docs/models/index.md](../models/index.md), math a ported model needed and this language
@@ -98,13 +103,13 @@ generation — because there is no "before" for it to happen in.
 **Outside the plan is not outside the engine**, and the difference is the whole
 of decomposition. A plan cannot contain a loop; a *process* may loop over plans,
 each with its shape fixed before its own data. Rolling horizon is that shape and
-is in scope ([ROADMAP Track 2c](../ROADMAP.md#tracks-23--untaxed)); so are
+is in scope ([ROADMAP Track 2](../ROADMAP.md#track-2--the-operational-surface)); so are
 Benders and successive substitution. Nor does appending a cut cost the label
 contract the way removal would: `var_label` is a `ROW_NUMBER()` over the rows
 surviving the `where` mask, so adding *rows* moves no column and renumbers no
 existing row, and `addRows` is already how the direct sink feeds the initial
 build. What such a scheme still owes an answer on is **who writes the cut** —
-rule 6 refuses a Python modeling API, so either a decomposition driver ships
+rule 5 refuses a Python modeling API, so either a decomposition driver ships
 reading the model frames, or the narrow seam for emitting affine rows discussed
 under [Composition](#composition-component-libraries) gets blessed. That is a
 scope question, not a ceiling one.
@@ -136,7 +141,7 @@ so capability is not a flat set. The whole-Hessian handoff is an implementation
 difference, not a rule-4 violation.
 
 Making this a declared per-sink capability set, with `check` taking an optional
-sink, is [ROADMAP Track 4](../ROADMAP.md#track-4--sink-capabilities).
+sink, is [ROADMAP Track 3](../ROADMAP.md#track-3--capabilities-and-the-degree-line).
 
 ## Composition (component libraries)
 
@@ -157,7 +162,7 @@ types) belongs in a thin layer emitting **more rows or more templates, never
 per-instance YAML** — but **that layer has nothing *supported* to call**. A seam
 does exist: `api.load_schema` accepts `dict | MathSchema`, so a programmatically
 built model already goes through validation, expansion, resolution and dim
-checking. It is just undocumented and unversioned, while rule 6 refuses a Python
+checking. It is just undocumented and unversioned, while rule 5 refuses a Python
 modeling API and this section forbids generated YAML. Composition therefore
 forces that contract earlier than the roadmap has it: not a general modeling API,
 but a narrow, versioned way to emit declarations. Should anything ever be

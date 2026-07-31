@@ -22,7 +22,7 @@ property makes everything else legal: the whole model can be compiled — to eag
 xarray/linopy calls, or to a logical plan executed relationally and streamed to a
 sink — with both paths provably meaning the same thing. Every rule below protects
 it. (A *declared* memory ceiling is not something we have; see
-[Track 5](ROADMAP.md#track-5--the-memory-axis).)
+[Track 4](ROADMAP.md#track-4--the-memory-axis).)
 
 **Four directories, four fences.** One produces the AST; three consume it and
 know nothing of each other. Each box below is a directory, and its subtitle is
@@ -360,7 +360,7 @@ streams and no more: `cols` (bounds, objective coefficients, integrality),
 and `genconstr` — plus a semi-continuous threshold on `cols`. Unlike the three
 that exist, those two would land *unevenly*, because the destinations differ
 per sink (see "Capability is not the ceiling"); that unevenness is what
-[Track 4](ROADMAP.md#track-4--sink-capabilities) exists to make declared rather
+[Track 3](ROADMAP.md#track-3--capabilities-and-the-degree-line) exists to make declared rather
 than discovered at solve time.
 
 ## Module map
