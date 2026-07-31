@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import difflib
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from lpspec.errors import did_you_mean
 from lpspec.helpers import BUILTIN_NAMES
 
 if TYPE_CHECKING:
@@ -43,9 +43,7 @@ class _StrictBlock(BaseModel):
     @classmethod
     def _unknown_key_error(cls, key: str, known: set[str]) -> str:
         label = cls._label or cls.__name__
-        near = difflib.get_close_matches(key, sorted(known), n=1, cutoff=0.6)
-        fix = f"Did you mean '{near[0]}'?" if near else f'Valid keys: {", ".join(sorted(known))}.'
-        return f"unknown key '{key}' in {label}. {fix}"
+        return f"unknown key '{key}' in {label}. {did_you_mean(key, known, label='Valid keys')}"
 
 
 def _one_of(value: str, allowed: set[str], field: str) -> str:
@@ -341,7 +339,6 @@ class MathSchema(_StrictBlock):
                 else:
                     seen[name] = kind
 
-        # Referenced dimensions must be declared
         errors.extend(
             f"{kind} '{name}' references undeclared dimension '{d}'. Declare it under 'dimensions:'."
             for kind, group, dims_of in (

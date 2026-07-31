@@ -57,7 +57,6 @@ if TYPE_CHECKING:
 
     from lpspec.schema import MathSchema
 
-# Mapping from YAML comparison operators to linopy sign strings
 _SIGN_MAP = {'==': '=', '<=': '<=', '>=': '>='}
 
 #: The language's arithmetic. ``**`` is absent on purpose — see ``_eval_ast``.
@@ -132,7 +131,6 @@ def _build_variables(ctx: EvaluationContext) -> None:
         with note(f"while building variable '{vname}'"):
             coords = {d: ctx.master_coords[d] for d in vdef.foreach}
 
-            # Resolve bounds
             lower = _resolve_bound(vdef.bounds.lower, ctx.dataset)
             upper = _resolve_bound(vdef.bounds.upper, ctx.dataset)
 
@@ -364,7 +362,6 @@ def _eval_ast(
         if node.name not in _HELPERS:
             raise NameError(unknown_helper_message(node.name))
         helper = _HELPERS[node.name]
-        # Evaluate positional args
         args = [_eval_ast(a, ctx) for a in node.args]
         if node.name == 'group_sum':
             # the coordinate lives on the dimension, not in the parameter

@@ -12,11 +12,14 @@ linopy-free by hard rule 3, and they import this module.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import pyparsing as pp
 
 from lpspec.errors import SchemaError
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 PredicateOperator = Literal['<=', '>=', '==', '!=', '<', '>']
 
@@ -127,63 +130,56 @@ def _build_where_grammar() -> pp.ParserElement:
     """Build and return the pyparsing grammar for where strings."""
     where_expr = pp.Forward()
 
-    # Literals
     true_lit = pp.CaselessKeyword('True').set_parse_action(lambda: BooleanLiteralNode(True))
     false_lit = pp.CaselessKeyword('False').set_parse_action(lambda: BooleanLiteralNode(False))
 
-    # Numbers
     real = pp.Regex(r'-?\d+\.\d*([eE][+-]?\d+)?').set_parse_action(lambda t: float(t[0]))
     # float, not int: UnresolvedComparisonNode.value is declared float, so store one
     integer = pp.Regex(r'-?\d+').set_parse_action(lambda t: float(t[0]))
     number = real | integer
 
-    # Names
     name = pp.Regex(r'[a-zA-Z_][a-zA-Z0-9_]*')
 
-    # Comparisons
     comparator = pp.one_of('<= >= == != < >')
     comparison = (name + comparator + (number | name)).set_parse_action(
         lambda t: UnresolvedComparisonNode(t[0], t[1], t[2])
     )
-
-    # Existence check (bare name)
+    # a bare name is an existence check
     existence = name.copy().set_parse_action(lambda t: UnresolvedNameNode(t[0]))
 
-    # Atoms
     atom = true_lit | false_lit | comparison | existence | (pp.Suppress('(') + where_expr + pp.Suppress(')'))
 
-    # NOT (highest precedence)
+    # NOT binds tightest, then AND, then OR
     NOT = pp.CaselessKeyword('NOT').suppress()
     not_expr = (NOT + atom).set_parse_action(lambda t: NotNode(t[0])) | atom
 
-    # AND
     AND = pp.CaselessKeyword('AND').suppress()
     and_expr = not_expr + pp.ZeroOrMore(AND + not_expr)
-    and_expr.set_parse_action(_fold_and)
+    and_expr.set_parse_action(_folder(AndNode))
 
-    # OR (lowest precedence)
     OR = pp.CaselessKeyword('OR').suppress()
     or_expr = and_expr + pp.ZeroOrMore(OR + and_expr)
-    or_expr.set_parse_action(_fold_or)
+    or_expr.set_parse_action(_folder(OrNode))
 
     where_expr <<= or_expr
     return where_expr
 
 
-def _fold_and(tokens: pp.ParseResults) -> Any:
-    items = list(tokens)
-    result = items[0]
-    for item in items[1:]:
-        result = AndNode(result, item)
-    return result
+def _folder(node_type: type[AndNode] | type[OrNode]) -> Callable[[pp.ParseResults], Any]:
+    """A parse action left-folding a flat operator chain into *node_type*.
 
+    ``AND`` and ``OR`` differ only in the node they build; the fold is the
+    grammar's associativity, which is one rule.
+    """
 
-def _fold_or(tokens: pp.ParseResults) -> Any:
-    items = list(tokens)
-    result = items[0]
-    for item in items[1:]:
-        result = OrNode(result, item)
-    return result
+    def fold(tokens: pp.ParseResults) -> Any:
+        items = list(tokens)
+        result = items[0]
+        for item in items[1:]:
+            result = node_type(result, item)
+        return result
+
+    return fold
 
 
 _WHERE_GRAMMAR = _build_where_grammar()
