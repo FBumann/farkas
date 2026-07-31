@@ -163,7 +163,53 @@ The gate agrees to 0.0e+00 relative on all six cases, including `fleet` and
 today's models on the old engine and reaches the same optimum bit for bit.
 That is what makes the rest of this table a measurement rather than a guess.
 
-<!-- LADDER -->
+**The duckdb arm ran at its own default `memory_limit='1GB'`.** Not a choice
+made here — `fk.build` defaults to it, so this is the engine as it shipped
+against the engine as it ships. It is also the whole difference in kind: one
+arm has a ceiling and spills, the other's peak tracks the model.
+
+### The write path, which is where a ceiling pays
+
+`lps.write` → LP file, at the top two rungs. This is the column #189 never
+published: its headline compares to a loaded solver, where the build is ~9% of
+peak and any build-side difference is diluted.
+
+| case | vars | wall: polars | wall: duckdb | peak: polars | peak: duckdb | lighter |
+|---|---:|---:|---:|---:|---:|---:|
+| dispatch `l` | 10M | 2.34 s | 7.67 s | 2.05 GB | 0.76 GB | **2.69×** |
+| dispatch `xl` | 40M | 17.99 s | 28.23 s | 4.38 GB | 1.39 GB | **3.15×** |
+| profiled `xl` | 48M | 36.73 s | 86.68 s | 7.48 GB | 1.78 GB | **4.20×** |
+| nodal `xl` | 12M | 5.44 s | 9.73 s | 3.22 GB | 1.16 GB | 2.77× |
+| sector `xl` | 4M | 4.23 s | 8.72 s | 2.02 GB | 0.96 GB | 2.11× |
+
+**The peak gap widens with the model** — dispatch runs 1.11× / 1.25× / 1.63× /
+2.69× / 3.15× up the ladder — which is what a ceiling looks like against a peak
+that tracks the model. The wall gap does not widen with it: 3.27× at `l` but
+1.57× at `xl` on dispatch, because polars is doing more work per byte once the
+model stops fitting comfortably.
+
+`fleet/xl` is the other half of the same fact: the duckdb arm **failed there**,
+`OutOfMemoryException` at 953 MiB, twice. That is a 1 GB budget being too tight
+for a 48M-variable model, not the engine breaking — and it is the behaviour the
+ceiling exists for. It fails instead of taking the machine with it.
+
+### The solver path, where it mostly does not
+
+Same models, `solver_direct`. HiGHS's own model is resident in both arms, so it
+dominates and the engines converge:
+
+| case | vars | peak: polars | peak: duckdb | lighter |
+|---|---:|---:|---:|---:|
+| dispatch `xl` | 40M | 8.32 GB | 6.17 GB | 1.35× |
+| profiled `xl` | 48M | 7.35 GB | 6.37 GB | 1.15× |
+| profiled `l` | 12M | 2.56 GB | 2.70 GB | **0.95×** |
+
+`profiled/l` is the one rung where polars is *lighter*, and it is worth not
+smoothing over: the gap is not a law, it is a consequence of how much of the
+build survives to the hand-off.
+
+Wall time across the whole ladder: polars **1.6–4.0× faster**, consistent with
+#189's 1.7–5.2× — the range narrows here because the top rungs are new.
 
 ### The binder's own shape
 
@@ -260,21 +306,48 @@ optimizer having skipped the work.
 | public break | `primal()` return type |
 | prerequisite | `Polars*` rename (44 sites) + the missing hard-rule-2 check |
 
-Comparable to #189 in the other direction and somewhat larger, against a
-measured 1.7–5.2× wall-clock regression.
+Comparable to #189 in the other direction and somewhat larger.
 
-**Where this leaves it.** The cost above is the honest price, and it has not
-moved. What moved is the counter-argument: partitioning polars to a bound was
-measured and floors at ~1.7 GB (§8a), and the hand-managed partitioning duckdb
-used to need has largely evaporated (§8b). So the choice is no longer "swap the
-engine or build the partitioning" — it is **buy a bounded build for a 1.7–5.2×
-wall-clock regression, or do not have one.** That is a product question about
-whether Track 5's ceiling is a real requirement, not an engineering question
-about whether it is reachable.
+**The line count was the wrong worry.** `bench/engine_diff.py` puts the two
+implementations of each operator side by side, against a working duckdb engine
+(`relational/duck/`, `spike/duckdb-engine-port`) that builds eight models to
+frames identical to polars' — same `row`, same `col`, exactly. Over the
+operators both implement, the SQL is **1.04×** the polars line count. The
+volume is not the tax.
 
-**Recommended next step, if this is live:** re-measure #189's six-model ladder
-with `lps.write` as the sink rather than `solve`, since §8's condition 2 says
-the write path is the only place the ceiling pays. #189's headline compares to a
-loaded solver, where the build is ~9% of peak and the regression is diluted. The
-write path is where duckdb would look its best and polars its worst, and nobody
-has published that column.
+Where the tax actually falls:
+
+- **Broadcast joins.** `_join_mul` doubles, 12 lines to 25: SQL needs explicit
+  column lists on both sides, alias qualification and null-safe
+  `IS NOT DISTINCT FROM` predicates where polars gets all three from
+  column-name semantics. Every fragment composition pays it.
+- **`labels._factored`, 37 lines, no counterpart.** The one place polars is
+  *algorithmically* ahead rather than incidentally, and real work to port.
+- SQL **wins** on `_compare` (15 → 4) and on the semi-joins, where
+  `WHERE EXISTS` says plainly what `how='semi'` needs a reader to know is not
+  a join.
+
+**Where this leaves it.** Three things have moved since §1 was written, and all
+three point the same way:
+
+1. Partitioning polars to a bound was already measured and floors at ~1.7 GB
+   (§8a). The escape hatch is not there.
+2. The hand-managed partitioning duckdb used to need has largely evaporated
+   (§8b) — the label window spills on 1.5.5.
+3. The write path, now measured (§7), is **2.1–4.2× lighter under duckdb at the
+   top rung, and the gap widens with the model.** On the solver path it is
+   1.15–1.35× and once *negative*.
+
+So the trade is no longer "slower and lighter, plus a knob". It is: **on the
+write path, a bounded build that costs 1.6–2.4× wall clock; on the solve path,
+almost nothing for 2–3×.** Which means the decision is not about the engine at
+all — it is about whether `lps.write` to a file someone else solves is a use
+case worth an engine for. That is a product question, and the numbers above are
+what it should be answered against rather than the ones in #189's headline,
+which measured the other path.
+
+**Recommended next step, if this is live:** decide the write-path question
+first. If the answer is no, this closes for good and `relational/duck/` should
+be deleted rather than left to rot. If the answer is yes, the cheaper move is
+probably a duckdb-backed `lp_file` sink alone — the write path is where the
+whole gap lives, and a sink is a module, not an engine.
