@@ -717,6 +717,36 @@ def test_infinite_bounds_survive_the_handoff(dispatch_data):
 
 
 @pytest.mark.parametrize('solver_name', sorted(SOLVERS))
+def test_a_solver_hands_back_a_vector_and_not_an_index(solver_name):
+    """A solution is positional, so there is nothing to key it by.
+
+    Solver output is indexed by the solver's own index, which *is* our label —
+    so a ``(label, value)`` frame carries an ``arange`` beside every value that
+    the read-back never reads, 8 bytes a column for as long as the result is
+    held. The same argument took ``col`` off ``cols`` in #433; this is the
+    other half of it, and neither is visible from the numbers.
+    """
+    model = {
+        'dimensions': {'t': {'dtype': 'int', 'values': [0, 1, 2]}},
+        'parameters': {'load': {'dims': ['t']}},
+        'variables': {'x': {'foreach': ['t'], 'bounds': {'lower': 0, 'upper': 10}}},
+        'constraints': {'meet': {'foreach': ['t'], 'expression': 'x >= load'}},
+        'objectives': {'o': {'sense': 'minimize', 'expression': 'sum(x, over=t)'}},
+    }
+    with lps.build(model, {'load': pl.DataFrame({'t': [0, 1, 2], 'value': [1.0, 2.0, 3.0]})}) as ex:
+        tables = ex._tables()
+        solution = ex.solve(solver_name=solver_name)
+        assert solution.is_ok
+        for values, count in (
+            (solution._primal_values, tables.column_count),
+            (solution._dual_values, tables.row_count),
+        ):
+            assert isinstance(values, pl.Series), 'a frame here is an index column nothing reads'
+            assert values.name == 'value'
+            assert len(values) == count, 'the read-back slices it positionally, so it spans the model'
+
+
+@pytest.mark.parametrize('solver_name', sorted(SOLVERS))
 @pytest.mark.parametrize('batch_rows', [1, 2, 7, 100_000], ids=['one', 'two', 'odd', 'whole'])
 def test_a_row_with_no_terms_keeps_its_seat_at_any_chunking(solver_name, batch_rows):
     """Rows reach a solver by position, so an empty one still occupies one.

@@ -52,8 +52,8 @@ class Result:
     _status: SolveStatus
     _objective: float
     _executor: PolarsExecutor
-    _primal_values: pl.DataFrame | None = None
-    _dual_values: pl.DataFrame | None = None
+    _primal_values: pl.Series | None = None
+    _dual_values: pl.Series | None = None
 
     @property
     def status(self) -> str:

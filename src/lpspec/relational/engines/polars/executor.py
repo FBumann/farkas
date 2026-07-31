@@ -344,7 +344,7 @@ class PolarsExecutor:
             _dual_values=dual,
         )
 
-    def _solution_frame(self, name: str, values: pl.DataFrame | None) -> pl.LazyFrame:
+    def _solution_frame(self, name: str, values: pl.Series | None) -> pl.LazyFrame:
         """The tidy solution of variable *name*: ``(dims…, value)``.
 
         A slice, never a dense array and never a join. *values* is the solver's
@@ -375,7 +375,7 @@ class PolarsExecutor:
         labels: pl.LazyFrame,
         label: str,
         dims: tuple[str, ...],
-        values: pl.DataFrame,
+        values: pl.Series,
     ) -> pl.LazyFrame:
         """One declaration's coordinates in label order, beside its values.
 
@@ -385,12 +385,12 @@ class PolarsExecutor:
         way it could go wrong is the one a silently short vector would hide.
         """
         start, height = self._blocks[name]
-        return labels.sort(label).select(*dims).with_columns(values['value'].slice(start, height))
+        return labels.sort(label).select(*dims).with_columns(values.slice(start, height))
 
-    def _primal(self, name: str, values: pl.DataFrame | None) -> pl.DataFrame:
+    def _primal(self, name: str, values: pl.Series | None) -> pl.DataFrame:
         return self._solution_frame(name, values).collect(engine='streaming')
 
-    def _dual(self, name: str, values: pl.DataFrame) -> pl.DataFrame:
+    def _dual(self, name: str, values: pl.Series) -> pl.DataFrame:
         """:meth:`_solution_frame` against row labels instead of column ones.
 
         Ordered and sliced the same way, for the same reason — a constraint
@@ -421,7 +421,7 @@ class PolarsExecutor:
             f'run stopped short of one does not have.'
         )
 
-    def _solution_to_parquet(self, directory: Path, values: pl.DataFrame | None) -> dict[str, Path]:
+    def _solution_to_parquet(self, directory: Path, values: pl.Series | None) -> dict[str, Path]:
         assert self._program is not None
         directory.mkdir(parents=True, exist_ok=True)
         written: dict[str, Path] = {}

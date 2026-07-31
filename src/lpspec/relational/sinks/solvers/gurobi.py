@@ -100,7 +100,7 @@ def solve_gurobi(
     model: ModelTables,
     batch_rows: int | None = None,
     solver_options: Mapping[str, Any] | None = None,
-) -> tuple[SolveStatus, float, pl.DataFrame | None, pl.DataFrame | None]:
+) -> tuple[SolveStatus, float, pl.Series | None, pl.Series | None]:
     """Feed the model to Gurobi and solve it.
 
     The family's shape, and the two ``None`` cases mean what they mean in
@@ -119,7 +119,7 @@ def solve_gurobi(
         status = _status_of(m)
         if not status.is_readable:
             return status, float('nan'), None, None
-        return status, m.ObjVal, _labelled('col', x.X), _duals(model.row_count, blocks)
+        return status, m.ObjVal, _vector(x.X), _duals(model.row_count, blocks)
     finally:
         m.dispose()
         environment.dispose()
@@ -234,7 +234,7 @@ def _wording(code: int) -> str:
     return names.get(code, str(code))
 
 
-def _duals(row_count: int, blocks: list[Any]) -> pl.DataFrame | None:
+def _duals(row_count: int, blocks: list[Any]) -> pl.Series | None:
     """Shadow prices in row order, or ``None`` where the model has none.
 
     Blocks were added in ascending row ranges, so concatenating their slices
@@ -252,17 +252,16 @@ def _duals(row_count: int, blocks: list[Any]) -> pl.DataFrame | None:
     values = np.concatenate(slices) if slices else np.empty(0, dtype=np.float64)
     if len(values) != row_count:
         raise LpspecError(
-            f'the solver returned {len(values)} duals for {row_count} rows. The join that reads '
-            f'them back is positional, so a short vector would drop rows silently. This is an '
+            f'the solver returned {len(values)} duals for {row_count} rows. The read-back is '
+            f'positional, so a short vector would drop rows silently. This is an '
             f'engine bug rather than a problem with the model — please report it.'
         )
-    return _labelled('row', values)
+    return _vector(values)
 
 
-def _labelled(label: str, values: Any) -> pl.DataFrame:
-    """``(label, value)`` over the solver's own dense index, which *is* our
-    label — so the join column is an ``arange``, not something read back."""
+def _vector(values: Any) -> pl.Series:
+    """One quantity the solver produced, in its own index — see
+    :func:`~lpspec.relational.sinks.solvers.highs._vector`."""
     import numpy as np
 
-    values = np.asarray(values, dtype=np.float64)
-    return pl.DataFrame({label: np.arange(len(values), dtype=np.int64), 'value': values})
+    return pl.Series('value', np.asarray(values, dtype=np.float64))
