@@ -119,7 +119,7 @@ Eligibility is decided by **attempting the lowering** — `lower_program` return
 a `Program` or raises `lps.LanguageError` — so it cannot drift from what the
 engine supports. Errors split model from run: everything under `LanguageError`
 is decidable without data, `DataError` is what a source failed to supply, and
-both are `LinopyYamlError` (`errors.py`). Expansion precedes validation in **both** lanes,
+both are `LpspecError` (`errors.py`). Expansion precedes validation in **both** lanes,
 because a formulation emits declarations and those are language too — a stray
 dim in generated math is the same error as a stray dim in a written one.
 
@@ -206,7 +206,7 @@ that says *no* needs nothing but the file, which is what makes it a CI verb.
 | **read it** | values, shadow prices, the objective | `result.objective` · `.primal` · `.dual`, plus the status pair | — |
 | | bridge out to another library | `.to_pandas` · `.to_dataarray` · `.to_parquet` | — |
 | | *derived results; re-solve with new numbers, same labels* | | |
-| **catch it** | tell a bad model from bad data | `LinopyYamlError` ⊃ `LanguageError` · `DataError` · `DimensionError` · `SchemaError` · `PiecewiseExpansionError` | — |
+| **catch it** | tell a bad model from bad data | `LpspecError` ⊃ `LanguageError` · `DataError` · `DimensionError` · `SchemaError` · `PiecewiseExpansionError` | — |
 
 **What the data arrow carries** is [SPEC §8](SPEC.md#8-data-binding) and is not
 restated here. The one structural fact: **binding is by name at both levels** —

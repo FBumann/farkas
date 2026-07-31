@@ -21,11 +21,11 @@ bare-install job runs the whole suite with none of them present.
 things and nothing else — the shim below, and the `to_pandas` / `to_dataarray`
 bridges out of a result.
 
-**One leak.** The public exception tree is rooted at `LinopyYamlError`, a name
-left over from when this package was called `linopy-yaml`. Every traceback on
-the pure-polars path names a library that path never loads. Renaming it is
-breaking and therefore
-[tracked separately](https://github.com/FBumann/lpspec/issues/389).
+**The last leak is closed.** The public exception tree used to be rooted at
+`LinopyYamlError`, left over from when this package was called `linopy-yaml`, so
+every traceback on the pure-polars path named a library that path never loads.
+It is `LpspecError` now, with no alias
+([#389](https://github.com/FBumann/lpspec/issues/389)).
 
 ## 2. It is the oracle
 
@@ -62,7 +62,7 @@ declared constraints to it.
 from lpspec import linopy as lpspec_linopy
 
 m = lpspec_linopy.build('model.yaml', data={...}, coords={...})  # -> linopy.Model
-lpspec_linopy.extend(m, 'ramp.yaml', data={...})                 # mutates m in place
+lpspec_linopy.extend(m, 'ramp.yaml', data={...})  # mutates m in place
 ```
 
 Both are *pure producers*: YAML in, model out, nothing retained. `build` returns
