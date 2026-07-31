@@ -1,6 +1,6 @@
 """Turn a results JSONL into the markdown that goes in docs/benchmarks.md.
 
-    uv run python -m bench.report bench/results/latest.jsonl
+    uv run python -m bench.report bench/results/latest.json
 
 Nothing here recomputes or smooths anything: repeats collapse by *minimum*,
 which is the usual choice for a benchmark because noise only ever adds. The
@@ -12,11 +12,12 @@ harness that produced it.
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import sys
 from pathlib import Path
 from typing import Any
+
+from bench import results as bench_results
 
 ARMS = ('lpspec', 'linopy')
 
@@ -28,7 +29,7 @@ _RATIO_AGAINST = 'linopy'
 def load(
     path: Path,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    records = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    records = bench_results.load(path)
     run = next((r for r in records if r.get('record') == 'run'), {})
     gates = [r for r in records if r.get('record') == 'gate']
     timings = [r for r in records if r.get('record') == 'timing']
@@ -192,7 +193,7 @@ def marginal(loop_rows: list[Row]) -> str:
         'that a loop never pays again — ~180 ms of it on the eager lane, ~4 ms here.',
         '',
         '| case | vars | lpspec: first | lpspec: steady | linopy: first | linopy: steady | steady vs linopy |',
-        '|---|---|---|---|---|---|',
+        '|---|---|---|---|---|---|---|',
     ]
     seen = sorted(
         {(c, s) for c, s, _ in best},
@@ -270,7 +271,7 @@ def density(rows: dict[Key, Row]) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('results', type=Path, nargs='*', default=[Path('bench/results/latest.jsonl')])
+    ap.add_argument('results', type=Path, nargs='*', default=[Path('bench/results/latest.json')])
     opts = ap.parse_args(argv)
 
     run: dict[str, Any] = {}
@@ -289,16 +290,22 @@ def main(argv: list[str] | None = None) -> int:
     versions = ', '.join(f'{k} {v}' for k, v in run.get('versions', {}).items() if v)
     print(f'{run.get("platform", "?")}, python {run.get("python", "?")} — {versions}.')
     print()
-    print(
-        'Parity gate: '
-        + '; '.join(
-            f'{g["case"]} objectives agree to {g["relative_gap"]:.1e} relative'
-            if g['passed']
-            else f'{g["case"]} FAILED'
-            for g in gates
+    # The gate is enforced by the harness now rather than recorded by it: a
+    # case whose arms disagree fails its measurements outright, so a file that
+    # exists at all was gated. Older files still carry the records.
+    if gates:
+        print(
+            'Parity gate: '
+            + '; '.join(
+                f'{g["case"]} objectives agree to {g["relative_gap"]:.1e} relative'
+                if g['passed']
+                else f'{g["case"]} FAILED'
+                for g in gates
+            )
+            + '.'
         )
-        + '.'
-    )
+    else:
+        print('Parity gate: enforced at measurement time — every arm below built the same model.')
     for case in sorted({c for c, _, _, _ in rows}):
         for sink in sorted({k for c, _, k, _ in rows if c == case}):
             if not sizes_of(case, rows, sink):

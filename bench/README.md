@@ -5,38 +5,50 @@ that [docs/benchmarks.md](../docs/benchmarks.md) has a *provenance* — the last
 set of published numbers came from a `scratch/` script that was deleted, and a
 claim nobody can re-run is a claim with a shelf life.
 
+It is **one pytest suite** (`bench/test_ladder.py`), and every question below is
+a selection out of it: `--cases / --sizes / --arms / --sinks`, plus `-k`.
+
 ```bash
+uv sync --group bench
+
 # every rung docs/benchmarks.md publishes. The size ladder and the mask sweep
 # go to separate files: a run REPLACES its results file rather than adding to
 # it, and the report takes as many files as you give it
-uv run python -m bench.run --sizes xs s m l --repeat 3
-uv run python -m bench.run --sizes d100 d50 d25 d08 --skip-gate --repeat 3 \
-    --out bench/results/density.jsonl
+uv run pytest bench --benchmark-memory --sizes xs s m l \
+    --benchmark-json=bench/results/latest.json
+uv run pytest bench --benchmark-memory --sizes d100 d50 d25 d08 --skip-gate \
+    --benchmark-json=bench/results/density.json
 
-uv run python -m bench.report bench/results/latest.jsonl \
-    bench/results/density.jsonl                             # -> markdown
+uv run python -m bench.report bench/results/latest.json \
+    bench/results/density.json                              # -> markdown
 uv run python -m bench.plot                                 # -> the chart page
 
 # anything narrower than the published ladder: send it somewhere else
-uv run python -m bench.run --cases dispatch --sizes m l --out /tmp/two.jsonl
-uv run python -m bench.run --sinks highs --out /tmp/highs.jsonl
+uv run pytest bench --cases dispatch --sizes m l --benchmark-json=/tmp/two.json
+uv run pytest bench --sinks highs --benchmark-json=/tmp/highs.json
 ```
 
-The bare `bench.run` is **not** the committed ladder: it defaults to `xs s m`,
-so it stops below the rung every interesting claim lives at. Narrowing the run
-and then committing the file leaves the published tables with no provenance,
-and nothing about the file looks wrong afterwards.
+The committed `results/*.jsonl` are the provenance of the tables
+`docs/benchmarks.md` publishes *today*, written by the pre-pytest harness. The
+readers no longer parse them — a full ladder run replaces them with `.json`,
+and until someone takes one on an idle machine the published numbers stand on
+files nothing in this directory can still read.
+
+A bare `pytest bench` is **not** the committed ladder: `--sizes` defaults to
+`xs s m`, so it stops below the rung every interesting claim lives at.
+Narrowing the run and then committing the file leaves the published tables with
+no provenance, and nothing about the file looks wrong afterwards.
 
 **`bench.plot` rewrites one line of `docs/benchmarks-scaling.html`** — the
 `const DATA = {...};` literal — and nothing else. The page is a tracked source
 file, so its markup and prose are reviewed in the diff like any other code and
 only the measurements inside it are mechanical.
 
-**Pass `--out` for every run that is not the full ladder.** The default target
-is the committed `results/latest.jsonl` and the run *replaces* it, so a
-one-rung smoke test overwrites 294 records of provenance with 4 — silently, and
-in a file whose diff nobody reads closely. `git checkout` gets it back; noticing
-is the hard part.
+**Point `--benchmark-json` somewhere else for every run that is not the full
+ladder.** Aim it at the committed `results/latest.json` and the run *replaces*
+it, so a one-rung smoke test overwrites the provenance of every published table
+with four measurements — silently, and in a file whose diff nobody reads
+closely. `git checkout` gets it back; noticing is the hard part.
 
 ## What it measures
 
@@ -85,16 +97,24 @@ it would swamp the build), and anything about expressiveness.
 
 ## Why it is built this way
 
-**One process per measurement.** Peak RSS is a property of a process. A second
+**One process per measurement.** Peak RSS is a property of a process: a second
 arm in the same interpreter inherits the first's high-water mark and its warm
-allocator, so `bench/run.py` never imports lpspec or linopy — it only spawns
-`bench/_run_case.py` and reads one JSON line back.
+allocator. `@pytest.mark.benchmem(isolate=True)` is what gives each pass its own
+interpreter, and it is the same declaration that makes whole-process `rss`
+available at all.
 
-**`ru_maxrss`, not a tracker.** The same kernel counter `/usr/bin/time -l`
-reports, read via `resource.getrusage`. `docs/benchmarks.md` records why the
-alternative is wrong: memray's tracker slows an allocation-heavy engine
-several-fold and overcounts reserved arenas, so it can attribute memory but must
-never time anything.
+**`rss`, not the memray peak, for anything published.** pytest-benchmem records
+both. `rss` is the whole-process high-water mark — the number `/usr/bin/time -l`
+agrees with — and it is the only one honest across two libraries; the memray
+peak is deterministic and attributable to a call stack, which is what makes it
+right for comparing lpspec to itself. Both are in every result file, and which
+one a table reads is a decision, not an accident. The measured reason is below.
+
+**The harness is pytest, and deliberately nothing more.** Selection, the
+ragged parametrization, per-pass isolation, the JSON, the repeats and the
+minimum are all things pytest and its plugins already do and have tested. What
+is left in this directory is what is specific to lpspec: the cases, the verbs,
+and the parity gate.
 
 **The parity gate runs before any timing.** The smallest rung of each case is
 solved on both arms and the objectives compared to 1e-9 relative; a mismatch
@@ -144,7 +164,7 @@ multi-gigabyte temp file, and the harness once recorded `workdir_bytes` to stop
 that. Neither arm writes anything but the LP file now, so that field is gone
 rather than left reading zero — a column that is always 0 reads as "measured
 and fine", which is the same failure in the other direction. Restore it in
-`_run_case.py` if a sink ever spills again.
+`bench/workloads.py` if a sink ever spills again.
 
 **Failures are results.** A run that dies is written to the JSONL with the
 exception line that killed it, and the report renders it as a cell. An OOM is
@@ -211,25 +231,22 @@ numbers), cached under `bench/.cache/`, and feasible by construction.
 Storage (`roll`, the bounded-halo self-join) and a MILP through the `highs` solver
 are the next rungs — see docs/benchmarks.md.
 
-## The other harness: regression benchmarks
+## The other question: regressions
 
-`bench/regressions/` asks a different question — *did this change make it
-worse?* — and answers it with a different metric, deliberately.
+*Did this change make it worse?* is a different question from *how do we compare
+to linopy*, and it wants a different metric — but it does not want a different
+harness. It is the same suite with one lane selected:
 
 ```bash
-uv sync --group bench
-uv run pytest bench/regressions --benchmark-memory
-uv run pytest bench/regressions --benchmark-memory-compare=0001 \
-    --benchmark-memory-compare-fail=mean:10%
+uv run pytest bench --arms lpspec --sizes s m --benchmark-memory
+uv run pytest bench --arms lpspec --sizes s m --benchmark-memory \
+    --benchmark-memory-compare=0001 --benchmark-memory-compare-fail=mean:10%
 ```
 
-It is [`pytest-benchmem`](https://github.com/fluxopt/pytest-benchmem): a memray
-peak pass on top of pytest-benchmark's timing, with `isolate=True` so every pass
-is a fresh process — a warm allocator would otherwise be measured instead of the
-build, and isolation is what makes whole-process `rss` available beside the
-memray peak.
+That is what `.github/workflows/bench.yml` runs, twice — once against the pull
+request's base and once against its head — and what it gates on.
 
-**Why memray here and not in the published ladder.** Measured on `dispatch/m`:
+**Why the metric changes with the question.** Measured on `dispatch/m`:
 
 | arm | `ru_maxrss` | memray peak |
 |---|---|---|
@@ -244,18 +261,19 @@ ran `/usr/bin/time`. Within one lane the same bias sits on both sides of a diff
 and cancels, leaving a metric that is deterministic and attributable to a call
 stack — which RSS, sensitive to machine load, is not.
 
-So: RSS for the comparison we publish, memray for the regressions we chase.
-`--benchmark-memory-compare-fail` is what turns the second into a gate.
+So: `rss` for the comparison we publish, the memray peak for the regressions we
+chase. Both come out of the same run — the choice is which column a table reads,
+and `--benchmark-memory-compare-fail` is what turns the second into a gate.
 
 ## The same suite, a third instrument: CodSpeed
 
-`bench/regressions/` is a plain `pytest-benchmark` suite, so the fixture its
-tests ask for is whichever plugin is loaded. That is not a detail — it is why
-there is no second set of benchmarks in this repository:
+`bench/` is a plain `pytest-benchmark` suite, so the fixture its tests ask for
+is whichever plugin is loaded. That is not a detail — it is why there is no
+second set of benchmarks in this repository:
 
 ```bash
-uv run pytest bench/regressions --benchmark-memory   # memray peak + rss
-uv run pytest bench/regressions --codspeed           # what CI measures
+uv run pytest bench --benchmark-memory   # memray peak + rss + timing
+uv run pytest bench --codspeed           # what CI measures
 ```
 
 `--benchmark-memory` patches the stock fixture and reads the `benchmem` marker;
@@ -282,7 +300,19 @@ workflow runs and uploads nothing.
 
 ## Adding a case
 
-Add a YAML file under `bench/models/`, a data generator and a ladder to
-`CASES` in `bench/cases.py`, and a function turning the same parquet paths into
-the linopy lane's `data=`/`coords=` shapes. Nothing else: the runner, the gate
-and the report are case-agnostic.
+Add a YAML file under `bench/models/`, a data generator and a ladder to `CASES`
+in `bench/cases.py`, and a function turning the same parquet paths into the
+linopy lane's `data=`/`coords=` shapes. Nothing else: the parametrization reads
+`CASES`, and the gate and the report are case-agnostic.
+
+## The map
+
+| file | |
+|---|---|
+| `cases.py` | the models, the data generators, the ladders |
+| `workloads.py` | what is measured — one verb per arm, picklable, lpspec imported inside |
+| `conftest.py` | selection flags, the ragged parametrization, the data fixture, the parity gate |
+| `test_ladder.py` | the two benchmarks: build-and-emit, and rebuild-in-one-process |
+| `results.py` | pytest-benchmark JSON -> the flat records the report and the plot read |
+| `report.py` / `plot.py` | the published tables, and the chart page's data literal |
+| `profile_build.py` | where the time goes inside one build — a profiler, not a benchmark |

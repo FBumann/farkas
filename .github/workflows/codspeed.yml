@@ -5,11 +5,13 @@ name: CodSpeed
 # repositories, so this is the cheapest way to run `bench/regressions/` and the
 # only one that runs unasked.
 #
-# **It measures the suite that already exists.** `bench/regressions/` is a
-# pytest-benchmark suite, and `--codspeed` swaps in CodSpeed's `benchmark`
-# fixture where `--benchmark-memory` swaps in pytest-benchmem's. Same tests,
-# same workloads, a different instrument — a second set of benchmarks written
-# for this job would be free to drift from the one a contributor runs by hand.
+# **It measures the suite that already exists.** `bench/` is one pytest-benchmark
+# suite, and `--codspeed` swaps in CodSpeed's `benchmark` fixture where
+# `--benchmark-memory` swaps in pytest-benchmem's. Same tests, same workloads, a
+# different instrument — and the selection flags are the suite's own, so what
+# runs here is a slice of what a contributor runs by hand rather than a copy of
+# it. One lane and the small rung: this measures lpspec against itself, and the
+# cross-lane comparison is the published ladder's job.
 #
 # What it buys over bench.yml, which already gates on memory: **the baseline**.
 # bench.yml can only compare against a base it checks out and measures itself,
@@ -79,12 +81,11 @@ jobs:
       # the callable it is handed and nothing around it, so there is only one
       # pass for a cache to be cold on.
       #
-      # The rungs are `bench/regressions/`' own, unnarrowed. CodSpeed's memory
-      # instrument tracks allocations individually and its guidance is to stay
-      # under ~2M of them, which polars may or may not respect at `m` — that is
-      # a thing to narrow on evidence from this job, not on a guess made before
-      # it ever ran.
+      # `--sizes s` because CodSpeed's memory instrument tracks allocations
+      # individually and its guidance is to stay under ~2M of them, which polars
+      # may or may not respect at `m`. Widen it on evidence from this job rather
+      # than on a guess made before it ever ran.
       - uses: CodSpeedHQ/action@v5
         with:
           mode: memory
-          run: uv run --no-sync pytest bench/regressions --codspeed
+          run: uv run --no-sync pytest bench --arms lpspec --sizes s --skip-gate --codspeed

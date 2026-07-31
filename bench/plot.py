@@ -22,6 +22,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from bench import results as bench_results
+
 NAME = {'lpspec': 'polars', 'linopy': 'linopy'}
 LADDER = ('xs', 's', 'm', 'l')
 SCALING = ('xs', 's', 'm', 'l', 'xl', '2xl')
@@ -31,8 +33,7 @@ _DATA = re.compile(r'^const DATA = .*;$', re.MULTILINE)
 def best(path: Path, sink: str) -> dict[str, dict[Any, Any]]:
     """``(case, size, arm) -> fastest repeat``. Minimum, because noise only adds."""
     out: dict[str, dict[Any, Any]] = {'wall': {}, 'peak': {}, 'cols': {}}
-    for line in path.read_text().splitlines():
-        r = json.loads(line)
+    for r in bench_results.records(path):
         if r.get('record') != 'timing' or 'error' in r or r.get('sink') != sink:
             continue
         k = (r['case'], r['size'], r['arm'])
@@ -56,8 +57,8 @@ def panel(t: dict[str, dict[Any, Any]], case: str, rungs: tuple[str, ...], arms:
 
 
 def main() -> int:
-    ladder = best(Path('bench/results/latest.jsonl'), 'highs')
-    scaling = best(Path('bench/results/scaling.jsonl'), 'lp')
+    ladder = best(Path('bench/results/latest.json'), 'highs')
+    scaling = best(Path('bench/results/scaling.json'), 'lp')
     cases = sorted({c for c, _, _ in ladder['wall']})
     data = {
         'scaling': panel(scaling, 'dispatch', SCALING, ('lpspec', 'linopy')),
