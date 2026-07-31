@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.36](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.35...v0.0.1-alpha.36) (2026-07-31)
+
+
+### Refactoring
+
+* one near-miss clause, one fold, and comments that restate their line ([#361](https://github.com/FBumann/lpspec/issues/361)) ([48464fc](https://github.com/FBumann/lpspec/commit/48464fc79a37827f1d9b67bc502a4f1a94b346ae))
+
 ## [0.0.1-alpha.35](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.34...v0.0.1-alpha.35) (2026-07-31)
 
 
