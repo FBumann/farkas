@@ -1,7 +1,7 @@
 """Phase-2 gate: two real models round-trip through solve on the relational backend.
 
 Each model is built three ways and must agree on the objective:
-  1. relational executor -> solver_direct (HiGHS via batched addCols/addRows)
+  1. relational executor -> the `highs` solver (batched addCols/addRows)
   2. relational executor -> lp_file sink -> HiGHS reads and solves the file
   3. eager linopy build (the correctness oracle)
 """
@@ -133,7 +133,7 @@ def test_dispatch_roundtrip(dispatch_data, tmp_path):
         assert result.objective == pytest.approx(oracle, rel=RTOL)
 
         lp = tmp_path / 'dispatch.lp'
-        ex.write_lp(lp)
+        ex.write(lp)
         assert solve_lp_file(lp) == pytest.approx(oracle, rel=RTOL)
 
         # masked variable rows are absent, and primal joins back to coords
@@ -223,7 +223,7 @@ def test_transport_roundtrip(transport_data, tmp_path):
         assert result.objective == pytest.approx(oracle, rel=RTOL)
 
         lp = tmp_path / 'transport.lp'
-        ex.write_lp(lp)
+        ex.write(lp)
         assert solve_lp_file(lp) == pytest.approx(oracle, rel=RTOL)
 
         # flows respect line capacity bounds

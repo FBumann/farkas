@@ -1,8 +1,9 @@
-"""The ``solver_direct`` sink: COO batches straight into HiGHS.
+"""The ``highs`` solver: COO batches straight into HiGHS.
 
-No float→text→parse round trip — that is why this exists beside
-:mod:`~lpspec.relational.sinks.lp_file`. Columns and rows arrive as numpy
-slices, in batches.
+The default, and the only one whose dependency ships with the package. No
+float→text→parse round trip — that is why this exists beside
+:mod:`~lpspec.relational.sinks.writers.lp_file`. Columns and rows arrive as
+numpy slices, in batches.
 
 **Nothing textual crosses into numpy.** A polars ``String`` column converts by
 boxing every value as a Python object, so a comparison against ``'<='`` is made
@@ -81,7 +82,7 @@ def build_highs(
 ) -> Any:
     """Load the model into a :class:`highspy.Highs` and stop there.
 
-    The hand-off without the simplex. :func:`solve_direct` is this plus
+    The hand-off without the simplex. :func:`solve_highs` is this plus
     ``run()``, and the seam exists because the two are different questions: the
     simplex is the same work whoever filled the model, so a measurement that
     includes it says nothing about the lane that filled it. `bench/` ends here,
@@ -142,7 +143,7 @@ def build_highs(
     return h
 
 
-def solve_direct(
+def solve_highs(
     model: ModelTables,
     batch_rows: int | None = None,
     solver_options: Mapping[str, Any] | None = None,

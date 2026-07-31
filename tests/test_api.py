@@ -35,7 +35,7 @@ def test_solve(dispatch_yaml, dispatch_frame_inputs):
         result.close()
 
 
-def test_build_context_manager_and_write_lp(dispatch_yaml, dispatch_frame_inputs, tmp_path):
+def test_build_context_manager_and_write(dispatch_yaml, dispatch_frame_inputs, tmp_path):
     sources, coords = dispatch_frame_inputs
     with lps.build(dispatch_yaml, sources, coords=coords) as ex:
         result = ex.solve()

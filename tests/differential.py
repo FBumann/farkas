@@ -109,7 +109,7 @@ def differential(
             lp_path = None
             if lp:
                 lp_path = work / 'model.lp'
-                ex.write_lp(lp_path)
+                ex.write(lp_path)
                 assert solve_lp_file(lp_path) == pytest.approx(oracle, rel=rel)
 
             yield Agreement(oracle=oracle, model=m, result=result, schema=schema, executor=ex, lp=lp_path)

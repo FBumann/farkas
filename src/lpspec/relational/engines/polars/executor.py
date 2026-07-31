@@ -16,6 +16,7 @@ which is what :class:`~lpspec.relational.engines.polars.binding.BoundSources` sa
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
 import polars as pl
@@ -35,7 +36,6 @@ from lpspec.relational.result import Result
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
-    from pathlib import Path
 
 
 #: The four frames a sink reads, as schemas. Stated here because the executor
@@ -309,9 +309,17 @@ class PolarsExecutor:
             objective_constant=self._obj_const,
         )
 
-    def write_lp(self, path: str | Path) -> None:
-        """Sink the built model to an LP file."""
-        sinks.write_lp_file(self._tables(), path)
+    def write(self, path: str | Path) -> None:
+        """Sink the built model to a file; the **suffix** picks the writer.
+
+        ``.lp`` today, ``.mps`` planned — an unknown suffix is an error naming
+        both sets. The caller names an output rather than a writer, which is
+        the one place this differs from :meth:`solve`: a file's format is a
+        property of the file, where which solver runs is not a property of
+        anything but the call.
+        """
+        path = Path(path)
+        sinks.writer(path.suffix.lower())(self._tables(), path)
 
     def solve(
         self,

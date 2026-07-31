@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any
 from lpspec.language.validation import load_schema
 from lpspec.lowering import lower_program
 from lpspec.relational.engines.polars.executor import PolarsExecutor
+from lpspec.relational.sinks import writer
 from lpspec.sources import tidy_sources
 
 if TYPE_CHECKING:
@@ -71,7 +72,7 @@ def build(
 
     ``sources`` maps parameter names to parquet paths or in-memory tables (and
     optionally dimension names to index tables). One build can feed more than
-    one sink: call ``ex.solve()`` and ``ex.write_lp(path)`` on the same object.
+    one sink: call ``ex.solve()`` and ``ex.write(path)`` on the same object.
 
     Raises
     ------
@@ -130,17 +131,15 @@ def write(
 ) -> Path:
     """Build and stream the model to a file; format from the suffix.
 
-    ``.lp`` is supported today; ``.mps`` is planned (same streaming
-    mechanics, see docs/ARCHITECTURE.md sinks).
+    ``.lp`` is supported today and ``.mps`` is planned, both answered by the
+    writer family rather than by a branch here — this verb owns *when* to
+    build, not what can be written.
+
+    The suffix is checked **before** the build, because a caller who named a
+    format nothing can write should not pay for a model first.
     """
     out = Path(out)
-    suffix = out.suffix.lower()
-    if suffix == '.lp':
-        with build(model, sources, **build_kwargs) as ex:
-            ex.write_lp(out)
-        return out
-    if suffix == '.mps':
-        msg = 'the mps sink is planned but not implemented yet (docs/ARCHITECTURE.md, sinks)'
-        raise NotImplementedError(msg)
-    msg = f"unsupported output format '{suffix}' — supported: .lp (planned: .mps)"
-    raise ValueError(msg)
+    writer(out.suffix.lower())
+    with build(model, sources, **build_kwargs) as ex:
+        ex.write(out)
+    return out

@@ -80,8 +80,8 @@ flowchart TB
             BIND["binding.py<br/>→ BoundSources, frozen"] --> EXEC["executor.py + labels.py<br/>assemble the model frames"]
         end
         ENG --> TABLES["sinks/tables.py<br/>cols · obj · rows · A"]
-        TABLES --> LPS["sinks/lp_file.py<br/>(mps planned)"]
-        TABLES --> DIRECT["sinks/highs.py · sinks/gurobi.py<br/>COO batches → the solver<br/>chosen by solver_name, never by the file"]
+        TABLES --> LPS["sinks/writers/<br/>a file, chosen by suffix<br/>lp_file (mps planned)"]
+        TABLES --> DIRECT["sinks/solvers/<br/>COO batches → the solver, chosen by name<br/>highs (ships) · gurobi (extra)"]
         DIRECT --> SOL["result.py<br/>label join, never dense"]
     end
 
@@ -162,7 +162,7 @@ costs seconds, and needs nothing but the file.
 members** — including the ones nobody has built, which is the point: none of
 them is a rewrite. Each reads the same AST the engine reads, so a renderer is a
 tree walk, a check is a pass with no data bound, and a new output format is one
-function in `relational/sinks/`.
+module in `relational/sinks/writers/`.
 
 `typeset/` is that claim cashed — a **spike** that typesets any model the lanes
 can build, in one walk of the resolved AST, holding no opinion the lanes do not
@@ -170,9 +170,9 @@ already hold: a `piecewise:` block prints as the λ-formulation it expands to,
 not as the sugar it was written as. How names *print* is the one thing it does
 not read off the model, since a symbol table is presentation — hence a sidecar
 file (`examples/symbols/`) rather than keys on `MathSchema`, and a model with no
-table still renders. It splits the way `relational/sinks/` does, one module per
-output format, so a format is a spelling table rather than a second walk that
-could disagree. `python -m lpspec <format>` is its shell front, one verb per
+table still renders. It splits the way `relational/sinks/writers/` does, one
+module per output format, so a format is a spelling table rather than a second
+walk that could disagree. `python -m lpspec <format>` is its shell front, one verb per
 entry in `typeset.FORMATS`: a consumer that needs no data needs no runner.
 
 That claim is enforced twice, because a renderer that imports only `language/`
@@ -304,7 +304,8 @@ That split is what makes the ceiling's admissibility test something you can
 *perform* rather than reason about: build a `PolarsCompiler`, hand it a node,
 read `.explain()` — `tests/test_compiler.py` does exactly that over empty
 frames, since a schema is all it takes to compile a query. It is also why a new
-sink is a function in one file rather than another method on the executor.
+sink is a module in one of two families rather than another method on the
+executor.
 
 **What binding produces is a value.** `BoundSources` is frozen — parameters,
 dimensions, their cardinalities, and which parameters are boolean — because a
@@ -369,16 +370,26 @@ per sink (see "Capability is not the ceiling"); that unevenness is what
 [Track 3](ROADMAP.md#track-3--capabilities-and-the-degree-line) exists to make declared rather
 than discovered at solve time.
 
-**Two solvers, one model.** `solver_direct` (HiGHS) and `gurobi` are separate
-modules reading the same `ModelTables`, and `solver_name` at the call is the
-whole of the choice — a **caller's**, never a file's, since no YAML key names a
-solver and a model means the same thing whichever one takes it. What they share
-is the projection of `cols` and `obj` onto the solver's column index, which
-lives on `ModelTables` so the two cannot drift into loading different models;
-what they do not share is a line of hand-off code, because the currencies
-differ (HiGHS takes the three CSR arrays, gurobipy takes a matrix object). The
-second solver is also what makes Track 3's uneven capability table concrete
-rather than hypothetical.
+**A sink is one of two things, and the directory says which.** A **solver**
+runs the tables and returns an answer; a **writer** renders them to a file.
+That is the whole taxonomy, and everything else follows from it: a solver is
+chosen by **name** at the call (`solver_name='gurobi'`), a writer by the
+output's **suffix**, because a file's format is a property of the file while
+which solver runs is a property of nothing but the call. Both sets are closed
+dict literals (`SOLVERS`, `WRITERS`) — no YAML key names a solver, and nothing
+installed may change what either resolves to.
+
+The split is a directory rather than a convention for the reason `engines/` is:
+**how many solvers there are will change, and what a solver has to answer will
+not.** A new one is a module named for it and a line in `SOLVERS` — no method
+on the executor, no branch in `api.py`, no name added to the Python surface.
+What members share is the projection of `cols` and `obj` onto the solver's
+column index, which lives on `ModelTables` so two solvers cannot drift into
+loading different models; what they never share is hand-off code, because the
+currencies differ (HiGHS takes the three CSR arrays, gurobipy a matrix object)
+and because `gurobipy` must stay off the import path of a caller who does not
+use it. Having a second solver is also what makes Track 3's uneven capability
+table concrete rather than hypothetical.
 
 ## Module map
 
@@ -412,7 +423,7 @@ rather than hypothetical.
 | `relational/result.py` | what a solve returned: status, objective, and the label joins that read values back |
 | `relational/engines/polars/data_validation.py` | is the bound data usable — one row per coordinate, labels that exist, single-valued coords |
 | `relational/sinks/tables.py` | what every sink reads and no more — the four frames plus the batching scalars, and their projection onto the solver's column index; what an engine produces |
-| `relational/sinks/` | how a built model leaves: `lp_file`, `solver_direct`, `gurobi` (one module each, [README](https://github.com/FBumann/lpspec/blob/main/src/lpspec/relational/sinks/README.md)) |
+| `relational/sinks/` | how a built model leaves, in two families: `solvers/` (one module per solver, chosen by name) and `writers/` (one per format, chosen by suffix) — [README](https://github.com/FBumann/lpspec/blob/main/src/lpspec/relational/sinks/README.md) |
 | `linopy/__init__.py` | opt-in shim: `build` / `extend` on a `linopy.Model` |
 | `linopy/loader.py` | data coercion to `xr.Dataset`, master coords |
 | `linopy/builder.py` | eager backend: core AST → `linopy.Model` |
@@ -508,6 +519,14 @@ read back by joining labels to coordinates.
 
 **Add a macro or named expression:** edit YAML. Nothing else.
 
+**Add a sink:** a module in `relational/sinks/solvers/` named for the solver
+(`solve_<name>`, `build_<name>`, one line in `SOLVERS`, its dependency behind an
+extra and imported inside the function), or one in `writers/` keyed by suffix in
+`WRITERS`. Nothing above it changes — no method on the executor, no branch in
+`api.py`, no name on the Python surface. The
+[README](https://github.com/FBumann/lpspec/blob/main/src/lpspec/relational/sinks/README.md)
+is the full list, and `tests/test_architecture.py` checks the shape off the path.
+
 **Add a consumer of the AST** (a renderer, a checker, a report): a directory
 beside `typeset/`, a fence test naming what it may import, and a walk. It reads
 `language.load_schema` and stops there — if it needs the plan it is a lane, not
@@ -517,8 +536,8 @@ a consumer, and the ceiling doc is the conversation to have first.
 signature in `helpers.BUILTINS` (arity and which arguments name dimensions —
 resolution, validation and lowering all read it from there, so the shape is
 declared once) → eager helper → plan node + locality class → executor →
-lowering case → differential test on both sinks → SPEC §5/§7, and this file if
-structural.
+lowering case → differential test through a solver *and* the LP writer → SPEC
+§5/§7, and this file if structural.
 
 Three things are deliberately *not* per-primitive work, because they are one
 implementation each: a primitive's dim rule lives only in `language/dimensions.py` —

@@ -40,7 +40,7 @@ executor when one build should feed more than one sink:
 
 ```python
 ex = lps.build('model.yaml', sources)
-ex.write_lp('model.lp')
+ex.write('model.lp')
 result = ex.solve()
 ```
 
@@ -69,7 +69,7 @@ Reading a result:
 | `dual` **raises rather than zero-filling** | no values at all is `NoSolutionError`; values but no duals — any integer or binary variable makes them undefined — is `LpspecError`, because only this quantity is missing |
 | duals exist only where a solver ran | either solver sink hands them back through the same join; a model written to LP and solved elsewhere never passes back through here. Reduced costs and slacks ride that join too and are not exposed yet |
 | `to_dataset` costs what it says | each variable arrives dense over its own dims — name a subset, or use `to_parquet` |
-| `write` | `.lp` only today; `.mps` raises `NotImplementedError` |
+| `write` | the **suffix** picks the writer — `.lp` today, `.mps` a `NotImplementedError` naming it as planned, anything else a `ValueError` listing both sets. Checked before the build, so a format nothing can write costs no model |
 
 **The linopy shim** (`lpspec.linopy.build` / `.extend`, `[linopy]` extra) puts
 the same YAML math on a `linopy.Model` that already exists in memory. It is

@@ -73,7 +73,7 @@ def build_and_write(case_name: str, size: str, sources: dict[str, str], coords: 
         tempfile.TemporaryDirectory(prefix='lpspec-bench-') as tmp,
         lps.build(CASES[case_name].model, sources, coords=coords) as ex,
     ):
-        ex.write_lp(Path(tmp) / 'model.lp')
+        ex.write(Path(tmp) / 'model.lp')
         return ex._tables().column_count
 
 
@@ -86,7 +86,7 @@ def build_and_hand_over(case_name: str, size: str, sources: dict[str, str], coor
     be watching a number nothing in this repository can move.
     """
     import lpspec as lps
-    from lpspec.relational.sinks.highs import build_highs
+    from lpspec.relational.sinks.solvers.highs import build_highs
 
     with lps.build(CASES[case_name].model, sources, coords=coords) as ex:
         tables = ex._tables()

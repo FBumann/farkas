@@ -131,7 +131,7 @@ The blocker is *where it can land*: HiGHS returns `kError` for
 ship today, so on the default path quadratic conflicts with features already in
 the language. That is a capability finding, not a reason to refuse the math — so
 it needs the table above **and** a solver without the exclusion. The second
-solver is no longer the blocking half: the `gurobi` sink ships
+solver is no longer the blocking half: the `gurobi` solver ships
 ([#106](https://github.com/FBumann/lpspec/issues/106)), and Gurobi takes a
 Hessian alongside integrality. What is left is the capability table, without
 which landing the primitive would ship math the *default* solver refuses.

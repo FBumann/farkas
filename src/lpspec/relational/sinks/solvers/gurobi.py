@@ -1,7 +1,7 @@
 """The ``gurobi`` sink: COO blocks straight into gurobipy.
 
 The second solver a built model can be handed to, and deliberately the same
-hand-off as :mod:`~lpspec.relational.sinks.highs` — dense column vectors and
+hand-off as :mod:`~lpspec.relational.sinks.solvers.highs` — dense column vectors and
 CSR row blocks, no float→text→parse round trip. Both read
 :meth:`~lpspec.relational.sinks.tables.ModelTables.dense_columns` for the
 columns, so the two sinks cannot disagree about the model they load.
@@ -15,7 +15,7 @@ per row.
 
 **Columns arrive in one call, rows in blocks.** ``addMConstr`` writes into one
 ``MVar`` spanning the whole model, so there is no column batching to do here
-the way :func:`~lpspec.relational.sinks.highs.build_highs` does it; the dense
+the way :func:`~lpspec.relational.sinks.solvers.highs.build_highs` does it; the dense
 vectors are the same size either way, and only the matrix is chunked.
 
 ``gurobipy`` and ``scipy`` are imported inside the functions: both are
@@ -42,7 +42,7 @@ if TYPE_CHECKING:
 #: filter over an already-sorted frame, so more blocks cost almost nothing and
 #: only residency scales with the budget. It is not independently tuned: the
 #: measurement that settled it is
-#: :data:`~lpspec.relational.sinks.highs.HANDOFF_BUDGET`'s, and the one thing
+#: :data:`~lpspec.relational.sinks.solvers.highs.HANDOFF_BUDGET`'s, and the one thing
 #: this sink adds per block — wrapping three arrays in a CSR view — is
 #: constant work.
 HANDOFF_BUDGET = 100_000
@@ -94,7 +94,7 @@ def build_gurobi(
 
     The hand-off without the branch and bound — :func:`solve_gurobi` is this
     plus ``optimize()``, and the seam is the one
-    :func:`~lpspec.relational.sinks.highs.build_highs` draws, for the same
+    :func:`~lpspec.relational.sinks.solvers.highs.build_highs` draws, for the same
     reason: the search is the same work whoever filled the model.
 
     ``batch_rows`` is the budget in *nonzeros*, spent through
@@ -112,7 +112,7 @@ def solve_gurobi(
     """Feed the model to Gurobi and solve it.
 
     Returns ``(status, objective, primal, dual)`` in
-    :func:`~lpspec.relational.sinks.highs.solve_direct`'s shape, and answers
+    :func:`~lpspec.relational.sinks.solvers.highs.solve_highs`'s shape, and answers
     the two ``None`` cases the same way: no primal means the solve left
     nothing worth reading, no dual means the model is mixed-integer or the run
     stopped short of a basis. Gurobi refuses the attribute in both of those

@@ -379,6 +379,85 @@ def test_expansion_has_no_mutable_module_state():
     )
 
 
+#: The two sink families. The directory *is* the family, so a member cannot
+#: land in the wrong one by being spelled differently — the same rule the four
+#: subpackage fences use.
+SINKS = PKG / 'relational' / 'sinks'
+
+
+def _family(name: str) -> set[str]:
+    return {p.stem for p in (SINKS / name).glob('*.py') if p.stem != '__init__'}
+
+
+def test_a_solver_is_a_module_named_for_it_and_a_line_in_the_registry():
+    """One shape per family, checked off the path.
+
+    A solver is four things that must agree: a module under ``solvers/`` named
+    for the solver, a ``solve_<name>``, a ``build_<name>`` load-only seam, and
+    the key ``SOLVERS`` maps to the first of those. Agreement is what makes
+    adding one mechanical — there is nothing above the module to teach, and
+    nothing to remember but the name.
+    """
+    import importlib
+
+    from lpspec.relational.sinks import SOLVERS
+
+    modules = _family('solvers')
+    assert set(SOLVERS) == modules, (
+        f'solver modules and SOLVERS keys disagree: {modules ^ set(SOLVERS)} — '
+        f'a module here is a solver, and a solver is a line in the registry'
+    )
+    for name in sorted(modules):
+        module = importlib.import_module(f'lpspec.relational.sinks.solvers.{name}')
+        assert SOLVERS[name] is getattr(module, f'solve_{name}'), f'SOLVERS[{name!r}] is not {name}.solve_{name}'
+        assert hasattr(module, f'build_{name}'), (
+            f'{name} has no build_{name}: the load-only seam is what `bench/` measures, '
+            f'and a solver without one can only be timed with its own search included'
+        )
+
+
+def test_a_writer_is_a_module_in_the_family_and_a_suffix_in_the_registry():
+    """Writers are chosen by suffix rather than by name, so the registry is
+    keyed by one — but the family rule is the same, and a format that is
+    planned rather than present says so in its own table."""
+    from lpspec.relational.sinks import PLANNED_WRITERS, WRITERS
+
+    modules = _family('writers')
+    assert {w.__module__.rsplit('.', 1)[-1] for w in WRITERS.values()} == modules
+    assert all(suffix.startswith('.') for suffix in (*WRITERS, *PLANNED_WRITERS)), 'writers are keyed by file suffix'
+    assert not set(WRITERS) & set(PLANNED_WRITERS), 'a format is either written or planned, never both'
+
+
+def test_no_sink_reaches_a_sibling():
+    """The fence that keeps an optional dependency optional.
+
+    ``gurobipy`` is the ``gurobi`` module's alone, and stays that way only
+    because no other sink imports it — directly or by importing the module
+    that does. Each leaf reads ``tables.py`` and nothing else in the family,
+    which is also why a solver cannot quietly grow a second opinion about how
+    a model is written out.
+    """
+    offenders = {}
+    for family in ('solvers', 'writers'):
+        for path in sorted((SINKS / family).glob('*.py')):
+            if path.stem == '__init__':
+                continue
+            reached = {
+                node.module
+                for node in ast.walk(ast.parse(path.read_text()))
+                if isinstance(node, ast.ImportFrom)
+                and node.module
+                and node.module.startswith('lpspec.relational.sinks.')
+                and not node.module.endswith('.tables')
+            }
+            if reached:
+                offenders[f'{family}/{path.name}'] = sorted(reached)
+    assert not offenders, (
+        f'sink modules reaching a sibling: {offenders} — a sink reads tables.py and its own '
+        f'dependency; anything shared belongs on ModelTables, where both families can see it'
+    )
+
+
 def test_every_plan_node_is_handled_by_the_compiler():
     """Two-tier economy: a primitive is not done until the engine consumes it.
 
@@ -431,6 +510,11 @@ def test_every_module_is_documented_somewhere():
     that map exists *not* to be. A ``README.md`` beside the code counts
     instead: it is what you read when you open the directory, and it stays
     next to the thing it describes.
+
+    "Beside" reaches *up* as well as across, because a family may be a
+    directory of its own — ``sinks/solvers/highs.py`` is documented by
+    ``sinks/README.md``, which is the page describing both families. One
+    README per tree, not one per level.
     """
     architecture = (REPO / 'docs/ARCHITECTURE.md').read_text()
     missing = []
@@ -440,8 +524,8 @@ def test_every_module_is_documented_somewhere():
             continue  # private plumbing (_notes) needs no doc entry
         if name == '__init__.py':
             continue
-        local_readme = path.parent / 'README.md'
-        documented = name in architecture or (local_readme.exists() and name in local_readme.read_text())
+        readmes = [d / 'README.md' for d in path.parents if PKG in d.parents or d == PKG]
+        documented = name in architecture or any(r.exists() and name in r.read_text() for r in readmes)
         if not documented:
             missing.append(str(path.relative_to(PKG)))
     assert not missing, (

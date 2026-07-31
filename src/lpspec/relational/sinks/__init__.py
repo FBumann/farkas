@@ -1,76 +1,30 @@
 """Sinks: how a built model leaves the engine.
 
-docs/ARCHITECTURE.md's pipeline draws the boxes downstream of the executor.
-This package is those boxes — one module each, because that is where the
-fences are: ``gurobipy`` is an optional dependency of the ``gurobi`` sink
-alone, and a caller that solves with HiGHS or only writes LP files should
-never import it.
+**Two families, and that is the whole mental model.** A *solver* takes the
+tables and runs them; a *writer* takes the tables and renders them to a file.
+Everything else about a sink follows from which of the two it is — how it is
+chosen (by name at the call, or by the output's suffix), what it returns
+(an answer, or nothing), and where its module lives.
 
-A sink reads :class:`ModelTables` and nothing else. No sink knows how the
-tables were filled, and the executor does not know how they are drained, which
-is what makes the planned ``mps`` sink a new module here rather than another
-method on the executor.
+The families are directories, not a convention: ``solvers/`` holds one module
+per solver and ``writers/`` one per format, and
+``tests/test_architecture.py`` reads the family off the path. Which is what
+makes the growing one cheap — a new solver is a module and a line in
+``SOLVERS``, with nothing above it to teach.
+
+``tables.py`` is what both read, and neither family imports the other. This
+module is the seam a caller uses: the contract, and the two lookups.
 """
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
-from lpspec.errors import LpspecError
-from lpspec.relational.sinks.gurobi import build_gurobi, solve_gurobi
-from lpspec.relational.sinks.highs import build_highs, solve_direct
-from lpspec.relational.sinks.lp_file import write_lp_file
+from lpspec.relational.sinks.solvers import SOLVERS, solver
 from lpspec.relational.sinks.tables import ModelTables
-
-if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
-    from typing import Any
-
-    import polars as pl
-
-    from lpspec.relational.status import SolveStatus
+from lpspec.relational.sinks.writers import PLANNED_WRITERS, WRITERS, writer
 
 __all__ = [
+    'PLANNED_WRITERS',
     'SOLVERS',
+    'WRITERS',
     'ModelTables',
-    'build_gurobi',
-    'build_highs',
-    'solve_direct',
-    'solve_gurobi',
     'solver',
-    'write_lp_file',
+    'writer',
 ]
-
-#: The solver sinks a caller may name, and the whole of them. **Closed on
-#: purpose** (README, "Adding a sink"): an installed package that could add an
-#: entry here is hard rule 5's failure mode one level down, since it would
-#: change what ``solver_name`` means for a file that never mentions one. Which
-#: solver a build goes to is the caller's choice at the call, never the
-#: model's — a YAML file cannot express it and does not know.
-SOLVERS: Mapping[
-    str,
-    Callable[
-        [ModelTables, int | None, Mapping[str, Any] | None],
-        tuple[SolveStatus, float, pl.DataFrame | None, pl.DataFrame | None],
-    ],
-] = {
-    'highs': solve_direct,
-    'gurobi': solve_gurobi,
-}
-
-
-def solver(name: str) -> Callable[..., tuple[SolveStatus, float, pl.DataFrame | None, pl.DataFrame | None]]:
-    """The solver sink called *name*.
-
-    Here rather than in the executor so the closed set and the message for a
-    name outside it stay next to the sinks they are about. The message names
-    every alternative, because the set is small and knowing it is the answer
-    to the question being asked.
-    """
-    try:
-        return SOLVERS[name]
-    except KeyError:
-        raise LpspecError(
-            f'unknown solver {name!r} — the sinks that solve are {", ".join(sorted(SOLVERS))}. '
-            'HiGHS ships with the package and is the default; gurobi needs the [gurobi] extra.'
-        ) from None

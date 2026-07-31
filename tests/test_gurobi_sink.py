@@ -21,7 +21,8 @@ import pytest
 
 import lpspec as lps
 from lpspec.errors import LpspecError, NoSolutionError
-from lpspec.relational import sinks
+from lpspec.relational.sinks import SOLVERS
+from lpspec.relational.sinks.solvers.gurobi import build_gurobi
 from tests.test_ports import PORTS, REFERENCES, sources
 
 gurobipy = pytest.importorskip('gurobipy', reason='the gurobi sink needs the [gurobi] extra')
@@ -181,7 +182,7 @@ def test_build_gurobi_loads_the_model_and_stops() -> None:
     reports is what was loaded rather than what was solved."""
     with lps.build(MIP, DATA['MIP']) as ex:
         tables = ex._tables()
-        m = sinks.build_gurobi(tables)
+        m = build_gurobi(tables)
         assert (m.NumVars, m.NumConstrs) == (tables.column_count, tables.row_count)
         assert m.NumIntVars == tables.cols.filter(pl.col('vtype') != 'continuous').height
         assert m.ModelSense == gurobipy.GRB.MAXIMIZE
@@ -193,7 +194,7 @@ def test_the_objective_constant_rides_on_the_model_not_the_answer() -> None:
     which is what makes :func:`build_gurobi` a complete hand-off rather than a
     model plus a number the caller has to remember to add back."""
     with lps.build(MAX, DATA['MAX']) as ex:
-        assert sinks.build_gurobi(ex._tables()).ObjCon == pytest.approx(5.0)
+        assert build_gurobi(ex._tables()).ObjCon == pytest.approx(5.0)
 
 
 def test_the_set_of_solver_sinks_is_closed() -> None:
@@ -202,7 +203,7 @@ def test_the_set_of_solver_sinks_is_closed() -> None:
     one answer that cannot be right."""
     with pytest.raises(LpspecError, match='unknown solver'):
         lps.solve(LP, DATA['LP'], solver_name='cplex')
-    assert set(sinks.SOLVERS) == {'highs', 'gurobi'}
+    assert set(SOLVERS) == {'highs', 'gurobi'}
 
 
 def test_the_missing_extra_is_named() -> None:

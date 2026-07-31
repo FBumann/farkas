@@ -2,7 +2,7 @@
 
 Binary commitment variables u with p <= p_max * u and a fixed commitment
 cost. Verifies the relational backend's vtype path end to end: cols vtype
-column, HiGHS changeColsIntegrality in solver_direct, and the LP binary
+column, HiGHS changeColsIntegrality in the `highs` solver, and the LP binary
 section.
 """
 
@@ -90,7 +90,7 @@ def test_commitment_milp_agrees_and_stays_integral(commitment_inputs):
 
 
 @pytest.mark.parametrize('batch_rows', [7, 13, 100_000], ids=['tiny-chunks', 'odd-chunks', 'one-chunk'])
-def test_solver_direct_ingests_columns_in_order_whatever_the_chunking(commitment_inputs, batch_rows):
+def test_the_highs_solver_ingests_columns_in_order_whatever_the_chunking(commitment_inputs, batch_rows):
     """Columns reach HiGHS in label order however the range loop splits them.
 
     ``addCols`` appends, so column *k* must be the *k*-th row handed over. The
