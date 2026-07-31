@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 
 #: The four frames a sink reads, as schemas. Stated here because the executor
 #: is what fills them and an empty model still has to have them.
-_COLS = ('col', 'lb', 'ub', 'vtype')
+_COLS = ('lb', 'ub', 'vtype')
 _OBJ = ('col', 'coeff')
 _ROWS = ('row', 'sense', 'rhs')
 _MATRIX = ('row', 'col', 'coeff')
@@ -159,12 +159,19 @@ class PolarsExecutor:
         self._blocks[v.name] = (start, labelled.height)
 
         bounded = self._q.bounds(labelled.lazy(), v)
-        cols = bounded.select(
-            pl.col('var_label').alias('col'),
-            pl.col('lb').cast(pl.Float64),
-            pl.col('ub').cast(pl.Float64),
-            pl.lit(v.variable_type, dtype=_DTYPES['vtype']).alias('vtype'),
-        ).collect(engine='streaming')
+        # A declaration owns a contiguous run of labels and the blocks are
+        # concatenated in declaration order, so a frame sorted within each
+        # block is sorted across all of them — which makes a row's *position*
+        # its solver column index, and the column redundant.
+        cols = (
+            bounded.sort('var_label')
+            .select(
+                pl.col('lb').cast(pl.Float64),
+                pl.col('ub').cast(pl.Float64),
+                pl.lit(v.variable_type, dtype=_DTYPES['vtype']).alias('vtype'),
+            )
+            .collect(engine='streaming')
+        )
 
         bad = cols.filter(pl.col('lb').is_null() | pl.col('ub').is_null()).height
         if bad:

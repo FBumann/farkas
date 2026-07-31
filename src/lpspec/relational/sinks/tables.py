@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 class ModelTables:
     """The built model, as a sink sees it.
 
-    ``cols`` (col, lb, ub, vtype), ``obj`` (col, coeff), ``rows`` (row, sense,
+    ``cols`` (lb, ub, vtype), ``obj`` (col, coeff), ``rows`` (row, sense,
     rhs) and ``matrix`` in COO (row, col, coeff). The scalars are what a sink
     cannot cheaply recover; the objective constant lives outside the frames
     because it has no column to attach to.
@@ -96,15 +96,13 @@ class ModelTables:
         import numpy as np
 
         count = self.column_count
-        at = self.cols['col'].to_numpy()
-        lb = _scattered(count, at, self.cols['lb'].to_numpy(), -infinity)
-        ub = _scattered(count, at, self.cols['ub'].to_numpy(), infinity)
-        integral = _scattered(
-            count, at, self.cols.select(pl.col('vtype') != 'continuous').to_series().to_numpy(), False
-        )
+        # `copy=True` rather than in place: these are views of the frame now,
+        # and rewriting an infinity through one would edit the built model to
+        # suit whichever solver asked last.
+        lb = np.nan_to_num(self.cols['lb'].to_numpy(), copy=True, neginf=-infinity, posinf=infinity)
+        ub = np.nan_to_num(self.cols['ub'].to_numpy(), copy=True, neginf=-infinity, posinf=infinity)
+        integral = self.cols.select(pl.col('vtype') != 'continuous').to_series().to_numpy()
         cost = _scattered(count, self.obj['col'].to_numpy(), self.obj['coeff'].to_numpy(), 0.0)
-        np.nan_to_num(lb, copy=False, neginf=-infinity, posinf=infinity)
-        np.nan_to_num(ub, copy=False, neginf=-infinity, posinf=infinity)
         return lb, ub, cost, integral
 
 
