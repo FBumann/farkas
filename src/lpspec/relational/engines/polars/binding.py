@@ -24,11 +24,13 @@ from typing import TYPE_CHECKING, Any
 import polars as pl
 
 from lpspec.errors import DataError
-from lpspec.relational import data_validation, plan
+from lpspec.relational.engines.polars import data_validation
 from lpspec.relational.frames import as_frame
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+    from lpspec.relational import plan
 
 #: Scratch column carrying a source row's position while first-occurrence
 #: order is computed. The spaces make it unrepresentable as a declared name, so

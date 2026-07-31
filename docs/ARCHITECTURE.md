@@ -384,17 +384,17 @@ than discovered at solve time.
 | `lowering.py` | core AST → logical plan (defines the relational subset) |
 | `errors.py` | the exception hierarchy; the one module either fenced side may import |
 | `_notes.py` | attach context to an exception on the way out; no package imports, no opinions |
-| `relational/plan.py` | frozen logical-plan dataclasses |
+| `relational/plan.py` | frozen logical-plan dataclasses — the contract an engine consumes |
 | `relational/frames.py` | the boundary — caller tables in, via the Arrow PyCapsule protocol |
-| `relational/compiler.py` | plan → lazy frames; pure, reads nothing |
+| `relational/engines/polars/compiler.py` | plan → lazy frames; pure, reads nothing |
 | `relational/chunking.py` | how a batched pass sizes its chunk: budget ÷ the width of one unit |
 | `relational/status.py` | solve outcome on two axes; linopy's vocabulary, copied not imported |
-| `relational/labels.py` | which coordinate gets which solver index; three routes to one number, which must agree |
-| `relational/binding.py` | a caller's sources → `BoundSources`, the frozen frames every query is written against |
-| `relational/executor.py` | assemble the model frames from the bound data |
+| `relational/engines/polars/labels.py` | which coordinate gets which solver index; three routes to one number, which must agree |
+| `relational/engines/polars/binding.py` | a caller's sources → `BoundSources`, the frozen frames every query is written against |
+| `relational/engines/polars/executor.py` | assemble the model frames from the bound data |
 | `relational/result.py` | what a solve returned: status, objective, and the label joins that read values back |
-| `relational/data_validation.py` | is the bound data usable — one row per coordinate, labels that exist, single-valued coords |
-| `relational/sinks/tables.py` | what every sink reads and no more — the four frames plus the batching scalars |
+| `relational/engines/polars/data_validation.py` | is the bound data usable — one row per coordinate, labels that exist, single-valued coords |
+| `relational/sinks/tables.py` | what every sink reads and no more — the four frames plus the batching scalars, and the contract an engine produces |
 | `relational/sinks/` | how a built model leaves: `lp_file`, `solver_direct` (one module each, [README](https://github.com/FBumann/lpspec/blob/main/src/lpspec/relational/sinks/README.md)) |
 | `linopy/__init__.py` | opt-in shim: `build` / `extend` on a `linopy.Model` |
 | `linopy/loader.py` | data coercion to `xr.Dataset`, master coords |

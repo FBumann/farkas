@@ -49,7 +49,7 @@ def check_one_row_per_coordinate(p: plan.ParameterDeclaration, frame: pl.LazyFra
     Two rows for one has no defined meaning, and the eager lane refuses to lay
     such a source out at all, so naming it beats silently summing it. It also
     earns the assembly's skipped aggregate
-    (:attr:`~lpspec.relational.compiler.TermFragment.keyed`), for one pass over
+    (:attr:`~lpspec.relational.engines.polars.compiler.TermFragment.keyed`), for one pass over
     a source orders of magnitude smaller than the matrix.
 
     A parameter with no dims has exactly one coordinate — the empty one — so the

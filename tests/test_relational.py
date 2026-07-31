@@ -380,7 +380,7 @@ def test_a_factored_mask_labels_exactly_like_the_counted_path():
     """
     import polars as pl_
 
-    from lpspec.relational.compiler import _ordinal
+    from lpspec.relational.engines.polars.compiler import _ordinal
 
     model = {
         'dimensions': {

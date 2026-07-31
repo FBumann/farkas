@@ -51,7 +51,7 @@ import yaml
 
 import lpspec as lps
 from lpspec.language.schema import MathSchema
-from lpspec.relational.executor import PolarsExecutor, Result
+from lpspec.relational.engines.polars.executor import PolarsExecutor, Result
 
 try:
     from lpspec import linopy as linopy_lane

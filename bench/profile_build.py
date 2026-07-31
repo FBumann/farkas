@@ -41,7 +41,7 @@ def _instrument(timings: dict[Any, list[float]], phase: dict[str, str]) -> None:
     """Tag each collection with the build step that issued it."""
     import polars as pl
 
-    from lpspec.relational.executor import PolarsExecutor
+    from lpspec.relational.engines.polars.executor import PolarsExecutor
 
     original_collect = pl.LazyFrame.collect
 

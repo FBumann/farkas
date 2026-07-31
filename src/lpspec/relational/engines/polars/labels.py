@@ -28,12 +28,12 @@ import polars as pl
 
 from lpspec.errors import LanguageError
 from lpspec.relational import plan
-from lpspec.relational.compiler import UNIT, _ordinal
+from lpspec.relational.engines.polars.compiler import UNIT, _ordinal
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from lpspec.relational.compiler import PolarsCompiler
+    from lpspec.relational.engines.polars.compiler import PolarsCompiler
 
 
 class Labeller:

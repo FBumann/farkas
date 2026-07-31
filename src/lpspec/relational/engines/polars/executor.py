@@ -3,15 +3,15 @@
 Owns the *assembly* — turning each declaration into rows of the four model
 frames, and holding them until a sink drains them. Owns none of the three
 questions it asks on the way: what the data is
-(:mod:`lpspec.relational.binding`), what a query over it looks like
-(:mod:`lpspec.relational.compiler`), which coordinate gets which solver index
-(:mod:`lpspec.relational.labels`). The lane is described in
+(:mod:`lpspec.relational.engines.polars.binding`), what a query over it looks like
+(:mod:`lpspec.relational.engines.polars.compiler`), which coordinate gets which solver index
+(:mod:`lpspec.relational.engines.polars.labels`). The lane is described in
 docs/ARCHITECTURE.md.
 
 The two registries it does own are the ones that fill *during* assembly — the
 variable and constraint frames — because a declaration built later has to see
 what earlier ones produced. Everything binding produced is frozen by contrast,
-which is what :class:`~lpspec.relational.binding.BoundSources` says.
+which is what :class:`~lpspec.relational.engines.polars.binding.BoundSources` says.
 """
 
 from __future__ import annotations
@@ -28,9 +28,9 @@ from lpspec.errors import (
     sparse_divisor_message,
 )
 from lpspec.relational import plan, sinks
-from lpspec.relational.binding import BoundSources, bind
-from lpspec.relational.compiler import PolarsCompiler, TermFragment
-from lpspec.relational.labels import Labeller
+from lpspec.relational.engines.polars.binding import BoundSources, bind
+from lpspec.relational.engines.polars.compiler import PolarsCompiler, TermFragment
+from lpspec.relational.engines.polars.labels import Labeller
 from lpspec.relational.result import Result
 
 if TYPE_CHECKING:
@@ -429,7 +429,7 @@ def _needs_aggregate(terms: Sequence[TermFragment], *, projected: bool = False) 
 
     Two fragments may both carry the same variable — ``x + 2 * x`` is one row
     each and one column — and a single fragment that is not
-    :attr:`~lpspec.relational.compiler.TermFragment.keyed` already holds a
+    :attr:`~lpspec.relational.engines.polars.compiler.TermFragment.keyed` already holds a
     label twice.
 
     *projected* is what the two call sites do not share. The matrix keeps a
@@ -497,7 +497,7 @@ def _absence_restrictions(terms: Sequence[TermFragment]) -> list[tuple[tuple[str
 
     Only *variable* absence counts. A sparse parameter is a compressed dense
     array whose missing rows mean a zero coefficient (SPEC §8), which is why the
-    fragment carries :attr:`~lpspec.relational.compiler.TermFragment.presence`
+    fragment carries :attr:`~lpspec.relational.engines.polars.compiler.TermFragment.presence`
     separately from its frame, and why this reads that rather than the frame.
 
     **A fragment with nothing to restrict is skipped**, and that is load-bearing
