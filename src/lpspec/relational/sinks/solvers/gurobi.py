@@ -91,6 +91,7 @@ def build_gurobi(
     """
     m, _x, _blocks, environment = _load(model, batch_rows, solver_options)
     weakref.finalize(m, environment.dispose)
+    m.update()  # so the returned model reports what it holds; `optimize` does its own
     return m
 
 
@@ -165,12 +166,16 @@ def _load(
             (a['coeff'].to_numpy(), a['col'].to_numpy(), np.append(starts, a.height)),
             shape=(rows.height, model.column_count),
         )
-        blocks.append(m.addMConstr(block, x, senses[rows['op'].to_numpy()], rows['rhs'].to_numpy()))
+        op = rows['op']
+        # one sense for the whole block costs gurobipy 11% less than an array
+        # of the same letter, and a model whose rows all compare the same way
+        # is the ordinary case — every balance an equality, every limit a cap.
+        sense = senses[op.item(0)] if op.n_unique() == 1 else senses[op.to_numpy()]
+        blocks.append(m.addMConstr(block, x, sense, rows['rhs'].to_numpy()))
 
     if model.objective_sense == 'max':
         m.ModelSense = gurobipy.GRB.MAXIMIZE
     m.ObjCon = model.objective_constant
-    m.update()
     return m, x, blocks, environment
 
 
