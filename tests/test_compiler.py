@@ -4,14 +4,30 @@ No solver, no data, not one row read — a plan node goes in and a query comes
 out. That is the seam the split bought: checking what an operator does costs a
 compile, not a build and a solve.
 
-These assertions are deliberately about *shape*, not exact text. They pin the
-properties docs/ARCHITECTURE.md's admissibility test reads off the plan — which dim
-columns survive, whether an aggregate appears, whether a mask becomes a join or
-a filter — and leave the query planner free to change underneath them.
+**This is the only place query *shape* is asserted**, which is what the
+hand-built fixture below buys. Every property here can regress while the whole
+suite still passes and every model still solves to the right answer, so no
+end-to-end test stands in for it:
 
-The frames the compiler reads are declared here as **empty frames with the
-right schemas**. A lazy frame is a plan, so a schema is all it takes to compile
-one; supplying rows would mean the test was checking results rather than shape.
+- ``AGGREGATE`` absent from ``Sum`` and ``GroupSum``. They *project*; duplicates
+  collapse once, in the terminal ``SUM(coeff) GROUP BY row, col`` at assembly.
+  Make either of them aggregate and the answers stay right while the skipped
+  aggregate — 2-4x of build time, see ``executor._needs_aggregate`` — quietly
+  becomes dead code.
+- ``OVER`` absent from a translation, which joins the dim table twice instead.
+  A window function answers correctly and gives up bounded-halo locality.
+- the modulo appearing only when a translation wraps.
+- a dimension comparison *filtering* a column the frame already carries rather
+  than joining to find it, and a constant bound costing no join at all.
+
+The frames are declared as **empty frames with the right schemas**, and that is
+the purity claim itself rather than a convenience: a lazy frame is a plan, so a
+schema is all it takes to compile one. It cannot be checked any other way —
+reach the compiler through the executor and it needs rows, at which point the
+demonstration that a schema suffices has evaporated.
+
+The assertions are deliberately about shape, not exact text, so the query
+planner stays free to change underneath them.
 """
 
 from __future__ import annotations
