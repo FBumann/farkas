@@ -73,10 +73,13 @@ flowchart TB
 
     subgraph REL["relational/ — imports nothing from the package but errors.py"]
         direction TB
-        PLAN["plan.py<br/>frozen logical plan"] --> COMP["compiler.py<br/>plan → lazy frames · reads nothing"]
-        BIND["binding.py<br/>→ BoundSources, frozen"] --> EXEC
-        COMP --> EXEC["executor.py + labels.py<br/>assemble the model frames"]
-        EXEC --> TABLES["sinks/tables.py<br/>cols · obj · rows · A"]
+        PLAN["plan.py<br/>frozen logical plan"] --> ENG
+        subgraph ENG["engines/polars/ — the only part a second engine replaces"]
+            direction TB
+            COMP["compiler.py<br/>plan → lazy frames · reads nothing"] --> EXEC
+            BIND["binding.py<br/>→ BoundSources, frozen"] --> EXEC["executor.py + labels.py<br/>assemble the model frames"]
+        end
+        ENG --> TABLES["sinks/tables.py<br/>cols · obj · rows · A"]
         TABLES --> LPS["sinks/lp_file.py<br/>(mps planned)"]
         TABLES --> DIRECT["sinks/highs.py<br/>COO batches → HiGHS"]
         DIRECT --> SOL["result.py<br/>label join, never dense"]
@@ -255,13 +258,16 @@ choice load-bearing in the language's rulebook.
    consumer that binds no data must reach it without reaching a runner; `api.py`
    re-exports it so callers keep saying `lps.load_schema`.
 2. **The engine knows nothing about linopy, xarray or YAML.** `relational/` goes
-   polars → highspy → solver, with linopy's semantics as a spec to match rather
-   than code to share; it never sees the schema, the AST, or the eager builder,
-   and its internal naming encodes neither "polars" nor "yaml". Enforced *more*
-   strictly than stated — it imports nothing from the package at all, bar
-   declared dependency-free leaves (`errors.py`, in `ENGINE_MAY_IMPORT`), because
-   a near-zero import surface is what keeps the subpackage extractable. Widening
-   that list is a decision, not an accident.
+   plan → engine → highspy → solver, with linopy's semantics as a spec to match
+   rather than code to share; it never sees the schema, the AST, or the eager
+   builder. **The engine is a directory, not a convention:** `engines/polars/`
+   is one implementation, and everything above it — `plan.py`, `sinks/`,
+   `status.py`, `chunking.py`, `frames.py` — is what any implementation answers
+   to. An engine package is named for its engine; nothing *inside* one is.
+   Enforced *more* strictly than stated — it imports nothing from the
+   package at all, bar declared dependency-free leaves (`errors.py`, in
+   `ENGINE_MAY_IMPORT`), because a near-zero import surface is what keeps the
+   subpackage extractable. Widening that list is a decision, not an accident.
 3. **One language, two lanes — not fast-vs-slow versions of each other.** The
    streaming engine builds models declared in YAML; the linopy lane attaches YAML
    math to a `linopy.Model` already in memory. **Both accept exactly the same
@@ -384,7 +390,7 @@ than discovered at solve time.
 | `lowering.py` | core AST → logical plan (defines the relational subset) |
 | `errors.py` | the exception hierarchy; the one module either fenced side may import |
 | `_notes.py` | attach context to an exception on the way out; no package imports, no opinions |
-| `relational/plan.py` | frozen logical-plan dataclasses — the contract an engine consumes |
+| `relational/plan.py` | frozen logical-plan dataclasses — what an engine consumes |
 | `relational/frames.py` | the boundary — caller tables in, via the Arrow PyCapsule protocol |
 | `relational/engines/polars/compiler.py` | plan → lazy frames; pure, reads nothing |
 | `relational/chunking.py` | how a batched pass sizes its chunk: budget ÷ the width of one unit |
@@ -394,7 +400,7 @@ than discovered at solve time.
 | `relational/engines/polars/executor.py` | assemble the model frames from the bound data |
 | `relational/result.py` | what a solve returned: status, objective, and the label joins that read values back |
 | `relational/engines/polars/data_validation.py` | is the bound data usable — one row per coordinate, labels that exist, single-valued coords |
-| `relational/sinks/tables.py` | what every sink reads and no more — the four frames plus the batching scalars, and the contract an engine produces |
+| `relational/sinks/tables.py` | what every sink reads and no more — the four frames plus the batching scalars; what an engine produces |
 | `relational/sinks/` | how a built model leaves: `lp_file`, `solver_direct` (one module each, [README](https://github.com/FBumann/lpspec/blob/main/src/lpspec/relational/sinks/README.md)) |
 | `linopy/__init__.py` | opt-in shim: `build` / `extend` on a `linopy.Model` |
 | `linopy/loader.py` | data coercion to `xr.Dataset`, master coords |
@@ -403,9 +409,11 @@ than discovered at solve time.
 
 **Four subpackages, and the directory *is* the rule in every case.** Everything
 under `language/` produces the AST and may not reach a consumer of it;
-everything under `relational/` is the engine and imports nothing else from the
-package; everything under `linopy/` is the opt-in eager lane and is the only
-code allowed to import linopy or xarray; everything under `typeset/` reads the
+everything under `relational/` is the relational lane and imports nothing else
+from the package, with a second boundary inside it — `engines/` holds
+implementations, the rest of `relational/` is what they implement; everything
+under `linopy/` is the opt-in eager lane and is the only code allowed to import
+linopy or xarray; everything under `typeset/` reads the
 AST and writes text, and reaches neither the plan nor any data.
 `tests/test_architecture.py` reads membership off the path in all four cases,
 so no fence can be stepped over by naming a file differently.
@@ -507,6 +515,6 @@ both its dim *set* and its verdict on an operand that lacks the dim being
 reduced along, which lowering asks for rather than deciding again — its degree
 verdict lives only in `language/degree.py`, which both lanes ask; and the
 dense-label assignment that gives a coordinate its solver index lives only in
-`relational/labels.py`, shared by variables and constraint rows. What a
-lowering case still owns is what is about the plan: which node the call becomes,
+`relational/engines/polars/labels.py`, shared by variables and constraint
+rows. What a lowering case still owns is what is about the plan: which node the call becomes,
 and the shapes that node cannot represent.
