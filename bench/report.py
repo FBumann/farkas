@@ -25,7 +25,7 @@ DEFAULT_ARMS = ('lpspec', 'linopy')
 
 #: The arms this run tabulates and the one the ratio divides by, set from
 #: `--arms`. Rebindable because the published ladder is not the only comparison
-#: this renders: `--arms lpspec duckdb` prices the engine choice itself
+#: this renders: `--arms lpspec polars` prices the engine choice itself
 #: (duckdb-spike.md), and hard-coding the pair would mean a second renderer
 #: that drifts from this one.
 ARMS = DEFAULT_ARMS

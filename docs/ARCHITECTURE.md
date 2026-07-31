@@ -78,8 +78,8 @@ flowchart TB
         ENGB["engine.py<br/>both sinks + the label read-back,<br/>written once"] --> ENG
         subgraph ENG["engines/ — one is chosen by LPSPEC_ENGINE"]
             direction TB
-            POL["polars/ (default)<br/>compiler · executor · labels"]
-            DUCK["duck/ (opt-in extra)<br/>plan → SQL"]
+            DUCK["duck/ (default)<br/>plan → SQL"]
+            POL["polars/<br/>compiler · executor · labels"]
         end
         ENG --> TABLES["sinks/tables.py<br/>cols · obj · rows · A"]
         TABLES --> LPS["sinks/writers/<br/>a file, chosen by suffix<br/>lp_file (mps planned)"]
@@ -274,8 +274,9 @@ choice load-bearing in the language's rulebook.
 3. **One language, two lanes — not fast-vs-slow versions of each other.** A
    *lane* consumes the AST and owns everything below it; an *engine* consumes
    the plan and fills `ModelTables`. They are different axes and the words are
-   not interchangeable: the relational lane has two engines (`polars`,
-   `duckdb`), and linopy is a lane and could not be an engine — it never sees
+   not interchangeable: the relational lane has two engines (`duckdb`, the
+   default, and `polars`), both installed and neither behind an extra — and
+   linopy is a lane and could not be an engine, because it never sees
    the plan, produces no `ModelTables`, and `extend` attaches to a model that
    already exists. The
    streaming engine builds models declared in YAML; the linopy lane attaches YAML
@@ -422,7 +423,7 @@ must stay off the import path of a caller who does not use it.
 | `_notes.py` | attach context to an exception on the way out; no package imports, no opinions |
 | `relational/plan.py` | frozen logical-plan dataclasses — what an engine consumes |
 | `relational/engine.py` | the engine base: what one must supply, and the sinks and label joins it gets for free |
-| `relational/engines/__init__.py` | name → engine, a closed set; `lps.build(engine=...)` resolves through it |
+| `relational/engines/__init__.py` | name → engine, a closed set; `LPSPEC_ENGINE` resolves through it, and unset means `duckdb` |
 | `relational/binding.py` | a caller's sources → `BoundSources`, the frozen frames every engine is written against |
 | `relational/data_validation.py` | is the bound data usable — one row per coordinate, labels that exist, single-valued coords |
 | `relational/engines/duck/compiler.py` | plan → SQL; the duckdb twin of the polars compiler |
