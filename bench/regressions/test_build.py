@@ -33,6 +33,13 @@ Not collected by ``uv run pytest`` — ``testpaths`` is ``tests``. Run:
     # against a stored baseline, failing on a regression
     uv run pytest bench/regressions --benchmark-memory-compare=NNNN \\
         --benchmark-memory-compare-fail=mean:10%
+
+**Whatever `lps.build` builds with.** Nothing here names an engine, so
+``LPSPEC_ENGINE`` selects one and the same two commands answer the same
+question for either — record a run, change something, compare the two run ids
+by hand. A stored baseline does not record which engine produced it, so do not
+compare across engines: both numbers are real, and the difference between them
+is the engine rather than the change.
 """
 
 from __future__ import annotations
@@ -81,7 +88,7 @@ def build_and_hand_over(case_name: str, size: str, sources: dict[str, str], coor
     import lpspec as lps
     from lpspec.relational.sinks.highs import build_highs
 
-    with lps.build(CASES[case_name].model, sources, coords=coords, memory_limit='1GB') as ex:
+    with lps.build(CASES[case_name].model, sources, coords=coords) as ex:
         tables = ex._tables()
         _handle = build_highs(tables)
         return tables.column_count
