@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.35](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.34...v0.0.1-alpha.35) (2026-07-31)
+
+
+### Features
+
+* **language:** one shift(over=, by=, edge=), replacing roll and shift ([#359](https://github.com/FBumann/lpspec/issues/359)) ([8473a24](https://github.com/FBumann/lpspec/commit/8473a24621326eb39151fd50337f1c6decb7a51d))
+
 ## [0.0.1-alpha.34](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.33...v0.0.1-alpha.34) (2026-07-30)
 
 
