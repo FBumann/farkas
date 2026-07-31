@@ -150,6 +150,7 @@ select = [
     "FLY",   # flynt (f-string)
     "FURB",  # refurb
     "T20",   # flake8-print
+    "T10",   # flake8-debugger
     "PLC",   # pylint conventions
     "PLE",   # pylint errors
 ]
