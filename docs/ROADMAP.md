@@ -70,21 +70,16 @@ coordinate-aligned, objective only, convex-guarded — aligned products are a
 pointwise self-join; general bilinear coupling is a cross join with |terms|²
 rows and is excluded permanently.
 
-**Sequencing, not a verdict.** The cost side is small and the oracle is free —
-linopy's `QuadraticExpression` builds the comparison, which is normally the
-expensive half of a new primitive. What is unsettled is not whether quadratic is
-worth having but **where it can land**: HiGHS refuses `Hessian + integrality`,
-and `binary:`, `integer:` and nonconvex `piecewise:` all ship today, so on the
-default path quadratic conflicts with features already in the language. That
-makes two things prerequisites rather than quadratic work — Track 4 declaring
-the conjunction exclusion, and a second solver bound to `solver_direct` that has
-no such exclusion (Gurobi, [#106](https://github.com/FBumann/lpspec/issues/106)).
-Landing the primitive first ships math the default solver refuses.
+**Sequencing, not a verdict.** Blocker (1) is not quadratic work, so it cannot
+be solved by doing quadratic well: it needs Track 4 to declare the conjunction
+exclusion, and a second solver on `solver_direct` that has no such exclusion
+(Gurobi, [#106](https://github.com/FBumann/lpspec/issues/106)). Landing the
+primitive before either ships math the default solver refuses.
 
 The live argument — in particular whether *coordinate-aligned* is the right
 restriction, or whether the real axis is **is the coupling declared as data?** —
 is in [#261](https://github.com/FBumann/lpspec/issues/261) and
-[#84](https://github.com/FBumann/lpspec/issues/84), which supersede the two
+[#84](https://github.com/FBumann/lpspec/issues/84), which supersede the
 paragraphs above. This section states the sequencing; those state the math.
 
 ## Track 1 — language primitives (taxed)
@@ -100,8 +95,8 @@ paragraphs above. This section states the sequencing; those state the math.
 | 7 | Bounds as expressions | — | signs, bidirectional flows, component libraries | pointwise | #31 |
 | 8 | Namespacing / qualified names | — | component libraries | n/a | #29 |
 | 9 | Compose-then-build (schema merge) | — | one lower/stream pass over merged libraries | n/a | #30 |
-| 10 | Cumulative sum, data only | `cumsum(p, over=dim)` over a variable-free expression | investment schedules, cumulative budgets and caps — today a data-prep round trip for one column | coordinate-space | small |
-| 11 | Semi-continuous variables | `semi_continuous: true` beside `binary`/`integer` | "off, or between min-stable and max" without the big-M pair it is written as today | n/a | small |
+| 10 | Cumulative sum, data only | `cumsum(p, over=dim)` over a variable-free expression | investment schedules, cumulative budgets and caps — today a data-prep round trip for one column | coordinate-space | [#384](https://github.com/FBumann/lpspec/issues/384) |
+| 11 | Semi-continuous variables | `semi_continuous: true` beside `binary`/`integer` | "off, or between min-stable and max" without the big-M pair it is written as today | n/a | [#383](https://github.com/FBumann/lpspec/issues/383) |
 
 Items 1–4 are one piece of work — indexed access plus the masks that make it
 usable — and are the difference between "dispatch and balances" and "network and
@@ -133,8 +128,9 @@ question is the mechanism: the label budget of
 [#38](https://github.com/FBumann/lpspec/issues/38) is a cap on rows and columns
 declared before the work runs, which is exactly the shape needed here, and
 generalising it from escape islands to any superlinear construct would make the
-size visible at load time rather than discovered in the solver. Deciding that
-also decides how much job is left for an island at all.
+size visible at load time rather than discovered in the solver
+([#380](https://github.com/FBumann/lpspec/issues/380)). Deciding that also
+decides how much job is left for an island at all.
 
 Item 11 is the cheapest thing on this table and the only one blocked by nothing:
 HiGHS carries `kSemiContinuous` and `kSemiInteger` natively, so unlike SOS
@@ -142,7 +138,9 @@ HiGHS carries `kSemiContinuous` and `kSemiInteger` natively, so unlike SOS
 `Model.semi_continuous`, so the oracle already covers it; and it adds a
 declaration flag, not a plan node — no expression grammar, no lowering case
 beyond the column type. The LP-file sink needs its own bound section, which is
-where the work actually is.
+where the work actually is — and which
+[ARCHITECTURE](ARCHITECTURE.md#the-relational-lane) already anticipates as a
+threshold on the `cols` stream.
 
 ## Tracks 2–3 — untaxed
 
@@ -158,7 +156,7 @@ exception noted under 2b.
   diagnostics. **Dual read-back has shipped** — `sol.dual(constraint)`, the same
   label join as `primal` against the row table, refusing rather than zero-filling
   where a model has no dual solution; reduced costs and slacks ride the same join
-  and have not ([#78](https://github.com/FBumann/lpspec/issues/78)). The headline
+  and have not. The headline
   item is **elastic relaxation**, the infeasibility answer — HiGHS has no IIS, so
   `solver_direct` returns a status code for a model too large to open in an
   editor; slack variables with penalty costs, then a query of nonzero slacks
@@ -193,10 +191,12 @@ exception noted under 2b.
   in-place bound update then writes to the wrong columns. A changed `group_sum`
   mapping leaves the labels alone but rewrites `A`, which a bounds-only update
   cannot express at all. Both are decidable off the resolved AST, and that check
-  ships with the feature
-  ([#82](https://github.com/FBumann/lpspec/issues/82)). Structural editing
-  stays out — it invalidates the label contract. Related gap: warm starts, which
-  `solver_direct` would need to set through highspy.
+  ships with the feature — which now lives on the solver session
+  ([#204](https://github.com/FBumann/lpspec/issues/204)), since a re-solve needs
+  somewhere to keep the handle. Structural editing stays out: it invalidates the
+  label contract. **Warm starts** are what make the accepted alternative to
+  structural editing — rebuild the model — cheap rather than merely correct, and
+  are tracked separately ([#382](https://github.com/FBumann/lpspec/issues/382)).
 
   **Integrality is label-preserving too**, and rides the same contract for free.
   Relaxing a MILP is one call in linopy (`Variable.relax()`); here it is a second
@@ -238,10 +238,15 @@ exception noted under 2b.
   since rule 6 refuses a Python modeling API — a shipped driver reading the
   frames, or the blessed seam that composition
   ([the ceiling](design/ceiling.md#composition-component-libraries)) already
-  forces. Same question, second direction; worth deciding once.
-- **3 — AST consumers** (#21): **math → LaTeX** (a tree walk, no data — the
-  product *is* the declarative math, so it should render as typeset
-  documentation), CLI `check`/`solve`/`write` (#35), observability (#34).
+  forces. Same question, second direction, filed once
+  ([#381](https://github.com/FBumann/lpspec/issues/381)).
+- **3 — AST consumers.** The first one **has shipped**: `to_latex` / `to_typst`
+  / `to_markdown` render a resolved model in one tree walk, with no data and no
+  solver, which is the claim the narrow waist was making. Remaining: CLI
+  `check`/`solve`/`write` ([#35](https://github.com/FBumann/lpspec/issues/35)),
+  observability ([#34](https://github.com/FBumann/lpspec/issues/34)), and the
+  typeset follow-ups ([#126](https://github.com/FBumann/lpspec/issues/126),
+  [#321](https://github.com/FBumann/lpspec/issues/321)).
 
 ## Track 4 — sink capabilities
 

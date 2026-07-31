@@ -271,9 +271,9 @@ what an existing `where: "snapshot > 0"` means.
 | `bounds.lower` / `.upper` | parameter name, or a number |
 | `shift(x, over=d, by=n, edge=0)` — the `edge` key | `wrap`, or a number; never a dimension |
 
-`fill` is the one keyword whose *key* is fixed rather than naming a dimension,
-so a dimension called `fill` does not change what it means; the position takes
-a number and nothing else.
+`edge` is the one keyword whose *key* is fixed rather than naming a dimension,
+so a dimension called `edge` does not change what it means; the position takes
+`wrap` or a number and nothing else.
 
 A dimension in a value position is an error — it is a coordinate space, not
 data. To use its coordinates as data, declare a parameter over it.
@@ -568,13 +568,10 @@ ex.write_lp('model.lp')
 result = ex.solve()
 ```
 
-`sources` maps parameter and dimension names to parquet paths, scalars, or any
-table exposing the Arrow PyCapsule protocol — polars, pyarrow and pandas all
-qualify, and the recogniser imports none of them. Nothing on this path imports
-linopy. `primal` returns a `polars.DataFrame`, which is Arrow-backed and
-exports the same protocol, so no dataframe library is a dependency of this
-package; `to_pandas` and `to_dataarray` are the bridges out and need pandas /
-xarray, which ship with the `[linopy]` extra.
+What `sources` accepts is §8. Nothing on this path imports linopy, and `primal`
+returns a `polars.DataFrame` — Arrow-backed, so it exports the same protocol the
+loader recognises. `to_pandas` and `to_dataarray` are the bridges out and need
+pandas / xarray, which ship with the `[linopy]` extra.
 
 The only build knob is `coords`, shared by all three entry points.
 **`solver_options` is separate and is not a build knob** — it is forwarded
@@ -596,9 +593,9 @@ zeros** in either of the two ways it can come up empty: no values at all is
 undefined — raises `LinopyYamlError`, because the primals are still readable
 and only this quantity is missing. Duals exist only on the `solver_direct`
 path — a model written to LP and solved elsewhere never passes back through
-here. Reduced costs and slacks ride the same join and are not exposed yet
-([#78](https://github.com/FBumann/lpspec/issues/78)). `.lp` is the only
-sink `write` supports today; `.mps` raises `NotImplementedError`.
+here. Reduced costs and slacks ride the same join and are not exposed yet.
+`.lp` is the only sink `write` supports today; `.mps` raises
+`NotImplementedError`.
 
 **Linopy shim** (`lpspec.linopy`, `[linopy]` extra) — two *pure producers*,
 YAML in, model out, nothing retained:
@@ -626,7 +623,7 @@ not a silent override. There is no `register()` decorator and no helper registry
 | Not here | Instead |
 |---|---|
 | time-series processing (resample, cluster, interpolate, align), file IO, units | data prep; pass a parameter |
-| solver breadth | HiGHS via `solver_direct`, Gurobi planned on the same path, LP files for everything else ([#28](https://github.com/FBumann/lpspec/issues/28)) |
+| solver breadth | HiGHS via `solver_direct`, Gurobi planned on the same path, LP files for everything else ([#106](https://github.com/FBumann/lpspec/issues/106)) |
 | SOS and indicator constraints | `piecewise:` (§4) covers SOS2's usual purpose; the streaming lane's default solver has no SOS or indicator concept at all, so this is a *sink capability* question rather than a language one — [#23](https://github.com/FBumann/lpspec/issues/23), ROADMAP Track 4 |
 | multi-objective | one objective — declaring a second is a load error (§2); weight them into one expression |
 | schema migrations | — |
@@ -635,8 +632,9 @@ not a silent override. There is no `register()` decorator and no helper registry
 
 Calliope's math language is a corpus we score coverage against, not a
 specification we match; file portability is not a goal, and neither is
-operation parity with xarray/pandas. Whether `.yaml` should ever be a complete
-representation of a model built partly in Python is open — the *math* side is
-feasible, but expression and where strings become anonymous arrays, giving a
-functional round-trip and not a readable one
-([#3](https://github.com/FBumann/lpspec/issues/3)).
+operation parity with xarray/pandas. A model built partly in Python has no
+readable `.yaml` representation and will not get one: the *math* side is
+feasible, but expression and where strings come back as anonymous arrays, so the
+round-trip is functional and not reviewable — which is the whole point of the
+file. Whether Python may *emit* declarations at all is a separate and open
+question ([#381](https://github.com/FBumann/lpspec/issues/381)).
