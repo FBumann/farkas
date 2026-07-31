@@ -121,6 +121,12 @@ next section is why there is nothing for the version to announce.
 `main` is protected: no force-push, no deletion, squash-only through a PR, and
 the two required checks above. Approvals are not required, but the PR is.
 
+**Labels are checked in.** [`.github/labels.yml`](.github/labels.yml) is the
+taxonomy and a merge to `main` applies it, so edit the file rather than the UI —
+a description changed in the UI is reverted by the next sync. The prefixes are
+independent axes, not a single choice: an issue takes a kind, plus the `area:`
+it touches, plus an `engine:` only when the finding is specific to one.
+
 Versioning, the release PR, and how to force a specific version:
 [RELEASING.md](RELEASING.md).
 

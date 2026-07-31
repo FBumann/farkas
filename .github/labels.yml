@@ -1,0 +1,129 @@
+# The issue taxonomy, checked in.
+#
+# This file is the source of truth; `labels.yml` in .github/workflows applies it
+# on a merge to `main`. Edit here, not in the UI — a description edited in the
+# UI is silently reverted by the next sync, which is the point: a label whose
+# meaning drifts is worse than one that is missing, because it keeps sorting
+# issues by a rule nobody agreed to.
+#
+# **Removing a line does not delete the label.** Deletion strips the label from
+# every issue that carried it and no history records what was lost, so it stays
+# a deliberate act in the UI. Renaming is the same: `gh label edit <old> --name
+# <new>` moves the issues; editing this file alone just creates a second label.
+#
+# Three prefixes, and the axes are independent — an issue takes one from each
+# where it applies, not one label total:
+#
+#   area:*    which part of the system. The module map in docs/ARCHITECTURE.md
+#             is the same carve.
+#   engine:*  which relational engine, when a finding is specific to one.
+#   bug:/trigger:/blocked:  a qualifier on the kind, not an area.
+#
+# Colours are grouped on purpose: all `area:*` share one, so the eye reads the
+# kind first and the area second.
+
+# --- kind: what sort of work this is -----------------------------------------
+
+- name: bug
+  color: "d73a4a"
+  description: "Fails loudly: exception or obviously wrong result"
+
+- name: bug:silent
+  color: "a00000"
+  description: "Plausible wrong answer or unearned green light; the user gets no signal"
+
+- name: feature
+  color: "a2eeef"
+  description: New capability
+
+- name: perf
+  color: "0e8a16"
+  description: Wall time, memory, or I/O cost — not a wrong answer
+
+- name: chore
+  color: "cfd3d7"
+  description: Packaging, CI, dependencies
+
+- name: decision
+  color: "d876e3"
+  description: "A question to be answered, not work to be done; closes by resolution"
+
+- name: roadmap
+  color: "5319e7"
+  description: "Decided yes: on the plan. Applied on resolution, replacing 'decision'"
+
+# --- area: which part of the system ------------------------------------------
+
+- name: area:language
+  color: "0075ca"
+  description: Schema, grammar, AST, macros, primitives
+
+- name: area:engine
+  color: "0075ca"
+  description: Lowering, IR, relational executor, the sink contract
+
+- name: area:solver
+  color: "0075ca"
+  description: Solver sink, options, statuses, duals, value read-back
+
+- name: area:file-out
+  color: "0075ca"
+  description: "How a model leaves as text: LP/MPS output, formatting, stable bytes"
+
+- name: area:api
+  color: "0075ca"
+  description: Native entry points and CLI
+
+- name: area:compat
+  color: "0075ca"
+  description: Oracle lane and linopy interop
+
+- name: area:docs
+  color: "0075ca"
+  description: SPEC, ARCHITECTURE, ROADMAP, GLOSSARY, README
+
+- name: area:packaging
+  color: "0075ca"
+  description: Distribution, extras, dependency footprint
+
+# --- engine: which implementation, when it matters ---------------------------
+
+- name: engine:polars
+  color: "ffd93d"
+  description: Specific to the polars engine — the default
+
+- name: engine:duckdb
+  color: "d4a017"
+  description: Specific to the duckdb engine — opt-in, the [duckdb] extra
+
+# --- qualifiers ---------------------------------------------------------------
+
+- name: breaking
+  color: "e99695"
+  description: "Changes the YAML surface; land before there are users"
+
+- name: taxed
+  color: "1b9aaa"
+  description: "New closed-vocabulary construct: needs both an oracle and a streaming implementation"
+
+- name: blocked:upstream
+  color: "000000"
+  description: Waiting on an upstream linopy change
+
+- name: trigger:bench
+  color: "ffffff"
+  description: Run the benchmark comparison on this PR; removed when the run finishes
+
+# --- machine-applied: release-please and dependabot own these -----------------
+
+- name: "autorelease: pending"
+  color: "ededed"
+  description: Release-please owns this one — a release PR awaiting merge
+
+- name: "autorelease: tagged"
+  color: "ededed"
+  description: Release-please owns this one — released, tag pushed
+
+- name: dependencies
+  color: "ededed"
+  description: Dependabot version bumps

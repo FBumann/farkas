@@ -1,0 +1,69 @@
+name: Labels
+
+# Applies .github/labels.yml to the repository. Cost: one ~15s job, and only
+# when that file changes.
+#
+# `gh label create --force` is create-or-update, so the run is idempotent and
+# re-running it after a UI edit puts the description back. It does **not**
+# delete: a label absent from the file is left alone, because deleting one
+# strips it from every issue that carried it. That asymmetry is deliberate and
+# documented at the top of the file.
+#
+# Not a required check. It runs *after* the merge — a taxonomy that blocks a
+# PR is a taxonomy people route around.
+
+on:
+  push:
+    branches: [main]
+    paths: [".github/labels.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # labels are issue-scoped, and this is the only job that writes them
+  issues: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/labels.yml
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.11"
+
+      # TSV rather than a jq pipeline, because a description carries colons,
+      # em-dashes and brackets — pyyaml is the only thing here that parses the
+      # file the same way a reader does.
+      - name: Read the taxonomy
+        run: |
+          uv run --no-project --with pyyaml python - > labels.tsv <<'PY'
+          import yaml
+
+          with open(".github/labels.yml") as fh:
+              labels = yaml.safe_load(fh)
+
+          for label in labels:
+              print(label["name"], label["color"], label.get("description", ""), sep="\t")
+          PY
+          wc -l < labels.tsv
+
+      - name: Apply it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          while IFS=$'\t' read -r name color description; do
+            gh label create "$name" --color "$color" --description "$description" --force
+          done < labels.tsv
