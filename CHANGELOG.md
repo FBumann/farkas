@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.61](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.60...v0.0.1-alpha.61) (2026-07-31)
+
+
+### Bug Fixes
+
+* **bench:** the default arm clears the engine it did not select ([#452](https://github.com/FBumann/lpspec/issues/452)) ([6e4e3a3](https://github.com/FBumann/lpspec/commit/6e4e3a3c49ccb78e91e6a2d0caa88eeb65dbb055))
+
 ## [0.0.1-alpha.60](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.59...v0.0.1-alpha.60) (2026-07-31)
 
 
