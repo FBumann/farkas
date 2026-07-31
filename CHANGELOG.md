@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.0.1-alpha.60](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.59...v0.0.1-alpha.60) (2026-07-31)
+
+
+### Refactoring
+
+* **bench:** the harness is pytest; drop the custom runner ([#448](https://github.com/FBumann/lpspec/issues/448)) ([d460ca6](https://github.com/FBumann/lpspec/commit/d460ca6fb330ba3153268e49ed1869374144b114))
+
+## [0.0.1-alpha.59](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.58...v0.0.1-alpha.59) (2026-07-31)
+
+
+### Performance
+
+* **engine:** the read-back reads the label order rather than re-imposing it ([#446](https://github.com/FBumann/lpspec/issues/446)) ([53f8eb8](https://github.com/FBumann/lpspec/commit/53f8eb8781db1ba30c180db0b158628a22fb898d))
+
 ## [0.0.1-alpha.58](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.57...v0.0.1-alpha.58) (2026-07-31)
 
 

@@ -50,14 +50,24 @@ class _Labels(Mapping[str, 'pl.LazyFrame']):
     writes an LP file never happens.
     """
 
-    def __init__(self, con: duckdb.DuckDBPyConnection, tables: dict[str, str]) -> None:
+    def __init__(self, con: duckdb.DuckDBPyConnection, tables: dict[str, str], label: str) -> None:
         self._con = con
         self._tables = tables
+        self._label = label
         self._frames: dict[str, pl.LazyFrame] = {}
 
     def __getitem__(self, name: str) -> pl.LazyFrame:
+        """The frame, **in label order** — which the read-back reads rather than imposes.
+
+        `Engine._read_back` stopped sorting once every labelling path produced
+        an ordered frame. polars' paths do and verify it; a SQL relation
+        promises no order at all, and two of the three here are views over a
+        cross join. So the order is asked for on the way out, where it is paid
+        only by a caller that reads a solution back.
+        """
         if name not in self._frames:
-            self._frames[name] = self._con.execute(f'SELECT * FROM {q(self._tables[name])}').pl().lazy()
+            sql = f'SELECT * FROM {q(self._tables[name])} ORDER BY {q(self._label)}'
+            self._frames[name] = self._con.execute(sql).pl().lazy()
         return self._frames[name]
 
     def __iter__(self) -> Iterator[str]:
@@ -94,8 +104,8 @@ class DuckExecutor(Engine):
         #: the dims each declared name is read through — what `plan.free_prefix`
         #: needs to know which label path a mask allows
         self._name_dims: dict[str, tuple[str, ...]] = {}
-        self._var_labels = _Labels(self._con, self._var_tables)
-        self._row_labels = _Labels(self._con, self._row_tables)
+        self._var_labels = _Labels(self._con, self._var_tables, 'var_label')
+        self._row_labels = _Labels(self._con, self._row_tables, 'row')
         #: the contiguous run of labels each declaration was given — what
         #: `Engine._read_back` slices a solver vector by, on both engines
         self._blocks: dict[str, tuple[int, int]] = {}

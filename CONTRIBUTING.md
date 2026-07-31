@@ -227,10 +227,12 @@ Full method, and why each measurement is taken the way it is, in
 [bench/README.md](bench/README.md). The short version:
 
 ```bash
-uv run python -m bench.run --sizes xs s m l --repeat 3
-uv run python -m bench.run --sizes d100 d50 d25 d08 --skip-gate --repeat 3 \
-    --out bench/results/density.jsonl
-uv run python -m bench.report bench/results/latest.jsonl bench/results/density.jsonl
+uv sync --group bench
+uv run pytest bench --benchmark-memory --sizes xs s m l \
+    --benchmark-json=bench/results/latest.json
+uv run pytest bench --benchmark-memory --sizes d100 d50 d25 d08 --skip-gate \
+    --benchmark-json=bench/results/density.json
+uv run python -m bench.report bench/results/latest.json bench/results/density.json
 uv run python -m bench.plot
 ```
 
@@ -239,8 +241,8 @@ Three things that have each cost us a wrong published number:
 - **Measure on an idle machine.** A ladder taken while the laptop was busy
   inflated one case by 55% — enough to turn "level" into "the one case we lose".
 - **A run replaces its output file.** Anything narrower than the published
-  ladder goes to `--out /tmp/something.jsonl`, or the tables keep their old
-  numbers with a fingerprint that no longer describes them.
+  ladder goes to `--benchmark-json=/tmp/something.json`, or the tables keep
+  their old numbers with a fingerprint that no longer describes them.
 - **Never retype a number.** `bench.report` prints the markdown and
   `bench.plot` rewrites the chart page's data, both from the results file. A
   figure typed by hand outlives the run that produced it.

@@ -203,7 +203,9 @@ def _in_label_order(frame: pl.DataFrame, label: str) -> pl.DataFrame:
     (`compiler._coordinate_product`). That is an implementation detail of a
     dependency, and a label is arithmetic on ordinals rather than a position —
     so a change there would not corrupt a *label*. It would silently stop the
-    frame being sorted, and `cols` is read positionally.
+    frame being sorted, and **two readers take that order on trust**: `cols` is
+    handed to a solver positionally, and `executor._read_back` reads a solution
+    back against these coordinates without sorting them again.
 
     So the claim is verified. `is_sorted` is a linear scan over a column the
     frame already holds; the sort behind it is the correctness floor and is

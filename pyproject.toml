@@ -122,12 +122,32 @@ packages = ["src/lpspec"]
 include = ["/src"]
 
 [dependency-groups]
-# Regression benchmarks (bench/regressions/). Their own group, not `dev`: this
-# pulls memray in, and neither the test suite nor the published ladder
-# (`bench/run.py`, which measures RSS out of process) needs it.
+# The benchmark suite (bench/). Its own group, not `dev`: this pulls memray in
+# and the test suite needs none of it. pytest-benchmem is the harness now — it
+# supplies the timing (through pytest-benchmark), the memray peak, and the
+# whole-process `rss` the published comparison is built on.
 # `uv sync --group bench` to run them.
 bench = [
     "pytest-benchmem>=0.4",
+]
+# The same suite (bench/), measured by CodSpeed instead. Its own group rather
+# than a share of `bench`, for the same reason `bench` is not a share of `dev`:
+# pytest-benchmem brings pytest-benchmark, whose `benchmark` fixture is the one
+# pytest-codspeed replaces, and a second benchmarking plugin loaded into the
+# process being measured is a confounder bought for nothing.
+#
+# Pinned exactly, unlike `pytest-benchmem>=0.4`: CodSpeed keeps the baseline
+# across commits, so the plugin version is part of the measurement rather than
+# part of the environment — a floor would let a bump land as a regression.
+#
+# pandas and pyarrow are here because `bench/cases.py` writes the parquet inputs
+# with them. Declaring them lets CI install this group with
+# `--no-default-groups` and skip resolving linopy from a git branch for a job
+# that never builds a linopy model.
+codspeed = [
+    "pytest-codspeed==5.0.3",
+    "pandas>=2.2",
+    "pyarrow>=16",
 ]
 # The published site (mkdocs.yml). Its own group, not `dev`: nothing in the
 # test suite imports any of it, and a contributor running `uv run pytest` should
@@ -222,9 +242,11 @@ runtime-evaluated-base-classes = ["pydantic.BaseModel"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["--strict-markers", "--strict-config", "-ra"]
-# bench/regressions/ is not on testpaths and is run explicitly; the marker is
-# declared here because --strict-markers rejects unknown ones when it is.
-markers = ["benchmem: regression benchmark (bench/regressions/, needs --group bench)"]
+# bench/ is not on testpaths and is run explicitly; the marker is declared here
+# because --strict-markers rejects unknown ones when it is — and it has to be
+# declared even where pytest-benchmem is absent, because the CodSpeed job runs
+# the same marked tests without it.
+markers = ["benchmem: pytest-benchmem settings for a benchmark (bench/, needs --group bench)"]
 xfail_strict = true
 filterwarnings = ["error"]
 
