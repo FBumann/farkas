@@ -31,6 +31,8 @@ from lpspec.relational import plan
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
+    from lpspec.relational.binding import BoundSources
+
 
 #: Scratch columns. The spaces make them unrepresentable as declared names, so
 #: they cannot collide with a dimension or coordinate the model already has.
@@ -126,21 +128,35 @@ class CompiledExpression:
 class PolarsCompiler:
     """Turn plan nodes into polars queries over the model's tidy frames.
 
-    ``dimension_cardinality`` and ``boolean_parameters`` are read off the data:
-    ``sum`` over an absent dim scales by that dim's size, and ``defined`` on a
-    boolean parameter tests the value rather than its finiteness.
+    ``data`` is everything binding produced and nothing else — frozen, because
+    a query is written against data that has stopped changing.
 
-    The frame registries are the executor's own dicts, not copies — a variable
-    frame appears while its declaration is built, and a constraint compiled
-    afterwards has to see it.
+    ``variables`` is deliberately *not* in it. It is the executor's own dict,
+    not a copy: a variable frame appears while its declaration is built, and a
+    constraint compiled afterwards has to see it. Keeping the live registry
+    outside the frozen carrier is what makes that difference visible in a
+    signature rather than only in this paragraph.
     """
 
     program: plan.Program
-    dimension_cardinality: Mapping[str, int]
-    boolean_parameters: frozenset[str]
-    parameters: Mapping[str, pl.LazyFrame]
-    dimensions: Mapping[str, pl.LazyFrame]
+    data: BoundSources
     variables: Mapping[str, pl.LazyFrame]
+
+    @property
+    def dimensions(self) -> Mapping[str, pl.LazyFrame]:
+        return self.data.dimensions
+
+    @property
+    def parameters(self) -> Mapping[str, pl.LazyFrame]:
+        return self.data.parameters
+
+    @property
+    def dimension_cardinality(self) -> Mapping[str, int]:
+        return self.data.cardinality
+
+    @property
+    def boolean_parameters(self) -> frozenset[str]:
+        return self.data.boolean_parameters
 
     # ------------------------------------------------------------------
     # frames — the masked coordinate product a declaration is instantiated over

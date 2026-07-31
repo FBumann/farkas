@@ -21,6 +21,7 @@ import pytest
 
 from lpspec.errors import LanguageError
 from lpspec.relational import plan
+from lpspec.relational.binding import BoundSources
 from lpspec.relational.compiler import PolarsCompiler
 
 PROGRAM = plan.Program(
@@ -54,8 +55,22 @@ PARAMETERS = {
 VARIABLES = {'p': pl.LazyFrame(schema={'snapshot': pl.Int64, 'generator': pl.String, 'var_label': pl.Int64})}
 
 
+def bound(boolean_parameters: frozenset[str] = frozenset()) -> BoundSources:
+    """The data a query is written against — schemas only, no rows.
+
+    Compiling reads nothing, so an empty frame of the right schema is a whole
+    fixture (docs/ARCHITECTURE.md's admissibility test).
+    """
+    return BoundSources(
+        parameters=PARAMETERS,
+        dimensions=DIMENSIONS,
+        cardinality=CARDINALITY,
+        boolean_parameters=boolean_parameters,
+    )
+
+
 def compiler(boolean_parameters: frozenset[str] = frozenset()) -> PolarsCompiler:
-    return PolarsCompiler(PROGRAM, CARDINALITY, boolean_parameters, PARAMETERS, DIMENSIONS, VARIABLES)
+    return PolarsCompiler(PROGRAM, bound(boolean_parameters), VARIABLES)
 
 
 def columns(frame: pl.LazyFrame) -> list[str]:
@@ -312,10 +327,7 @@ def test_group_sum_over_a_broadcast_dim_is_not_keyed():
     )
     lonely = PolarsCompiler(
         lone,
-        CARDINALITY,
-        frozenset(),
-        PARAMETERS,
-        DIMENSIONS,
+        bound(),
         {'q': pl.LazyFrame(schema={'snapshot': pl.Int64, 'var_label': pl.Int64})},
     )
     node = plan.GroupSum(
