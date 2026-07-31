@@ -37,6 +37,7 @@ from lpspec.relational.plan import (
     Variable,
     VariableDeclaration,
 )
+from lpspec.relational.sinks import SOLVERS
 from tests.conftest import by_coord, solve_lp_file
 from tests.differential import RTOL, differential
 from tests.oracle import linopy, pd, transport_eager_objective, xr
@@ -713,6 +714,36 @@ def test_infinite_bounds_survive_the_handoff(dispatch_data):
         ex.build(unbounded, dispatch_sources(gens, load))
         assert ex._tables().cols['ub'].is_infinite().all()
         assert ex.solve().is_ok
+
+
+@pytest.mark.parametrize('solver_name', sorted(SOLVERS))
+@pytest.mark.parametrize('batch_rows', [1, 2, 7, 100_000], ids=['one', 'two', 'odd', 'whole'])
+def test_a_row_with_no_terms_keeps_its_seat_at_any_chunking(solver_name, batch_rows):
+    """Rows reach a solver by position, so an empty one still occupies one.
+
+    `where: "t > 0"` leaves `balance` at `t = 0` with nothing to sum, and this
+    lane keeps the row: `0 == 5` is infeasible and says so. Both solvers now
+    take the row bounds from a dense vector and slice it per chunk, which is
+    the same hand-off only if every label in the range has a seat — a row that
+    fell out of the frame would take a comparison nothing can fail, leave the
+    constraint unenforced, and the model would come back solved against a
+    model that cannot be.
+
+    Ragged batches because the range loop is where a seat would be lost, and a
+    round number is the one split that hides an off-by-one. Both solvers,
+    because the seating is now theirs jointly rather than either one's.
+    """
+    model = {
+        'dimensions': {'t': {'dtype': 'int', 'values': [0, 1, 2]}, 'g': {'values': ['a', 'b']}},
+        'parameters': {'load': {'dims': ['t']}},
+        'variables': {'p': {'foreach': ['t', 'g'], 'where': 't > 0', 'bounds': {'lower': 0, 'upper': 100}}},
+        'constraints': {'balance': {'foreach': ['t'], 'expression': 'sum(p, over=g) == load'}},
+        'objectives': {'o': {'sense': 'minimize', 'expression': 'sum(sum(p, over=g), over=t)'}},
+    }
+    with lps.build(model, {'load': pl.DataFrame({'t': [0, 1, 2], 'value': [5.0, 4.0, 6.0]})}) as ex:
+        assert sorted(set(ex._tables().matrix['row'].to_list())) == [1, 2], 'row 0 is the orphan under test'
+        solution = ex.solve(batch_rows=batch_rows, solver_name=solver_name)
+        assert solution.termination_condition == 'infeasible'
 
 
 def test_row_chunks_are_bounded_by_nonzeros_not_by_rows():

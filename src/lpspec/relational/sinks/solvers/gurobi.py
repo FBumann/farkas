@@ -161,23 +161,16 @@ def _load(
     lb, ub, cost, integral = model.dense_columns(gurobipy.GRB.INFINITY)
     x = m.addMVar(model.column_count, lb=lb, ub=ub, obj=cost, vtype=np.where(integral, 'I', 'C'))
 
-    ordered_rows = model.rows.sort('row')
-    ordered_matrix = model.matrix.sort('row')
-    senses = np.array([gurobipy.GRB.LESS_EQUAL, gurobipy.GRB.GREATER_EQUAL, gurobipy.GRB.EQUAL], dtype='<U1')
+    sense, rhs = model.dense_rows(gurobipy.GRB.INFINITY)
+    # indexed by SENSE_CODES, which is the order that pairing depends on
+    spelling = np.array([gurobipy.GRB.LESS_EQUAL, gurobipy.GRB.GREATER_EQUAL, gurobipy.GRB.EQUAL], dtype='<U1')
     blocks = []
-    for lo, hi in model.row_chunks_by_nonzeros(batch):
-        rows = ordered_rows.filter(pl.col('row').is_between(lo, hi, closed='left')).select(
-            'row',
-            pl.col('sense').replace_strict({'<=': 0, '>=': 1, '==': 2}, return_dtype=pl.UInt8).alias('op'),
-            'rhs',
-        )
-        a = ordered_matrix.filter(pl.col('row').is_between(lo, hi, closed='left'))
-        starts = np.searchsorted(a['row'].to_numpy(), rows['row'].to_numpy())
+    for lo, hi, a, starts in model.row_blocks(batch):
         block = scipy.sparse.csr_matrix(
             (a['coeff'].to_numpy(), a['col'].to_numpy(), np.append(starts, a.height)),
-            shape=(rows.height, model.column_count),
+            shape=(hi - lo, model.column_count),
         )
-        blocks.append(m.addMConstr(block, x, senses[rows['op'].to_numpy()], rows['rhs'].to_numpy()))
+        blocks.append(m.addMConstr(block, x, spelling[sense[lo:hi]], rhs[lo:hi]))
 
     if model.objective_sense == 'max':
         m.ModelSense = gurobipy.GRB.MAXIMIZE
