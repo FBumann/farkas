@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.45](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.44...v0.0.1-alpha.45) (2026-07-31)
+
+
+### Documentation
+
+* quadratic is planned, not refused — and the ceiling is relational ∩ local ([#388](https://github.com/FBumann/lpspec/issues/388)) ([2a8c172](https://github.com/FBumann/lpspec/commit/2a8c1721cf73552e55c5b1c39775bbe4cf7f02ec))
+
 ## [0.0.1-alpha.44](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.43...v0.0.1-alpha.44) (2026-07-31)
 
 
