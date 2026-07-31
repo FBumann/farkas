@@ -21,16 +21,12 @@ Only the execution surface is re-exported here. Plan node classes live in
 ``lpspec.relational.plan`` and are imported from there — so adding a node
 no longer silently widens something that reads like public API, and the
 import site says which layer the caller is reaching into.
-
-``RelationalBuildError`` is kept as a deprecated alias only. The engine now
-raises ``lpspec.errors.LanguageError`` and ``DataError``; catch those.
 """
 
-from lpspec.relational.engines.polars import PolarsExecutor, RelationalBuildError
+from lpspec.relational.engines.polars import PolarsExecutor
 from lpspec.relational.result import Result
 
 __all__ = [
     'PolarsExecutor',
-    'RelationalBuildError',
     'Result',
 ]

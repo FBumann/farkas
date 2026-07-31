@@ -24,7 +24,6 @@ import polars as pl
 from lpspec.errors import (
     DataError,
     LanguageError,
-    LpspecError,
     null_bounds_message,
     sparse_divisor_message,
 )
@@ -59,14 +58,6 @@ _DTYPES = {
     'lb': pl.Float64, 'ub': pl.Float64, 'rhs': pl.Float64, 'coeff': pl.Float64,
     'sense': pl.String, 'vtype': pl.Enum(get_args(plan.VariableType)),
 }  # fmt: skip
-
-
-#: Deprecated. The engine's failures are now split between
-#: :class:`~lpspec.errors.LanguageError` (the program says something the
-#: engine cannot build) and :class:`~lpspec.errors.DataError` (a source is
-#: missing or the wrong shape). This alias is their common base, so an existing
-#: ``except RelationalBuildError`` keeps catching everything it used to.
-RelationalBuildError = LpspecError
 
 
 class PolarsExecutor:

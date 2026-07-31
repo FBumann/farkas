@@ -149,17 +149,12 @@ def test_check_reports_language_errors_before_any_data_is_bound(
 
 def test_error_hierarchy_is_one_catchable_tree():
     """One ``except`` covers the package, and the model/run split is real."""
-    from lpspec.relational import RelationalBuildError
-
     for cls in (lps.LanguageError, lps.DataError):
         assert issubclass(cls, lps.LpspecError)
     for cls in (lps.SchemaError, lps.DimensionError, lps.PiecewiseExpansionError):
         assert issubclass(cls, lps.LanguageError)
     assert not issubclass(lps.DataError, lps.LanguageError)
     assert issubclass(lps.LpspecError, ValueError)
-
-    # the retired name still catches everything it used to
-    assert RelationalBuildError is lps.LpspecError
 
 
 def test_multi_file_composition_reserved(dispatch_yaml):
