@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.0.1-alpha.50](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.49...v0.0.1-alpha.50) (2026-07-31)
+
+
+### Performance
+
+* **polars:** a constraint over distinct variables has nothing to collapse ([#408](https://github.com/FBumann/lpspec/issues/408)) ([8e725de](https://github.com/FBumann/lpspec/commit/8e725debe8cfe47ab2aac2b6bd35a04a6ce00472))
+* **polars:** a fragment is not restricted by its own absence ([#413](https://github.com/FBumann/lpspec/issues/413)) ([8ac3a0d](https://github.com/FBumann/lpspec/commit/8ac3a0d6c1bcd5f5ff40b671d7faf358fb1e49e7))
+* **polars:** a mask joins for what it is certain of ([#415](https://github.com/FBumann/lpspec/issues/415)) ([68d95e2](https://github.com/FBumann/lpspec/commit/68d95e2a11a162bac85338139af06f5156633514))
+* **polars:** a solve is read back by position, not by key ([#414](https://github.com/FBumann/lpspec/issues/414)) ([cba01c4](https://github.com/FBumann/lpspec/commit/cba01c4563fb0094e04b409b2483266e06a9e741))
+* **polars:** an existence join does not deduplicate what it asks about ([#412](https://github.com/FBumann/lpspec/issues/412)) ([c008154](https://github.com/FBumann/lpspec/commit/c00815437513dab83ae0ce1780170675ff709608))
+
 ## [0.0.1-alpha.49](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.48...v0.0.1-alpha.49) (2026-07-31)
 
 
