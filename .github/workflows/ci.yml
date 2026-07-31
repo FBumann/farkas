@@ -162,12 +162,12 @@ jobs:
           uv venv
           uv pip install ".[duckdb]"
           uv run --no-sync python -c "import importlib.util, sys; sys.exit(importlib.util.find_spec('pandas') is not None)"
-          uv run --no-sync python -c "
+          LPSPEC_ENGINE=duckdb uv run --no-sync python -c "
           import polars as pl, lpspec as lps
           src = {'p_max': pl.DataFrame({'generator': ['wind'], 'value': [10.0]}),
                  'cost': pl.DataFrame({'generator': ['wind'], 'value': [1.0]}),
                  'load': pl.DataFrame({'snapshot': [0], 'value': [5.0]})}
-          sol = lps.solve('examples/dispatch.yaml', src, engine='duckdb')
+          sol = lps.solve('examples/dispatch.yaml', src)
           assert sol.objective == 5.0, sol.objective
           assert isinstance(sol.primal('p'), pl.DataFrame)
           import sys; assert 'pandas' not in sys.modules
