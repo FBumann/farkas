@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.42](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.41...v0.0.1-alpha.42) (2026-07-31)
+
+
+### Documentation
+
+* **architecture:** the consumers diagram carries the shape, not the list ([#377](https://github.com/FBumann/lpspec/issues/377)) ([fb06b82](https://github.com/FBumann/lpspec/commit/fb06b82cd2c00e8a1c764b860d78ce1a5e8e77d7))
+
 ## [0.0.1-alpha.41](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.40...v0.0.1-alpha.41) (2026-07-31)
 
 
