@@ -170,6 +170,49 @@ def test_sum_drops_the_dim_it_sums_over_without_aggregating():
     assert 'AGGREGATE' not in query(fragment.frame)
 
 
+def masked_compiler() -> PolarsCompiler:
+    """A compiler over two masked variables, so fragments carry presence.
+
+    Two, because a restriction only ever crosses from one fragment to another —
+    with a single masked term there is nothing for absence to propagate *to*.
+    """
+    over = ('snapshot', 'generator')
+    where = plan.ParameterComparison('available', '>', 0.0)
+    masked = plan.Program(
+        parameters=PROGRAM.parameters,
+        variables=(
+            plan.VariableDeclaration('p', over, where=where),
+            plan.VariableDeclaration('q', over, where=where),
+        ),
+        constraints=(),
+        objective=PROGRAM.objective,
+        dimensions=PROGRAM.dimensions,
+    )
+    frames = dict(VARIABLES, q=VARIABLES['p'])
+    return PolarsCompiler(masked, bound(), frames)
+
+
+def test_a_reduction_carries_absence_between_fragments_and_not_into_the_one_it_came_from():
+    """`sum(p + q)` sums where each exists, and neither is checked against itself.
+
+    Which is the whole of what "each one's absence says nothing about the
+    other" means: the *other*. A fragment's rows and its presence come from one
+    frame and are rewritten in step, so restricting a fragment by its own
+    coordinates can only return the rows it was given. Under a mask over a
+    single term — the ordinary case — that made the pass a semi-join of a
+    frame against itself, and no assertion about the answer can see it, since
+    the answer is the same frame.
+    """
+    both = masked_compiler().expression(
+        plan.Sum(plan.Add(plan.Variable('p'), plan.Variable('q')), ('generator',)), 'test'
+    )
+    assert [joins(t.frame) for t in both.terms] == [1, 1]
+    assert all('SEMI JOIN' in query(t.frame) for t in both.terms)
+
+    alone = masked_compiler().expression(plan.Sum(plan.Variable('p'), ('generator',)), 'test')
+    assert joins(alone.terms[0].frame) == 0
+
+
 def test_a_reduction_restricts_by_existence_and_does_not_deduplicate():
     """A semi-join asks whether a key occurs, so nothing distinguishes first.
 
@@ -178,22 +221,10 @@ def test_a_reduction_restricts_by_existence_and_does_not_deduplicate():
     which on `dispatch/l` was a third of the restriction — and it is invisible
     from the answer, since both plans return the same frame.
     """
-    masked = plan.Program(
-        parameters=PROGRAM.parameters,
-        variables=(
-            plan.VariableDeclaration(
-                'p', ('snapshot', 'generator'), where=plan.ParameterComparison('available', '>', 0.0)
-            ),
-        ),
-        constraints=(),
-        objective=PROGRAM.objective,
-        dimensions=PROGRAM.dimensions,
+    compiled = masked_compiler().expression(
+        plan.Sum(plan.Add(plan.Variable('p'), plan.Variable('q')), ('generator',)), 'test'
     )
-    restricting = PolarsCompiler(masked, bound(), VARIABLES)
-    fragment = restricting.expression(plan.Sum(plan.Variable('p'), ('generator',)), 'test').terms[0]
-
-    assert 'SEMI JOIN' in query(fragment.frame)
-    assert 'UNIQUE' not in query(fragment.frame)
+    assert 'UNIQUE' not in query(compiled.terms[0].frame)
 
 
 def test_sum_over_an_absent_dim_scales_by_that_dims_cardinality():
