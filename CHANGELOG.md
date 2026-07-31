@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.1-alpha.39](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.38...v0.0.1-alpha.39) (2026-07-31)
+
+
+### Refactoring
+
+* **language:** the front end is a package, and degree 1 lives in it ([#371](https://github.com/FBumann/lpspec/issues/371)) ([0bcfd1b](https://github.com/FBumann/lpspec/commit/0bcfd1b2cd09fae66b9e25e5afd3aed520c569c3))
+* **relational:** binding produces a value, and the live registry is visibly the exception ([#370](https://github.com/FBumann/lpspec/issues/370)) ([70e13ba](https://github.com/FBumann/lpspec/commit/70e13ba4a07f29bb97f1a0b620952118c6c9b0a3))
+
 ## [0.0.1-alpha.38](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.37...v0.0.1-alpha.38) (2026-07-31)
 
 
