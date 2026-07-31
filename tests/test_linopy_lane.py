@@ -19,7 +19,7 @@ import textwrap
 import pytest
 
 from lpspec.errors import DataError, LanguageError
-from lpspec.schema import MathSchema
+from lpspec.language.schema import MathSchema
 from tests.oracle import builder, linopy, loader, lpspec_linopy, pd, xr
 
 
@@ -282,7 +282,7 @@ def gens():
 
 def _resolved(text, parameters=('p_max',), dimensions=('g',)):
     """Resolve then evaluate — the evaluator no longer takes strings."""
-    from lpspec.resolution import Namespace, where_of
+    from lpspec.language.resolution import Namespace, where_of
 
     return where_of(text, Namespace((), parameters, dimensions), 'test')
 

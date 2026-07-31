@@ -291,7 +291,7 @@ def test_no_helper_registry_anywhere():
     makes the differential tests an oracle rather than a comparison of
     dialects (docs/ARCHITECTURE.md, "The expressive ceiling").
     """
-    import lpspec.helpers as helpers
+    import lpspec.language.helpers as helpers
 
     assert not hasattr(lps, 'register')
     assert not hasattr(helpers, 'register')

@@ -29,9 +29,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, assert_never
 
-from lpspec.dimensions import dims_of
 from lpspec.errors import LanguageError
-from lpspec.expression_parser import (
+from lpspec.language import degree
+from lpspec.language.dimensions import dims_of
+from lpspec.language.expression_parser import (
     ArithmeticNode,
     BinaryOperatorNode,
     ComparisonNode,
@@ -45,10 +46,9 @@ from lpspec.expression_parser import (
     UnaryOperatorNode,
     VariableNode,
 )
-from lpspec.helpers import BUILTIN_NAMES, call_shape_error, edge_error
-from lpspec.relational import plan
-from lpspec.resolution import Namespace, expression_of, where_of
-from lpspec.where_parser import (
+from lpspec.language.helpers import BUILTIN_NAMES, call_shape_error, edge_error
+from lpspec.language.resolution import Namespace, expression_of, where_of
+from lpspec.language.where_parser import (
     AndNode,
     BooleanLiteralNode,
     DimensionComparisonNode,
@@ -61,9 +61,10 @@ from lpspec.where_parser import (
     VariableDefinedNode,
     WhereNode,
 )
+from lpspec.relational import plan
 
 if TYPE_CHECKING:
-    from lpspec.schema import MathSchema
+    from lpspec.language.schema import MathSchema
 
 _SENSES = {'==', '<=', '>='}
 
@@ -196,33 +197,20 @@ def _lower_expr(node: ArithmeticNode, schema: MathSchema, context: str) -> plan.
     if isinstance(node, BinaryOperatorNode):
         left = _lower_expr(node.left, schema, context)
         right = _lower_expr(node.right, schema, context)
+        # Degree is the language's rule, not the plan's — asked here, answered
+        # in `language/degree.py`, and asked identically by the eager lane.
+        degree.check_binary(node, context)
         match node.op:
             case '+':
                 return plan.Add(left, right)
             case '-':
                 return plan.Add(left, plan.Negate(right))
             case '*':
-                if _has_var(left) and _has_var(right):
-                    raise LanguageError(
-                        f'{context}: both factors of a product contain variables, which '
-                        f'is degree 2. Multiply the variable by a parameter instead, or '
-                        f'model the curve with a piecewise: block — see ROADMAP, '
-                        f'"The degree axis".'
-                    )
                 return plan.Multiply(left, right)
             case '/':
-                if _has_var(right):
-                    raise LanguageError(
-                        f'{context}: the divisor contains variables, which is not affine. '
-                        f'Divide by a parameter, or precompute the reciprocal as one.'
-                    )
                 return plan.Divide(left, right)
-            case _:
-                raise LanguageError(
-                    f"{context}: operator '{node.op}' is not in the language. Multiply the "
-                    f'term out, or precompute it as a parameter — a variable base would '
-                    f'make the model nonlinear (see ROADMAP, "The degree axis").'
-                )
+            case _:  # pragma: no cover — check_binary refuses every other operator
+                raise AssertionError(f'{context}: operator {node.op!r} passed the degree check')
 
     if isinstance(node, FunctionCallNode):
         if node.name not in BUILTIN_NAMES:
@@ -270,7 +258,7 @@ def _lower_expr(node: ArithmeticNode, schema: MathSchema, context: str) -> plan.
                 raise LanguageError(f'{context}: shift(by=...) must be an integer literal')
             _check_dim_rules(node, schema, context)
             operand = _lower_expr(node.args[0], schema, context)
-            has_var = _has_var(operand)
+            has_var = degree.carries_variable(node.args[0])
             edge = node.kwargs.get('edge')
             wrap = isinstance(edge, EdgeNode)
             # One kwarg, three policies: `edge=wrap` is cyclic and vacates
@@ -348,23 +336,6 @@ def _shift_over_data_message(context: str) -> str:
         f'  where: "..."                        mask the vacated coordinate out of the row\n'
         f'  shift(x, over=d, by=n, edge=wrap)   the dimension really is cyclic'
     )
-
-
-def _has_var(expr: plan.Expression) -> bool:
-    """Whether *expr* contains a decision variable.
-
-    Degree 1 is the first clause of the expressive ceiling, so it has to be
-    decidable without data — that is what makes ``lps.check()`` a real gate.
-    The executor repeats the check when it compiles terms, for hand-built plans.
-    """
-    if isinstance(expr, plan.Variable):
-        return True
-    if isinstance(expr, (plan.Constant, plan.Parameter)):
-        return False
-    operands = plan.children(expr)
-    if not operands:
-        raise LanguageError(f'cannot decide degree of {type(expr).__name__}')
-    return any(_has_var(operand) for operand in operands)
 
 
 def _bound_expression(value: float | str) -> plan.Expression:

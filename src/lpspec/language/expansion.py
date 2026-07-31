@@ -40,7 +40,7 @@ import copy
 from typing import TYPE_CHECKING, assert_never, overload
 
 from lpspec.errors import SchemaError
-from lpspec.expression_parser import (
+from lpspec.language.expression_parser import (
     ArithmeticNode,
     BinaryOperatorNode,
     ComparisonNode,
@@ -60,7 +60,7 @@ from lpspec.expression_parser import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from lpspec.schema import MacroBlock, MathSchema
+    from lpspec.language.schema import MacroBlock, MathSchema
 
 #: Backstop against pathological nesting the cycle check cannot see.
 _MAX_DEPTH = 50

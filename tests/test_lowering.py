@@ -14,6 +14,8 @@ import numpy as np
 import pytest
 
 from lpspec.errors import DataError, DimensionError, LanguageError
+from lpspec.language.resolution import Namespace
+from lpspec.language.schema import MathSchema
 from lpspec.lowering import _lower_expr, _lower_where, lower_program
 from lpspec.relational.plan import (
     DimensionComparison,
@@ -23,8 +25,6 @@ from lpspec.relational.plan import (
     Sum,
     Variable,
 )
-from lpspec.resolution import Namespace
-from lpspec.schema import MathSchema
 from lpspec.sources import tidy_sources
 from tests.conftest import resolved, schema_of
 from tests.differential import differential

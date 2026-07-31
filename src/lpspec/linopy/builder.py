@@ -17,7 +17,8 @@ import xarray as xr
 
 from lpspec._notes import note
 from lpspec.errors import DataError, LanguageError, null_bounds_message
-from lpspec.expression_parser import (
+from lpspec.language import degree
+from lpspec.language.expression_parser import (
     ArithmeticNode,
     BinaryOperatorNode,
     ComparisonNode,
@@ -31,11 +32,9 @@ from lpspec.expression_parser import (
     UnaryOperatorNode,
     VariableNode,
 )
-from lpspec.helpers import EDGE_WRAP, unknown_helper_message
-from lpspec.linopy import semantics
-from lpspec.linopy.loader import check_divisors_cover
-from lpspec.resolution import Namespace, expression_of, where_of
-from lpspec.where_parser import (
+from lpspec.language.helpers import EDGE_WRAP, unknown_helper_message
+from lpspec.language.resolution import Namespace, expression_of, where_of
+from lpspec.language.where_parser import (
     AndNode,
     BooleanLiteralNode,
     DimensionComparisonNode,
@@ -48,6 +47,8 @@ from lpspec.where_parser import (
     VariableDefinedNode,
     WhereNode,
 )
+from lpspec.linopy import semantics
+from lpspec.linopy.loader import check_divisors_cover
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Hashable, Mapping
@@ -55,7 +56,7 @@ if TYPE_CHECKING:
     import linopy
     import pandas as pd
 
-    from lpspec.schema import MathSchema
+    from lpspec.language.schema import MathSchema
 
 _SIGN_MAP = {'==': '=', '<=': '<=', '>=': '>='}
 
@@ -286,13 +287,14 @@ def _additive_terms(node: ArithmeticNode, ctx: EvaluationContext) -> list[Any]:
         return [-t for t in terms] if node.op == '-' else terms
 
     if isinstance(node, BinaryOperatorNode):
+        degree.check_binary(node)  # the language's verdict, not linopy's
         if node.op == '+':
             return _additive_terms(node.left, ctx) + _additive_terms(node.right, ctx)
         if node.op == '-':
             return _additive_terms(node.left, ctx) + [-t for t in _additive_terms(node.right, ctx)]
         if node.op == '*':
-            # degree stays whatever it was: a product of two variable-carrying
-            # terms still fails in linopy, exactly as it does through _eval_ast
+            # degree 1 survives distribution: check_binary has already refused
+            # the one product that would not, so no term here can be quadratic
             return [
                 left * right for left in _additive_terms(node.left, ctx) for right in _additive_terms(node.right, ctx)
             ]
@@ -342,18 +344,13 @@ def _eval_ast(
         return operand  # unary +
 
     if isinstance(node, BinaryOperatorNode):
+        # One sentence for one rule: `**`, a quadratic product and a variable
+        # divisor are all refused by `language/degree.py`, which is also what
+        # the streaming lane asks. This lane used to keep a hand-copy of the
+        # `**` message and leave `x * y` to fail as whatever linopy raised.
+        degree.check_binary(node)
         left = _eval_ast(node.left, ctx)
         right = _eval_ast(node.right, ctx)
-        if node.op not in _ARITHMETIC_OPS:
-            # `**` parses but is not in the language: a variable base breaks
-            # degree 1, and a parameters-only power belongs in data prep. The
-            # streaming lane rejects it at lowering; this lane must agree.
-            msg = (
-                f"operator '{node.op}' is not in the language. Multiply the term out, "
-                f'or precompute it as a parameter — a variable base would make the '
-                f'model nonlinear (see ROADMAP, "The degree axis").'
-            )
-            raise LanguageError(msg)
         return _ARITHMETIC_OPS[node.op](left, right)
 
     if isinstance(node, FunctionCallNode):

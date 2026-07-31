@@ -121,8 +121,8 @@ def test_every_resolved_predicate_is_parity_tested():
     """
     from typing import get_args
 
-    from lpspec.resolution import Namespace, where_of
-    from lpspec.where_parser import UnresolvedComparisonNode, UnresolvedNameNode, WhereNode
+    from lpspec.language.resolution import Namespace, where_of
+    from lpspec.language.where_parser import UnresolvedComparisonNode, UnresolvedNameNode, WhereNode
 
     unresolved = {UnresolvedNameNode, UnresolvedComparisonNode}  # rewritten by resolution, never evaluated
     expected = set(get_args(WhereNode)) - unresolved

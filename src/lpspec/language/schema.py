@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from lpspec.errors import did_you_mean
-from lpspec.helpers import BUILTIN_NAMES
+from lpspec.language.helpers import BUILTIN_NAMES
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

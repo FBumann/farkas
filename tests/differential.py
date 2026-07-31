@@ -45,8 +45,8 @@ from tests.oracle import linopy, lpspec_linopy
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
 
+    from lpspec.language.schema import MathSchema
     from lpspec.relational.executor import Result
-    from lpspec.schema import MathSchema
 
 #: Both lanes hand the same numbers to the same solver, so they must agree to
 #: solver precision, not to a fudge factor. One tolerance, one place.
