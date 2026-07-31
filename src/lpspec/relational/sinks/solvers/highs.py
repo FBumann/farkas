@@ -6,8 +6,9 @@ float→text→parse round trip — that is why this exists beside
 numpy slices, in batches.
 
 **Nothing textual crosses into numpy.** A polars ``String`` column converts by
-boxing every value as a Python object, so a comparison against ``'<='`` is made
-in polars and only the bound it selects is handed over — the same rule
+boxing every value as a Python object, so a row's ``'<='`` becomes a
+:data:`~lpspec.relational.sinks.tables.SENSE_CODES` byte before it is read here
+— the same rule
 :meth:`~lpspec.relational.sinks.tables.ModelTables.dense_columns` states for
 the column vectors, where it was measured.
 
@@ -22,6 +23,7 @@ from typing import TYPE_CHECKING, Any
 import polars as pl
 
 from lpspec.errors import LpspecError
+from lpspec.relational.sinks.tables import SENSE_CODES
 from lpspec.relational.status import SolveStatus
 
 if TYPE_CHECKING:
@@ -39,9 +41,9 @@ if TYPE_CHECKING:
 #:
 #: Deliberately small, and the opposite of what the same budget settled at on
 #: the duckdb engine. There a wider chunk was worth a third of the hand-off,
-#: because every chunk re-ran an ordered query; here the columns are numpy
-#: slices and the rows a filter over an already-sorted frame, so more chunks
-#: cost almost nothing and only residency scales with the budget. Measured at
+#: because every chunk re-ran an ordered query; here both columns and rows are
+#: numpy slices, so more chunks cost almost nothing and only residency scales
+#: with the budget. Measured at
 #: `l`: 2e6 against 1e5 is 0.50s against 0.59s on `dispatch` and 0.71 against
 #: 0.75 on `transport`, for 0.6 GB and 0.2 GB more peak. A tenth of a second
 #: on a hand-off that precedes a minute of simplex is not worth half a
@@ -112,26 +114,18 @@ def build_highs(
             integrality = np.full(len(noncontinuous), int(highspy.HighsVarType.kInteger), dtype=np.uint8)
             h.changeColsIntegrality(len(noncontinuous), noncontinuous, integrality)
 
-    ordered_rows = model.rows.sort('row')
-    ordered_matrix = model.matrix.sort('row')
-    for lo, hi in model.row_chunks_by_nonzeros(batch):
-        rows = ordered_rows.filter(pl.col('row').is_between(lo, hi, closed='left')).select(
-            'row',
-            pl.when(pl.col('sense') == '<=').then(-inf).otherwise(pl.col('rhs')).alias('rlb'),
-            pl.when(pl.col('sense') == '>=').then(inf).otherwise(pl.col('rhs')).alias('rub'),
-        )
-        a = ordered_matrix.filter(pl.col('row').is_between(lo, hi, closed='left'))
-        rlb = rows['rlb'].to_numpy()
-        rub = rows['rub'].to_numpy()
-        starts = np.searchsorted(a['row'].to_numpy(), rows['row'].to_numpy()).astype(np.int32)
+    sense, rhs = model.dense_rows(inf)
+    rlb = np.where(sense == SENSE_CODES['<='], -inf, rhs)
+    rub = np.where(sense == SENSE_CODES['>='], inf, rhs)
+    for lo, hi, a, starts in model.row_blocks(batch):
         _loaded(
             h,
             h.addRows(
-                len(rlb),
-                rlb,
-                rub,
+                hi - lo,
+                rlb[lo:hi],
+                rub[lo:hi],
                 a.height,
-                starts,
+                starts.astype(np.int32),
                 a['col'].to_numpy().astype(np.int32),
                 a['coeff'].to_numpy(),
             ),
