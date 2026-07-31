@@ -666,24 +666,34 @@ def _propagate_absence(compiled: CompiledExpression) -> CompiledExpression:
     a constant part lacking the summed dims is refused by ``_sum_fragment``
     before it gets here.
 
+    **A fragment is never restricted by its own presence**, which is the whole
+    of what the *other* in "each one's absence says nothing about the other"
+    means. A fragment's rows and its presence are built from one frame and
+    rewritten in step — a product joins the rows and leaves the coordinates, a
+    translation remaps both, a fill adds to both — so the rows are inside the
+    coordinates by construction and the join can only return them all. Under a
+    mask over a single term, which is the ordinary case, that made the whole
+    pass a semi-join of a frame against itself: 0.31 s over 10M rows on
+    `dispatch/l`, returning the 10M it was given.
+
     The restriction is a **semi-join, so the presence frame is not deduplicated
     first**. A semi-join asks whether a key occurs, and occurring twice is still
     occurring — the distinct changes no row and costs a hash pass over every
-    coordinate the variable has. On `dispatch/l` that pass was a third of the
-    restriction.
+    coordinate the variable has.
     """
-    restrictions = [
-        (p.presence_dims or p.dims, p.presence) for p in (*compiled.terms, *compiled.consts) if p.presence is not None
-    ]
-    if not restrictions:
+    absent = [p for p in (*compiled.terms, *compiled.consts) if p.presence is not None]
+    if not absent:
         return compiled
 
     def restrict(p: TermFragment) -> TermFragment:
         frame = p.frame
-        for on, presence in restrictions:
+        for source in absent:
+            if source is p or source.presence is None:
+                continue
+            on = list(source.presence_dims or source.dims)
             if all(d in p.dims for d in on):
-                frame = frame.join(presence.select(list(on)), on=list(on), how='semi')
-        return replace(p, frame=frame)
+                frame = frame.join(source.presence.select(on), on=on, how='semi')
+        return p if frame is p.frame else replace(p, frame=frame)
 
     return _map_fragments(compiled, restrict)
 
