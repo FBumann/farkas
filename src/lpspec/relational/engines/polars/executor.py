@@ -427,10 +427,18 @@ def _needs_aggregate(terms: Sequence[TermFragment], *, projected: bool = False) 
     Named for the answer, not the condition: an inverted test here is a wrong
     model rather than a slow one.
 
-    Two fragments may both carry the same variable — ``x + 2 * x`` is one row
-    each and one column — and a single fragment that is not
-    :attr:`~lpspec.relational.engines.polars.compiler.TermFragment.keyed` already holds a
-    label twice.
+    Two things can put a label twice into the stack, and they are asked
+    separately. A single fragment that is not
+    :attr:`~lpspec.relational.engines.polars.compiler.TermFragment.keyed`
+    already holds one twice on its own. Two fragments collide only if they
+    carry the *same* variable — ``x + 2 * x`` is one row each and one column —
+    because labels are dense and assigned a declaration at a time, so distinct
+    variables cannot reach a shared one however either fragment was reshaped.
+
+    That second half is what makes the ordinary multi-term constraint free.
+    ``reserve_up + reserve_down <= p_max`` stacks two fragments, and reading
+    only their count says the aggregate is reachable — which on the `fleet`
+    rungs means sorting every nonzero in the model to collapse nothing.
 
     *projected* is what the two call sites do not share. The matrix keeps a
     fragment's dims: a constraint's ``row`` is a function of dims that include
@@ -452,10 +460,10 @@ def _needs_aggregate(terms: Sequence[TermFragment], *, projected: bool = False) 
     the same change measured at nothing — the value is engine-specific even
     though the reasoning is not (#161).
     """
-    if len(terms) != 1:
+    if any(not t.survives_dropping(set(t.dims) if projected else set()) for t in terms):
         return True
-    (term,) = terms
-    return not term.survives_dropping(set(term.dims) if projected else set())
+    carried = [t.variable for t in terms]
+    return len(set(carried)) != len(carried)
 
 
 def _has_repeated_entry(matrix: pl.DataFrame) -> bool:
