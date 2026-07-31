@@ -9,7 +9,7 @@ column index — assembled relationally and handed to the solver in batches.
 
 The consequence worth the headline is **cost to a loaded solver** — YAML and
 data in, a populated solver out, no LP file anywhere in between. Measured
-against the eager lane's own best path to the same place, on the top rung of
+against linopy's own best path to the same place, on the top rung of
 each of five benchmark cases — 1M to 12M variables
 ([benchmarks](docs/benchmarks.md)):
 
@@ -17,8 +17,8 @@ each of five benchmark cases — 1M to 12M variables
   in the ladder to be lost — its parameters are dense over the whole variable
   product, the one shape that suits an array engine.
 - **Lower peak on all five**, from 0.95x to 0.32x. The margins are narrow at
-  the top because HiGHS's own copy of the model dominates once it is loaded and
-  neither lane can shrink it.
+  the top because HiGHS's own copy of the model dominates once it is loaded, and
+  nothing on either side can shrink it.
 
 Read the sink you use: through the *LP file* the picture is closer, and on one
 case we are behind on peak. That table is in the same file, next to this one.
@@ -146,11 +146,11 @@ constraints:
     expression: p - shift(p, over=snapshot, by=1) <= ramp_max
 ```
 
-[linopy](https://github.com/PyPSA/linopy) is not a runtime dependency — that shim
-is opt-in, and the same install doubles as the **oracle** every language feature
-is differentially tested against. There is no routing and no fallback: both lanes
-accept exactly the same language, and a construct outside it is a load error
-naming its rewrite.
+[linopy](https://github.com/PyPSA/linopy) is **not a runtime dependency**. The
+shim above is opt-in, and the same install doubles as the **oracle** every
+language feature is differentially tested against — all three relationships are
+[one page](docs/design/linopy.md). There is no routing and no fallback: a
+construct outside the language is a load error naming its rewrite.
 
 ## Docs
 
@@ -185,7 +185,7 @@ language.
 
 In practice: pin an exact version if you depend on this, and read the
 [changelog](https://github.com/FBumann/lpspec/blob/main/CHANGELOG.md) before upgrading — breaking commits are marked `!`,
-and every one names the rewrite. What exists is tested; both lanes round-trip
-real models through solve, differentially verified against linopy. It is the
+and every one names the rewrite. What exists is tested: real models round-trip
+through solve, differentially verified against linopy. It is the
 *surface* that is not yet frozen, not the behaviour.
 <!--status-end-->
