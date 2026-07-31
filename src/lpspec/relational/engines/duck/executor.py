@@ -40,7 +40,7 @@ _COLS, _OBJ, _ROWS, _MATRIX = sinks.COLS, sinks.OBJ, sinks.ROWS, sinks.MATRIX
 
 
 class _Labels(Mapping[str, 'pl.LazyFrame']):
-    """Label tables, fetched out of duckdb only if a read-back asks.
+    """Label relations, fetched out of duckdb only if a read-back asks.
 
     `Engine` reads a solution back by joining the solver's answer onto
     `(dims…, label)` frames, and states those as polars. Materialising every
@@ -67,7 +67,7 @@ class _Labels(Mapping[str, 'pl.LazyFrame']):
         return len(self._tables)
 
     def clear(self) -> None:
-        """Drop the cached frames; the tables go with the connection."""
+        """Drop the cached frames; the relations go with the connection."""
         self._frames.clear()
 
 
@@ -104,17 +104,24 @@ class DuckExecutor(Engine):
 
     # -- registration ---------------------------------------------------
 
-    def _view(self, sql: str, prefix: str) -> str:
-        """Materialise *sql* as a named table and return the name.
+    def _relation(self, sql: str, prefix: str, *, materialise: bool) -> str:
+        """Name *sql* as a table or a view, and return the name.
 
-        Materialised rather than a view on purpose: a label relation is read
-        several times downstream, and a view would re-execute the whole nested
-        SELECT underneath it each time. The polars side makes the same call in
-        the same places — `labels.frame` collects.
+        **Materialise when the derivation is the expensive part, not when the
+        result is read often.** A label relation is read three or four times
+        downstream, which argues for a table until you price the two sides: a
+        counted label needs an ordered window over the whole coordinate product
+        and is worth paying for once, while an arithmetic one is a cross join
+        of two small relations and a multiply. Writing ten million rows to
+        answer that a second time costs more than answering it three times.
+
+        The polars engine collects in the same places, and for a reason that
+        does not carry over: a `LazyFrame` read twice is *planned* twice, and
+        the plan under a label reaches all the way back to the parquet.
         """
         self._registered += 1
         name = f'{prefix}_{self._registered}'
-        self._con.execute(f'CREATE TABLE {q(name)} AS {sql}')
+        self._con.execute(f'CREATE {"TABLE" if materialise else "VIEW"} {q(name)} AS {sql}')
         return name
 
     def _register(self, name: str, frame: pl.DataFrame) -> str:
@@ -211,7 +218,7 @@ class DuckExecutor(Engine):
                 cols = ', '.join(q(d) for d in dims) or q(UNIT)
                 rel = self._q.frame(dims, None)
                 sql = f'SELECT {cols}, ({self._row_major(dims, start)})::BIGINT AS {q(label)} FROM {rel.alias("p")}'
-                return self._view(sql, 'lbl'), start + rows
+                return self._relation(sql, 'lbl', materialise=False), start + rows
 
             free = plan.free_prefix(dims, plan.predicate_dims(where, self._name_dims))
             if free:
@@ -259,7 +266,7 @@ class DuckExecutor(Engine):
             f'SELECT {cols}, (ROW_NUMBER() OVER (ORDER BY {order}) - 1 + {start})::BIGINT AS {q(label)} '
             f'FROM {carrier.alias("c")}'
         )
-        name = self._view(sql, 'lbl')
+        name = self._relation(sql, 'lbl', materialise=True)
         return name, start + self._height(name)
 
     def _factored(
@@ -289,11 +296,14 @@ class DuckExecutor(Engine):
         comparing the built model against the other engine's.
         """
         head, kept = dims[:free], dims[free:]
-        ranked = self._view(
+        ranked = self._relation(
             f'SELECT {", ".join(q(d) for d in kept)}, '
             f'(ROW_NUMBER() OVER (ORDER BY {", ".join(q(_ordinal(d)) for d in kept)}) - 1)::BIGINT AS "__rank" '
             f'FROM {self._q.frame(kept, where).alias("k")}',
             'srv',
+            # the one relation here worth writing down: it is small, it is
+            # counted, and its window is the work the rectangle exists to avoid
+            materialise=True,
         )
         width = self._height(ranked)
         if width == 0:
@@ -309,7 +319,7 @@ class DuckExecutor(Engine):
             f'FROM {product.alias("h")} CROSS JOIN {q(ranked)} AS s'
         )
         rows = math.prod(self._q.cardinality[d] for d in head) * width
-        return self._view(sql, 'lbl'), start + rows
+        return self._relation(sql, 'lbl', materialise=False), start + rows
 
     def _height(self, table: str) -> int:
         got = self._con.execute(f'SELECT count(*) FROM {q(table)}').fetchone()

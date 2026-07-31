@@ -32,11 +32,27 @@ uv run python -m bench.report bench/results/duckdb-spike.jsonl --arms lpspec duc
 ```
 
 **The committed results file is the *old* engine**, kept as the measurement the
-argument was built on rather than re-baselined. The in-tree engine has since
-grown the `_factored` label path §9 recorded as missing — masked models no
-longer pay an ordered window over the whole coordinate product — which took the
-build on `dispatch/l` from 1.84 s to 0.69 s and on `nodal/l` from 1.09 s to
-0.53 s, against 0.59 s and 0.29 s on polars.
+argument was built on rather than re-baselined. §7's ratios are provenance, not
+the current cost: five changes since the port have moved the build phase a long
+way, and the `_factored` label path §9 recorded as missing is only the first of
+them.
+
+Where it stands, build phase, minimum of three repeats, `duckdb ÷ polars`:
+
+| | at the port | now |
+|---|---:|---:|
+| `dispatch/l` | 3.03× | **0.55×** |
+| `nodal/l` | 3.65× | **1.06×** |
+| `transport/l` | 2.20× | 1.39× |
+
+Peak follows the same way at that rung — 0.88–0.92× on `dispatch` and `nodal`
+against 1.2–1.5× before. The exception is `transport` on the write path
+(1.45×), which is the price of deriving label relations rather than writing
+them down: three derivations of a 7M-row relation are alive at once inside its
+`UNION ALL`, and it buys 23% of that case's build.
+
+**Below `l` the ratio inverts** and duckdb is 1.6–2.5× slower: what is left is
+per-statement overhead, which is fixed and therefore dominates a small model.
 
 ---
 
@@ -373,10 +389,15 @@ read-back are written against `ModelTables` and the label frames, so
 ~2,300-line figure priced a replacement; a *second* engine is a compiler and an
 assembler.
 
-**Read §7 as provenance, not as the current cost.** The committed results
-predate the in-tree port, and the port has been measured and improved since —
-the factored label path alone halves the build on every masked model. Re-run
-the command at the top before quoting a ratio.
+**Read §7 as provenance, not as the current cost, and read point 3 above as the
+argument that was made rather than a property of the shipped engine.** The
+committed results are the *foreign checkout*, and the in-tree port has never
+reproduced its memory advantage: at `dispatch/xl` the two engines peak within
+2% of each other. What the port has instead is the build phase — 2.66 s against
+6.84 s at that rung, after five changes since it landed. So the trade is no
+longer "lighter for slower"; it is faster at the top of the ladder, slower at
+the bottom, and roughly level on memory. The table at the head of this file is
+the current one; re-run the command beside it before quoting a ratio.
 
 **Recommended next step, if this is live:** decide the write-path question
 first. If the answer is no, this closes for good and
