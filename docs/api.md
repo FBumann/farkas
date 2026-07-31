@@ -7,7 +7,7 @@ pinned by a test and the reasoning behind its size is
 [ARCHITECTURE](ARCHITECTURE.md#the-python-surface).
 
 Five verbs — `check`, `load_schema`, `build`, `solve`, `write` — and the
-exception tree rooted at `LinopyYamlError`: `LanguageError` (with `SchemaError`,
+exception tree rooted at `LpspecError`: `LanguageError` (with `SchemaError`,
 `DimensionError`, `PiecewiseExpansionError`) for the model, `DataError` for what
 was bound to it.
 
@@ -56,7 +56,7 @@ Reading a result:
 |---|---|
 | **`is_ok` is not `has_primal`** | `is_ok` rolls up the termination condition; `has_primal` adds the solver's verdict on whether an incumbent exists, and is what every reader gates on. A MIP that hits `time_limit` before finding a feasible point is `ok` with nothing to read |
 | reading anyway | `NoSolutionError`; `objective` is `nan` |
-| `dual` **raises rather than zero-filling** | no values at all is `NoSolutionError`; values but no duals — any integer or binary variable makes them undefined — is `LinopyYamlError`, because only this quantity is missing |
+| `dual` **raises rather than zero-filling** | no values at all is `NoSolutionError`; values but no duals — any integer or binary variable makes them undefined — is `LpspecError`, because only this quantity is missing |
 | duals exist only on `solver_direct` | a model written to LP and solved elsewhere never passes back through here. Reduced costs and slacks ride the same join and are not exposed yet |
 | `to_dataset` costs what it says | each variable arrives dense over its own dims — name a subset, or use `to_parquet` |
 | `write` | `.lp` only today; `.mps` raises `NotImplementedError` |
