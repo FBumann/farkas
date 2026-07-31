@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.40](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.39...v0.0.1-alpha.40) (2026-07-31)
+
+
+### Refactoring
+
+* **architecture:** four directories, four enforced fences ([#373](https://github.com/FBumann/lpspec/issues/373)) ([f5e2c09](https://github.com/FBumann/lpspec/commit/f5e2c09bb1d1579d440d033b69002d9655f7e5e6))
+
 ## [0.0.1-alpha.39](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.38...v0.0.1-alpha.39) (2026-07-31)
 
 
