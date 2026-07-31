@@ -12,6 +12,7 @@ goes to stderr and is the parent's problem.
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import resource
@@ -56,20 +57,47 @@ class Phases:
         self._start = time.perf_counter()
 
 
+def _engine():
+    """The engine package, whatever this interpreter calls it.
+
+    A foreign arm runs *this* harness under *that* checkout's interpreter, and
+    the checkout predating #336 installs the same package under its old name.
+    The rename is not a difference this harness is measuring, so it is absorbed
+    here rather than by copying the harness into the other tree.
+    """
+    try:
+        import lpspec
+
+        return lpspec
+    except ImportError:
+        import farkas
+
+        return farkas
+
+
 def _run_lpspec(
     case: Case, paths: dict[str, str], lp: Path, phases: Phases, opts: argparse.Namespace
 ) -> dict[str, Any]:
-    import lpspec as lps
-    from lpspec.relational.sinks.highs import build_highs
+    lps = _engine()
+    build_highs = importlib.import_module(f'{lps.__name__}.relational.sinks.highs').build_highs
 
     # The parameter/dimension split is harness bookkeeping — it re-parses the
     # YAML only because the runner, not lpspec, decides which parquet file is
     # which. Doing it before the clock starts is the difference between timing
     # the engine and timing the harness; the linopy arm has no counterpart.
     sources, coords = _split_sources(case, paths)
+    # Also before the clock: an engine that predates the `expression:` surface
+    # reads the same math spelled `equations:`. Translating here keeps one set
+    # of model files as the source of truth — two copies would drift, and the
+    # gate would only catch it once the drift changed an optimum.
+    model = _dialect(case.model, opts.dialect)
 
     phases.mark('import')
-    ex = lps.build(case.model, sources, coords=coords)
+    # `memory_limit` is a duckdb-engine option that this branch's `build` has no
+    # parameter for, so it is forwarded only when asked for — which is only ever
+    # when this runner is driving a foreign checkout's engine.
+    budget = {'memory_limit': opts.memory_limit} if opts.memory_limit else {}
+    ex = lps.build(model, sources, coords=coords, **budget)
     phases.mark('build')
     if opts.sink == 'lp':
         ex.write_lp(lp)
@@ -127,15 +155,16 @@ def _run_linopy(
 ARMS = {'lpspec': _run_lpspec, 'linopy': _run_linopy}
 
 
-def _builder(case: Case, paths: dict[str, str], arm: str):
+def _builder(case: Case, paths: dict[str, str], arm: str, dialect: str = 'expression'):
     """Just the build, callable repeatedly — no sink, no teardown timing."""
     if arm == 'lpspec':
-        import lpspec as lps
+        lps = _engine()
 
         sources, coords = _split_sources(case, paths)
+        model = _dialect(case.model, dialect)
 
         def build() -> None:
-            lps.build(case.model, sources, coords=coords).close()
+            lps.build(model, sources, coords=coords).close()
     else:
         from lpspec import linopy as lpspec_linopy
 
@@ -159,7 +188,7 @@ def _run_loop(case: Case, paths: dict[str, str], opts: argparse.Namespace) -> di
     Deliberately build-only: a sink is measured by `time`, and repeating one
     would conflate warm-up in the writer with warm-up in the engine.
     """
-    build = _builder(case, paths, opts.arm)
+    build = _builder(case, paths, opts.arm, opts.dialect)
     times = []
     for _ in range(opts.builds):
         start = time.perf_counter()
@@ -170,6 +199,34 @@ def _run_loop(case: Case, paths: dict[str, str], opts: argparse.Namespace) -> di
         'steady_build_seconds': min(times[1:]) if len(times) > 1 else None,
         'build_seconds': times,
     }
+
+
+def _dialect(model: Path, want: str) -> Path:
+    """*model* in the surface syntax *want*, as a path the engine can read.
+
+    ``expression:`` on a constraint or objective replaced the older
+    ``equations: [{expression: ...}]`` list after #189, so a checkout from
+    before it parses today's bench models as a validation error rather than as
+    math. The two spell the same declaration, which is why this is a rewrite
+    and not a second model: the gate compares optima across arms and would fail
+    if it were not.
+
+    Returns *model* untouched for the current surface, so the common path
+    neither writes a file nor parses YAML.
+    """
+    if want != 'equations':
+        return model
+
+    import yaml as pyyaml
+
+    doc = pyyaml.safe_load(model.read_text())
+    for section in ('constraints', 'objectives'):
+        for decl in doc.get(section, {}).values():
+            if isinstance(decl, dict) and 'expression' in decl:
+                decl['equations'] = [{'expression': decl.pop('expression')}]
+    out = Path(tempfile.mkdtemp()) / model.name
+    out.write_text(pyyaml.safe_dump(doc, sort_keys=False))
+    return out
 
 
 def _split_sources(case: Case, paths: dict[str, str]) -> tuple[dict[str, str], dict[str, str]]:
@@ -185,13 +242,15 @@ def _split_sources(case: Case, paths: dict[str, str]) -> tuple[dict[str, str], d
     )
 
 
-def _objective(case: Case, shape: Shape, paths: dict[str, str], arm: str) -> float:
+def _objective(case: Case, shape: Shape, paths: dict[str, str], arm: str, dialect: str = 'expression') -> float:
     """Solve, and return the objective the parity gate compares."""
     if arm == 'lpspec':
-        import lpspec as lps
+        lps = _engine()
 
         sources, coords = _split_sources(case, paths)
-        with lps.solve(case.model, sources, coords=coords) as sol:
+        # The gate is the whole reason a foreign arm can be trusted, so it runs
+        # against the same translated model the timed pass builds.
+        with lps.solve(_dialect(case.model, dialect), sources, coords=coords) as sol:
             # two axes, not one: `status` is the coarse rollup ('ok') and the
             # solver's verdict is `termination_condition` ('optimal'). Testing
             # the wrong one aborted every run with a parity failure that was
@@ -229,6 +288,19 @@ def main(argv: list[str] | None = None) -> int:
         help='where the built model goes: an LP file, or straight into HiGHS',
     )
     ap.add_argument('--cache', type=Path, default=None)
+    ap.add_argument(
+        '--dialect',
+        default='expression',
+        choices=('expression', 'equations'),
+        help="the surface a foreign engine's schema accepts. Only a checkout "
+        'predating #189 needs `equations`; see `_dialect`.',
+    )
+    ap.add_argument(
+        '--memory-limit',
+        default=None,
+        help='budget for an engine that takes one (duckdb). Unset means the '
+        'engine is not given one, which is the only thing this branch can do.',
+    )
     opts = ap.parse_args(argv)
 
     case = CASES[opts.case]
@@ -253,7 +325,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if opts.mode == 'solve':
-        record['objective'] = _objective(case, shape, paths, opts.arm)
+        record['objective'] = _objective(case, shape, paths, opts.arm, opts.dialect)
         record['peak_rss_bytes'] = peak_rss_bytes()
         print(json.dumps(record))
         return 0

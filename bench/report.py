@@ -18,11 +18,17 @@ import sys
 from pathlib import Path
 from typing import Any
 
-ARMS = ('lpspec', 'linopy')
+#: The published ladder's pair: the eager lane is what the shipped engine is
+#: judged against, so the ratio columns are lpspec ÷ linopy.
+DEFAULT_ARMS = ('lpspec', 'linopy')
 
-#: The ratio columns are lpspec ÷ linopy: the eager lane is what this one is
-#: judged against, and the only arm still measured.
-_RATIO_AGAINST = 'linopy'
+#: The arms this run tabulates, and the one the ratio divides by — set from
+#: `--arms`. Rebindable because the published ladder is not the only comparison
+#: this tool renders: `--arms lpspec duckdb` prices the engine decision itself
+#: (bench/duckdb-spike.md), and hard-coding the pair would mean a second
+#: renderer that drifts from this one.
+ARMS = DEFAULT_ARMS
+_RATIO_AGAINST = DEFAULT_ARMS[1]
 
 
 def load(
@@ -105,6 +111,17 @@ _SEAM = {
     ),
 }
 
+#: Both engine arms are the *same* code path — the seam sentence above names
+#: linopy's, which is not the comparison being drawn when the arms are engines.
+_SEAM_ENGINE = {
+    'lp': 'Both arms write the LP file through their own engine.',
+    'highs': (
+        'Both arms end holding a populated `highspy.Highs` with `run()` never '
+        'called, through the same `build_highs` seam. Only the engine that '
+        'filled the tables differs.'
+    ),
+}
+
 
 def table(case: str, rows: dict[Key, Row], sink: str = 'lp') -> str:
     cols = ARMS
@@ -115,10 +132,11 @@ def table(case: str, rows: dict[Key, Row], sink: str = 'lp') -> str:
         + [f'peak: {a}' for a in cols]
         + ['peak', 'LP']
     )
+    seam = _SEAM[sink] if 'linopy' in cols else _SEAM_ENGINE[sink]
     lines = [
         f'### {case} — {sink} sink',
         '',
-        _SEAM[sink],
+        seam,
         '',
         '| ' + ' | '.join(head) + ' |',
         '|' + '---|' * len(head),
@@ -135,9 +153,9 @@ def table(case: str, rows: dict[Key, Row], sink: str = 'lp') -> str:
             _live(ref),
             _si(ref['counts']['rows']),
             *(f'{wall[a]:.2f} s' if wall[a] else '—' for a in cols),
-            _ratio(wall['lpspec'], wall[_RATIO_AGAINST]),
+            _ratio(wall[ARMS[0]], wall[_RATIO_AGAINST]),
             *(f'{_gb(peak[a])} GB' if peak[a] else '—' for a in cols),
-            _ratio(peak['lpspec'], peak[_RATIO_AGAINST]),
+            _ratio(peak[ARMS[0]], peak[_RATIO_AGAINST]),
             f'{ref["lp_bytes"] / 1e6:.0f} MB' if ref.get('lp_bytes') else '—',
         ]
         lines.append('| ' + ' | '.join(cells) + ' |')
@@ -253,9 +271,9 @@ def density(rows: dict[Key, Row]) -> str:
                 _live(ref),
                 _si(ref['counts']['columns']),
                 *(f'{wall[a]:.2f} s' if wall[a] else '—' for a in cols),
-                _ratio(wall['lpspec'], wall[_RATIO_AGAINST]),
+                _ratio(wall[ARMS[0]], wall[_RATIO_AGAINST]),
                 *(f'{_gb(peak[a])} GB' if peak[a] else '—' for a in cols),
-                _ratio(peak['lpspec'], peak[_RATIO_AGAINST]),
+                _ratio(peak[ARMS[0]], peak[_RATIO_AGAINST]),
             ]
             lines.append('| ' + ' | '.join(cells) + ' |')
     return '\n'.join(lines)
@@ -264,7 +282,19 @@ def density(rows: dict[Key, Row]) -> str:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('results', type=Path, nargs='*', default=[Path('bench/results/latest.jsonl')])
+    ap.add_argument(
+        '--arms',
+        nargs=2,
+        default=list(DEFAULT_ARMS),
+        metavar=('SUBJECT', 'AGAINST'),
+        help='the two arms to tabulate. The ratio columns are SUBJECT / AGAINST, '
+        'so order is the claim being made. Default lpspec linopy.',
+    )
     opts = ap.parse_args(argv)
+
+    global ARMS, _RATIO_AGAINST
+    ARMS = tuple(opts.arms)
+    _RATIO_AGAINST = opts.arms[1]
 
     run: dict[str, Any] = {}
     gates: list[Row] = []

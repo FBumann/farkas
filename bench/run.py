@@ -52,9 +52,20 @@ if TYPE_CHECKING:
 RESULTS = Path(__file__).resolve().parent / 'results'
 CACHE = Path(__file__).resolve().parent / '.cache'
 
+#: Arms whose engine is not on this branch, and the checkout each needs. The
+#: value is filled from `--duckdb-root`; an arm with no root is skipped rather
+#: than silently dropped, because "we did not run it" and "it has no row" look
+#: identical in a table.
+#:
+#: Restored after #189 retired the duckdb engine. Pricing that decision again
+#: needs the engine it replaced, and the only honest version of that number
+#: comes from the engine as it shipped rather than from a fresh port.
+FOREIGN_ARMS: dict[str, Path | None] = {'duckdb': None}
+#: The surface each foreign checkout's schema accepts (see `_run_case._dialect`).
+FOREIGN_DIALECT = {'duckdb': 'equations'}
 GATE_RTOL = 1e-9
 _EXCEPTION = re.compile(r'^[\w.]*(Error|Exception)\b')
-TRACKED = ('lpspec', 'linopy', 'highspy', 'polars', 'pandas', 'numpy', 'xarray', 'pyarrow')
+TRACKED = ('lpspec', 'farkas', 'linopy', 'duckdb', 'highspy', 'polars', 'pandas', 'numpy', 'xarray', 'pyarrow')
 
 
 def _commit(root: Path) -> str | None:
@@ -89,6 +100,11 @@ def fingerprint() -> dict[str, Any]:
     """Everything a number needs to still mean something in six months."""
     here = Path(__file__).resolve().parent.parent
     commits = {'lpspec': _commit(here)}
+    for arm, root in FOREIGN_ARMS.items():
+        # For an arm that is a checkout rather than a release, the commit is the
+        # only identifier there is.
+        if root is not None:
+            commits[arm] = _commit(root)
     versions = {}
     for pkg in TRACKED:
         try:
@@ -107,18 +123,26 @@ def fingerprint() -> dict[str, Any]:
     }
 
 
-def _child(args: list[str], timeout: float) -> dict[str, Any]:
+def _child(args: list[str], timeout: float, interpreter: Path | None = None) -> dict[str, Any]:
     """Run one measurement in its own process and parse its single JSON line.
 
     One process per measurement, always: peak RSS is a high-water mark, so two
     measurements in one process report the larger of them twice.
+
+    *interpreter* runs **this** checkout's harness under another checkout's
+    python, which is how a foreign arm is reached without copying the harness
+    there: the models, the ladder and the parquet cache stay this tree's, and
+    only the engine package comes from the other one. A rung or a case added
+    since that checkout is therefore still covered.
     """
+    here = Path(__file__).resolve().parent.parent
+    python = str(interpreter / '.venv' / 'bin' / 'python') if interpreter else sys.executable
     proc = subprocess.run(
-        [sys.executable, '-m', 'bench._run_case', *args],
+        [python, '-m', 'bench._run_case', *args],
         capture_output=True,
         text=True,
         timeout=timeout,
-        cwd=Path(__file__).resolve().parent.parent,
+        cwd=here,
         check=False,
     )
     if proc.returncode != 0:
@@ -150,6 +174,7 @@ def loops(case: str, sizes: list[str], arms: list[str], opts: argparse.Namespace
     out = []
     for size in sizes:
         for arm in arms:
+            child_arm, extra, interpreter = _dispatch(arm)
             record = _child(
                 [
                     'loop',
@@ -158,13 +183,15 @@ def loops(case: str, sizes: list[str], arms: list[str], opts: argparse.Namespace
                     '--size',
                     size,
                     '--arm',
-                    arm,
+                    child_arm,
                     '--cache',
                     str(CACHE),
                     '--builds',
                     str(opts.builds),
+                    *extra,
                 ],
                 opts.timeout,
+                interpreter,
             )
             record |= {'record': 'loop', 'case': case, 'size': size, 'arm': arm}
             first = record.get('first_build_seconds')
@@ -178,6 +205,19 @@ def loops(case: str, sizes: list[str], arms: list[str], opts: argparse.Namespace
     return out
 
 
+def _dispatch(arm: str) -> tuple[str, list[str], Path | None]:
+    """How an arm name becomes a child invocation.
+
+    A foreign arm runs the *same* engine code path as `lpspec` — same sinks,
+    same counts — under another checkout's interpreter, so the difference is
+    dispatched by name here rather than by a branch inside the child.
+    """
+    root = FOREIGN_ARMS.get(arm)
+    if root is None:
+        return arm, [], None
+    return 'lpspec', ['--dialect', FOREIGN_DIALECT[arm]], root
+
+
 def gate(case: str, timeout: float, arms: Sequence[str] = ('lpspec', 'linopy')) -> dict[str, Any]:
     """Solve the smallest rung on every arm; objectives must agree.
 
@@ -187,10 +227,14 @@ def gate(case: str, timeout: float, arms: Sequence[str] = ('lpspec', 'linopy')) 
     check the first two answer to.
     """
     size = CASES[case].ladder[0].label
-    results = {
-        arm: _child(['solve', '--case', case, '--size', size, '--arm', arm, '--cache', str(CACHE)], timeout)
-        for arm in arms
-    }
+    results = {}
+    for arm in arms:
+        child_arm, extra, interpreter = _dispatch(arm)
+        results[arm] = _child(
+            ['solve', '--case', case, '--size', size, '--arm', child_arm, '--cache', str(CACHE), *extra],
+            timeout,
+            interpreter,
+        )
     failed = {arm: r['error'] for arm, r in results.items() if 'error' in r}
     if failed:
         return {'record': 'gate', 'case': case, 'size': size, 'passed': False, 'reason': failed, 'detail': results}
@@ -214,6 +258,7 @@ def timings(case: str, sizes: list[str], arms: list[str], opts: argparse.Namespa
     for size in sizes:
         for sink in opts.sinks:
             for arm in arms:
+                child_arm, extra, interpreter = _dispatch(arm)
                 for repeat in range(opts.repeat):
                     args = [
                         'time',
@@ -222,15 +267,16 @@ def timings(case: str, sizes: list[str], arms: list[str], opts: argparse.Namespa
                         '--size',
                         size,
                         '--arm',
-                        arm,
+                        child_arm,
                         '--sink',
                         sink,
                         '--cache',
                         str(CACHE),
+                        *extra,
                     ]
                     if arm == 'linopy' and sink == 'lp':
                         args += ['--io-api', opts.io_api]
-                    record = _child(args, opts.timeout)
+                    record = _child(args, opts.timeout, interpreter)
                     # stamped by the parent so a *failed* run is still fully
                     # identified — a failure is a result here
                     record |= {
@@ -264,7 +310,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         '--sizes', nargs='+', default=['xs', 's', 'm'], help="rung labels, or 'all' for every rung a case has"
     )
-    ap.add_argument('--arms', nargs='+', default=['lpspec', 'linopy'])
+    ap.add_argument('--arms', nargs='+', default=['lpspec', 'linopy'], choices=('lpspec', 'linopy', *FOREIGN_ARMS))
+    ap.add_argument(
+        '--duckdb-root',
+        type=Path,
+        default=None,
+        help='checkout holding the pre-#189 duckdb engine, synced (`uv sync`) so '
+        'its .venv exists. Without it the `duckdb` arm is skipped loudly rather '
+        'than dropped, since a missing row and an unrun arm look identical.',
+    )
     ap.add_argument('--repeat', type=int, default=1)
     ap.add_argument(
         '--builds',
@@ -286,6 +340,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument('--skip-gate', action='store_true', help='time without checking the arms agree')
     ap.add_argument('--out', type=Path, default=RESULTS / 'latest.jsonl')
     opts = ap.parse_args(argv)
+
+    if opts.duckdb_root is not None:
+        FOREIGN_ARMS['duckdb'] = opts.duckdb_root.resolve()
+    missing = [a for a in opts.arms if a in FOREIGN_ARMS and FOREIGN_ARMS[a] is None]
+    if missing:
+        print(f'Asked for {missing} but no checkout given — pass --duckdb-root. Refusing to run a partial ladder.')
+        return 2
 
     records: list[dict[str, Any]] = [fingerprint()]
     print(f'{records[0]["platform"]} · python {records[0]["python"]}')

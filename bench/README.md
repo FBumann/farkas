@@ -69,6 +69,46 @@ than a rival dialect.
 Not measured, deliberately: solve time (that is HiGHS, identical either way, and
 it would swamp the build), and anything about expressiveness.
 
+## The `duckdb` arm — measuring an engine that is not on this branch
+
+`#189` replaced the duckdb engine with polars. Pricing that decision again needs
+the engine it replaced, and the only honest version of that number comes from
+the engine **as it shipped** rather than from a fresh port written to lose.
+
+So `duckdb` is a *foreign arm*: this tree's harness, models, ladder and parquet
+cache, run under another checkout's interpreter. Only the engine package comes
+from there.
+
+```bash
+git worktree add /tmp/duckdb-arm c11a0dd^ --detach   # the last duckdb commit
+cd /tmp/duckdb-arm && uv sync                        # it needs its own .venv
+
+uv run python -m bench.run --arms lpspec duckdb \
+    --duckdb-root /tmp/duckdb-arm \
+    --sizes xs s m l xl --repeat 2 \
+    --out bench/results/duckdb-spike.jsonl
+```
+
+Three things make this comparable rather than merely runnable:
+
+- **One harness.** `_child(interpreter=...)` runs *this* `bench/_run_case.py`
+  under *that* checkout's python, so a case or a rung added since that commit is
+  still covered — `fleet`, `sector` and the `xl`/`2xl` rungs all postdate it.
+- **One set of models.** The `expression:` surface replaced `equations:` after
+  #189, so today's models are a validation error to that engine. `_dialect`
+  rewrites the declaration on the way in, before the clock starts. It is a
+  rewrite and not a second copy of each model on purpose: two copies drift, and
+  the drift is invisible until it changes an optimum.
+- **The gate proves it.** `bench.run` solves the smallest rung on every arm
+  being timed and refuses to publish if the optima disagree. That is what makes
+  the translation checkable instead of trusted.
+
+`--duckdb-root` is required to ask for the arm: an arm with no checkout is
+refused loudly rather than skipped, because "we did not run it" and "it has no
+row" look identical in a table afterwards.
+
+The findings are in [duckdb-spike.md](duckdb-spike.md).
+
 ## Why it is built this way
 
 **One process per measurement.** Peak RSS is a property of a process. A second
