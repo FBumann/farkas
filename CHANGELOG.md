@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.60](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.59...v0.0.1-alpha.60) (2026-07-31)
+
+
+### Refactoring
+
+* **bench:** the harness is pytest; drop the custom runner ([#448](https://github.com/FBumann/lpspec/issues/448)) ([d460ca6](https://github.com/FBumann/lpspec/commit/d460ca6fb330ba3153268e49ed1869374144b114))
+
 ## [0.0.1-alpha.59](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.58...v0.0.1-alpha.59) (2026-07-31)
 
 
