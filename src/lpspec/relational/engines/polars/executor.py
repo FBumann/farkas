@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 
 #: The four frames a sink reads, as schemas. Stated here because the executor
 #: is what fills them and an empty model still has to have them.
-_COLS = ('col', 'lb', 'ub', 'vtype')
+_COLS = ('lb', 'ub', 'vtype')
 _OBJ = ('col', 'coeff')
 _ROWS = ('row', 'sense', 'rhs')
 _MATRIX = ('row', 'col', 'coeff')
@@ -159,8 +159,11 @@ class PolarsExecutor:
         self._blocks[v.name] = (start, labelled.height)
 
         bounded = self._q.bounds(labelled.lazy(), v)
+        # No `col`: the label frame arrives in label order and the bounds join
+        # maintains it, so a row's *position* is its solver column index. The
+        # column would be the frame's own row number — 0.32 GB of it at 40M
+        # columns, held for as long as the model is.
         cols = bounded.select(
-            pl.col('var_label').alias('col'),
             pl.col('lb').cast(pl.Float64),
             pl.col('ub').cast(pl.Float64),
             pl.lit(v.variable_type, dtype=_DTYPES['vtype']).alias('vtype'),

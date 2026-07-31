@@ -31,7 +31,7 @@ from lpspec.relational import plan
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
-    from polars._typing import JoinStrategy
+    from polars._typing import JoinStrategy, MaintainOrderJoin
 
     from lpspec.relational.engines.polars.binding import BoundSources
 
@@ -188,8 +188,15 @@ class PolarsCompiler:
     def _coordinate_product(self, dims: tuple[str, ...]) -> pl.LazyFrame:
         """Cross join of the dim tables: labels and ordinals, nothing else."""
 
+        # **Folded in reverse, then projected back.** polars' streaming engine
+        # walks a cross join right-major, so folding the dims backwards is what
+        # makes the product arrive in *declaration* row-major order — which is
+        # label order, and is what lets `cols` be read positionally instead of
+        # sorted. `labels._in_label_order` verifies that rather than trusting
+        # it. The projection restores the declared column order the fold
+        # reversed; only the row order was ever the point.
         out: pl.LazyFrame | None = None
-        for d in dims:
+        for d in reversed(dims):
             table = self.dimensions[d].select(pl.col('val').alias(d), pl.col('ord').alias(_ordinal(d)))
             out = table if out is None else out.join(table, how='cross')
         if out is None:
@@ -197,7 +204,7 @@ class PolarsCompiler:
             # has to be real, since a `where` on a scalar declaration filters
             # this frame and nothing survives a filter.
             return pl.LazyFrame({UNIT: [0]})
-        return out
+        return out.select(*(c for d in dims for c in (d, _ordinal(d))))
 
     def parameter_join(
         self,
@@ -207,6 +214,7 @@ class PolarsCompiler:
         alias: str,
         subject: str,
         how: JoinStrategy = 'left',
+        maintain_order: MaintainOrderJoin | None = None,
     ) -> pl.LazyFrame:
         """Join *param* onto *frame*, its value column renamed to *alias*.
 
@@ -219,6 +227,12 @@ class PolarsCompiler:
         caller has to report rather than a row to drop. A mask that cannot be
         satisfied without the value asks for ``inner`` — see
         :func:`_certain_parameters`.
+
+        *maintain_order* is asked for only where the result is ordered by
+        construction and something downstream reads it that way — the bounds,
+        which become ``cols``. It is not free (+12 ms on a 10M-row join) and it
+        is far cheaper than restoring the order afterwards (~110 ms to sort the
+        same frame), so it is passed deliberately rather than defaulted on.
         """
         declaration = self.program.parameter(param)
         extra = set(declaration.dims) - set(frame_dims)
@@ -226,8 +240,8 @@ class PolarsCompiler:
             raise LanguageError(f'{subject} has dims {sorted(extra)} outside the foreach dims {list(frame_dims)}')
         table = self.parameters[param].rename({'value': alias})
         if not declaration.dims:
-            return frame.join(table, how='cross')
-        return frame.join(table, on=list(declaration.dims), how=how)
+            return frame.join(table, how='cross', maintain_order=maintain_order)
+        return frame.join(table, on=list(declaration.dims), how=how, maintain_order=maintain_order)
 
     # ------------------------------------------------------------------
     # predicates (where masks — row absence)
@@ -332,7 +346,14 @@ class PolarsCompiler:
                 alias = f'__bound {e.name}__'
                 if alias not in joined:
                     carrier = self.parameter_join(
-                        carrier, e.name, v.dims, alias, f"bound parameter '{e.name}' of variable '{v.name}'"
+                        carrier,
+                        e.name,
+                        v.dims,
+                        alias,
+                        f"bound parameter '{e.name}' of variable '{v.name}'",
+                        # the label frame arrives in label order and `cols` is
+                        # read positionally, so this join may not shuffle it
+                        maintain_order='left',
                     )
                     joined.add(alias)
                 return pl.col(alias).cast(pl.Float64)

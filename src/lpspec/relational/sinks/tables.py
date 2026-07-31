@@ -35,13 +35,19 @@ if TYPE_CHECKING:
 class ModelTables:
     """The built model, as a sink sees it.
 
-    ``cols`` (col, lb, ub, vtype), ``obj`` (col, coeff), ``rows`` (row, sense,
+    ``cols`` (lb, ub, vtype), ``obj`` (col, coeff), ``rows`` (row, sense,
     rhs) and ``matrix`` in COO (row, col, coeff). The scalars are what a sink
     cannot cheaply recover; the objective constant lives outside the frames
     because it has no column to attach to.
 
     ``col`` and ``row`` are dense ``0..n-1``, so they *are* the solver's own
     indices and no sink builds a mapping.
+
+    **``cols`` carries no ``col``.** It holds one row per column, in label
+    order, so a row's position is its index and the column would be the frame's
+    own row number. Every other frame is sparse in the index and keeps it —
+    ``obj`` most of all, which looks dense on models where every variable has a
+    cost and is not (0.71 of ``cols`` on `transport`).
     """
 
     cols: pl.DataFrame
@@ -81,12 +87,11 @@ class ModelTables:
         the vectors come back ready to hand over unedited.
 
         ``col`` is dense ``0..n-1``, so it *is* the position a value has to end
-        up at: lining a frame up with the solver's index is a scatter, and
-        neither the join that fills the objective's gaps nor the sort that
-        orders the bounds does anything this does not. That pair had to be
-        collected whole before the first batch could go over, which cost more
-        than the model does. A column with no row is left free rather than
-        holding whatever the allocator returned.
+        up at — and ``cols`` already arrives in that order, one row per column,
+        so its three vectors are the frame's own and nothing is scattered.
+        Only ``cost`` still is, because ``obj`` is genuinely sparse: a variable
+        in no objective term has no row, and is left free rather than holding
+        whatever the allocator returned.
 
         **Nothing textual crosses into numpy.** A polars ``String`` converts by
         boxing every value as a Python object, so the test against
@@ -96,15 +101,14 @@ class ModelTables:
         import numpy as np
 
         count = self.column_count
-        at = self.cols['col'].to_numpy()
-        lb = _scattered(count, at, self.cols['lb'].to_numpy(), -infinity)
-        ub = _scattered(count, at, self.cols['ub'].to_numpy(), infinity)
-        integral = _scattered(
-            count, at, self.cols.select(pl.col('vtype') != 'continuous').to_series().to_numpy(), False
-        )
+        # `cols` is already the solver's index, so its three vectors need no
+        # scatter. `copy=True` rather than in place because they are views of
+        # the frame now: rewriting an infinity through one would edit the built
+        # model to suit whichever solver asked last.
+        lb = np.nan_to_num(self.cols['lb'].to_numpy(), copy=True, neginf=-infinity, posinf=infinity)
+        ub = np.nan_to_num(self.cols['ub'].to_numpy(), copy=True, neginf=-infinity, posinf=infinity)
+        integral = self.cols.select(pl.col('vtype') != 'continuous').to_series().to_numpy()
         cost = _scattered(count, self.obj['col'].to_numpy(), self.obj['coeff'].to_numpy(), 0.0)
-        np.nan_to_num(lb, copy=False, neginf=-infinity, posinf=infinity)
-        np.nan_to_num(ub, copy=False, neginf=-infinity, posinf=infinity)
         return lb, ub, cost, integral
 
 
