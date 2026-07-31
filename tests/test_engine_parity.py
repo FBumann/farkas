@@ -105,6 +105,28 @@ def test_both_engines_build_the_same_model(model, sources):
 
 
 @pytest.mark.parametrize(('model', 'sources'), MODELS)
+def test_both_engines_produce_the_declared_schema(model, sources):
+    """Same columns *and* same dtypes — `.equals` above checks only values.
+
+    Two engines can agree on every number and still hand a sink different
+    types, and a sink reads the frames without asking who filled them. It cost
+    the duckdb engine a `vtype` of 10M copies of the word `continuous` where
+    the other holds an `Enum`, and an `obj.coeff` typed `DECIMAL(2,1)` because
+    SQL reads `1.0` as a decimal — a different number from the double the plan
+    holds, and one that overflows above 9.9.
+    """
+    from lpspec.relational import sinks
+
+    declared = {'cols': sinks.COLS, 'obj': sinks.OBJ, 'rows': sinks.ROWS, 'matrix': sinks.MATRIX}
+    for name in ENGINES:
+        with using(name), lps.build(ROOT / model, sources) as ex:
+            tables = ex._tables()
+            for frame, columns in declared.items():
+                schema = dict(getattr(tables, frame).schema)
+                assert schema == {c: sinks.DTYPES[c] for c in columns}, f'{name}: {frame} is not the declared schema'
+
+
+@pytest.mark.parametrize(('model', 'sources'), MODELS)
 def test_both_engines_solve_to_the_same_answer(model, sources):
     answers = {}
     for name in ENGINES:

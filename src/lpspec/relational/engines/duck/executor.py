@@ -33,10 +33,10 @@ from lpspec.relational.engines.duck.compiler import UNIT, DuckCompiler, Rel, Ter
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
 
-_COLS = ('col', 'lb', 'ub', 'vtype')
-_ROWS = ('row', 'sense', 'rhs')
-_MATRIX = ('row', 'col', 'coeff')
-_OBJ = ('col', 'coeff')
+#: The four frames a sink reads, and their dtypes — both stated by
+#: `sinks/tables.py`, which is what reads them. Shared with the polars engine
+#: for the reason the frames are: a sink cannot see which engine filled them.
+_COLS, _OBJ, _ROWS, _MATRIX = sinks.COLS, sinks.OBJ, sinks.ROWS, sinks.MATRIX
 
 
 class _Labels(Mapping[str, 'pl.LazyFrame']):
@@ -325,11 +325,11 @@ class DuckExecutor(Engine):
         labelled = Rel(f'SELECT * FROM {q(name)}', (*v.dims, 'var_label'))
 
         bounded = self._q.bounds(labelled, v)
-        sql = (
-            f'SELECT var_label AS col, lb::DOUBLE AS lb, ub::DOUBLE AS ub, '
-            f'{lit(v.variable_type)} AS vtype FROM {bounded.alias("b")}'
-        )
-        cols = self._fetch(sql)
+        sql = f'SELECT var_label AS col, lb::DOUBLE AS lb, ub::DOUBLE AS ub FROM {bounded.alias("b")}'
+        # `vtype` is attached here rather than selected as a literal in SQL:
+        # one word per column is one *copy* of that word per row over the wire,
+        # and the frame's stated dtype is an Enum holding four bytes.
+        cols = self._fetch(sql).with_columns(pl.lit(v.variable_type, dtype=sinks.VTYPE).alias('vtype'))
         bad = cols.filter(pl.col('lb').is_null() | pl.col('ub').is_null()).height
         if bad:
             raise DataError(null_bounds_message(v.name, bad))
@@ -445,9 +445,7 @@ class DuckExecutor(Engine):
 def _stack(frames: list[pl.DataFrame], columns: tuple[str, ...]) -> pl.DataFrame:
     kept = [f for f in frames if f.height]
     if not kept:
-        return pl.DataFrame(
-            schema={c: (pl.String if c in ('sense', 'vtype') else pl.Float64) for c in columns}
-        ).with_columns([pl.col(c).cast(pl.Int64) for c in columns if c in ('row', 'col')])
+        return pl.DataFrame(schema={name: sinks.DTYPES[name] for name in columns})
     return pl.concat([f.select(columns) for f in kept])
 
 

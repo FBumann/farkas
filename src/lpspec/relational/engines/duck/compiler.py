@@ -56,8 +56,14 @@ def lit(value: object) -> str:
         return 'TRUE' if value else 'FALSE'
     if value is None:
         return 'NULL'
-    if isinstance(value, float) and not math.isfinite(value):
-        return "'Infinity'::DOUBLE" if value > 0 else "'-Infinity'::DOUBLE"
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return "'Infinity'::DOUBLE" if value > 0 else "'-Infinity'::DOUBLE"
+        # `::DOUBLE`, or SQL reads `0.1` as DECIMAL(2,1) — a different number
+        # from the double the plan holds, and a different one from what the
+        # polars engine multiplies by. Decimal also propagates: a coefficient
+        # built from one stays decimal all the way into `obj`.
+        return f'{value!r}::DOUBLE'
     return repr(value)
 
 
@@ -346,7 +352,7 @@ class DuckCompiler:
         # syntax error rather than an empty projection
         prefix = ''.join(f'{q(d)}, ' for d in dims)
         table = q(self.variables[name])
-        rel = Rel(f'SELECT {prefix}var_label, 1.0 AS coeff FROM {table}', (*dims, 'var_label', 'coeff'))
+        rel = Rel(f'SELECT {prefix}var_label, 1.0::DOUBLE AS coeff FROM {table}', (*dims, 'var_label', 'coeff'))
         masked = self.program.variable(name).where is not None
         presence = Rel(f'SELECT {", ".join(q(d) for d in dims) or q(UNIT)} FROM {table}', dims) if masked else None
         return TermFragment(
