@@ -31,12 +31,19 @@ because a run *replaces* its output: one narrower than the tables it publishes
 would leave them unprovenanced while still looking complete.
 
 ```bash
-uv run python -m bench.run --sizes xs s m l --repeat 3
-uv run python -m bench.run --sizes d100 d50 d25 d08 --skip-gate --repeat 3 \
-    --out bench/results/density.jsonl
-uv run python -m bench.report bench/results/latest.jsonl bench/results/density.jsonl
-uv run python -m bench.plot  # refreshes the chart page's numbers
+uv run pytest bench --benchmark-memory --sizes xs s m l \
+    --benchmark-json=bench/results/latest.json
+uv run pytest bench --benchmark-memory --sizes d100 d50 d25 d08 --skip-gate \
+    --benchmark-json=bench/results/density.json
+
+uv run python -m bench.report bench/results/latest.json bench/results/density.json
+uv run python -m bench.plot  # the figures above, and the chart page's numbers
 ```
+
+The results committed today are the `.jsonl` the runner before
+[#448](https://github.com/FBumann/lpspec/pull/448) wrote; both readers take
+either, so the figures regenerate against the tree as it stands rather than
+only after the next full ladder.
 
 **Measure on an idle machine.** An earlier version of these tables was taken
 while the laptop was doing other work and it inflated `profiled` by 55% —
@@ -63,7 +70,24 @@ re-run is a claim with a shelf life.*
 
 ## Results
 
-### dispatch — highs sink
+![Wall time to a loaded solver, by model size](charts/wall-light.svg#only-light)
+![Wall time to a loaded solver, by model size](charts/wall-dark.svg#only-dark)
+
+![Peak resident memory, by model size](charts/peak-light.svg#only-light)
+![Peak resident memory, by model size](charts/peak-dark.svg#only-dark)
+
+![Every model in the corpus, through the highs sink](charts/cases-light.svg#only-light)
+![Every model in the corpus, through the highs sink](charts/cases-dark.svg#only-dark)
+
+![Where the time goes at the l rung](charts/phases-light.svg#only-light)
+![Where the time goes at the l rung](charts/phases-dark.svg#only-dark)
+
+*Static, so they render anywhere. The same data with a cursor: [the chart page](benchmarks-scaling.html).*
+
+<details markdown="1">
+<summary><b>dispatch</b> — every rung, every sink</summary>
+
+**dispatch — highs sink**
 
 Both arms end holding a populated `highspy.Highs` with `run()` never called: lpspec through `build_highs`, linopy through `to_highspy(set_names=False)`. The simplex is the same work whoever filled the model, so timing it would say nothing about the lane that filled it.
 
@@ -74,7 +98,7 @@ Both arms end holding a populated `highspy.Highs` with `run()` never called: lps
 | 1M | 100% | 10k | 0.08 s | 0.28 s | 0.28x | 0.50 GB | 0.37 GB | 1.34x | — |
 | 10M | 100% | 100k | 0.57 s | 1.03 s | 0.56x | 2.88 GB | 1.97 GB | 1.46x | — |
 
-### dispatch — lp sink
+**dispatch — lp sink**
 
 lpspec writes the LP file, linopy through its `lp-polars` writer.
 
@@ -85,7 +109,12 @@ lpspec writes the LP file, linopy through its `lp-polars` writer.
 | 1M | 100% | 10k | 0.12 s | 0.34 s | 0.35x | 0.42 GB | 0.58 GB | 0.73x | 76 MB |
 | 10M | 100% | 100k | 1.07 s | 1.69 s | 0.63x | 1.59 GB | 2.11 GB | 0.75x | 796 MB |
 
-### fleet — highs sink
+</details>
+
+<details markdown="1">
+<summary><b>fleet</b> — every rung, every sink</summary>
+
+**fleet — highs sink**
 
 Both arms end holding a populated `highspy.Highs` with `run()` never called: lpspec through `build_highs`, linopy through `to_highspy(set_names=False)`. The simplex is the same work whoever filled the model, so timing it would say nothing about the lane that filled it.
 
@@ -96,7 +125,7 @@ Both arms end holding a populated `highspy.Highs` with `run()` never called: lps
 | 1.2M | 100% | 602k | 0.14 s | 0.40 s | 0.36x | 0.61 GB | 0.54 GB | 1.14x | — |
 | 12M | 100% | 6.02M | 1.08 s | 1.62 s | 0.67x | 4.07 GB | 3.71 GB | 1.10x | — |
 
-### fleet — lp sink
+**fleet — lp sink**
 
 lpspec writes the LP file, linopy through its `lp-polars` writer.
 
@@ -107,7 +136,12 @@ lpspec writes the LP file, linopy through its `lp-polars` writer.
 | 1.2M | 100% | 602k | 0.20 s | 0.45 s | 0.43x | 0.64 GB | 0.45 GB | 1.41x | 89 MB |
 | 12M | 100% | 6.02M | 1.75 s | 1.98 s | 0.88x | 2.34 GB | 1.61 GB | 1.46x | 920 MB |
 
-### nodal — highs sink
+</details>
+
+<details markdown="1">
+<summary><b>nodal</b> — every rung, every sink</summary>
+
+**nodal — highs sink**
 
 Both arms end holding a populated `highspy.Highs` with `run()` never called: lpspec through `build_highs`, linopy through `to_highspy(set_names=False)`. The simplex is the same work whoever filled the model, so timing it would say nothing about the lane that filled it.
 
@@ -118,7 +152,7 @@ Both arms end holding a populated `highspy.Highs` with `run()` never called: lps
 | 300k | 25% | 100k | 0.04 s | 0.26 s | 0.17x | 0.33 GB | 0.32 GB | 1.04x | — |
 | 3M | 25% | 1M | 0.29 s | 0.74 s | 0.40x | 1.34 GB | 1.49 GB | 0.90x | — |
 
-### nodal — lp sink
+**nodal — lp sink**
 
 lpspec writes the LP file, linopy through its `lp-polars` writer.
 
@@ -129,7 +163,12 @@ lpspec writes the LP file, linopy through its `lp-polars` writer.
 | 300k | 25% | 100k | 0.06 s | 0.27 s | 0.23x | 0.32 GB | 0.46 GB | 0.70x | 25 MB |
 | 3M | 25% | 1M | 0.49 s | 0.83 s | 0.59x | 1.07 GB | 1.55 GB | 0.69x | 264 MB |
 
-### profiled — highs sink
+</details>
+
+<details markdown="1">
+<summary><b>profiled</b> — every rung, every sink</summary>
+
+**profiled — highs sink**
 
 Both arms end holding a populated `highspy.Highs` with `run()` never called: lpspec through `build_highs`, linopy through `to_highspy(set_names=False)`. The simplex is the same work whoever filled the model, so timing it would say nothing about the lane that filled it.
 
@@ -140,7 +179,7 @@ Both arms end holding a populated `highspy.Highs` with `run()` never called: lps
 | 1.2M | 100% | 100k | 0.17 s | 0.31 s | 0.56x | 0.83 GB | 0.49 GB | 1.70x | — |
 | 12M | 100% | 1M | 1.69 s | 1.33 s | 1.27x | 3.93 GB | 3.10 GB | 1.27x | — |
 
-### profiled — lp sink
+**profiled — lp sink**
 
 lpspec writes the LP file, linopy through its `lp-polars` writer.
 
@@ -151,7 +190,12 @@ lpspec writes the LP file, linopy through its `lp-polars` writer.
 | 1.2M | 100% | 100k | 0.24 s | 0.38 s | 0.61x | 0.71 GB | 0.69 GB | 1.03x | 95 MB |
 | 12M | 100% | 1M | 2.36 s | 2.20 s | 1.07x | 2.46 GB | 3.12 GB | 0.79x | 986 MB |
 
-### sector — highs sink
+</details>
+
+<details markdown="1">
+<summary><b>sector</b> — every rung, every sink</summary>
+
+**sector — highs sink**
 
 Both arms end holding a populated `highspy.Highs` with `run()` never called: lpspec through `build_highs`, linopy through `to_highspy(set_names=False)`. The simplex is the same work whoever filled the model, so timing it would say nothing about the lane that filled it.
 
@@ -162,7 +206,7 @@ Both arms end holding a populated `highspy.Highs` with `run()` never called: lps
 | 100k | 6% | 100k | 0.04 s | 0.31 s | 0.14x | 0.31 GB | 0.48 GB | 0.64x | — |
 | 1M | 6% | 1M | 0.26 s | 1.17 s | 0.23x | 0.95 GB | 2.84 GB | 0.34x | — |
 
-### sector — lp sink
+**sector — lp sink**
 
 lpspec writes the LP file, linopy through its `lp-polars` writer.
 
@@ -173,7 +217,12 @@ lpspec writes the LP file, linopy through its `lp-polars` writer.
 | 100k | 6% | 100k | 0.05 s | 0.31 s | 0.16x | 0.31 GB | 0.53 GB | 0.59x | 12 MB |
 | 1M | 6% | 1M | 0.35 s | 1.17 s | 0.30x | 0.95 GB | 2.91 GB | 0.33x | 120 MB |
 
-### transport — highs sink
+</details>
+
+<details markdown="1">
+<summary><b>transport</b> — every rung, every sink</summary>
+
+**transport — highs sink**
 
 Both arms end holding a populated `highspy.Highs` with `run()` never called: lpspec through `build_highs`, linopy through `to_highspy(set_names=False)`. The simplex is the same work whoever filled the model, so timing it would say nothing about the lane that filled it.
 
@@ -184,7 +233,7 @@ Both arms end holding a populated `highspy.Highs` with `run()` never called: lps
 | 980k | 100% | 140k | 0.11 s | 0.33 s | 0.35x | 0.57 GB | 0.44 GB | 1.30x | — |
 | 9.8M | 100% | 1.4M | 0.98 s | 1.48 s | 0.66x | 2.96 GB | 2.63 GB | 1.13x | — |
 
-### transport — lp sink
+**transport — lp sink**
 
 lpspec writes the LP file, linopy through its `lp-polars` writer.
 
@@ -194,6 +243,8 @@ lpspec writes the LP file, linopy through its `lp-polars` writer.
 | 98k | 100% | 14k | 0.04 s | 0.24 s | 0.15x | 0.23 GB | 0.29 GB | 0.79x | 8 MB |
 | 980k | 100% | 140k | 0.18 s | 0.39 s | 0.45x | 0.53 GB | 0.66 GB | 0.81x | 79 MB |
 | 9.8M | 100% | 1.4M | 1.66 s | 2.09 s | 0.79x | 1.92 GB | 1.78 GB | 1.08x | 820 MB |
+
+</details>
 
 ## What this says
 

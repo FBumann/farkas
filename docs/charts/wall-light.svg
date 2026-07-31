@@ -15,16 +15,16 @@
 <text x="168.7" y="310" font-size="11" text-anchor="middle" font-family="ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace" fill="#5c646d">100k</text>
 <text x="279.3" y="310" font-size="11" text-anchor="middle" font-family="ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace" fill="#5c646d">1M</text>
 <text x="390.0" y="310" font-size="11" text-anchor="middle" font-family="ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace" fill="#5c646d">10M</text>
-<path d="M58.0,275.0 L168.7,265.5 L279.3,221.0 L390.0,151.2" fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="58.0" cy="275.0" r="3.4" fill="#2a78d6" stroke="#ffffff" stroke-width="2"/>
-<circle cx="168.7" cy="265.5" r="3.4" fill="#2a78d6" stroke="#ffffff" stroke-width="2"/>
-<circle cx="279.3" cy="221.0" r="3.4" fill="#2a78d6" stroke="#ffffff" stroke-width="2"/>
-<circle cx="390.0" cy="151.2" r="3.4" fill="#2a78d6" stroke="#ffffff" stroke-width="2"/>
-<path d="M58.0,191.1 L168.7,189.3 L279.3,171.4 L390.0,116.8" fill="none" stroke="#eb6834" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="58.0" cy="191.1" r="3.4" fill="#eb6834" stroke="#ffffff" stroke-width="2"/>
-<circle cx="168.7" cy="189.3" r="3.4" fill="#eb6834" stroke="#ffffff" stroke-width="2"/>
-<circle cx="279.3" cy="171.4" r="3.4" fill="#eb6834" stroke="#ffffff" stroke-width="2"/>
-<circle cx="390.0" cy="116.8" r="3.4" fill="#eb6834" stroke="#ffffff" stroke-width="2"/>
+<path d="M58.0,275.2 L168.7,266.2 L279.3,224.4 L390.0,157.2" fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="58.0" cy="275.2" r="3.4" fill="#2a78d6" stroke="#ffffff" stroke-width="2"/>
+<circle cx="168.7" cy="266.2" r="3.4" fill="#2a78d6" stroke="#ffffff" stroke-width="2"/>
+<circle cx="279.3" cy="224.4" r="3.4" fill="#2a78d6" stroke="#ffffff" stroke-width="2"/>
+<circle cx="390.0" cy="157.2" r="3.4" fill="#2a78d6" stroke="#ffffff" stroke-width="2"/>
+<path d="M58.0,192.4 L168.7,191.1 L279.3,181.6 L390.0,137.7" fill="none" stroke="#eb6834" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="58.0" cy="192.4" r="3.4" fill="#eb6834" stroke="#ffffff" stroke-width="2"/>
+<circle cx="168.7" cy="191.1" r="3.4" fill="#eb6834" stroke="#ffffff" stroke-width="2"/>
+<circle cx="279.3" cy="181.6" r="3.4" fill="#eb6834" stroke="#ffffff" stroke-width="2"/>
+<circle cx="390.0" cy="137.7" r="3.4" fill="#eb6834" stroke="#ffffff" stroke-width="2"/>
 <text x="424" y="46" font-size="13" font-weight="600" fill="#1a1c1f">lp sink</text>
 <line x1="424" y1="292.0" x2="756" y2="292.0" stroke="#e6e9ec" stroke-width="1"/>
 <line x1="424" y1="215.3" x2="756" y2="215.3" stroke="#e6e9ec" stroke-width="1"/>
@@ -34,18 +34,18 @@
 <text x="534.7" y="310" font-size="11" text-anchor="middle" font-family="ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace" fill="#5c646d">100k</text>
 <text x="645.3" y="310" font-size="11" text-anchor="middle" font-family="ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace" fill="#5c646d">1M</text>
 <text x="756.0" y="310" font-size="11" text-anchor="middle" font-family="ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace" fill="#5c646d">10M</text>
-<path d="M424.0,278.8 L534.7,258.8 L645.3,207.0 L756.0,135.2" fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="424.0" cy="278.8" r="3.4" fill="#2a78d6" stroke="#ffffff" stroke-width="2"/>
-<circle cx="534.7" cy="258.8" r="3.4" fill="#2a78d6" stroke="#ffffff" stroke-width="2"/>
-<circle cx="645.3" cy="207.0" r="3.4" fill="#2a78d6" stroke="#ffffff" stroke-width="2"/>
-<circle cx="756.0" cy="135.2" r="3.4" fill="#2a78d6" stroke="#ffffff" stroke-width="2"/>
-<path d="M424.0,191.0 L534.7,189.7 L645.3,173.7 L756.0,124.1" fill="none" stroke="#eb6834" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="424.0" cy="191.0" r="3.4" fill="#eb6834" stroke="#ffffff" stroke-width="2"/>
+<path d="M424.0,279.6 L534.7,262.3 L645.3,209.9 L756.0,136.3" fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="424.0" cy="279.6" r="3.4" fill="#2a78d6" stroke="#ffffff" stroke-width="2"/>
+<circle cx="534.7" cy="262.3" r="3.4" fill="#2a78d6" stroke="#ffffff" stroke-width="2"/>
+<circle cx="645.3" cy="209.9" r="3.4" fill="#2a78d6" stroke="#ffffff" stroke-width="2"/>
+<circle cx="756.0" cy="136.3" r="3.4" fill="#2a78d6" stroke="#ffffff" stroke-width="2"/>
+<path d="M424.0,191.6 L534.7,189.7 L645.3,174.7 L756.0,121.1" fill="none" stroke="#eb6834" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="424.0" cy="191.6" r="3.4" fill="#eb6834" stroke="#ffffff" stroke-width="2"/>
 <circle cx="534.7" cy="189.7" r="3.4" fill="#eb6834" stroke="#ffffff" stroke-width="2"/>
-<circle cx="645.3" cy="173.7" r="3.4" fill="#eb6834" stroke="#ffffff" stroke-width="2"/>
-<circle cx="756.0" cy="124.1" r="3.4" fill="#eb6834" stroke="#ffffff" stroke-width="2"/>
-<text x="768.0" y="128.1" font-size="12" font-weight="600" fill="#eb6834">linopy</text>
-<text x="768.0" y="153.2" font-size="12" font-weight="600" fill="#2a78d6">polars</text>
+<circle cx="645.3" cy="174.7" r="3.4" fill="#eb6834" stroke="#ffffff" stroke-width="2"/>
+<circle cx="756.0" cy="121.1" r="3.4" fill="#eb6834" stroke="#ffffff" stroke-width="2"/>
+<text x="768.0" y="125.1" font-size="12" font-weight="600" fill="#eb6834">linopy</text>
+<text x="768.0" y="140.3" font-size="12" font-weight="600" fill="#2a78d6">polars</text>
 <text x="58" y="332" font-size="11" fill="#5c646d">variables in the model</text>
 <text x="52" y="24" font-size="11" letter-spacing="0.04em" fill="#5c646d">WALL SECONDS</text>
 <text x="58" y="354" font-size="11.5" fill="#5c646d">Wall time to a loaded solver. Both axes are log.</text>

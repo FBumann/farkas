@@ -35,6 +35,21 @@ SCALING = ('xs', 's', 'm', 'l', 'xl', '2xl')
 _DATA = re.compile(r'^const DATA = .*;$', re.MULTILINE)
 
 
+def measurements(name: str) -> Path:
+    """The results file called *name*, in whichever format is committed.
+
+    The harness writes `.json` now; `bench/results/` still holds the `.jsonl`
+    the previous one wrote. Preferring the new and falling back to the old is
+    what lets this run against the tree as it stands rather than only after
+    the next full ladder.
+    """
+    for suffix in ('.json', '.jsonl'):
+        path = Path('bench/results') / f'{name}{suffix}'
+        if path.exists():
+            return path
+    raise SystemExit(f'no bench/results/{name}.json — run the ladder first (bench/README.md)')
+
+
 def best(path: Path, sink: str) -> dict[str, dict[Any, Any]]:
     """``(case, size, arm) -> fastest repeat``. Minimum, because noise only adds."""
     out: dict[str, dict[Any, Any]] = {'wall': {}, 'peak': {}, 'cols': {}}
@@ -67,7 +82,7 @@ def panel(t: dict[str, dict[Any, Any]], case: str, rungs: tuple[str, ...], arms:
 SINKS = ('highs', 'lp', 'gurobi')
 
 
-def figures(results: Path, scaling_results: Path) -> list[tuple[str, Any]]:
+def figures(results: Path) -> list[tuple[str, Any]]:
     """The figures `docs/benchmarks.md` embeds, as (name, builder) pairs."""
     from bench import svg
 
@@ -135,8 +150,11 @@ def figures(results: Path, scaling_results: Path) -> list[tuple[str, Any]]:
         )
 
     def phases(scheme: svg.Scheme) -> str:
-        rows = [json.loads(line) for line in results.read_text().splitlines()]
-        wanted = [r for r in rows if r.get('record') == 'timing' and r.get('sink') == 'highs' and r.get('size') == 'l']
+        wanted = [
+            r
+            for r in bench_results.records(results)
+            if r.get('record') == 'timing' and r.get('sink') == 'highs' and r.get('size') == 'l' and 'error' not in r
+        ]
         # teardown is ~10us at every rung: a legend entry for a segment that
         # never draws is noise, and `import` is excluded as the tables exclude it
         order = ('build', 'emit')
@@ -170,8 +188,8 @@ def figures(results: Path, scaling_results: Path) -> list[tuple[str, Any]]:
 
 
 def main() -> int:
-    ladder = best(Path('bench/results/latest.json'), 'highs')
-    scaling = best(Path('bench/results/scaling.json'), 'lp')
+    ladder = best(measurements('latest'), 'highs')
+    scaling = best(measurements('scaling'), 'lp')
     cases = sorted({c for c, _, _ in ladder['wall']})
     data = {
         'scaling': panel(scaling, 'dispatch', SCALING, ('lpspec', 'linopy')),
@@ -189,7 +207,7 @@ def main() -> int:
 
     from bench import svg
 
-    written = svg.write(figures(Path('bench/results/latest.jsonl'), Path('bench/results/scaling.jsonl')), 'docs/charts')
+    written = svg.write(figures(measurements('latest')), 'docs/charts')
     print(f'{len(written)} figures -> docs/charts/')
     return 0
 
