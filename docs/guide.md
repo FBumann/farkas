@@ -112,13 +112,6 @@ sol.primal('p')  # a polars.DataFrame
 sol.dual('power_balance')
 ```
 
-Two engines build the same YAML. The default needs nothing extra; the other is
-`LPSPEC_ENGINE=duckdb` with `pip install "lpspec[duckdb]"`, and trades wall
-clock for a smaller build peak — worth it writing a large LP file, worth little
-on the way to a solver. Same model either way, integer for integer, which is
-why it is an environment variable and not an argument.
-→ [benchmarks](benchmarks.md)
-
 `lps.check` is the CI verb — it parses, expands, resolves and lowers without
 binding anything, so a model repository can be validated on every commit
 without shipping the data.

@@ -146,27 +146,13 @@ spelling even after quadratic lands. The scope, the lowering, and whether
 
 ## Track 4 — the memory axis
 
-The default engine holds the model it builds, so peak tracks the model rather
-than a number the caller sets. That is the right default and it is what makes
-the lifetime disappear from the API, but there is **no declared ceiling** — no
-way to say "build this within N gigabytes or fail".
-
-`LPSPEC_ENGINE=duckdb` **is not the answer**, and that is worth knowing before
-this track is picked up. The figure this section used to quote — 2.1–4.2x less
-memory on the write path — was measured on the engine the in-tree one was
-ported from, and the port has never reproduced it: at the top of the ladder
-(`dispatch/xl`, 40M columns) the two peak within 2% of each other
-([bench/duckdb-spike.md](https://github.com/FBumann/lpspec/blob/main/bench/duckdb-spike.md)).
-What the second engine buys at that rung is *speed* — a build in 2.66 s against
-6.84 s — which is a different question from the one this section asks.
-
-What remains is a declared bound, and the honest version is partition-wise
-execution, which the locality closure already guarantees is safe. Measured on
-polars it takes 23–36% off peak and then floors, because the matrix stops being
-the binding term while the label frames, `cols`, `rows`, `obj` and the
-parameters stay resident. Worth most for the write path either way: the solver
-is the larger term by roughly an order of magnitude at 10⁷ variables
-([benchmarks](benchmarks.md)).
+The engine holds the model it builds, so peak tracks the model rather than a
+number the caller sets. That is the right default and it is what makes the
+lifetime disappear from the API, but there is **no declared ceiling** — no way
+to say "build this within N gigabytes or fail". The honest version is
+partition-wise execution, which the locality closure already guarantees is safe.
+Worth most for the write path: the solver is the larger term by roughly an order
+of magnitude at 10⁷ variables ([benchmarks](benchmarks.md)).
 
 ## What we will not build
 

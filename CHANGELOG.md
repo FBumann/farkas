@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.0.1-alpha.57](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.56...v0.0.1-alpha.57) (2026-07-31)
+
+
+### Performance
+
+* **sinks:** a solution is a vector, not a vector beside its own index ([#439](https://github.com/FBumann/lpspec/issues/439)) ([76600ab](https://github.com/FBumann/lpspec/commit/76600ab8f1685315c9f942b97bcc7e5b67f68d74))
+
+## [0.0.1-alpha.56](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.55...v0.0.1-alpha.56) (2026-07-31)
+
+
+### Bug Fixes
+
+* **bench:** compare like with like, and add a gurobi arm ([#438](https://github.com/FBumann/lpspec/issues/438)) ([ea15cb4](https://github.com/FBumann/lpspec/commit/ea15cb43031f8b751bdd8a4abff162616fd4d5a9))
+
 ## [0.0.1-alpha.55](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.54...v0.0.1-alpha.55) (2026-07-31)
 
 

@@ -296,10 +296,12 @@ def main(argv: list[str] | None = None) -> int:
         '--sinks',
         nargs='+',
         default=['lp', 'highs'],
-        choices=('lp', 'highs'),
-        help='where each built model goes. Both by default: the LP file is the '
-        'artifact fewest callers want, and it is not the same comparison — '
-        "HiGHS's own model is resident in both arms and narrows the gap.",
+        choices=('lp', 'highs', 'gurobi'),
+        help='where each built model goes. `lp` and `highs` by default: the LP '
+        'file is the artifact fewest callers want, and it is not the same '
+        "comparison — HiGHS's own model is resident in both arms and narrows "
+        'the gap. `gurobi` is opt-in because it needs the [gurobi] extra, and '
+        'it is measured against linopy the same way, through `to_gurobipy()`.',
     )
     ap.add_argument('--timeout', type=float, default=3600.0)
     ap.add_argument('--skip-gate', action='store_true', help='time without checking the arms agree')

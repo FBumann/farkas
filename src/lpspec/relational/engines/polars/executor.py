@@ -23,6 +23,7 @@ import polars as pl
 from lpspec.errors import (
     DataError,
     LanguageError,
+    LpspecError,
     null_bounds_message,
     sparse_divisor_message,
 )
@@ -304,6 +305,28 @@ class PolarsExecutor(Engine):
         self._bound = None
         self._compiler = None
         self._labels = None
+
+
+def _spanning(solver: str, quantity: str, values: pl.Series | None, expected: int) -> None:
+    """Refuse a solver vector that does not span the model.
+
+    Reading a solution back is positional, so a vector of the wrong length is
+    an answer about a *different* model rather than a short answer about this
+    one. Checked here, where the solver hands it over, rather than where it is
+    read: the objective comes back from the solver directly, so a `Result`
+    built on a broken vector would report a plausible number and only fail if
+    someone asked for a coordinate.
+
+    ``None`` is not a wrong length. A mixed-integer model has no duals at all,
+    and neither does a run stopped short of a simplex basis.
+    """
+    if values is not None and len(values) != expected:
+        raise LpspecError(
+            f'{solver} returned {len(values)} {quantity} values for a model with {expected}. '
+            f'Reading a solution back is positional, so a vector that does not span the model '
+            f'describes a different one. This is an engine bug rather than a problem with the '
+            f'model — please report it.'
+        )
 
 
 def _needs_aggregate(terms: Sequence[TermFragment], *, projected: bool = False) -> bool:
