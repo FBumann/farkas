@@ -15,7 +15,7 @@ Example::
     result.to_dataarray('p')  # labelled, for array post-processing
 """
 
-from importlib.metadata import PackageNotFoundError
+from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
 from importlib.metadata import version as _installed_version
 
 from lpspec.api import build, check, load_schema, solve, write
@@ -52,5 +52,5 @@ __all__ = [
 try:
     # the git tag is the source of truth; hatch-vcs bakes it into the metadata
     __version__ = _installed_version('lpspec')
-except PackageNotFoundError:  # running from a source tree with nothing installed
+except _PackageNotFoundError:  # running from a source tree with nothing installed
     __version__ = '0.0.0'

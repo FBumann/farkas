@@ -112,7 +112,7 @@ flowchart TB
 
     Y --> AST
 
-    AST["the whole model, typed and checked<br/>before a byte of data is read"]
+    AST["the whole model, typed and checked<br/>before a byte of data is read<br/><b>lps.load_schema → MathSchema</b>"]
 
     AST --> SHOW
     AST --> CHECK
@@ -120,30 +120,30 @@ flowchart TB
 
     subgraph SHOW["show it — no data, no solver"]
         direction TB
-        S1(["typeset the math for a paper or a review"])
-        S2(["drive it from the command line"])
+        S1(["typeset the math for a paper or a review<br/><b>lps.to_latex · to_typst · to_markdown</b><br/>how names print: <b>SymbolTable</b>"])
+        S2(["drive it from the command line<br/><b>python -m lpspec &lt;format&gt;</b>"])
         S3(["watch what a build is doing"])
     end
 
     subgraph CHECK["check it — no data, no solver"]
         direction TB
-        C1(["will this build, and is the math sayable?"])
-        C2(["do the dimensions line up?"])
+        C1(["will this build, and is the math sayable?<br/><b>lps.check</b>"])
+        C2(["do the dimensions line up?<br/><b>lps.check</b> — same pass, same answer"])
         C3(["will that solver take it, and how big is it?"])
     end
 
     subgraph RUN["run it — the only part that touches your data"]
         direction TB
-        R1(["stream it straight into a solver"])
-        R2(["write an LP file for anything else"])
-        R3(["put the same math on a linopy model"])
+        R1(["stream it straight into a solver<br/><b>lps.solve</b> · <b>lps.build</b> for several sinks"])
+        R2(["write an LP file for anything else<br/><b>lps.write</b>"])
+        R3(["put the same math on a linopy model<br/><b>lpspec.linopy.build · .extend</b>"])
     end
 
     R1 --> ANS
 
     subgraph ANS["your answers, as tables you can join"]
         direction TB
-        A1(["values and shadow prices, by name"])
+        A1(["values and shadow prices, by name<br/><b>result.objective · .primal · .dual</b><br/>bridges out: <b>.to_pandas · .to_parquet</b>"])
         A2(["derived results and diagnostics"])
         A3(["change a number, re-solve, keep the labels"])
     end
@@ -158,7 +158,10 @@ flowchart TB
     class RUN,CHECK,SHOW,ANS fam
 ```
 
-**Solid is what ships today; dashed is what the shape makes cheap.** None of the
+**Solid is what ships today; dashed is what the shape makes cheap** — which is
+also to say the solid boxes are the ones with a name in them. That is the whole
+Python surface bar the error hierarchy, which is cross-cutting rather than a
+box; [the table below](#the-python-surface) is the same set, listed. None of the
 dashed boxes is a rewrite — each reads the same AST the engine reads, so a
 renderer is a tree walk, a check is a pass with no data bound, and a new output
 format is one function in `relational/sinks/`. `typeset/` is that claim cashed:
@@ -187,6 +190,34 @@ needs nothing but the file; and the waist is **closed**, which is what the
 ceiling in [docs/design/ceiling.md](design/ceiling.md) protects — a new consumer
 is free, a new primitive is taxed. What is planned, and why, is
 [docs/ROADMAP.md](ROADMAP.md).
+
+### The Python surface
+
+**Sixteen names, and that is the feature.** The model is the YAML file; Python
+is how you *run* it, so the surface is the diagram above written out — one
+group per box, nothing that constructs math, nothing that reaches the plan.
+
+| | `lpspec.` | |
+|---|---|---|
+| **run it** | `solve` · `build` · `write` · `check` | the four verbs; `check` binds no data |
+| **load it** | `load_schema` · `MathSchema` | parse and validate; the schema is the contract under the YAML |
+| **show it** | `to_latex` · `to_typst` · `to_markdown` · `SymbolTable` | one per format, plus how names print |
+| **catch it** | `LinopyYamlError` · `LanguageError` · `DataError` · `DimensionError` · `SchemaError` · `PiecewiseExpansionError` | one hierarchy, split model from run |
+
+Plus two on the opt-in shim — `lpspec.linopy.build` and `.extend` — and the
+methods of what `solve` hands back (`Result`: `objective`, `primal`, `dual`,
+`to_pandas` / `to_dataarray` / `to_parquet`, the status pair, `close`).
+
+`tests/test_architecture.py` pins all of it: `__all__` must match the table,
+**and** no public non-module attribute may exist outside it. Both directions,
+because either alone rots — the first catches a name documented and never
+exported, the second a helper that leaked into the namespace by being imported
+at the top of `__init__.py`. That check found one the day it was written.
+
+There is deliberately no Python API for *constructing* a model, no way to hand
+in a plan, and no registry to populate. That is hard rule 5 below, and it is
+what makes a `.yaml` file the thing you review, diff and cite — rather than the
+serialisation of a Python object you would have to run to understand.
 
 ## Hard rules
 
@@ -247,7 +278,10 @@ that made an implementation choice load-bearing in the language's rulebook.
    whether that seam is ever blessed is open (see
    [Composition](design/ceiling.md#composition-component-libraries)). The Python
    surface is the runner (`api.py`); the plan is internal, and a stable
-   plan-construction API is a later possibility, not a current contract.
+   plan-construction API is a later possibility, not a current contract. The
+   whole of it is [sixteen names](#the-python-surface), pinned by a test — so
+   the surface grows through a list a reviewer reads, the way every other fence
+   here does.
 
 ## The relational lane
 

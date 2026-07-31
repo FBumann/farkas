@@ -281,6 +281,83 @@ def test_typesets_import_closure_needs_no_third_party_engine():
     )
 
 
+#: The whole Python surface, by role. Hard rule 5 says the public interface is
+#: a declared model rather than a Python API — this is what "rather than" is
+#: worth in names. Adding one is a row here, which is a line in a diff a
+#: reviewer reads; the fences elsewhere in this file work the same way.
+PUBLIC_API = {
+    'run it': {'build', 'check', 'solve', 'write'},
+    'load it': {'load_schema', 'MathSchema'},
+    'show it': {'to_latex', 'to_markdown', 'to_typst', 'SymbolTable'},
+    'catch it': {
+        'LinopyYamlError',
+        'LanguageError',
+        'DataError',
+        'DimensionError',
+        'SchemaError',
+        'PiecewiseExpansionError',
+    },
+}
+
+#: The opt-in shim, which is a surface of its own — and deliberately two verbs.
+PUBLIC_API_LINOPY = {'build', 'extend'}
+
+
+def test_the_public_surface_is_exactly_what_is_declared():
+    """Hard rule 5, in names: the Python surface is narrow, and stays narrow.
+
+    Narrow is a feature, not an accident — it is the half of "the public
+    interface is a declared model" that a reader can count. A model travels as
+    YAML; Python is how you *run* it, so the runner has four verbs, the
+    language one loader, the readers one each, and the errors one hierarchy.
+
+    Two directions, because either alone rots. ``__all__`` must match the
+    table (a name added quietly, or documented and never exported), and no
+    public non-module attribute may exist outside it (a helper that leaked
+    into the namespace by being imported at the top of ``__init__``).
+    """
+    import inspect
+
+    import lpspec
+
+    declared = {name for names in PUBLIC_API.values() for name in names}
+    assert set(lpspec.__all__) == declared, (
+        f'lpspec.__all__ and PUBLIC_API disagree: only in __all__ '
+        f'{sorted(set(lpspec.__all__) - declared)}, only in the table '
+        f'{sorted(declared - set(lpspec.__all__))} — add the name to PUBLIC_API '
+        f'with the role it plays, and to docs/ARCHITECTURE.md'
+    )
+
+    leaked = sorted(
+        name
+        for name in dir(lpspec)
+        if not name.startswith('_')
+        and name not in declared
+        and not inspect.ismodule(getattr(lpspec, name))  # submodules are import paths, not API
+    )
+    assert not leaked, (
+        f'public names outside __all__: {leaked} — a surface that grows by '
+        f'accident is not narrow. Import it privately, or declare it.'
+    )
+
+
+def test_the_linopy_shim_stays_two_verbs():
+    """The shim attaches YAML math to a model that already exists.
+
+    That is the whole of it — ``build`` makes one, ``extend`` adds to one. A
+    third verb would mean the shim had started being a lane of its own, which
+    hard rule 3 spends its length refusing. Read statically: the module
+    imports linopy, and this must run on a bare install.
+    """
+    tree = ast.parse((PKG / 'linopy' / '__init__.py').read_text())
+    declared = next(
+        ast.literal_eval(node.value)
+        for node in tree.body
+        if isinstance(node, ast.Assign) and any(ast.unparse(t) == '__all__' for t in node.targets)
+    )
+    assert set(declared) == PUBLIC_API_LINOPY, f'the linopy shim exports {sorted(declared)}'
+
+
 def test_expansion_has_no_mutable_module_state():
     """Hard rule 5: YAML files are self-contained — nothing importable may
     accumulate state that changes what a file means."""
