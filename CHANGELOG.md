@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.51](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.50...v0.0.1-alpha.51) (2026-07-31)
+
+
+### Documentation
+
+* breaking changes are free while we are 0.0.1aN ([#420](https://github.com/FBumann/lpspec/issues/420)) ([ae1389a](https://github.com/FBumann/lpspec/commit/ae1389aac964f7f3c1e094b541e80f8ab74bc39f))
+
 ## [0.0.1-alpha.50](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.49...v0.0.1-alpha.50) (2026-07-31)
 
 
