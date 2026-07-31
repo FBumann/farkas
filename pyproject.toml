@@ -109,8 +109,15 @@ include = ["/src"]
 # supplies the timing (through pytest-benchmark), the memray peak, and the
 # whole-process `rss` the published comparison is built on.
 # `uv sync --group bench` to run them.
+#
+# The floor is a behavioural one: 0.5 is the first release whose isolated pass
+# reports `rss` correctly on Linux — it reads the child's own resident
+# high-water, keeps the warmup out of it, and runs setup before the measured
+# region rather than inside it. Every number this suite publishes comes from
+# `benchmem(isolate=True)`, so below that floor the `rss` column means
+# something else.
 bench = [
-    "pytest-benchmem>=0.4",
+    "pytest-benchmem>=0.5",
 ]
 # The same suite (bench/), measured by CodSpeed instead. Its own group rather
 # than a share of `bench`, for the same reason `bench` is not a share of `dev`:
@@ -118,7 +125,7 @@ bench = [
 # pytest-codspeed replaces, and a second benchmarking plugin loaded into the
 # process being measured is a confounder bought for nothing.
 #
-# Pinned exactly, unlike `pytest-benchmem>=0.4`: CodSpeed keeps the baseline
+# Pinned exactly, unlike `pytest-benchmem>=0.5`: CodSpeed keeps the baseline
 # across commits, so the plugin version is part of the measurement rather than
 # part of the environment — a floor would let a bump land as a regression.
 #
