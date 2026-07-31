@@ -368,9 +368,10 @@ class DuckExecutor(Engine):
             return rows, self._fetch(stacked)
         # `sum` over `(row, col)` is the terminal aggregate — where duplicates
         # from Sum and GroupSum, which project rather than aggregate, collapse.
-        return rows, self._fetch(
-            f'SELECT row, col, sum(coeff) AS coeff FROM ({stacked}) GROUP BY row, col ORDER BY row, col'
-        )
+        # Unordered: every sink sorts the matrix into the order it needs
+        # (`lp_file` by `(row, col)`, `solver_direct` by `row`), so an ORDER BY
+        # here is a second sort of the largest frame in the model for nothing.
+        return rows, self._fetch(f'SELECT row, col, sum(coeff) AS coeff FROM ({stacked}) GROUP BY row, col')
 
     def _build_objective(self, o: plan.ObjectiveDeclaration) -> pl.DataFrame | None:
         """The objective as ``(col, coeff)``, or ``None`` if it has no terms."""
