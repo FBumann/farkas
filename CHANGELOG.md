@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.48](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.47...v0.0.1-alpha.48) (2026-07-31)
+
+
+### Bug Fixes
+
+* **bench:** the regression harness builds again ([#400](https://github.com/FBumann/lpspec/issues/400)) ([291f714](https://github.com/FBumann/lpspec/commit/291f714c0138aaeff586be1ff6f76ea904e8ec13))
+
 ## [0.0.1-alpha.47](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.46...v0.0.1-alpha.47) (2026-07-31)
 
 
