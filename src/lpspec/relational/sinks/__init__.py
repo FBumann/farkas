@@ -11,12 +11,18 @@ module is the seam a caller uses: the contract, and the two lookups.
 """
 
 from lpspec.relational.sinks.solvers import SOLVERS, solver
-from lpspec.relational.sinks.tables import ModelTables
+from lpspec.relational.sinks.tables import COLS, DTYPES, MATRIX, OBJ, ROWS, VTYPE, ModelTables
 from lpspec.relational.sinks.writers import PLANNED_WRITERS, WRITERS, writer
 
 __all__ = [
+    'COLS',
+    'DTYPES',
+    'MATRIX',
+    'OBJ',
     'PLANNED_WRITERS',
+    'ROWS',
     'SOLVERS',
+    'VTYPE',
     'WRITERS',
     'ModelTables',
     'solver',

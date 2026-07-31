@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     import pandas as pd
     import polars as pl
 
-    from lpspec.relational.engines.polars.executor import PolarsExecutor
+    from lpspec.relational.engine import Engine
     from lpspec.relational.status import SolveStatus
 
 
@@ -51,7 +51,7 @@ class Result:
 
     _status: SolveStatus
     _objective: float
-    _executor: PolarsExecutor
+    _executor: Engine
     _primal_values: pl.Series | None = None
     _dual_values: pl.Series | None = None
 

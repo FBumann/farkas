@@ -3,7 +3,7 @@
 Owns the *assembly* — turning each declaration into rows of the four model
 frames, and holding them until a sink drains them. Owns none of the three
 questions it asks on the way: what the data is
-(:mod:`lpspec.relational.engines.polars.binding`), what a query over it looks like
+(:mod:`lpspec.relational.binding`), what a query over it looks like
 (:mod:`lpspec.relational.engines.polars.compiler`), which coordinate gets which solver index
 (:mod:`lpspec.relational.engines.polars.labels`). The lane is described in
 docs/ARCHITECTURE.md.
@@ -11,13 +11,12 @@ docs/ARCHITECTURE.md.
 The two registries it does own are the ones that fill *during* assembly — the
 variable and constraint frames — because a declaration built later has to see
 what earlier ones produced. Everything binding produced is frozen by contrast,
-which is what :class:`~lpspec.relational.engines.polars.binding.BoundSources` says.
+which is what :class:`~lpspec.relational.binding.BoundSources` says.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, get_args
+from typing import TYPE_CHECKING, Any
 
 import polars as pl
 
@@ -29,39 +28,23 @@ from lpspec.errors import (
     sparse_divisor_message,
 )
 from lpspec.relational import plan, sinks
-from lpspec.relational.engines.polars.binding import BoundSources, bind
+from lpspec.relational.binding import BoundSources, bind
+from lpspec.relational.engine import Engine
 from lpspec.relational.engines.polars.compiler import PolarsCompiler, TermFragment
 from lpspec.relational.engines.polars.labels import Labeller
-from lpspec.relational.result import Result
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
 
-#: The four frames a sink reads, as schemas. Stated here because the executor
-#: is what fills them and an empty model still has to have them.
-_COLS = ('lb', 'ub', 'vtype')
-_OBJ = ('col', 'coeff')
-_ROWS = ('row', 'sense', 'rhs')
-_MATRIX = ('row', 'col', 'coeff')
-
-#: The dtype of each of those columns. ``vtype`` is an ``Enum`` over the
-#: variable types the plan declares, rather than a string: it holds one word
-#: per column and the same handful of words for the whole model, so as a string
-#: it stores that word once per row — 0.098 GB of the ``cols`` frame's 0.333 at
-#: 9.8M columns, against 0.010 as an Enum. The Enum also makes the vocabulary
-#: explicit, so a fourth variable type added to
-#: :data:`~lpspec.relational.plan.VariableType` and not reaching here fails
-#: where the column is built rather than in whichever sink first compares
-#: against a name it does not know.
-_DTYPES = {
-    'col': pl.Int64, 'row': pl.Int64,
-    'lb': pl.Float64, 'ub': pl.Float64, 'rhs': pl.Float64, 'coeff': pl.Float64,
-    'sense': pl.String, 'vtype': pl.Enum(get_args(plan.VariableType)),
-}  # fmt: skip
+#: The four frames a sink reads, and their dtypes — both stated by
+#: `sinks/tables.py`, which is what reads them. An engine fills the schema; it
+#: does not get to have one of its own.
+_COLS, _OBJ, _ROWS, _MATRIX = sinks.COLS, sinks.OBJ, sinks.ROWS, sinks.MATRIX
+_DTYPES = sinks.DTYPES
 
 
-class PolarsExecutor:
+class PolarsExecutor(Engine):
     """Build a :class:`Program` into polars frames, then sink it."""
 
     def __init__(self) -> None:
@@ -69,12 +52,8 @@ class PolarsExecutor:
         self._compiler: PolarsCompiler | None = None
         self._labels: Labeller | None = None
         self._bound: BoundSources | None = None
-        self._variables: dict[str, pl.LazyFrame] = {}
-        self._constraints: dict[str, pl.LazyFrame] = {}
-        #: ``name -> (first label, how many)``. Every path in
-        #: :meth:`~lpspec.relational.engines.polars.labels.Labeller.frame`
-        #: hands a declaration a *contiguous, dense* run of labels, so a
-        #: declaration's share of a solver vector is a slice of it.
+        self._var_frames: dict[str, pl.LazyFrame] = {}
+        self._row_frames: dict[str, pl.LazyFrame] = {}
         self._blocks: dict[str, tuple[int, int]] = {}
         self._cols: pl.DataFrame | None = None
         self._obj: pl.DataFrame | None = None
@@ -104,7 +83,7 @@ class PolarsExecutor:
         # The variable frames are passed apart from the bound data on purpose:
         # they are the one registry still being filled, appearing as each
         # declaration is built so a constraint compiled afterwards can see them.
-        self._compiler = PolarsCompiler(program, self._bound, self._variables)
+        self._compiler = PolarsCompiler(program, self._bound, self._var_frames)
         self._labels = Labeller(self._compiler, self._bound.cardinality, program)
 
         cols = [self._build_variable(v) for v in program.variables]
@@ -115,6 +94,14 @@ class PolarsExecutor:
         self._rows = _stack([r for r, _ in built], _ROWS)
         self._matrix = _stack([m for _, m in built if m is not None], _MATRIX)
         self._obj = _stack([objective] if objective is not None else [], _OBJ)
+
+    @property
+    def _variables(self) -> Mapping[str, pl.LazyFrame]:
+        return self._var_frames
+
+    @property
+    def _constraints(self) -> Mapping[str, pl.LazyFrame]:
+        return self._row_frames
 
     @property
     def _q(self) -> PolarsCompiler:
@@ -156,7 +143,7 @@ class PolarsExecutor:
 
         start = self._n_cols
         labelled, self._n_cols = self._label.frame(v.dims, v.where, 'var_label', start)
-        self._variables[v.name] = labelled.lazy()
+        self._var_frames[v.name] = labelled.lazy()
         self._blocks[v.name] = (start, labelled.height)
 
         bounded = self._q.bounds(labelled.lazy(), v)
@@ -203,7 +190,7 @@ class PolarsExecutor:
         start = self._n_rows
         labelled, self._n_rows = self._label.frame(c.dims, c.where, 'row', start, restrictions)
         frame = labelled.lazy()
-        self._constraints[c.name] = frame  # kept for the dual read-back
+        self._row_frames[c.name] = frame  # kept for the dual read-back
         self._blocks[c.name] = (start, labelled.height)
 
         accumulated = pl.lit(0.0, dtype=pl.Float64)
@@ -304,153 +291,13 @@ class PolarsExecutor:
             objective_constant=self._obj_const,
         )
 
-    def write(self, path: str | Path) -> None:
-        """Sink the built model to a file; the **suffix** picks the writer.
-
-        ``.lp`` today, ``.mps`` planned — an unknown suffix is an error naming
-        both sets. The caller names an output rather than a writer, which is
-        the one place this differs from :meth:`solve`: a file's format is a
-        property of the file, where which solver runs is not a property of
-        anything but the call.
-        """
-        path = Path(path)
-        sinks.writer(path.suffix.lower())(self._tables(), path)
-
-    def solve(
-        self,
-        batch_rows: int | None = None,
-        solver_options: Mapping[str, Any] | None = None,
-        solver_name: str = 'highs',
-    ) -> Result:
-        """Sink the built model straight into a solver and solve it.
-
-        ``solver_name`` picks the sink — ``highs``, which ships with the
-        package, or ``gurobi``, which needs the ``[gurobi]`` extra. Spelled
-        the way linopy spells it, and a *caller's* choice at the call: no YAML
-        file can express it, because a model means the same thing whoever
-        solves it.
-
-        ``solver_options`` is forwarded verbatim to that solver, the way
-        linopy's is — ``{'time_limit': 60, 'mip_rel_gap': 0.01}``, and so
-        named in the solver's own vocabulary. ``batch_rows`` is the hand-off
-        budget in elements, and defaults to the sink's own — see
-        :data:`~lpspec.relational.sinks.highs.HANDOFF_BUDGET`.
-        """
-        status, objective, primal, dual = sinks.solver(solver_name)(self._tables(), batch_rows, solver_options)
-        _spanning(solver_name, 'primal', primal, self._n_cols)
-        _spanning(solver_name, 'dual', dual, self._n_rows)
-        return Result(
-            _status=status,
-            _objective=objective,
-            _executor=self,
-            _primal_values=primal,
-            _dual_values=dual,
-        )
-
-    def _solution_frame(self, name: str, values: pl.Series | None) -> pl.LazyFrame:
-        """The tidy solution of variable *name*: ``(dims…, value)``.
-
-        A slice, never a dense array and never a join. *values* is the solver's
-        column vector, held by the :class:`Result` that asks — the labels are
-        the build's and shared, the values are one solve's and are not.
-
-        **Ordered by label**, which is the order the coordinates already have:
-        a label *is* row-major position in the coordinate product, so sorting
-        on it hands the caller back the model's own order rather than the
-        order a hash join happened to finish in. Stated rather than inherited,
-        because the labels are not guaranteed to arrive sorted — a mask decides
-        which rows of the product survive, not how they arrive.
-
-        And once they *are* in label order there is nothing left to look up.
-        The declaration owns a contiguous, dense run of labels (:attr:`_blocks`)
-        and the solver's vector is positional in the same index, so its
-        coordinates and its values line up by construction. Matching them by
-        key instead cost 0.38 s against 0.10 s on `dispatch/l`, for the same
-        10M rows.
-        """
-        assert self._program is not None
-        assert values is not None, 'no solve has stored a primal'
-        return self._read_back(name, self._variables[name], 'var_label', self._program.variable(name).dims, values)
-
-    def _read_back(
-        self,
-        name: str,
-        labels: pl.LazyFrame,
-        label: str,
-        dims: tuple[str, ...],
-        values: pl.Series,
-    ) -> pl.LazyFrame:
-        """One declaration's coordinates in label order, beside its values.
-
-        **The order is not re-established here, because it was never lost.**
-        Every path in :meth:`~lpspec.relational.engines.polars.labels.Labeller.frame`
-        hands back a label-ascending frame and two of them verify it
-        (:func:`~lpspec.relational.engines.polars.labels._in_label_order`), so
-        this reads the ordering rather than imposing it. Sorting again moved a
-        full copy of the coordinates — strings included — at the moment the
-        solver's own model is still resident, which is the worst point in the
-        process to allocate one.
-
-        The slice is attached as a column rather than concatenated as a frame
-        so that a length that does not match the coordinates raises instead of
-        padding with nulls — though :func:`_spanning` has already refused a
-        vector that does not span the model, so what is left here is the block
-        bookkeeping alone.
-        """
-        start, height = self._blocks[name]
-        return labels.select(*dims).with_columns(values.slice(start, height))
-
-    def _primal(self, name: str, values: pl.Series | None) -> pl.DataFrame:
-        return self._solution_frame(name, values).collect(engine='streaming')
-
-    def _dual(self, name: str, values: pl.Series) -> pl.DataFrame:
-        """:meth:`_solution_frame` against row labels instead of column ones.
-
-        Ordered and sliced the same way, for the same reason — a constraint
-        row's label is its position in that constraint's coordinate product.
-        """
-        assert self._program is not None
-        dims = self._program.constraint(name).dims
-        return self._read_back(name, self._constraints[name], 'row', dims, values).collect(engine='streaming')
-
-    def _no_duals_reason(self, termination_condition: str) -> str:
-        """Why a solve that *did* leave values still has no duals.
-
-        Integrality is decidable from the program, and naming the variable is
-        actionable where "the solver reported none" is not.
-        """
-        assert self._program is not None
-        discrete = sorted(v.name for v in self._program.variables if v.variable_type != 'continuous')
-        if discrete:
-            names = ', '.join(f"'{n}'" for n in discrete)
-            return (
-                f'duals are undefined for a mixed-integer model: {names} '
-                f'{"is" if len(discrete) == 1 else "are"} not continuous. '
-                f'Drop the integrality to price the LP relaxation instead.'
-            )
-        return (
-            f'the solver returned no dual solution, though the solve terminated '
-            f'{termination_condition!r}. Duals come from a simplex basis, which a '
-            f'run stopped short of one does not have.'
-        )
-
-    def _solution_to_parquet(self, directory: Path, values: pl.Series | None) -> dict[str, Path]:
-        assert self._program is not None
-        directory.mkdir(parents=True, exist_ok=True)
-        written: dict[str, Path] = {}
-        for v in self._program.variables:
-            out = directory / f'{v.name}.parquet'
-            self._solution_frame(v.name, values).sink_parquet(out)
-            written[v.name] = out
-        return written
-
     # ------------------------------------------------------------------
 
     def close(self) -> None:
         """Drop the built model. Optional — see :class:`Result`."""
         self._cols = self._obj = self._rows = self._matrix = None
-        self._variables.clear()
-        self._constraints.clear()
+        self._var_frames.clear()
+        self._row_frames.clear()
         self._blocks.clear()
         # `BoundSources` is frozen, so it cannot be emptied in place the way the
         # registries above can: what frees the bound frames is dropping every
@@ -458,13 +305,6 @@ class PolarsExecutor:
         self._bound = None
         self._compiler = None
         self._labels = None
-
-    def __enter__(self) -> PolarsExecutor:
-        return self
-
-    def __exit__(self, *exc: object) -> Literal[False]:
-        self.close()
-        return False
 
 
 def _spanning(solver: str, quantity: str, values: pl.Series | None, expected: int) -> None:

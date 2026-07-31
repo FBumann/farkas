@@ -4,10 +4,19 @@
 
 `lpspec` is a YAML-based math definition layer for LP/MILP. It lets users define
 optimisation problems declaratively in YAML and build them at runtime — natively on the
-relational engine (polars → solver or LP file), which is the product path and needs no
+relational lane (→ solver or LP file), which is the product path and needs no
 [linopy](https://github.com/PyPSA/linopy); or through the opt-in `lpspec.linopy` shim,
 which puts the same math onto a `linopy.Model` that already exists in memory. Both lanes
 accept exactly the same language; there is no routing and no fallback.
+
+The relational lane has **two engines**, `duckdb` (default) and `polars`, both
+shipped as runtime dependencies and chosen by `LPSPEC_ENGINE`, never by the
+library. They build the same model integer for integer, so the choice is a cost
+one — not a third lane, and not something a YAML file can express. *Lane* and
+*engine* are different axes: linopy is a lane and cannot be an engine (it never
+sees the plan). `pytest --engine polars` runs the whole suite on the second one,
+and CI does. duckdb is the default despite being behind on the ladder, so that
+CodSpeed and the unflagged CI pass measure it without being asked.
 
 Four docs, kept short on purpose — **reference pages carry rules, design notes carry arguments**. If a change makes one longer, check whether it belongs in another:
 
@@ -97,11 +106,14 @@ lpspec_linopy.extend(m, 'ramp_constraint.yaml', data={...})  # YAML math onto an
   the one line with `# pyrefly: ignore[rule-name]` and say why — do not turn the rule
   off globally. The rules `pyproject.toml` deliberately leaves unpromoted are
   documented there with the reason.
-- Keep the dependency footprint minimal. The runtime set is polars, numpy, pyparsing,
-  pydantic, pyyaml, highspy — and *no dataframe library beyond polars*: pandas and
-  xarray are bridges *out* (`to_pandas`, `to_dataarray`), shipped with the `[linopy]`
-  extra. The bare-install CI job proves the engine builds, solves and reads results
-  back without them, and re-resolves at `--resolution lowest-direct` so the declared
+- Keep the dependency footprint minimal. The runtime set is polars, duckdb, pyarrow,
+  numpy, pyparsing, pydantic, pyyaml, highspy — the two engines and what they hand
+  frames over with, and nothing else. **pandas is not in it**: pandas and xarray are
+  bridges *out* (`to_pandas`, `to_dataarray`), shipped with the `[linopy]` extra, and
+  the narrower "no dataframe library beyond polars" claim belongs to the polars
+  engine alone (`tests/test_api.py` pins it there). The bare-install CI job
+  proves the engine builds, solves and reads results back with neither pandas nor
+  linopy on disk, and re-resolves at `--resolution lowest-direct` so the declared
   lower bounds stay real rather than decorative. Raise a floor when you rely on a
   version's behaviour; do not raise it to whatever is current.
 - Releasing: the git tag *is* the version (hatch-vcs derives it at build time) — never

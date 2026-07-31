@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING, Any
 
 from lpspec.language.validation import load_schema
 from lpspec.lowering import lower_program
-from lpspec.relational.engines.polars.executor import PolarsExecutor
+from lpspec.relational.engines import resolve as resolve_engine
 from lpspec.relational.sinks import solver, writer
 from lpspec.sources import tidy_sources
 
@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from lpspec.language.schema import MathSchema
+    from lpspec.relational.engine import Engine
     from lpspec.relational.result import Result
 
 #: Re-exported: parsing and validating a model is the *language's* job, and a
@@ -67,12 +68,18 @@ def build(
     sources: Mapping[str, Any],
     *,
     coords: dict[str, Any] | None = None,
-) -> PolarsExecutor:
+) -> Engine:
     """Build *model* on the relational engine and return the executor.
 
     ``sources`` maps parameter names to parquet paths or in-memory tables (and
     optionally dimension names to index tables). One build can feed more than
     one sink: call ``ex.solve()`` and ``ex.write(path)`` on the same object.
+
+    Which engine builds it is set by ``LPSPEC_ENGINE`` and is deliberately not
+    a parameter here: the engines produce the same model integer for integer,
+    so the choice cannot change the answer, only what computing it costs. A
+    knob that cannot change the answer does not belong in the call that
+    produces one — see :mod:`lpspec.relational.engines`.
 
     Raises
     ------
@@ -82,7 +89,7 @@ def build(
     """
     schema = load_schema(model)
     program = lower_program(schema)  # strict: no fallback, errors carry the reason
-    ex = PolarsExecutor()
+    ex = resolve_engine()()
     try:
         ex.build(program, tidy_sources(schema, dict(sources), coords))
     except BaseException:

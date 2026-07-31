@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 
     from polars._typing import JoinStrategy, MaintainOrderJoin
 
-    from lpspec.relational.engines.polars.binding import BoundSources
+    from lpspec.relational.binding import BoundSources
 
 
 #: Scratch columns. The spaces make them unrepresentable as declared names, so
