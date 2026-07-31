@@ -137,3 +137,35 @@ jobs:
           uv pip install pytest
           uv run --no-sync python -c "import importlib.util, sys; sys.exit(importlib.util.find_spec('linopy') is not None)"
           uv run --no-sync pytest -q
+
+      # The `[duckdb]` extra, alone, in a clean environment. Two claims, and
+      # the first one was already false once: that the extra is **complete**,
+      # and that choosing that engine does not drag pandas in.
+      #
+      # It shipped declaring only `duckdb`, which installs cleanly and then
+      # fails on the first build — duckdb and polars hand frames to each other
+      # through Arrow, so `pyarrow` is a requirement rather than a nicety. No
+      # test in the suite could catch that, because the dev environment has
+      # pyarrow via the `[linopy]` extra.
+      #
+      # The pandas half cannot be checked in-process either: pyarrow imports
+      # pandas whenever pandas is installed, and polars imports it on the way
+      # up, so hiding it does not work. Here there simply is no pandas, which
+      # is the only honest way to assert the engine never reaches for one.
+      - name: the duckdb extra, alone
+        run: |
+          rm -rf .venv
+          uv venv
+          uv pip install ".[duckdb]"
+          uv run --no-sync python -c "import importlib.util, sys; sys.exit(importlib.util.find_spec('pandas') is not None)"
+          uv run --no-sync python -c "
+          import polars as pl, lpspec as lps
+          src = {'p_max': pl.DataFrame({'generator': ['wind'], 'value': [10.0]}),
+                 'cost': pl.DataFrame({'generator': ['wind'], 'value': [1.0]}),
+                 'load': pl.DataFrame({'snapshot': [0], 'value': [5.0]})}
+          sol = lps.solve('examples/dispatch.yaml', src, engine='duckdb')
+          assert sol.objective == 5.0, sol.objective
+          assert isinstance(sol.primal('p'), pl.DataFrame)
+          import sys; assert 'pandas' not in sys.modules
+          print('duckdb extra OK, pandas-free')
+          "

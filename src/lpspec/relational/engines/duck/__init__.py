@@ -12,10 +12,11 @@ costs 1.6-2.4x the wall clock to do it. On the way to a solver, where HiGHS's
 own copy dominates, that advantage mostly disappears. `bench/duckdb-spike.md`
 is the whole measurement, including the rungs where polars wins.
 
-Choosing it **widens the runtime**: duckdb's dataframe interop imports pyarrow,
-which imports pandas. The default engine imports neither, and that difference
-is pinned by `tests/test_api.py` on both sides so it stays confined to this
-extra rather than becoming true of every install.
+Choosing it **adds pyarrow**, which the default engine does not need: duckdb
+and polars hand frames to each other through Arrow. It does *not* add pandas —
+pyarrow imports pandas only when pandas is already installed, which is easy to
+mistake for a requirement in a development environment. `tests/test_api.py`
+pins both halves.
 """
 
 from lpspec.relational.engines.duck.compiler import DuckCompiler
