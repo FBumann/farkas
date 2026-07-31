@@ -64,6 +64,15 @@ dependencies = [
 # turn the import into a bare `KeyError: semantics is not a valid setting`.
 # Raise the floor to the release that carries v1 in the same change that drops
 # the source pin.
+# The duckdb engine (`lps.build(..., engine='duckdb')`). Optional because the
+# default engine needs nothing extra and is what every published number is
+# measured on: this one trades wall clock for a smaller build peak, which is
+# worth having on the write path and worth little on the way to a solver.
+# See bench/duckdb-spike.md.
+duckdb = [
+    "duckdb>=1.5",
+]
+
 linopy = [
     "linopy>=0.8.0.post1.dev0",
     "xarray>=2024.2.0",
@@ -208,7 +217,17 @@ preset = "strict"
 #                  in the ParseResults handoff.
 #   deprecated   — currently only fires on typeshed's `contextlib.contextmanager`
 #                  overload.
+#
+# Deliberately DISABLED, which is a different thing and needs the stronger
+# reason:
+#   missing-override-decorator — `typing.override` is 3.12+, and this project's
+#                  floor is 3.11 (above). Satisfying the rule would mean taking
+#                  `typing_extensions` as a runtime dependency to spell a lint,
+#                  which the dependency policy in CLAUDE.md rules out. Revisit
+#                  when the floor reaches 3.12; it is the only rule here that is
+#                  off because it cannot be met, rather than because it is wrong.
 [tool.pyrefly.errors]
+missing-override-decorator = false
 implicit-import = true
 missing-import = true
 non-exhaustive-match = true

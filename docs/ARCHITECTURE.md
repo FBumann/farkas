@@ -74,10 +74,11 @@ flowchart TB
     subgraph REL["relational/ — imports nothing from the package but errors.py"]
         direction TB
         PLAN["plan.py<br/>frozen logical plan"] --> ENG
-        subgraph ENG["engines/polars/ — the only part a second engine replaces"]
+        BINDP["binding.py<br/>→ BoundSources, frozen"] --> ENG
+        subgraph ENG["engines/polars/ — swapped by engine=; engines/duck/ is the other"]
             direction TB
             COMP["compiler.py<br/>plan → lazy frames · reads nothing"] --> EXEC
-            BIND["binding.py<br/>→ BoundSources, frozen"] --> EXEC["executor.py + labels.py<br/>assemble the model frames"]
+            COMP --> EXEC["executor.py + labels.py<br/>assemble the model frames"]
         end
         ENG --> TABLES["sinks/tables.py<br/>cols · obj · rows · A"]
         TABLES --> LPS["sinks/lp_file.py<br/>(mps planned)"]
@@ -391,15 +392,19 @@ than discovered at solve time.
 | `errors.py` | the exception hierarchy; the one module either fenced side may import |
 | `_notes.py` | attach context to an exception on the way out; no package imports, no opinions |
 | `relational/plan.py` | frozen logical-plan dataclasses — what an engine consumes |
+| `relational/engine.py` | the engine base: what one must supply, and the sinks and label joins it gets for free |
+| `relational/engines/__init__.py` | name → engine, a closed set; `lps.build(engine=...)` resolves through it |
+| `relational/binding.py` | a caller's sources → `BoundSources`, the frozen frames every engine is written against |
+| `relational/data_validation.py` | is the bound data usable — one row per coordinate, labels that exist, single-valued coords |
+| `relational/engines/duck/compiler.py` | plan → SQL; the duckdb twin of the polars compiler |
+| `relational/engines/duck/executor.py` | assemble the model frames through duckdb |
 | `relational/frames.py` | the boundary — caller tables in, via the Arrow PyCapsule protocol |
 | `relational/engines/polars/compiler.py` | plan → lazy frames; pure, reads nothing |
 | `relational/chunking.py` | how a batched pass sizes its chunk: budget ÷ the width of one unit |
 | `relational/status.py` | solve outcome on two axes; linopy's vocabulary, copied not imported |
 | `relational/engines/polars/labels.py` | which coordinate gets which solver index; three routes to one number, which must agree |
-| `relational/engines/polars/binding.py` | a caller's sources → `BoundSources`, the frozen frames every query is written against |
 | `relational/engines/polars/executor.py` | assemble the model frames from the bound data |
 | `relational/result.py` | what a solve returned: status, objective, and the label joins that read values back |
-| `relational/engines/polars/data_validation.py` | is the bound data usable — one row per coordinate, labels that exist, single-valued coords |
 | `relational/sinks/tables.py` | what every sink reads and no more — the four frames plus the batching scalars; what an engine produces |
 | `relational/sinks/` | how a built model leaves: `lp_file`, `solver_direct` (one module each, [README](https://github.com/FBumann/lpspec/blob/main/src/lpspec/relational/sinks/README.md)) |
 | `linopy/__init__.py` | opt-in shim: `build` / `extend` on a `linopy.Model` |

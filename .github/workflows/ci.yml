@@ -43,6 +43,16 @@ jobs:
       - run: uv run --no-sync pyrefly check --output-format=github
       - run: uv run --no-sync pytest -q
 
+      # The whole suite again, on the other engine. Not a subset and not a
+      # separate parity file: the claim `lps.build(engine='duckdb')` makes is
+      # that a caller can choose it and nothing else changes, and only running
+      # every test that reaches `lps.build` checks that. It costs ~25s.
+      #
+      # `test_engine_parity.py` asserts the switch actually took effect, so
+      # this cannot silently degrade into a second run of the default engine.
+      - run: uv sync --group dev --extra duckdb
+      - run: uv run --no-sync pytest -q --engine duckdb
+
       # The site, built strictly: `strict: true` in mkdocs.yml turns every
       # warning into a failure, so this gate catches a dead cross-link, a model
       # page added without a nav entry, and an anchor that stopped resolving.

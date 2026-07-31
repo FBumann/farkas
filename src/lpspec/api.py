@@ -33,13 +33,14 @@ from typing import TYPE_CHECKING, Any
 
 from lpspec.language.validation import load_schema
 from lpspec.lowering import lower_program
-from lpspec.relational.engines.polars.executor import PolarsExecutor
+from lpspec.relational.engines import resolve as resolve_engine
 from lpspec.sources import tidy_sources
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from lpspec.language.schema import MathSchema
+    from lpspec.relational.engine import Engine
     from lpspec.relational.result import Result
 
 #: Re-exported: parsing and validating a model is the *language's* job, and a
@@ -66,12 +67,20 @@ def build(
     sources: Mapping[str, Any],
     *,
     coords: dict[str, Any] | None = None,
-) -> PolarsExecutor:
+    engine: str | type[Engine] | None = None,
+) -> Engine:
     """Build *model* on the relational engine and return the executor.
 
     ``sources`` maps parameter names to parquet paths or in-memory tables (and
     optionally dimension names to index tables). One build can feed more than
     one sink: call ``ex.solve()`` and ``ex.write_lp(path)`` on the same object.
+
+    ``engine`` names which one builds it — ``'polars'`` (the default) or
+    ``'duckdb'``, which needs ``pip install "lpspec[duckdb]"``. Both accept the
+    same YAML and produce the same model, integer for integer; they differ in
+    what the *build* costs, which `bench/duckdb-spike.md` measures. Nothing
+    chooses for you and there is no fallback: an engine that cannot build a
+    model raises rather than handing it to the other one.
 
     Raises
     ------
@@ -81,7 +90,7 @@ def build(
     """
     schema = load_schema(model)
     program = lower_program(schema)  # strict: no fallback, errors carry the reason
-    ex = PolarsExecutor()
+    ex = resolve_engine(engine)()
     try:
         ex.build(program, tidy_sources(schema, dict(sources), coords))
     except BaseException:

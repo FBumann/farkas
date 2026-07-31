@@ -365,7 +365,7 @@ def test_a_variable_appearing_twice_in_a_row_is_summed_not_duplicated():
     assert result.objective == pytest.approx(5.0)  # 6/3 + 9/3
 
 
-def test_a_factored_mask_labels_exactly_like_the_counted_path():
+def test_a_factored_mask_labels_exactly_like_the_counted_path(engine_internals):
     """The fast path has to be indistinguishable from the one it replaces.
 
     A mask that reads none of the leading dims removes the same coordinates

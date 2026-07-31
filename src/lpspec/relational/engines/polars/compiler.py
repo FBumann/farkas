@@ -31,7 +31,7 @@ from lpspec.relational import plan
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
-    from lpspec.relational.engines.polars.binding import BoundSources
+    from lpspec.relational.binding import BoundSources
 
 
 #: Scratch columns. The spaces make them unrepresentable as declared names, so

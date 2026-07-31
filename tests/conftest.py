@@ -21,13 +21,16 @@ from __future__ import annotations
 
 import copy
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 import yaml as pyyaml
 
 from lpspec.language.schema import MathSchema
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 EXAMPLES_DIR = Path(__file__).parent.parent / 'examples'
 
@@ -55,6 +58,49 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help='rewrite committed golden output (examples/*.out) from this run instead of asserting on it',
     )
+    parser.addoption(
+        '--engine',
+        default=None,
+        help="run the whole suite on this engine instead of the default ('duckdb' needs the extra). "
+        'Every test that reaches `lps.build` is then a test of that engine, which is what makes a '
+        'second one a lane rather than a demo.',
+    )
+
+
+@pytest.fixture
+def engine_internals(pytestconfig: pytest.Config) -> None:
+    """Skip when the suite is running on an engine other than the default.
+
+    For the few tests that reach *inside* an engine — its compiler, its label
+    strategies — rather than through `lps.build`. Another engine does not have
+    to share those internals to be correct; it has to produce the same model,
+    which every other test here already checks against the same YAML.
+    """
+    name = pytestconfig.getoption('--engine')
+    if name not in (None, 'polars'):
+        pytest.skip(f'reaches polars-engine internals; this run is on {name!r}')
+
+
+@pytest.fixture(autouse=True, scope='session')
+def _engine_under_test(pytestconfig: pytest.Config) -> Iterator[None]:
+    """Point `lps.build`'s default at `--engine`, for the whole session.
+
+    Patching the default rather than threading a parameter through every test:
+    the claim being checked is that *the suite* passes on another engine, and a
+    parameter each test opts into would only check the ones that remembered.
+    """
+    name = pytestconfig.getoption('--engine')
+    if name is None:
+        yield
+        return
+    from lpspec.relational import engines
+
+    previous = engines.DEFAULT_ENGINE
+    engines.DEFAULT_ENGINE = name
+    try:
+        yield
+    finally:
+        engines.DEFAULT_ENGINE = previous
 
 
 # ---------------------------------------------------------------------------
