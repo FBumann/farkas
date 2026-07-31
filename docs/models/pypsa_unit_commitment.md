@@ -176,7 +176,7 @@ constraints:
 
   start_up:
     foreach: [snapshot, generator]
-    expression: start_up - status + shift(status, snapshot=1) >= 0
+    expression: start_up - status + shift(status, over=snapshot, by=1) >= 0
 
   shut_down_initial:
     foreach: [snapshot, generator]
@@ -185,7 +185,7 @@ constraints:
 
   shut_down:
     foreach: [snapshot, generator]
-    expression: shut_down + status - shift(status, snapshot=1) >= 0
+    expression: shut_down + status - shift(status, over=snapshot, by=1) >= 0
 
 objectives:
   total_cost:

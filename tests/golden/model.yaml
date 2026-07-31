@@ -39,7 +39,7 @@ constraints:
     expression: group_sum(p, over=generator, by=bus) + spill - slack == load
   ramp:         # roll (cyclic) and shift (acyclic) in one equation
     foreach: [snapshot, generator]
-    expression: p - roll(p, snapshot=1) <= shift(p, snapshot=1) + p_max
+    expression: p - shift(p, over=snapshot, by=1, edge=wrap) <= shift(p, over=snapshot, by=1) + p_max
   arithmetic:   # division, unary minus, nested reduction, bracketing
     # No `**`: the walk renders it, but `lower_program` rejects it, so a model
     # using it would not be a model. Format.power stays exercised by unit

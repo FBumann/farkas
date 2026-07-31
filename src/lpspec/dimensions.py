@@ -17,7 +17,7 @@ The rules::
     group_sum(x, over=d, by=c)
                             -> x's dims without d, plus the dim c targets;
                                error if x has no d, or d declares no coord c
-    roll/shift(x, d=n)      -> same dims as x;      error if x has no d
+    shift(x, over=d, by=n)  -> same dims as x;      error if x has no d
 
 and at the declaration level::
 
@@ -46,6 +46,7 @@ from lpspec.expression_parser import (
     ComparisonNode,
     CoordinateNode,
     DimensionNode,
+    EdgeNode,
     ExpressionNode,
     FunctionCallNode,
     NameNode,
@@ -54,7 +55,6 @@ from lpspec.expression_parser import (
     UnaryOperatorNode,
     VariableNode,
 )
-from lpspec.helpers import split_dimension_key
 from lpspec.resolution import Namespace, expression_of, where_of
 from lpspec.where_parser import (
     AndNode,
@@ -110,7 +110,7 @@ def _dims(
             return frozenset(schema.variables[node.name].foreach)
         return frozenset(external[node.name])  # a variable already on the model
 
-    if isinstance(node, (NameNode, DimensionNode, CoordinateNode)):
+    if isinstance(node, (NameNode, DimensionNode, CoordinateNode, EdgeNode)):
         msg = f'{type(node).__name__} reached the dim checker; resolve the expression first.'
         raise AssertionError(msg)
 
@@ -174,11 +174,12 @@ def _dims_call(
             )
         return (inner - {over.name}) | {by.into}
 
-    if node.name in ('roll', 'shift'):
+    if node.name == 'shift':
         inner = _dims(node.args[0], schema, context, external)
-        dim, _, _ = split_dimension_key(node.name, node.kwargs)
-        if dim not in inner:
-            raise DimensionError(f"{context}: {node.name}() along '{dim}' but the expression has dims {sorted(inner)}.")
+        over = node.kwargs['over']
+        assert isinstance(over, DimensionNode)
+        if over.name not in inner:
+            raise DimensionError(f'{context}: shift(over={over.name}) but the expression has dims {sorted(inner)}.')
         return inner
 
     msg = f"{context}: helper '{node.name}' has no dim rule"

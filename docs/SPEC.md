@@ -23,7 +23,7 @@ applied in a different position.
 | 5 | **Dim sets compose by union.** A constraint must *equal* its `foreach`; a `where` or a bound must not *exceed* its frame. | [§5.2](#52-dim-algebra) |
 | 6 | **Absence is a property of variables.** Four constructs create it; nothing else does. | [§6](#6-absence) |
 | 7 | Through arithmetic absence **spreads, taking the row with it**. Out of a reduction it does not — so a reduction does not distribute over `+`, and `sum(x + y)` and `sum(x) + sum(y)` are different questions. | [§6](#6-absence) |
-| 8 | **Identity of the position.** A missing value reads as whatever makes it contribute nothing — zero as a coefficient, the identity of a sum; false in a `where`, where the coordinate then does not exist. Where no such reading exists it is refused: a divisor, a bound. `shift(…, fill=)` is the one place a value may be *asked* for, and it takes the identity of its position too. | [§6](#6-absence), [§7](#7-operators) |
+| 8 | **Identity of the position.** A missing value reads as whatever makes it contribute nothing — zero as a coefficient, the identity of a sum; false in a `where`, where the coordinate then does not exist. Where no such reading exists it is refused: a divisor, a bound. `shift(…, edge=)` is the one place a value may be *asked* for, and it takes the identity of its position too. | [§6](#6-absence), [§7](#7-operators) |
 | 9 | **Degree 1, always**: `*` needs a variable-free factor, `/` a variable-free divisor, `**` is refused. Bounds are narrower still — a name or a number, never arithmetic. | [§5](#5-expressions), [§2](#2-declarations) |
 | 10 | **The operator set is closed.** Compositions go in `macros:`. | [§7](#7-operators) |
 
@@ -146,7 +146,7 @@ rather than a position in a list:
 ```yaml
 storage_balance:
   foreach: [snapshot, storage]
-  expression: soc == shift(soc, snapshot=1) * (1 - loss) + charge - discharge
+  expression: soc == shift(soc, over=snapshot, by=1) * (1 - loss) + charge - discharge
 
 storage_balance_initial:
   foreach: [snapshot, storage]
@@ -155,7 +155,7 @@ storage_balance_initial:
 ```
 
 `shift` vacates the first snapshot and a vacated position is absent (§7), so
-that row drops without a `where` saying so. Spelling the carry-over `roll` and
+that row drops without a `where` saying so. Spelling the carry-over `edge=wrap` and
 gating it with `where: "snapshot > 0"` builds the same rows here and a different
 model on a horizon that does not start at 0 — the gate hardcodes the origin,
 where the operator does not.
@@ -225,7 +225,7 @@ exactly two links) bounds the link instead of pinning it. Blocks expand **before
 building** into plain variables and constraints via λ convex-combination —
 weights in `[0,1]` with a convexity row, one link row per tuple, and unless
 `convex: true` segment binaries with an adjacency row
-`lam <= seg + shift(seg, bp=1)`. Both lanes receive the identical expansion.
+`lam <= seg + shift(seg, over=bp, by=1, edge=0)`. Both lanes receive the identical expansion.
 
 ## 5. Expressions
 
@@ -266,10 +266,10 @@ what an existing `where: "snapshot > 0"` means.
 | Position | Legal kinds |
 |---|---|
 | expression (`p * cost`) | variable, parameter |
-| dimension argument (`over=`, `into=`, `roll(x, snapshot=1)`) | dimension |
+| dimension argument (`over=`, `into=`) | dimension |
 | where string | parameter, dimension |
 | `bounds.lower` / `.upper` | parameter name, or a number |
-| `shift(x, d=n, fill=0)` — the `fill` key | a number, never a dimension |
+| `shift(x, over=d, by=n, edge=0)` — the `edge` key | `wrap`, or a number; never a dimension |
 
 `fill` is the one keyword whose *key* is fixed rather than naming a dimension,
 so a dimension called `fill` does not change what it means; the position takes
@@ -293,7 +293,7 @@ both lanes agree by construction.
 | `a + b`, `a * b`, `a / b` | `dims(a) ∪ dims(b)` | |
 | `sum(x, over=d)` | `dims(x) − {d}` | if `d ∉ dims(x)` |
 | `group_sum(x, over=d, by=c)` | `(dims(x) − {d}) ∪ {target(c)}` | unless `d ∈ dims(x)`, or `d` declares no coordinate `c` |
-| `roll(x, d=n)`, `shift(x, d=n)` | `dims(x)` | if `d ∉ dims(x)` |
+| `shift(x, over=d, by=n)` | `dims(x)` | if `d ∉ dims(x)` |
 
 Binary operators **union**: an outer product is legitimate when the frame
 declares the result. What must not be silent is the declaration disagreeing —
@@ -312,7 +312,7 @@ but a state the language tracks (law 6).
 |---|---|
 | `where:` on a variable | the variable, at the masked coordinates |
 | `where:` on a constraint | the row |
-| `shift(x, d=n)` with no `fill=` | the vacated edge coordinate (§7) |
+| `shift(x, over=d, by=n)` with no `edge=` | the vacated edge coordinate (§7) |
 | a null value in a dimension's `coords:` | that label's group membership (§2) |
 
 **A sparse parameter table is not one of them.** Missing rows are compressed
@@ -357,7 +357,7 @@ Each rule has a spelling for the opposite intent:
 | you want | you write |
 |---|---|
 | the row kept, the missing term read as zero | two constraints under complementary `where` clauses |
-| a vacated shift position to contribute | `shift(x, d=n, fill=0)` — the identity of *its* position (§7) |
+| a vacated shift position to contribute | `shift(x, over=d, by=n, edge=0)` — the identity of *its* position (§7) |
 | to test whether a variable exists here | its bare name in a `where` |
 | a sparse coefficient to remove the row rather than zero the term | mask on it — `where: "rel_max"` |
 | to divide by a parameter you only have some of | mask the row or the variable — `where: "d"`. The divisor is required where the division survives, not everywhere it is indexed |
@@ -416,14 +416,20 @@ a comparison of dialects. Dimension arguments are name-checked at load time:
 |---|---|---|
 | `sum(array, over=dim)` | `dim` collapses | `array` must carry `dim` |
 | `group_sum(array, over=dim, by=coord)` | `over` → the dimension `coord` targets | `coord` is declared on `over` (§2); its values are the group labels, checked against the target dimension at bind time. The membership sum that makes topology data rather than structure; groups with no members contribute nothing |
-| `roll(array, dim=n)` | value at *t−n*, cyclic | coordinates fixed, values wrap |
-| `shift(array, dim=n)` | value at *t−n*, acyclic | vacated positions are **absent**: they propagate and drop the row (§6) |
-| `shift(array, dim=n, fill=v)` | as above | vacated positions contribute **`v`** instead, and the row survives (`0` for a sum, `1` for a product) |
+| `shift(array, over=dim, by=n)` | value at *t−n* | vacated positions are **absent**: they propagate and drop the row (§6) |
+| `shift(array, over=dim, by=n, edge=wrap)` | value at *t−n*, cyclic | coordinates fixed, values wrap; nothing is vacated |
+| `shift(array, over=dim, by=n, edge=v)` | value at *t−n* | vacated positions contribute the number **`v`** instead, and the row survives (`0` for a sum, `1` for a product) |
 
-`array` is any node of the right dim set, so `roll` and `shift` re-index a
-**parameter** as readily as a variable: `shift(dt, t=1, fill=0)` is the previous
-snapshot's duration, and saves shipping a pre-shifted copy of a table the model
-already has.
+**One operator, and `edge=` is the whole boundary question.** The three
+policies are values of one keyword rather than two keywords that can
+contradict each other, so "cyclic, and also fill what it vacates" has no
+spelling to be refused — a cyclic map vacates nothing, and the surface says so
+by construction.
+
+`array` is any node of the right dim set, so `shift` re-indexes a
+**parameter** as readily as a variable: `shift(dt, over=t, by=1, edge=0)` is the
+previous snapshot's duration, and saves shipping a pre-shifted copy of a table
+the model already has.
 
 The position a shift leaves at the edge is **absent** in exactly §6's sense, so
 an acyclic recurrence has no row at its first coordinate rather than a row
@@ -431,26 +437,26 @@ asserting the quantity starts at zero. An initial condition is then something
 the model states, under a complementary `where`, rather than something the
 language supplies unasked.
 
-`fill=` asks for a value back instead, and it takes a **number rather than a
-flag because the identity is positional** (law 8): `lam <= seg + shift(seg,
-bp=1, fill=0)` bounds the first breakpoint by the first segment, where dropping
-the row would leave it unbounded; `x * shift(eff, t=1, fill=1)` leaves the first
-coordinate governed by its own bound, where `fill=0` would pin it. The library
+A numeric `edge=` asks for a value back instead, and it is a **number rather
+than a flag because the identity is positional** (law 8): `lam <= seg +
+shift(seg, over=bp, by=1, edge=0)` bounds the first breakpoint by the first
+segment, where dropping the row would leave it unbounded; `x * shift(eff,
+over=t, by=1, edge=1)` leaves the first coordinate governed by its own bound,
+where `edge=0` would pin it. The library
 cannot see which position it is in and the model can — which is v1's own reason
 for refusing to fill on a caller's behalf.
 
-The same law bounds what `fill` may be. Over an expression carrying a
+The same law bounds what a numeric `edge` may be. Over an expression carrying a
 **variable** the only representable value is `0`, since a vacated slot there
 contributes no term at all and a nonzero one would be a constant standing where
-a term was. `roll` refuses `fill` outright: it vacates nothing, so there is no
-position to take an identity of.
+a term was.
 
 **A bare `shift` over a variable-free expression is a load error.** Absence is a
 property of variables (§6); a parameter's missing row is a zero coefficient, so
 there is no absence for the vacated slot to carry and inventing a value there is
-what silently turned `x <= shift(dt, t=1)` into `x <= 0`. The error names the
-three things it could have meant: `fill=0`, a `where` that masks the coordinate
-out, or `roll` if the horizon is genuinely cyclic.
+what silently turned `x <= shift(dt, over=t, by=1)` into `x <= 0`. The error
+names the three things it could have meant: `edge=0`, a `where` that masks the
+coordinate out, or `edge=wrap` if the horizon is genuinely cyclic.
 
 Anything composable out of these belongs in `macros:`. Math that is not sayable
 at all goes to a declared `escape:` island
@@ -473,7 +479,7 @@ highest precedence first:
 
 Step 4 is unavailable to a dimension declaring `coords` — it reads index
 columns only, so it cannot supply a coordinate. Otherwise step 4 exists because
-a dim some parameter already spans needs no second declaration, but it costs the *declared order*, which `roll`/`shift` read
+a dim some parameter already spans needs no second declaration, but it costs the *declared order*, which `shift` reads
 positionally — so pass an explicit index whenever order matters. The linopy
 lane has no step 4: a dimension with neither `coords=` nor `values:` raises
 there. A dim that no source names and no parameter carries raises on both.
@@ -625,7 +631,7 @@ not a silent override. There is no `register()` decorator and no helper registry
 | multi-objective | one objective — declaring a second is a load error (§2); weight them into one expression |
 | schema migrations | — |
 | arbitrary array ops (`merge`, `reindex`, `apply_ufunc`) | data prep, or a declared `escape:` island — the closed AST is what makes streaming possible |
-| filling a missing value (`.fillna`) | data prep, or a `where` if you meant the coordinate not to exist. In the language only where the data cannot reach — `shift(..., fill=)`, §6 |
+| filling a missing value (`.fillna`) | data prep, or a `where` if you meant the coordinate not to exist. In the language only where the data cannot reach — `shift(..., edge=)`, §6 |
 
 Calliope's math language is a corpus we score coverage against, not a
 specification we match; file portability is not a goal, and neither is

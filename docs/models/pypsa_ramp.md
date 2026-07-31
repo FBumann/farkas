@@ -142,11 +142,11 @@ constraints:
   # which is the boundary PyPSA wants, since nothing precedes it to ramp from.
   ramp_up:
     foreach: [snapshot, generator]
-    expression: p - shift(p, snapshot=1) <= ramp_limit_up * p_nom
+    expression: p - shift(p, over=snapshot, by=1) <= ramp_limit_up * p_nom
 
   ramp_down:
     foreach: [snapshot, generator]
-    expression: shift(p, snapshot=1) - p <= ramp_limit_down * p_nom
+    expression: shift(p, over=snapshot, by=1) - p <= ramp_limit_down * p_nom
 
 objectives:
   total_cost:

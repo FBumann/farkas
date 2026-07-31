@@ -67,15 +67,17 @@ coordinates — once as inflow, once as outflow.
 No adjacency matrix and no join written by hand: the network is data on the
 dimension. → [transport](models/transport.md)
 
-## 4. `roll` and `shift` reach along an axis
+## 4. `shift` reaches along an axis
 
 ```yaml
-- expression: soc == roll(soc, snapshot=1) + charge * 0.9 - discharge
+- expression: soc == shift(soc, over=snapshot, by=1, edge=wrap) + charge * 0.9 - discharge
 ```
 
-`roll` wraps, so the first snapshot reads the last — which is what makes a
-battery cyclic without writing the boundary condition out. `shift` is the same
-thing without the wrap: positions translated past the edge contribute nothing.
+One operator, and `edge=` says what happens at the boundary. `edge=wrap` is
+cyclic — the first snapshot reads the last, which is what makes a battery
+cyclic without writing the boundary condition out. Omit `edge` and positions
+translated past the edge are **absent**, so the row they would have fed is not
+built. `edge=0` keeps the row and contributes zero there instead.
 
 This is the only construct whose cost is not obviously linear in model size.
 → [storage](models/storage.md)

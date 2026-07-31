@@ -251,17 +251,16 @@ class TestDimensionKwargs:
         with pytest.raises(ValueError, match="does not name a coordinate of 'generator'"):
             validate_expressions(self._schema('group_sum(p, over=generator, by=zne) == load'))
 
-    def test_roll_and_shift_dim_key_is_checked(self):
-        for helper in ('roll', 'shift'):
-            with pytest.raises(ValueError, match='does not name a declared dimension'):
-                validate_expressions(self._schema(f'{helper}(p, snapshto=1) == load'))
+    def test_shift_over_dim_is_checked(self):
+        with pytest.raises(ValueError, match='does not name a declared dimension'):
+            validate_expressions(self._schema('shift(p, over=snapshto, by=1) == load'))
 
     def test_declared_dimensions_still_pass(self):
         for expression, foreach in (
             ('sum(p, over=generator) == load', ['snapshot']),
             ('group_sum(p, over=generator, by=zone) == load', ['snapshot', 'bus']),
-            ('roll(p, snapshot=1) == load', ['snapshot', 'generator']),
-            ('shift(p, snapshot=1) == load', ['snapshot', 'generator']),
+            ('shift(p, over=snapshot, by=1, edge=wrap) == load', ['snapshot', 'generator']),
+            ('shift(p, over=snapshot, by=1) == load', ['snapshot', 'generator']),
         ):
             validate_expressions(self._schema(expression, foreach))
 

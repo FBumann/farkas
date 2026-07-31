@@ -20,7 +20,7 @@ const fragment       ``dims…``, ``cval``
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 import polars as pl
@@ -418,6 +418,8 @@ class PolarsCompiler:
             frame = frame.with_columns(pl.col(p.value_column) * scale)
         # §13: a reduction *skips* absent slots rather than propagating them, so
         # summing over a partly-masked dim is well defined and reports nothing.
+        # Constructed rather than `replace`d for exactly that: `presence` has to
+        # be *dropped* here, and carrying it would be the silent default.
         return TermFragment(keep, frame, p.is_term, p.survives_dropping(dropped), p.label_dims - dropped)
 
     def _group_fragment(self, p: TermFragment, g: plan.GroupSum, context: str) -> TermFragment:
@@ -442,7 +444,8 @@ class PolarsCompiler:
         mapping = self.dimensions[g.over].select(pl.col('val').alias(g.over), pl.col(g.coordinate).alias(g.into))
         frame = p.frame.join(mapping, on=g.over, how='inner').select(*keep, g.into, *p.carried)
         keyed = p.keyed and g.over in p.label_dims
-        # a group is a sum, so §13 applies here as well: absence does not escape it
+        # a group is a sum, so §13 applies here as well: absence does not escape
+        # it, which is why this constructs rather than `replace`s — see _sum_fragment
         return TermFragment((*keep, g.into), frame, p.is_term, keyed, _relabel(p.label_dims, g.over, g.into))
 
     def _translate_fragment(self, p: TermFragment, s: plan.Translate, context: str) -> TermFragment:
@@ -498,8 +501,8 @@ class PolarsCompiler:
             # merely fail to join and the row would survive with the term
             # quietly gone — a different constraint, which is the shape #239
             # removed from masks and #289 removes from shift.
-            presence, presence_dims = self._survivors(s, card), (s.dimension,)
-        return TermFragment(p.dims, frame, p.is_term, p.keyed, p.label_dims, presence, presence_dims)
+            presence, presence_dims = self._edge(s, card, vacated=False), (s.dimension,)
+        return replace(p, frame=frame, presence=presence, presence_dims=presence_dims)
 
     def _filled_edge(self, s: plan.Translate, card: int, others: list[str], fill: float) -> pl.LazyFrame:
         """``(dims…, cval=fill)`` at every coordinate the shift vacated.
@@ -510,25 +513,28 @@ class PolarsCompiler:
         appeared only where the parameter was non-sparse would be a second
         answer to the same question.
         """
-        edge = (
-            self.dimensions[s.dimension]
-            .filter(((pl.col('ord') - s.by) < 0) | ((pl.col('ord') - s.by) >= card))
-            .select(pl.col('val').alias(s.dimension))
-        )
+        edge = self._edge(s, card, vacated=True)
         for d in others:
             edge = edge.join(self.dimensions[d].select(pl.col('val').alias(d)), how='cross')
         return edge.with_columns(pl.lit(fill, dtype=pl.Float64).alias('cval')).select(*others, s.dimension, 'cval')
 
-    def _survivors(self, s: plan.Translate, card: int) -> pl.LazyFrame:
-        """The coordinates of ``s.dimension`` an acyclic shift leaves populated.
+    def _edge(self, s: plan.Translate, card: int, *, vacated: bool) -> pl.LazyFrame:
+        """The labels of ``s.dimension`` an acyclic shift vacates, or keeps.
 
-        The complement of :meth:`_vacated`, and one column wide: an edge along
-        this dimension is vacated for *every* combination of the others, so
-        naming the others would only repeat the same statement.
+        The two are exact complements, so they are one filter negated rather
+        than two conditions to keep in step — a fill and the presence set it
+        implies must not be able to disagree about which coordinates the edge is.
+
+        One column wide either way: an edge along this dimension is vacated for
+        *every* combination of the others, so naming the others would only
+        repeat the same statement.
         """
-        table = self.dimensions[s.dimension]
-        return table.filter(((pl.col('ord') - s.by) >= 0) & ((pl.col('ord') - s.by) < card)).select(
-            pl.col('val').alias(s.dimension)
+        source = pl.col('ord') - s.by
+        outside = (source < 0) | (source >= card)
+        return (
+            self.dimensions[s.dimension]
+            .filter(outside if vacated else ~outside)
+            .select(pl.col('val').alias(s.dimension))
         )
 
     def _vacated(self, p: TermFragment, s: plan.Translate, card: int, others: list[str]) -> pl.LazyFrame:
@@ -545,10 +551,7 @@ class PolarsCompiler:
         Only the ``shift`` edge qualifies. A coordinate the variable's own mask
         removed is genuinely absent, and remapping already dropped it above.
         """
-        table = self.dimensions[s.dimension]
-        edge = table.filter(((pl.col('ord') - s.by) < 0) | ((pl.col('ord') - s.by) >= card)).select(
-            pl.col('val').alias(s.dimension)
-        )
+        edge = self._edge(s, card, vacated=True)
         if not others:
             return edge
         # One vacated row per other-dim combination the variable actually has:
@@ -641,7 +644,7 @@ def _propagate_absence(compiled: CompiledExpression) -> CompiledExpression:
         for on, presence in restrictions:
             if all(d in p.dims for d in on):
                 frame = frame.join(presence.select(list(on)).unique(), on=list(on), how='semi')
-        return TermFragment(p.dims, frame, p.is_term, p.keyed, p.label_dims, p.presence, p.presence_dims)
+        return replace(p, frame=frame)
 
     return _map_fragments(compiled, restrict)
 
@@ -664,15 +667,7 @@ def _map_fragments(
 
 def _negate(p: TermFragment) -> TermFragment:
 
-    return TermFragment(
-        p.dims,
-        p.frame.with_columns(-pl.col(p.value_column)),
-        p.is_term,
-        p.keyed,
-        p.label_dims,
-        p.presence,
-        p.presence_dims,
-    )
+    return replace(p, frame=p.frame.with_columns(-pl.col(p.value_column)))
 
 
 def _join_mul(a: TermFragment, c: TermFragment, is_term: bool, divide: bool = False) -> TermFragment:
@@ -703,4 +698,4 @@ def _join_mul(a: TermFragment, c: TermFragment, is_term: bool, divide: bool = Fa
     # zeroes a term, it does not unmake the variable underneath it. `out_dims`
     # may be wider than `a.dims`, which is why the presence key travels with the
     # frame rather than being re-derived from dims here (#345).
-    return TermFragment(out_dims, frame, is_term, a.keyed and c.keyed, a.label_dims, a.presence, a.presence_dims)
+    return replace(a, dims=out_dims, frame=frame, is_term=is_term, keyed=a.keyed and c.keyed)

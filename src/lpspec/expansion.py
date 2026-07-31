@@ -46,6 +46,7 @@ from lpspec.expression_parser import (
     ComparisonNode,
     CoordinateNode,
     DimensionNode,
+    EdgeNode,
     ExpressionNode,
     FunctionCallNode,
     NameNode,
@@ -114,7 +115,9 @@ def _descend(node: ArithmeticNode, recurse: Callable[[ArithmeticNode], Arithmeti
     differ only in what they do at NameNode and FunctionCallNode, and duplicating
     the other four cases is how the two drift apart.
     """
-    if isinstance(node, NumberNode | NameNode | VariableNode | ParameterNode | DimensionNode | CoordinateNode):
+    if isinstance(
+        node, NumberNode | NameNode | VariableNode | ParameterNode | DimensionNode | CoordinateNode | EdgeNode
+    ):
         return node
     if isinstance(node, UnaryOperatorNode):
         return UnaryOperatorNode(node.op, recurse(node.operand))
