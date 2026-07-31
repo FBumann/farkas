@@ -119,6 +119,20 @@ def solve_lp_file(path: Path | str) -> float:
     return h.getInfo().objective_function_value
 
 
+def by_coord(result: Any, name: str, dim: str) -> dict[Any, float]:
+    """A variable's primal as ``{coordinate: value}``, for a one-dim variable.
+
+    One ``primal`` call, then one zip — and that is the whole reason this is a
+    function. ``primal`` is a label join and promises row *order* but not that
+    two separate calls line up column-wise, so the idiom has to read the frame
+    once and pair its columns in a single pass. Six tests do this and the
+    caveat was written down at one of them; here it applies to all six by
+    construction.
+    """
+    frame = result.primal(name)
+    return dict(zip(frame[dim], frame['value'], strict=True))
+
+
 def resolved(text, schema):
     """Parse + expand + resolve — exactly what a backend receives.
 
