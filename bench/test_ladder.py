@@ -104,6 +104,9 @@ def test_rebuild(benchmark: Any, gate: Any, paths: Any, builds: int, case_name: 
     builds in one process are the whole question, so a fresh process per pass
     would answer a different one — and a peak read here would be the high-water
     mark of five builds rather than of one.
+
+    Not run under CodSpeed at all — its instruments ignore `rounds`, so there is
+    no second build to compare the first against. `conftest.py` deselects it.
     """
     if arm == 'duckdb':
         pytest.importorskip('duckdb')

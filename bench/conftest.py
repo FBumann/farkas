@@ -114,6 +114,27 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
         metafunc.parametrize('sink', metafunc.config.getoption('--sinks'))
 
 
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """`test_rebuild` asks a question CodSpeed's instruments cannot answer.
+
+    Its whole premise is what the *second* build costs, which is ``rounds`` in
+    one process — and pytest-codspeed warns that its memory instrument ignores
+    rounds and iterations in pedantic mode. Left in, it would report a
+    first-vs-steady number measured over a single build: a wrong number under a
+    right-sounding name. (It also fails outright, because `filterwarnings` is
+    `error` — which is the warning doing its job.)
+
+    Deselected rather than skipped, so the count reads as "not asked here"
+    rather than "asked and unanswered".
+    """
+    if not getattr(config.option, 'codspeed', False):
+        return
+    dropped = [i for i in items if i.name.startswith('test_rebuild')]
+    if dropped:
+        config.hook.pytest_deselected(items=dropped)
+        items[:] = [i for i in items if not i.name.startswith('test_rebuild')]
+
+
 @pytest.fixture(scope='session')
 def paths() -> Any:
     """``(case, rung) -> parquet paths``, generated once and shared.
