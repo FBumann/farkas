@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.55](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.54...v0.0.1-alpha.55) (2026-07-31)
+
+
+### Performance
+
+* **engine:** cols is positional, and the order is produced rather than repaired ([#433](https://github.com/FBumann/lpspec/issues/433)) ([22bb9c7](https://github.com/FBumann/lpspec/commit/22bb9c7d944e360f874232ee7955d35ee545c19e))
+
 ## [0.0.1-alpha.54](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.53...v0.0.1-alpha.54) (2026-07-31)
 
 
