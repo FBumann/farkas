@@ -119,7 +119,7 @@ without shipping the data.
 Sources accept polars, pandas, pyarrow, or parquet paths — anything exposing
 the Arrow PyCapsule protocol, and the recogniser imports none of them.
 Results come back as frames; `to_pandas`, `to_dataarray` and `to_parquet` are
-the bridges out. → [SPEC §8](SPEC.md#8-data-binding), [§10](SPEC.md#10-python-api)
+the bridges out. → [SPEC §8](SPEC.md#8-data-binding), [Python API](api.md)
 
 ## What it will not do
 
@@ -142,5 +142,5 @@ Worth knowing before you start, rather than after:
 |---|---|
 | [Models](models/index.md) | every model in the repo, and which constructs each exercises |
 | [SPEC](SPEC.md) | the reference — what a file may contain, exactly |
-| [Benchmarks](benchmarks.md) | what it costs, measured against the eager lane |
+| [Benchmarks](benchmarks.md) | what it costs, measured against linopy |
 | [ARCHITECTURE](ARCHITECTURE.md) | why it is shaped this way |

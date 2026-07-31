@@ -334,7 +334,7 @@ Wall time behaves throughout: our advantage grows as the model thins, 1.0x to
 What each sink can ingest, measured against the shipped solvers rather than
 assumed. The architectural reading is in
 [docs/design/ceiling.md](design/ceiling.md#capability-is-not-the-ceiling); the plan is
-[ROADMAP Track 4](ROADMAP.md#track-4--sink-capabilities).
+[ROADMAP Track 3](ROADMAP.md#track-3--capabilities-and-the-degree-line).
 
 | | `lp_file` | HiGHS direct | Gurobi direct |
 |---|---|---|---|

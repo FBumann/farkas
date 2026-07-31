@@ -56,7 +56,7 @@ Write the math in YAML, bind data at runtime, solve.
 
     ---
 
-    The ceiling is a closure (affine ∩ relational ∩ local), not a feature race.
+    The ceiling is a closure (relational ∩ local), not a feature race.
     Genuinely unsayable math goes in an `escape:` island — visible in the file,
     billed before it runs.
 
@@ -65,7 +65,7 @@ Write the math in YAML, bind data at runtime, solve.
     ---
 
     YAML and data in, a populated solver out, no LP file in between: 2–4x faster
-    than the eager lane on four of five benchmark cases, lower peak memory on
+    than linopy on four of five benchmark cases, lower peak memory on
     all five. [The numbers](benchmarks.md)
 
 -   :material-check-decagram-outline: __Checked against somebody else__

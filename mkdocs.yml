@@ -62,10 +62,12 @@ nav:
           - Travelling salesman: models/tsp_mtz.md
   - Reference:
       - Language: SPEC.md
+      - Python API: api.md
       - Benchmarks: benchmarks.md
   - Design notes:
       - Architecture: ARCHITECTURE.md
       - The ceiling: design/ceiling.md
+      - Relationship to linopy: design/linopy.md
       - Roadmap: ROADMAP.md
   - Changelog: changelog.md
 
