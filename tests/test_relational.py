@@ -36,7 +36,7 @@ from lpspec.relational.plan import (
     VariableDeclaration,
 )
 from lpspec.schema import MathSchema
-from tests.conftest import solve_lp_file
+from tests.conftest import by_coord, solve_lp_file
 from tests.differential import RTOL, differential
 from tests.oracle import linopy, pd, transport_eager_objective, xr
 
@@ -737,10 +737,7 @@ def test_a_term_whose_variable_is_absent_drops_the_row_on_both_lanes():
         'cost': pd.Series({'a': 1.0, 'b': 1.0}),
     }
     with differential(ABSENT_VARIABLE_MODEL, data, lp=True) as run:
-        # one call, then zip: `primal` is a label join and does not promise row order,
-        # so reading it twice and pairing the columns can mismatch them.
-        solved = run.result.primal('x')
-        x = dict(zip(solved['f'], solved['value'], strict=True))
+        x = by_coord(run.result, 'x', 'f')
         assert x['a'] == pytest.approx(25.0, rel=RTOL), 'sized: x <= 0.5 * size, size <= 50'
         assert x['b'] == pytest.approx(100.0, rel=RTOL), 'unsized: the row is gone, so only the bound holds'
 
@@ -779,8 +776,7 @@ def test_a_bare_variable_name_in_a_where_asks_whether_it_exists():
         'cost': pd.Series({'a': 1.0, 'b': 1.0}),
     }
     with differential(DEFINED_MODEL, data, lp=True) as run:
-        solved = run.result.primal('x')
-        x = dict(zip(solved['f'], solved['value'], strict=True))
+        x = by_coord(run.result, 'x', 'f')
         assert x['a'] == pytest.approx(25.0, rel=RTOL), 'sized: the envelope binds'
         assert x['b'] == pytest.approx(0.0, abs=1e-9), 'unsized: the complementary clause pins it'
 
@@ -819,8 +815,7 @@ def test_a_sparse_coefficient_on_the_bound_side_still_pins_the_variable():
         'cost': pd.Series({'a': 1.0, 'b': 1.0}),
     }
     with differential(ABSENT_COEFFICIENT_MODEL, data, lp=True) as run:
-        solved = run.result.primal('x')
-        x = dict(zip(solved['f'], solved['value'], strict=True))
+        x = by_coord(run.result, 'x', 'f')
         assert x['a'] == pytest.approx(25.0, rel=RTOL), 'sized: x <= 0.5 * size, size <= 50'
         assert x['b'] == pytest.approx(0.0, abs=1e-9), 'the row survived the missing coefficient and pins x'
 
@@ -858,8 +853,7 @@ def test_roll_and_filled_shift_re_index_a_parameter_not_only_a_variable(op, expe
     """
     data = {'dt': pd.Series({0: 5.0, 1: 6.0, 2: 7.0})}
     with differential(_reindexed_parameter_model(op), data, lp=True) as run:
-        solved = run.result.primal('x')
-        x = dict(zip(solved['t'], solved['value'], strict=True))
+        x = by_coord(run.result, 'x', 't')
         for t, want in expected.items():
             assert x[t] == pytest.approx(want, abs=1e-9), f'{op} at t={t}'
 
@@ -911,8 +905,7 @@ def test_equal_bounds_pin_a_variable_so_one_equation_covers_both_regimes():
         'size_ub': pd.Series({'fixed': 10.0, 'sized': 50.0}),
     }
     with differential(PINNED_MODEL, data, lp=True) as run:
-        solved = run.result.primal('rate')
-        rate = dict(zip(solved['f'], solved['value'], strict=True))
+        rate = by_coord(run.result, 'rate', 'f')
         assert rate['fixed'] == pytest.approx(8.0, rel=RTOL), 'pinned at 10, so the envelope is 0.8 * 10'
         assert rate['sized'] == pytest.approx(40.0, rel=RTOL), 'free to 50, so the envelope is 0.8 * 50'
 

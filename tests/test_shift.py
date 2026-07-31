@@ -19,7 +19,7 @@ from lpspec.relational.plan import (
     Translate,
     Variable,
 )
-from tests.conftest import resolved, schema_of
+from tests.conftest import by_coord, resolved, schema_of
 from tests.differential import differential
 from tests.oracle import pd
 
@@ -273,8 +273,7 @@ def test_the_fill_a_product_wants_is_one_not_zero():
     missing row as zero, so `fill=1` exists only if something puts it there.
     """
     with differential(FILL_IDENTITY_MODEL, {'eff': pd.Series({0: 2.0, 1: 4.0, 2: 5.0})}, lp=True) as run:
-        solved = run.result.primal('x')
-        x = dict(zip(solved['t'], solved['value'], strict=True))
+        x = by_coord(run.result, 'x', 't')
         assert x[0] == pytest.approx(10.0), 't=0: the fill is 1, so the bound is 10/1'
         assert x[1] == pytest.approx(5.0), 't=1: eff[0] = 2, so 10/2'
         assert x[2] == pytest.approx(2.5), 't=2: eff[1] = 4, so 10/4'
