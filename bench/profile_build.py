@@ -27,21 +27,26 @@ from typing import Any
 
 from bench import cases as bench_cases
 
+#: The methods a collection is attributed to, as ``(module path, class,
+#: method)``. Named against the classes that own them rather than against one
+#: of them, because the three steps a build spends its time in no longer live
+#: on the executor: binding reads the sources, the labeller assigns the solver
+#: indices, and only the assembly is the executor's own.
 STEPS = (
-    '_create_param_frame',
-    '_create_dim_frames',
-    '_label_frame',
-    '_build_variable',
-    '_build_constraint',
-    '_build_objective',
+    ('lpspec.relational.engines.polars.executor', 'PolarsExecutor', '_build_variable'),
+    ('lpspec.relational.engines.polars.executor', 'PolarsExecutor', '_build_constraint'),
+    ('lpspec.relational.engines.polars.executor', 'PolarsExecutor', '_build_objective'),
+    ('lpspec.relational.engines.polars.labels', 'Labeller', 'frame'),
+    ('lpspec.relational.engines.polars.binding', '_Binder', 'parameter'),
+    ('lpspec.relational.engines.polars.binding', '_Binder', '_register'),
 )
 
 
 def _instrument(timings: dict[Any, list[float]], phase: dict[str, str]) -> None:
     """Tag each collection with the build step that issued it."""
-    import polars as pl
+    import importlib
 
-    from lpspec.relational.engines.polars.executor import PolarsExecutor
+    import polars as pl
 
     original_collect = pl.LazyFrame.collect
 
@@ -60,8 +65,9 @@ def _instrument(timings: dict[Any, list[float]], phase: dict[str, str]) -> None:
 
     pl.LazyFrame.collect = collect
 
-    for name in STEPS:
-        original_step = getattr(PolarsExecutor, name)
+    for module_path, class_name, name in STEPS:
+        owner = getattr(importlib.import_module(module_path), class_name)
+        original_step = getattr(owner, name)
 
         def wrap(step, label):
             def wrapper(self, *args, **kwargs):
@@ -73,7 +79,7 @@ def _instrument(timings: dict[Any, list[float]], phase: dict[str, str]) -> None:
 
             return wrapper
 
-        setattr(PolarsExecutor, name, wrap(original_step, name))
+        setattr(owner, name, wrap(original_step, f'{class_name}.{name}'))
 
 
 def main() -> None:
