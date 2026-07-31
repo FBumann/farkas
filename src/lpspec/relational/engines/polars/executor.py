@@ -24,6 +24,7 @@ import polars as pl
 from lpspec.errors import (
     DataError,
     LanguageError,
+    LpspecError,
     null_bounds_message,
     sparse_divisor_message,
 )
@@ -336,6 +337,8 @@ class PolarsExecutor:
         :data:`~lpspec.relational.sinks.highs.HANDOFF_BUDGET`.
         """
         status, objective, primal, dual = sinks.solver(solver_name)(self._tables(), batch_rows, solver_options)
+        _spanning(solver_name, 'primal', primal, self._n_cols)
+        _spanning(solver_name, 'dual', dual, self._n_rows)
         return Result(
             _status=status,
             _objective=objective,
@@ -344,7 +347,7 @@ class PolarsExecutor:
             _dual_values=dual,
         )
 
-    def _solution_frame(self, name: str, values: pl.DataFrame | None) -> pl.LazyFrame:
+    def _solution_frame(self, name: str, values: pl.Series | None) -> pl.LazyFrame:
         """The tidy solution of variable *name*: ``(dims…, value)``.
 
         A slice, never a dense array and never a join. *values* is the solver's
@@ -375,7 +378,7 @@ class PolarsExecutor:
         labels: pl.LazyFrame,
         label: str,
         dims: tuple[str, ...],
-        values: pl.DataFrame,
+        values: pl.Series,
     ) -> pl.LazyFrame:
         """One declaration's coordinates in label order, beside its values.
 
@@ -383,14 +386,16 @@ class PolarsExecutor:
         so that a length that does not match the coordinates raises instead of
         padding with nulls — the block bookkeeping is an invariant, and the one
         way it could go wrong is the one a silently short vector would hide.
+        :func:`_spanning` has already refused a vector that does not span the
+        model, so what is left here is the block bookkeeping alone.
         """
         start, height = self._blocks[name]
-        return labels.sort(label).select(*dims).with_columns(values['value'].slice(start, height))
+        return labels.sort(label).select(*dims).with_columns(values.slice(start, height))
 
-    def _primal(self, name: str, values: pl.DataFrame | None) -> pl.DataFrame:
+    def _primal(self, name: str, values: pl.Series | None) -> pl.DataFrame:
         return self._solution_frame(name, values).collect(engine='streaming')
 
-    def _dual(self, name: str, values: pl.DataFrame) -> pl.DataFrame:
+    def _dual(self, name: str, values: pl.Series) -> pl.DataFrame:
         """:meth:`_solution_frame` against row labels instead of column ones.
 
         Ordered and sliced the same way, for the same reason — a constraint
@@ -421,7 +426,7 @@ class PolarsExecutor:
             f'run stopped short of one does not have.'
         )
 
-    def _solution_to_parquet(self, directory: Path, values: pl.DataFrame | None) -> dict[str, Path]:
+    def _solution_to_parquet(self, directory: Path, values: pl.Series | None) -> dict[str, Path]:
         assert self._program is not None
         directory.mkdir(parents=True, exist_ok=True)
         written: dict[str, Path] = {}
@@ -452,6 +457,28 @@ class PolarsExecutor:
     def __exit__(self, *exc: object) -> Literal[False]:
         self.close()
         return False
+
+
+def _spanning(solver: str, quantity: str, values: pl.Series | None, expected: int) -> None:
+    """Refuse a solver vector that does not span the model.
+
+    Reading a solution back is positional, so a vector of the wrong length is
+    an answer about a *different* model rather than a short answer about this
+    one. Checked here, where the solver hands it over, rather than where it is
+    read: the objective comes back from the solver directly, so a `Result`
+    built on a broken vector would report a plausible number and only fail if
+    someone asked for a coordinate.
+
+    ``None`` is not a wrong length. A mixed-integer model has no duals at all,
+    and neither does a run stopped short of a simplex basis.
+    """
+    if values is not None and len(values) != expected:
+        raise LpspecError(
+            f'{solver} returned {len(values)} {quantity} values for a model with {expected}. '
+            f'Reading a solution back is positional, so a vector that does not span the model '
+            f'describes a different one. This is an engine bug rather than a problem with the '
+            f'model — please report it.'
+        )
 
 
 def _needs_aggregate(terms: Sequence[TermFragment], *, projected: bool = False) -> bool:

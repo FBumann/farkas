@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
     Solve = Callable[
         [ModelTables, int | None, Mapping[str, Any] | None],
-        tuple[SolveStatus, float, pl.DataFrame | None, pl.DataFrame | None],
+        tuple[SolveStatus, float, pl.Series | None, pl.Series | None],
     ]
 
 __all__ = ['SOLVERS', 'solver']

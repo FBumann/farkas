@@ -42,12 +42,26 @@ is the hard part.
 
 **Peak RSS and wall time**, per phase, for the same model built two ways:
 
-| | `lp` | `highs` |
-|---|---|---|
-| `lpspec` | `lps.build(...)` then `ex.write(...)` | `lps.build(...)` then `build_highs(...)` |
-| `linopy` | `lpspec.linopy.build(...)` then `Model.to_file(io_api='lp-polars')` | `lpspec.linopy.build(...)` then `Model.to_highspy()` |
+| | `lp` | `highs` | `gurobi` |
+|---|---|---|---|
+| `lpspec` | `lps.build(...)` then `ex.write(...)` | `lps.build(...)` then `build_highs(...)` | `lps.build(...)` then `build_gurobi(...)` |
+| `linopy` | `lpspec.linopy.build(...)` then `Model.to_file(io_api='lp-polars')` | … then `Model.to_highspy(set_names=False)` | … then `Model.to_gurobipy(set_names=False)` |
 
-**The `highs` sink stops at the handoff — `run()` is never called.** That is the
+`gurobi` is opt-in (`--sinks gurobi`): it needs the `[gurobi]` extra, where the
+other two need nothing a contributor does not already have. It measures the
+same seam — `build_gurobi` never calls `optimize()`, `to_gurobipy` never
+returns a solved model.
+
+**`set_names=False` on the linopy side is load-bearing.** linopy names every
+variable and constraint by default and neither of our solver sinks names
+anything, so the default call would time a feature only one arm's model
+carries. It is not a rounding error: naming is **82% of linopy's HiGHS
+hand-off** (0.11s against 0.02s at 200k variables) and 35% of its Gurobi one.
+The two arms have to end holding the same artifact or the number means
+nothing — and the correction runs against us, which is the direction an
+honest harness should err.
+
+**The solver sinks stop at the handoff — `run()` / `optimize()` is never called.** That is the
 whole discipline of it. HiGHS's simplex is the same work whoever filled the
 model, so including it would swamp the phase this harness exists to measure and
 publish a number about HiGHS under our name. Both arms end holding a populated

@@ -141,11 +141,12 @@ def solve_highs(
     model: ModelTables,
     batch_rows: int | None = None,
     solver_options: Mapping[str, Any] | None = None,
-) -> tuple[SolveStatus, float, pl.DataFrame | None, pl.DataFrame | None]:
+) -> tuple[SolveStatus, float, pl.Series | None, pl.Series | None]:
     """Feed the model to HiGHS and solve it.
 
-    Returns ``(status, objective, primal, dual)`` as ``(col, value)`` and
-    ``(row, value)`` frames for the caller to join back to coordinates.
+    Returns ``(status, objective, primal, dual)`` as the solver's own
+    vectors, positional in the solver's index — which *is* our label, densely
+    assigned — so there is nothing to key them by and nothing to join.
 
     Either can be ``None``, for different reasons. No primal means the solve
     left nothing worth reading. No dual is narrower: a mixed-integer model has
@@ -164,8 +165,8 @@ def solve_highs(
 
     objective = h.getInfo().objective_function_value + model.objective_constant
     solution = h.getSolution()
-    primal = _labelled('col', model.column_count, solution.col_value)
-    dual = _labelled('row', model.row_count, solution.row_dual) if solution.dual_valid else None
+    primal = _vector(solution.col_value)
+    dual = _vector(solution.row_dual) if solution.dual_valid else None
     return status, objective, primal, dual
 
 
@@ -202,13 +203,15 @@ def _status_of(h: Any, highspy: Any) -> SolveStatus:
     )
 
 
-def _labelled(label: str, count: int, values: Any) -> pl.DataFrame:
-    """``(label, value)`` over the solver's own dense index.
+def _vector(values: Any) -> pl.Series:
+    """One quantity the solver produced, in its own index.
 
-    Solver output is one array per quantity, positionally indexed by the
-    solver's index — which *is* our label, densely assigned — so the join
-    column is an ``arange`` rather than anything read back.
+    Carried as a series rather than a ``(label, value)`` frame because the
+    label would be the position: the read-back takes a declaration's share by
+    slicing, so an index column beside it is an ``arange`` nothing reads —
+    8 bytes a column, for as long as the result is held. The same argument
+    took ``col`` off ``cols`` (#433); this is its other half.
     """
     import numpy as np
 
-    return pl.DataFrame({label: np.arange(count, dtype=np.int64), 'value': np.asarray(values, dtype=np.float64)})
+    return pl.Series('value', np.asarray(values, dtype=np.float64))
