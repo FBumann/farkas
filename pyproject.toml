@@ -111,6 +111,25 @@ include = ["/src"]
 bench = [
     "pytest-benchmem>=0.4",
 ]
+# The CodSpeed suite (bench/codspeed/). Its own group rather than a share of
+# `bench`, for the same reason `bench` is not a share of `dev`: pytest-benchmem
+# brings pytest-benchmark, whose `benchmark` fixture is the one pytest-codspeed
+# replaces, and a second benchmarking plugin loaded into the process being
+# measured is a confounder bought for nothing.
+#
+# Pinned exactly, unlike `pytest-benchmem>=0.4`: CodSpeed keeps the baseline
+# across commits, so the plugin version is part of the measurement rather than
+# part of the environment — a floor would let a bump land as a regression.
+#
+# pandas and pyarrow are here because `bench/cases.py` writes the parquet inputs
+# with them. Declaring them lets CI install this group with
+# `--no-default-groups` and skip resolving linopy from a git branch for a job
+# that never builds a linopy model.
+codspeed = [
+    "pytest-codspeed==5.0.3",
+    "pandas>=2.2",
+    "pyarrow>=16",
+]
 # The published site (mkdocs.yml). Its own group, not `dev`: nothing in the
 # test suite imports any of it, and a contributor running `uv run pytest` should
 # not pay for a docs toolchain. `uv sync --group docs` to serve it locally.

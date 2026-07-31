@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from bench.cases import CASES
+from bench.workloads import split_sources
 
 if TYPE_CHECKING:
     from bench.cases import Case, Shape
@@ -70,7 +71,7 @@ def _run_lpspec(
     # YAML only because the runner, not lpspec, decides which parquet file is
     # which. Doing it before the clock starts is the difference between timing
     # the engine and timing the harness; the linopy arm has no counterpart.
-    sources, coords = _split_sources(case, paths)
+    sources, coords = split_sources(case, paths)
 
     phases.mark('import')
     ex = lps.build(case.model, sources, coords=coords)
@@ -145,7 +146,7 @@ def _builder(case: Case, paths: dict[str, str], arm: str):
     if arm == 'lpspec':
         import lpspec as lps
 
-        sources, coords = _split_sources(case, paths)
+        sources, coords = split_sources(case, paths)
 
         def build() -> None:
             lps.build(case.model, sources, coords=coords).close()
@@ -185,25 +186,12 @@ def _run_loop(case: Case, paths: dict[str, str], opts: argparse.Namespace) -> di
     }
 
 
-def _split_sources(case: Case, paths: dict[str, str]) -> tuple[dict[str, str], dict[str, str]]:
-    """Parameters from dimension index tables, by what the model declares."""
-    import yaml as pyyaml
-
-    schema = pyyaml.safe_load(case.model.read_text())
-    params = set(schema.get('parameters', {}))
-    dims = set(schema.get('dimensions', {}))
-    return (
-        {k: v for k, v in paths.items() if k in params},
-        {k: v for k, v in paths.items() if k in dims},
-    )
-
-
 def _objective(case: Case, shape: Shape, paths: dict[str, str], arm: str) -> float:
     """Solve, and return the objective the parity gate compares."""
     if arm == 'lpspec':
         import lpspec as lps
 
-        sources, coords = _split_sources(case, paths)
+        sources, coords = split_sources(case, paths)
         with lps.solve(case.model, sources, coords=coords) as sol:
             # two axes, not one: `status` is the coarse rollup ('ok') and the
             # solver's verdict is `termination_condition` ('optimal'). Testing

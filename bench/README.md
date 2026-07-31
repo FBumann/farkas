@@ -247,6 +247,39 @@ stack — which RSS, sensitive to machine load, is not.
 So: RSS for the comparison we publish, memray for the regressions we chase.
 `--benchmark-memory-compare-fail` is what turns the second into a gate.
 
+## The same suite, a third instrument: CodSpeed
+
+`bench/regressions/` is a plain `pytest-benchmark` suite, so the fixture its
+tests ask for is whichever plugin is loaded. That is not a detail — it is why
+there is no second set of benchmarks in this repository:
+
+```bash
+uv run pytest bench/regressions --benchmark-memory   # memray peak + rss
+uv run pytest bench/regressions --codspeed           # what CI measures
+```
+
+`--benchmark-memory` patches the stock fixture and reads the `benchmem` marker;
+`--codspeed` replaces the fixture outright and the marker goes inert. Same
+tests, same workloads, same rungs — a different instrument. The workloads
+cannot drift between them, because there is one of them.
+
+[CodSpeed](https://codspeed.io) runs on every pull request
+(`.github/workflows/codspeed.yml`): one ~3-minute job, free runner, no secret.
+What it adds over `bench.yml` is not the metric but **the baseline** —
+`bench.yml` can only compare against a base it checks out and measures itself,
+which costs two passes and is why it waits for a `trigger:bench` label. CodSpeed
+stores the number for every commit on `main`.
+
+Only the `memory` instrument runs. `walltime` needs CodSpeed's metered
+bare-metal runners to say anything a shared runner's clock cannot, and
+`simulation` — their default — runs the workload under an emulator, which suits
+neither multi-threaded native code nor these rungs.
+
+**It gates nothing.** The job is `continue-on-error` and no ruleset names it;
+`bench.yml` remains the check that fails a pull request. It also needs a
+maintainer to connect the repository to the CodSpeed GitHub app — until then the
+workflow runs and uploads nothing.
+
 ## Adding a case
 
 Add a YAML file under `bench/models/`, a data generator and a ladder to
