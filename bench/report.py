@@ -113,7 +113,12 @@ def figures() -> str:
         out.append(f'![{alt}](charts/{name}-light.svg#only-light)')
         out.append(f'![{alt}](charts/{name}-dark.svg#only-dark)')
         out.append('')
-    return '\n'.join(out).rstrip()
+    # one pointer for the four, not four for the four: these are pictures, and
+    # reading a value off one is what the interactive page is for
+    out.append(
+        '*Static, so they render anywhere. The same data with a cursor: [the chart page](benchmarks-scaling.html).*'
+    )
+    return '\n'.join(out)
 
 
 #: How each arm reaches each sink, said once so a table can name its own seam.
