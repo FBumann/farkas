@@ -11,6 +11,7 @@ dataframe library beyond the engine's own. The tests that exercise the bridges
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import textwrap
@@ -70,13 +71,18 @@ def test_parquet_path_sources(dispatch_yaml, dispatch_frame_inputs, tmp_path):
 def test_runtime_is_linopy_free(dispatch_yaml):
     """Import the package, build and solve on Arrow sources — linopy never loads.
 
-    pandas and pyarrow are on the list too, and that is newer than it looks:
-    on the duckdb engine they could not be, because duckdb imported pandas
-    opportunistically when registering any Python object, so "not in
-    ``sys.modules``" was not a claim this package could keep. polars imports
-    neither until asked, so the stronger claim is now available and is pinned
-    here — a bridge out (``to_pandas``, ``to_dataarray``) must stay a bridge
-    and never become something the build path walks over on its own.
+    pandas and pyarrow are on the list too, and that is a property of **the
+    default engine**, which is why the subprocess below is pinned to it rather
+    than following ``--engine``. polars imports neither until asked, so a
+    bridge out (``to_pandas``, ``to_dataarray``) stays a bridge and never
+    becomes something the build path walks over on its own.
+
+    The `duckdb` engine cannot keep this claim, and
+    :func:`test_the_duckdb_engine_widens_the_runtime` records that rather than
+    leaving it to be discovered — duckdb's dataframe interop imports pyarrow,
+    and `pyarrow._dataset` imports pandas. It is confined to an opt-in extra,
+    which is the reason the claim is worth stating per engine instead of
+    dropping.
 
     Distinct from, and weaker than, the claim that they need not be
     *installed*: the bare-install CI job is what proves that, running this
@@ -113,9 +119,44 @@ def test_runtime_is_linopy_free(dispatch_yaml):
             assert lib not in sys.modules, f"solve pulled in {{lib}}"
         print("LINOPY_FREE_OK")
     """)
-    out = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, timeout=300)
+    # the default engine, whatever the session is running on: an env var that
+    # leaked in would silently turn this into a claim about a different engine
+    env = {k: v for k, v in os.environ.items() if k != 'LPSPEC_ENGINE'}
+    out = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, timeout=300, env=env)
     assert out.returncode == 0, out.stderr
     assert 'LINOPY_FREE_OK' in out.stdout
+
+
+def test_the_duckdb_engine_widens_the_runtime(dispatch_yaml):
+    """Choosing `engine='duckdb'` pulls pyarrow, and pyarrow pulls pandas.
+
+    Recorded as a fact rather than left to be found. It is not this package
+    importing them: duckdb's dataframe interop needs pyarrow, and
+    `pyarrow._dataset` imports `pyarrow.pandas_compat`. Nothing here can avoid
+    it — `fetchnumpy()` skips both on the way out but not on the way in, and
+    costs null handling to try.
+
+    The point of pinning it is that it must stay *confined to the extra*: if
+    this ever passes without `engine='duckdb'`, the default install has taken
+    on a dataframe library it does not declare.
+    """
+    pytest.importorskip('duckdb')
+    script = textwrap.dedent(f"""
+        import sys
+        import polars as pl
+        import lpspec as lps
+        with lps.build({str(dispatch_yaml)!r}, {{
+            "p_max": pl.DataFrame({{"generator": ["wind"], "value": [100.0]}}),
+            "cost": pl.DataFrame({{"generator": ["wind"], "value": [1.0]}}),
+            "load": pl.DataFrame({{"snapshot": [0], "value": [80.0]}}),
+        }}, coords={{"snapshot": range(1)}}, engine="duckdb") as ex:
+            ex._tables()
+        print("PANDAS", "pandas" in sys.modules)
+    """)
+    env = {k: v for k, v in os.environ.items() if k != 'LPSPEC_ENGINE'}
+    out = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, timeout=300, env=env)
+    assert out.returncode == 0, out.stderr
+    assert 'PANDAS True' in out.stdout, 'duckdb no longer pulls pandas — tighten the claim in pyproject'
 
 
 def test_check_and_load_schema_need_no_data(dispatch_yaml):

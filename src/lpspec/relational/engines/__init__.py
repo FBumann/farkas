@@ -11,10 +11,20 @@ is a pull request here.
 
 Resolution is lazy. `duckdb` is an optional dependency and the import is the
 expensive part, so naming an engine you do not use costs nothing.
+
+**`LPSPEC_ENGINE` sets the default for a process**, under an explicit `engine=`
+which always wins. It exists because the only way to answer "is the other
+engine worth it for *our* models" is to run a real workload on it, and editing
+every call site to find out is a poor trade. It is a cost knob and nothing
+more: the engines build the same model integer for integer
+(`tests/test_engine_parity.py`), so this cannot change what a YAML file means —
+only what building it costs. That is what keeps it clear of hard rule 4, which
+is about Python-side state changing *meaning*.
 """
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -28,6 +38,9 @@ ENGINES: dict[str, str] = {
 }
 
 DEFAULT_ENGINE = 'polars'
+
+#: Overrides `DEFAULT_ENGINE` for a process; an explicit `engine=` overrides it.
+ENV_VAR = 'LPSPEC_ENGINE'
 
 #: What an engine needs installed, for an error naming the fix rather than the
 #: missing module.
@@ -44,13 +57,18 @@ def resolve(engine: str | type[Engine] | None) -> type[Engine]:
     """
     import importlib
 
+    from_env = False
     if engine is None:
-        engine = DEFAULT_ENGINE
+        engine = os.environ.get(ENV_VAR) or DEFAULT_ENGINE
+        from_env = engine != DEFAULT_ENGINE
     if not isinstance(engine, str):
         return engine
     if engine not in ENGINES:
         known = ', '.join(repr(n) for n in ENGINES)
-        msg = f'unknown engine {engine!r} — available: {known}'
+        # naming the *source* matters here: an unknown name in the environment
+        # is a typo in a shell profile, and reads as a library bug otherwise
+        where = f' (from {ENV_VAR})' if from_env else ''
+        msg = f'unknown engine {engine!r}{where} — available: {known}'
         raise ValueError(msg)
     module, _, attribute = ENGINES[engine].partition(':')
     try:

@@ -116,6 +116,31 @@ def test_the_engine_option_is_not_silently_a_no_op(pytestconfig):
         assert type(ex).__name__ == expected
 
 
+def test_the_env_var_sets_the_engine_and_an_explicit_argument_beats_it(monkeypatch):
+    """`LPSPEC_ENGINE` is the process-wide switch; `engine=` still wins.
+
+    The precedence is the whole design: an environment can say "try the other
+    engine everywhere" without a code change, and a call that has already made
+    up its mind is not overridden by the shell it happens to run in.
+    """
+    from lpspec.relational import engines
+
+    monkeypatch.setenv(engines.ENV_VAR, 'duckdb')
+    with lps.build(ROOT / 'examples/dispatch.yaml', DISPATCH) as ex:
+        assert type(ex).__name__ == 'DuckExecutor'
+    with lps.build(ROOT / 'examples/dispatch.yaml', DISPATCH, engine='polars') as ex:
+        assert type(ex).__name__ == 'PolarsExecutor'
+
+
+def test_a_typo_in_the_env_var_says_where_it_came_from(monkeypatch):
+    """Otherwise an unknown name in a shell profile reads as a library bug."""
+    from lpspec.relational import engines
+
+    monkeypatch.setenv(engines.ENV_VAR, 'ducdkb')
+    with pytest.raises(ValueError, match=r"unknown engine 'ducdkb' \(from LPSPEC_ENGINE\)"):
+        lps.build(ROOT / 'examples/dispatch.yaml', DISPATCH)
+
+
 def test_an_unknown_engine_names_the_ones_that_exist():
     with pytest.raises(ValueError, match=r"unknown engine 'nope' — available: 'polars', 'duckdb'"):
         lps.build(ROOT / 'examples/dispatch.yaml', DISPATCH, engine='nope')

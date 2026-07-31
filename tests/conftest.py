@@ -85,22 +85,30 @@ def engine_internals(pytestconfig: pytest.Config) -> None:
 def _engine_under_test(pytestconfig: pytest.Config) -> Iterator[None]:
     """Point `lps.build`'s default at `--engine`, for the whole session.
 
-    Patching the default rather than threading a parameter through every test:
-    the claim being checked is that *the suite* passes on another engine, and a
-    parameter each test opts into would only check the ones that remembered.
+    Through `LPSPEC_ENGINE`, the same switch a user has — so this fixture
+    exercises the documented mechanism rather than a private hook only the
+    tests know about. Setting the default rather than threading a parameter
+    through every test: the claim being checked is that *the suite* passes on
+    another engine, and a parameter each test opts into would only check the
+    ones that remembered.
     """
     name = pytestconfig.getoption('--engine')
     if name is None:
         yield
         return
+    import os
+
     from lpspec.relational import engines
 
-    previous = engines.DEFAULT_ENGINE
-    engines.DEFAULT_ENGINE = name
+    previous = os.environ.get(engines.ENV_VAR)
+    os.environ[engines.ENV_VAR] = name
     try:
         yield
     finally:
-        engines.DEFAULT_ENGINE = previous
+        if previous is None:
+            del os.environ[engines.ENV_VAR]
+        else:
+            os.environ[engines.ENV_VAR] = previous
 
 
 # ---------------------------------------------------------------------------

@@ -69,6 +69,14 @@ dependencies = [
 # measured on: this one trades wall clock for a smaller build peak, which is
 # worth having on the write path and worth little on the way to a solver.
 # See bench/duckdb-spike.md.
+#
+# **This extra widens the runtime, and that is the price of it.** duckdb's
+# dataframe interop imports pyarrow, and `pyarrow._dataset` imports pandas — so
+# a process that chooses this engine has both resident, which the default
+# engine guarantees it does not (`test_runtime_is_linopy_free`). Not something
+# this package can avoid: the numpy path out of duckdb skips them but the
+# registration path in does not, and it costs null handling to try. Pinned by
+# `test_the_duckdb_engine_widens_the_runtime` so it stays confined to here.
 duckdb = [
     "duckdb>=1.5",
 ]

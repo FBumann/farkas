@@ -115,8 +115,11 @@ sol.dual('power_balance')
 Two engines build the same YAML. The default needs nothing extra; the other
 is `lps.solve(..., engine='duckdb')` with `pip install "lpspec[duckdb]"`, and
 trades wall clock for a smaller build peak — worth it writing a large LP file,
-worth little on the way to a solver. Same model either way, integer for
-integer. → [benchmarks](benchmarks.md)
+worth little on the way to a solver. Same model either way, integer for integer.
+
+To try it across a program you already have, `LPSPEC_ENGINE=duckdb` sets the
+default and any explicit `engine=` still wins.
+→ [benchmarks](benchmarks.md)
 
 `lps.check` is the CI verb — it parses, expands, resolves and lowers without
 binding anything, so a model repository can be validated on every commit

@@ -57,9 +57,7 @@ class _Labels(Mapping[str, 'pl.LazyFrame']):
 
     def __getitem__(self, name: str) -> pl.LazyFrame:
         if name not in self._frames:
-            got = pl.from_arrow(self._con.execute(f'SELECT * FROM {q(self._tables[name])}').arrow())
-            assert isinstance(got, pl.DataFrame)
-            self._frames[name] = got.lazy()
+            self._frames[name] = self._con.execute(f'SELECT * FROM {q(self._tables[name])}').pl().lazy()
         return self._frames[name]
 
     def __iter__(self) -> Iterator[str]:
@@ -117,7 +115,10 @@ class DuckExecutor(Engine):
         return name
 
     def _register(self, name: str, frame: pl.DataFrame) -> str:
-        self._con.register(name, frame.to_arrow())
+        # the frame itself, not `to_arrow()`: duckdb reads polars natively, and
+        # the round-trip through a pyarrow table is what used to drag pandas
+        # into a runtime that declares it a bridge out and not a dependency
+        self._con.register(name, frame)
         return name
 
     def build(self, program: plan.Program, sources: Mapping[str, Any]) -> None:
@@ -313,9 +314,7 @@ class DuckExecutor(Engine):
 
     def _fetch(self, sql: str) -> pl.DataFrame:
         """One query out, as the polars frame the sinks read."""
-        out = pl.from_arrow(self._con.execute(sql).arrow())
-        assert isinstance(out, pl.DataFrame)
-        return out
+        return self._con.execute(sql).pl()
 
     def _tables(self) -> sinks.ModelTables:
         assert self._cols is not None and self._obj is not None
