@@ -142,5 +142,5 @@ Worth knowing before you start, rather than after:
 |---|---|
 | [Models](models/index.md) | every model in the repo, and which constructs each exercises |
 | [SPEC](SPEC.md) | the reference — what a file may contain, exactly |
-| [Benchmarks](benchmarks.md) | what it costs, measured against the eager lane |
+| [Benchmarks](benchmarks.md) | what it costs, measured against linopy |
 | [ARCHITECTURE](ARCHITECTURE.md) | why it is shaped this way |

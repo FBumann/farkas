@@ -67,6 +67,7 @@ nav:
   - Design notes:
       - Architecture: ARCHITECTURE.md
       - The ceiling: design/ceiling.md
+      - Relationship to linopy: design/linopy.md
       - Roadmap: ROADMAP.md
   - Changelog: changelog.md
 

@@ -19,7 +19,7 @@ schema = lps.load_schema('model.yaml')  # MathSchema
 
 result = lps.solve('model.yaml', sources, solver_options={'time_limit': 60})
 result.status, result.termination_condition, result.objective
-result.is_ok  # linopy's rollup: not an error, abort or refusal
+result.is_ok  # rolled-up verdict: not an error, abort or refusal
 result.has_primal  # narrower: are there values to read
 result.primal('p')  # tidy frame (dims…, value) — the native shape
 result.dual('power_balance')  # shadow prices, the same shape and the same join
@@ -43,41 +43,25 @@ ex.write_lp('model.lp')
 result = ex.solve()
 ```
 
-What `sources` accepts is §8. Nothing on this path imports linopy, and `primal`
-returns a `polars.DataFrame` — Arrow-backed, so it exports the same protocol the
+What `sources` accepts is [SPEC §8](SPEC.md#8-data-binding). Nothing on this
+path imports linopy, and `primal` returns a `polars.DataFrame` — Arrow-backed, so it exports the same protocol the
 loader recognises. `to_pandas` and `to_dataarray` are the bridges out and need
 pandas / xarray, which ship with the `[linopy]` extra. The only build knob is
 `coords`; **`solver_options` is not a build knob** and is forwarded verbatim to
-the solver, the shape linopy takes.
+the solver.
 
 Reading a result:
 
 | Rule | |
 |---|---|
-| **`is_ok` is not `has_primal`** | `is_ok` is linopy's rollup of the termination condition; `has_primal` adds the solver's verdict on whether an incumbent exists, and is what every reader gates on. A MIP that hits `time_limit` before finding a feasible point is `ok` with nothing to read |
+| **`is_ok` is not `has_primal`** | `is_ok` rolls up the termination condition; `has_primal` adds the solver's verdict on whether an incumbent exists, and is what every reader gates on. A MIP that hits `time_limit` before finding a feasible point is `ok` with nothing to read |
 | reading anyway | `NoSolutionError`; `objective` is `nan` |
 | `dual` **raises rather than zero-filling** | no values at all is `NoSolutionError`; values but no duals — any integer or binary variable makes them undefined — is `LinopyYamlError`, because only this quantity is missing |
 | duals exist only on `solver_direct` | a model written to LP and solved elsewhere never passes back through here. Reduced costs and slacks ride the same join and are not exposed yet |
 | `to_dataset` costs what it says | each variable arrives dense over its own dims — name a subset, or use `to_parquet` |
 | `write` | `.lp` only today; `.mps` raises `NotImplementedError` |
 
-**Linopy shim** (`lpspec.linopy`, `[linopy]` extra) — two *pure producers*,
-YAML in, model out, nothing retained:
-
-```python
-from lpspec import linopy as lpspec_linopy
-
-m = lpspec_linopy.build('model.yaml', data={...}, coords={...})  # -> linopy.Model
-lpspec_linopy.extend(m, 'ramp.yaml', data={...})  # mutates m in place
-```
-
-`build` returns a plain `linopy.Model` — no accessor, no attached schema, no
-patched attributes — so nothing is lost across `pickle`, `deepcopy` or
-`to_netcdf`; to inspect the math, re-read the file with `lps.load_schema`.
-`extend` may reference variables already on the model (they come from the model
-argument, not from Python-side history), while the YAML must still declare every
-parameter *and dimension* it uses — the declaration is required, the `values:`
-are not, since they can come from the model. Coords precedence for `extend`: the `coords=` kwarg, then
-coords inferred from the model's variables, then `values:` in the YAML, then
-error — a `values:` contradicting the model's existing coordinate is an error,
-not a silent override. There is no `register()` decorator and no helper registry.
+**The linopy shim** (`lpspec.linopy.build` / `.extend`, `[linopy]` extra) puts
+the same YAML math on a `linopy.Model` that already exists in memory. It is
+documented with everything else about that relationship in
+[docs/design/linopy.md](design/linopy.md#3-the-shim).

@@ -32,7 +32,7 @@ applied in a different position.
 Eight top-level keys: `dimensions`, `parameters`, `variables`, `constraints`,
 `objectives` (§2), `expressions`, `macros` (§3), `piecewise` (§4). The schema
 accepts any subset, but `check`, `solve` and `write` require an objective —
-there is nothing for the streaming lane to optimise without one.
+there is nothing to optimise without one.
 
 **The schema is closed at every level.** An unrecognised key — top-level or
 inside any declaration — is a load error naming the near miss (`unknown key
@@ -61,8 +61,8 @@ the constraints that use it.
 
 **`dimensions`** — the master coordinate index. Every dimension named anywhere
 must be declared. `dtype` ∈ {`float`, `int`, `str`, `datetime`}, default `str`.
-`values` is a list or null; if null, coordinates must arrive via `sources=`
-(`coords=` on the linopy lane), else loading fails. Every declared value must
+`values` is a list or null; if null, coordinates must arrive from data (§8),
+else loading fails. Every declared value must
 be of the declared `dtype` — `values: [2024-01-01]` under the default
 `dtype: str` is a load error, because YAML resolved it to a date and a date
 does not join `'2024-01-01'` in the data.
@@ -105,8 +105,8 @@ default `float`.
 | `bounds.lower` / `.upper` | number or parameter name | `-inf` / `inf` |
 | `binary`, `integer` | bool | `false`; not both |
 
-Omitting a bound means unbounded on that side, as in
-`linopy.Model.add_variables` — non-negativity is written, not assumed. Bounds are
+Omitting a bound means unbounded on that side — non-negativity is written, not
+assumed. Bounds are
 a *narrower* language than expressions (a name or a number, never arithmetic) and
 the error says so rather than reporting a parse failure; expressions there are
 [#31](https://github.com/FBumann/lpspec/issues/31). A bound parameter's dims must
@@ -161,9 +161,9 @@ error.
 
 ## 3. `expressions` and `macros`
 
-Pure AST substitution before dispatch — neither backend ever sees one, so they
-cost nothing and cannot make the lanes diverge. A named expression is a macro
-with no formals.
+Pure AST substitution: they are expanded away before anything consumes the
+model, so they cost nothing at build time. A named expression is a macro with no
+formals.
 
 ```yaml
 expressions:
@@ -184,8 +184,7 @@ name-checked at load time even if never called.
 
 ## 4. `piecewise`
 
-N expressions jointly pinned to a breakpoint-indexed piecewise-linear curve,
-mirroring `linopy.Model.add_piecewise_formulation`.
+N expressions jointly pinned to a breakpoint-indexed piecewise-linear curve.
 
 ```yaml
 piecewise:
@@ -213,7 +212,7 @@ exactly two links) bounds the link instead of pinning it. Blocks expand **before
 building** into plain variables and constraints via λ convex-combination —
 weights in `[0,1]` with a convexity row, one link row per tuple, and unless
 `convex: true` segment binaries with an adjacency row
-`lam <= seg + shift(seg, over=bp, by=1, edge=0)`. Both lanes receive the identical expansion.
+`lam <= seg + shift(seg, over=bp, by=1, edge=0)`.
 
 ## 5. Expressions
 
@@ -233,8 +232,8 @@ NUMBER      ::= integer | float | "inf" | ".inf"
 Precedence, highest first: `**`, then `*` `/`, then binary `+` `-`, then unary
 `+` `-`; parentheses override. Affinity is enforced — `*` needs at least one
 variable-free factor, `/` a variable-free divisor that is a single factor rather
-than a sum. **`**` parses but is not in the language**: both lanes reject it at
-load time, so the refusal can name the operator and its rewrite. A variable base
+than a sum. **`**` parses but is not in the language**: it is rejected at load time, so the
+refusal can name the operator and its rewrite. A variable base
 breaks degree 1; over parameters alone it is data prep.
 
 ### 5.1 Name resolution
@@ -270,8 +269,7 @@ data. To use its coordinates as data, declare a parameter over it.
 
 Parameter `dims` and variable `foreach` are declared and dimension arguments are
 name-checked, so **every node's dim set is computable before any data is bound**.
-`dimensions.py` computes it at load time on the resolved AST, which is what makes
-both lanes agree by construction.
+`dimensions.py` computes it at load time on the resolved AST.
 
 | Node | Dim set | Error |
 |---|---|---|
@@ -354,7 +352,7 @@ Each rule has a spelling for the opposite intent:
 *created by the operator*, so there is no row a caller could have supplied.
 Everywhere else the value is expressible in the data, and §11 keeps it there.
 
-This is linopy's v1 arithmetic convention, which both lanes are built against.
+
 
 ### 6.1 Where strings
 
@@ -386,14 +384,14 @@ RHS name is for names the model does *not* declare, which is how a string
 coordinate is compared; a **declared** name on the RHS (parameter, variable or
 dimension) is a load error naming the near miss, because reading it as text
 would compare a coordinate column against another declaration's name and mask
-everything out. An undeclared *bare* name is a load error on both lanes, and a
-mask dim outside `foreach` is one too (§5.2).
+everything out. An undeclared *bare* name is a load error, and a mask dim outside `foreach` is
+one too (§5.2).
 
 ## 7. Operators
 
-The built-in set is **closed** — no Python registry — which is what makes both
-lanes accept the same language and the differential tests an oracle rather than
-a comparison of dialects. Dimension arguments are name-checked at load time:
+The built-in set is **closed** — no Python registry, so the operators are
+exactly these and a model cannot depend on what a caller registered. Dimension
+arguments are name-checked at load time:
 `sum(p, over=snapshto)` is an error, not a no-op.
 
 | Operator | Result | Notes |
@@ -439,38 +437,32 @@ sub-expression), and billed against a label budget before any Python runs.
 **Master coordinates** are resolved per dimension before any parameter loads,
 highest precedence first:
 
-1. a key in `sources` — a DataFrame carrying a column of that name, or a
-   parquet path; first occurrence of each value is its position
-2. `coords=` — anything `pd.Index()` accepts, or a DataFrame carrying the
-   label column plus one column per declared coordinate (§2)
+1. a key in `sources` — a table carrying a column of that name, or a parquet
+   path; first occurrence of each value is its position
+2. `coords=` — anything `pd.Index()` accepts, or a table carrying the label
+   column plus one column per declared coordinate (§2)
 3. `values:` in the YAML
-4. *streaming lane only* — derived from the parameter tables that carry the
-   dim, as **sorted** distinct values
+4. derived from the parameter tables that carry the dim, as **sorted** distinct
+   values
 
-Step 4 is unavailable to a dimension declaring `coords` — it reads index
-columns only, so it cannot supply a coordinate. Otherwise step 4 exists because
-a dim some parameter already spans needs no second declaration, but it costs the *declared order*, which `shift` reads
-positionally — so pass an explicit index whenever order matters. The linopy
-lane has no step 4: a dimension with neither `coords=` nor `values:` raises
-there. A dim that no source names and no parameter carries raises on both.
+Step 4 is unavailable to a dimension declaring `coords`: it reads index columns
+only, so it cannot supply a coordinate. Otherwise it exists because a dim some
+parameter already spans needs no second declaration — but it costs the *declared
+order*, which `shift` reads positionally, so pass an explicit index whenever
+order matters. A dim that no source names and no parameter carries raises.
 
-**Accepted per parameter** (declared `dims: [d1, d2]`), streaming lane: a
-parquet path; any table exposing the Arrow PyCapsule protocol with columns
-`d1, d2, value`; `int`/`float` for a 0-D parameter. `pd.Series` and
-`xr.DataArray` keep their dims in an *index* rather than in columns, so they
-are unwrapped first — but only if that library is already imported, never by
-importing it.
+**Accepted per parameter** (declared `dims: [d1, d2]`): a parquet path; any
+table exposing the Arrow PyCapsule protocol with columns `d1, d2, value`;
+`int`/`float` for a 0-D parameter. `pd.Series` and `xr.DataArray` keep their
+dims in an *index* rather than in columns, so they are unwrapped first — but
+only if that library is already imported, never by importing it. An unnamed
+index binds positionally to the declared `dims`; a named one binds by name in
+any order, and a name outside the declared dims raises rather than being
+overwritten.
 
-Compat lane (`data=`): `int`/`float` as a scalar that broadcasts freely; `dict`
-and `pd.Series` for 1-D (keys / index values become coordinates);
-`pd.DataFrame` for 2-D (index name → `d1`, column name → `d2`); `xr.DataArray`
-directly, with dim names a subset of the declared dims. `np.ndarray` and `list`
-have no named axes, so only 0-D or 1-D matching one declared dim is accepted —
-anything else is refused with a message asking for a named object.
-
-Index names are optional but **binding**: an unnamed index binds positionally
-to the declared `dims`, a named one binds by name in any order, and a name
-outside the declared dims raises rather than being overwritten.
+The opt-in linopy shim accepts the same *language* but a different set of data
+inputs, and has no step 4 —
+[docs/design/linopy.md](design/linopy.md#the-same-language-different-data-inputs).
 
 Coordinate values in the data must be a subset of the master coordinate; values
 outside it raise rather than being dropped silently. Every declared parameter
@@ -496,8 +488,8 @@ Constraint 'balance', equation 0: 'p_charge' not found.
 Check for typos, or ensure 'p_charge' is declared.
 ```
 
-A construct outside the language names the construct and its rewrite — never a
-silent fallback, never a redirection to the other lane.
+A construct outside the language names the construct and its rewrite, never a
+silent fallback.
 
 ## 10. Python API
 
@@ -511,7 +503,7 @@ language: nothing there changes what a file means.
 |---|---|
 | time-series processing (resample, cluster, interpolate, align), file IO, units | data prep; pass a parameter |
 | solver breadth | HiGHS via `solver_direct`, Gurobi planned on the same path, LP files for everything else ([#106](https://github.com/FBumann/lpspec/issues/106)) |
-| SOS and indicator constraints | `piecewise:` (§4) covers SOS2's usual purpose; the streaming lane's default solver has no SOS or indicator concept at all, so this is a *sink capability* question rather than a language one — [#23](https://github.com/FBumann/lpspec/issues/23), ROADMAP Track 4 |
+| SOS and indicator constraints | planned, as a *sink capability* rather than a language question — the default solver has no such concept, `lp_file` and Gurobi do ([#23](https://github.com/FBumann/lpspec/issues/23), [ROADMAP Track 3](ROADMAP.md#track-3--capabilities-and-the-degree-line)). `piecewise:` (§4) covers SOS2's usual purpose today |
 | multi-objective | one objective — declaring a second is a load error (§2); weight them into one expression |
 | schema migrations | — |
 | arbitrary array ops (`merge`, `reindex`, `apply_ufunc`) | data prep, or a declared `escape:` island — the closed AST is what makes streaming possible |
