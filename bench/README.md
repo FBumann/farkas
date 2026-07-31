@@ -265,6 +265,12 @@ which costs two passes and is why it waits for a `trigger:bench` label;
 [CodSpeed](https://codspeed.io) stores the number for every commit on `main`, so
 a pull request gets the comparison for one pass on a free runner.
 
+It is not a second set of benchmarks. All three harnesses build through
+`bench/workloads.py`, which is the only place that says what "the build" is —
+they differ in the instrument, the process model and the question, never in the
+work. Adding a workload to one and forgetting the other is still possible; two
+suites quietly measuring *different things* under the same name is not.
+
 Only the `memory` instrument runs. `walltime` needs CodSpeed's metered
 bare-metal runners to say anything a shared runner's clock cannot, and
 `simulation` — their default — runs the workload under an emulator, which suits

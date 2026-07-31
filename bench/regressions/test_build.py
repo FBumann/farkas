@@ -44,54 +44,17 @@ is the engine rather than the change.
 
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
 from typing import Any
 
 import pytest
 
-from bench._run_case import _split_sources
 from bench.cases import CASES, Shape
+from bench.workloads import build_and_hand_over, build_and_write, split_sources
 
 #: (case, rung). Small enough to run in a minute, large enough that fixed costs
 #: do not dominate — a regression suite that only exercises the constant term
 #: reports noise. The published ladder is where the big rungs live.
 WORKLOADS = [('dispatch', 's'), ('dispatch', 'm'), ('nodal', 'm'), ('transport', 'm'), ('profiled', 'm')]
-
-
-def build_and_write(case_name: str, size: str, sources: dict[str, str], coords: dict[str, str]) -> int:
-    """Build the model and stream it to an LP file; return the column count.
-
-    Top-level and picklable on purpose: ``isolate=True`` sends this to a fresh
-    process per pass. Data paths are resolved by the caller so that generating
-    the parquet — which is neither lpspec's work nor stable across machines —
-    stays outside the measurement.
-    """
-    import lpspec as lps
-
-    with (
-        tempfile.TemporaryDirectory(prefix='lpspec-bench-') as tmp,
-        lps.build(CASES[case_name].model, sources, coords=coords) as ex,
-    ):
-        ex.write(Path(tmp) / 'model.lp')
-        return ex._tables().column_count
-
-
-def build_and_hand_over(case_name: str, size: str, sources: dict[str, str], coords: dict[str, str]) -> int:
-    """Build the model and stream it into HiGHS; return the column count.
-
-    The sibling of :func:`build_and_write`, and the one that matches what most
-    callers do. ``run()`` is deliberately never called: the simplex is HiGHS's
-    work whoever filled the model, and a regression suite that included it would
-    be watching a number nothing in this repository can move.
-    """
-    import lpspec as lps
-    from lpspec.relational.sinks.solvers.highs import build_highs
-
-    with lps.build(CASES[case_name].model, sources, coords=coords) as ex:
-        tables = ex._tables()
-        _handle = build_highs(tables)
-        return tables.column_count
 
 
 def _check(benchmark_memory: Any, columns: int, shape: Shape) -> None:
@@ -112,8 +75,8 @@ def test_build_and_write(benchmark_memory, case_name: str, size: str) -> None:
     case = CASES[case_name]
     shape = case.shape(size)
     # the same split the published harness uses, imported rather than restated
-    sources, coords = _split_sources(case, case.data(shape))
-    _check(benchmark_memory, benchmark_memory(build_and_write, case_name, size, sources, coords), shape)
+    sources, coords = split_sources(case, case.data(shape))
+    _check(benchmark_memory, benchmark_memory(build_and_write, case_name, sources, coords), shape)
 
 
 @pytest.mark.benchmem(isolate=True)
@@ -127,5 +90,5 @@ def test_build_and_hand_over(benchmark_memory, case_name: str, size: str) -> Non
     """
     case = CASES[case_name]
     shape = case.shape(size)
-    sources, coords = _split_sources(case, case.data(shape))
-    _check(benchmark_memory, benchmark_memory(build_and_hand_over, case_name, size, sources, coords), shape)
+    sources, coords = split_sources(case, case.data(shape))
+    _check(benchmark_memory, benchmark_memory(build_and_hand_over, case_name, sources, coords), shape)

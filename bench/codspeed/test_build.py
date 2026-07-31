@@ -12,7 +12,9 @@ individual allocations, which makes it the same kind of number memray gives
 ``bench/regressions/`` and right here for the same reason: within one lane the
 bias sits on both sides of a diff and cancels, where ``ru_maxrss`` moves with
 whatever else the runner was doing. That argument is made in full in
-``bench/regressions/test_build.py``; it is not restated here.
+``bench/regressions/test_build.py``; it is not restated here, any more than
+the verbs are — both suites build through ``bench/workloads.py``, so neither
+can drift into measuring a different thing under the same name.
 
 Wall time is not measured at all. The ``walltime`` instrument wants CodSpeed's
 bare-metal runners, and a free GitHub runner's clock is exactly the noise
@@ -36,14 +38,8 @@ from typing import TYPE_CHECKING, Protocol
 
 import pytest
 
-from bench._run_case import _split_sources
 from bench.cases import CASES
-
-# The measured verbs, imported rather than restated. Two suites reporting on
-# "the build" have to mean the same thing by it or their numbers cannot be read
-# together — and the drift would be invisible, because each would still be
-# internally consistent.
-from bench.regressions.test_build import build_and_hand_over, build_and_write
+from bench.workloads import build_and_hand_over, build_and_write, split_sources
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -56,7 +52,7 @@ WORKLOADS = [('dispatch', 's'), ('nodal', 's'), ('transport', 's')]
 
 
 class Verb(Protocol):
-    def __call__(self, case_name: str, size: str, sources: dict[str, str], coords: dict[str, str]) -> int: ...
+    def __call__(self, case_name: str, sources: dict[str, str], coords: dict[str, str]) -> int: ...
 
 
 def _measure(benchmark: Callable[..., int], verb: Verb, case_name: str, size: str) -> None:
@@ -65,8 +61,8 @@ def _measure(benchmark: Callable[..., int], verb: Verb, case_name: str, size: st
     # Generated and split before the measured region. Writing the parquet is the
     # harness's cost, and a baseline that moved the first time a data file was
     # created would be measuring the cache.
-    sources, coords = _split_sources(case, case.data(shape))
-    columns = benchmark(verb, case_name, size, sources, coords)
+    sources, coords = split_sources(case, case.data(shape))
+    columns = benchmark(verb, case_name, sources, coords)
     # a benchmark that silently built the wrong model is worse than none
     assert 0 < columns <= shape.nominal_variables
 
