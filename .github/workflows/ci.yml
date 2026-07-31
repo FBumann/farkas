@@ -34,8 +34,13 @@ jobs:
           python-version: "3.11"
           enable-cache: true
 
-      # Current dependencies, dev group: lint, format, types, suite.
-      - run: uv sync --group dev
+      # Current dependencies, dev group *and every extra the package ships code
+      # for*: `pyrefly` treats `missing-import` as an error, so an optional
+      # dependency absent here is a type-check failure on code that is in the
+      # wheel. That is why `[duckdb]` is installed before the checks and not
+      # just before the run that uses it — the engine under `engines/duck/`
+      # ships either way and has to type-check either way.
+      - run: uv sync --group dev --extra duckdb
       - run: uv run --no-sync ruff check .
       - run: uv run --no-sync ruff format --check .
       # Only meaningful here, not below: missing-import is an error, and the
@@ -44,13 +49,12 @@ jobs:
       - run: uv run --no-sync pytest -q
 
       # The whole suite again, on the other engine. Not a subset and not a
-      # separate parity file: the claim `lps.build(engine='duckdb')` makes is
-      # that a caller can choose it and nothing else changes, and only running
-      # every test that reaches `lps.build` checks that. It costs ~25s.
+      # separate parity file: the claim `LPSPEC_ENGINE=duckdb` makes is that a
+      # caller can choose it and nothing else changes, and only running every
+      # test that reaches `lps.build` checks that. It costs ~25s.
       #
       # `test_engine_parity.py` asserts the switch actually took effect, so
       # this cannot silently degrade into a second run of the default engine.
-      - run: uv sync --group dev --extra duckdb
       - run: uv run --no-sync pytest -q --engine duckdb
 
       # The site, built strictly: `strict: true` in mkdocs.yml turns every
