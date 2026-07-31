@@ -7,19 +7,23 @@ a difference that is stable, so both runs pass their own assertions while
 disagreeing with each other.
 
 What is compared is what a caller can observe: the objective, the primal, the
-duals, and the LP file byte for byte. Not the four frames — those are checked
-here too, but through `_tables()`, because `row` and `col` *are* the solver's
-own indices and an off-by-one there is a different model that still solves.
+duals, and the LP file byte for byte. The four frames are checked too, through
+`_tables()`, because `row` and `col` *are* the solver's own indices and an
+off-by-one there is a different model that still solves.
 """
 
 from __future__ import annotations
 
+import contextlib
+import inspect
+import os
 from pathlib import Path
 
 import polars as pl
 import pytest
 
 import lpspec as lps
+from lpspec.relational import engines
 
 pytest.importorskip('duckdb')
 
@@ -32,12 +36,31 @@ DISPATCH = {
     'load': pl.DataFrame({'snapshot': [0, 1, 2], 'value': [12.0, 8.0, 20.0]}),
 }
 
-#: `storage` carries a cyclic `shift`, `transport` three `group_sum`s — the two
-#: operators a second engine is most likely to get subtly wrong.
+#: `storage` carries a cyclic `shift` — the operator a second engine is most
+#: likely to get subtly wrong, and the one the spike calls hardest to port.
 MODELS = [
     ('examples/dispatch.yaml', DISPATCH),
     ('examples/storage.yaml', DISPATCH),
 ]
+
+
+@contextlib.contextmanager
+def using(engine: str):
+    """Build on *engine*, through the switch a caller actually has.
+
+    `lps.build` takes no engine parameter, so a test wanting a specific one
+    sets `LPSPEC_ENGINE`. That keeps these tests on the documented mechanism
+    rather than an internal the public path never touches.
+    """
+    previous = os.environ.get(engines.ENV_VAR)
+    os.environ[engines.ENV_VAR] = engine
+    try:
+        yield
+    finally:
+        if previous is None:
+            del os.environ[engines.ENV_VAR]
+        else:
+            os.environ[engines.ENV_VAR] = previous
 
 
 def _frames(tables) -> dict[str, pl.DataFrame]:
@@ -54,7 +77,8 @@ def test_both_engines_build_the_same_model(model, sources):
     built = {}
     try:
         for name in ENGINES:
-            ex = lps.build(ROOT / model, sources, engine=name)
+            with using(name):
+                ex = lps.build(ROOT / model, sources)
             built[name] = (ex, ex._tables())
 
         left, right = (_frames(t) for _, t in (built['polars'], built['duckdb']))
@@ -75,11 +99,12 @@ def test_both_engines_build_the_same_model(model, sources):
 def test_both_engines_solve_to_the_same_answer(model, sources):
     answers = {}
     for name in ENGINES:
-        with lps.solve(ROOT / model, sources, engine=name) as result:
+        with using(name), lps.solve(ROOT / model, sources) as result:
             assert result.is_ok
+            primal = result.primal('p')
             answers[name] = (
                 result.objective,
-                result.primal('p').sort(result.primal('p').columns),
+                primal.sort(primal.columns),
                 result.dual('power_balance').sort('snapshot'),
             )
 
@@ -93,19 +118,39 @@ def test_both_engines_solve_to_the_same_answer(model, sources):
 def test_both_engines_write_the_same_lp_file(model, sources, tmp_path):
     written = {}
     for name in ENGINES:
-        out = lps.write(ROOT / model, sources, tmp_path / f'{name}.lp', engine=name)
+        with using(name):
+            out = lps.write(ROOT / model, sources, tmp_path / f'{name}.lp')
         written[name] = out.read_bytes()
     assert written['polars'] == written['duckdb'], 'the LP files differ byte for byte'
+
+
+def test_the_env_var_is_the_whole_switch(monkeypatch):
+    """`LPSPEC_ENGINE` selects the engine, and nothing else does.
+
+    `build` deliberately takes no engine parameter: an engine cannot change the
+    answer, only what computing it costs, so it does not belong in the call
+    that produces one. The signature assertion is the part that would notice
+    somebody adding it back.
+    """
+    assert 'engine' not in inspect.signature(lps.build).parameters
+
+    monkeypatch.setenv(engines.ENV_VAR, 'duckdb')
+    with lps.build(ROOT / 'examples/dispatch.yaml', DISPATCH) as ex:
+        assert type(ex).__name__ == 'DuckExecutor'
+
+    monkeypatch.delenv(engines.ENV_VAR)
+    with lps.build(ROOT / 'examples/dispatch.yaml', DISPATCH) as ex:
+        assert type(ex).__name__ == 'PolarsExecutor'
 
 
 def test_the_engine_option_is_not_silently_a_no_op(pytestconfig):
     """`--engine X` must actually build on X, and this must fail if it stops.
 
     Everything the suite claims about a second engine rests on having *run* on
-    it. If `resolve` ever read the default at import time instead of call time,
-    or the session fixture stopped being applied, every test would still pass
-    and the claim would quietly become vacuous — a green suite proving nothing.
-    So the switch is asserted outright, in whichever mode the run is in.
+    it. If `resolve` ever read the environment at import time instead of call
+    time, or the session fixture stopped being applied, every test would still
+    pass and the claim would quietly become vacuous — a green suite proving
+    nothing. So the switch is asserted outright, in whichever mode the run is in.
     """
     expected = {
         'polars': 'PolarsExecutor',
@@ -116,40 +161,14 @@ def test_the_engine_option_is_not_silently_a_no_op(pytestconfig):
         assert type(ex).__name__ == expected
 
 
-def test_the_env_var_sets_the_engine_and_an_explicit_argument_beats_it(monkeypatch):
-    """`LPSPEC_ENGINE` is the process-wide switch; `engine=` still wins.
-
-    The precedence is the whole design: an environment can say "try the other
-    engine everywhere" without a code change, and a call that has already made
-    up its mind is not overridden by the shell it happens to run in.
-    """
-    from lpspec.relational import engines
-
-    monkeypatch.setenv(engines.ENV_VAR, 'duckdb')
-    with lps.build(ROOT / 'examples/dispatch.yaml', DISPATCH) as ex:
-        assert type(ex).__name__ == 'DuckExecutor'
-    with lps.build(ROOT / 'examples/dispatch.yaml', DISPATCH, engine='polars') as ex:
-        assert type(ex).__name__ == 'PolarsExecutor'
-
-
 def test_a_typo_in_the_env_var_says_where_it_came_from(monkeypatch):
     """Otherwise an unknown name in a shell profile reads as a library bug."""
-    from lpspec.relational import engines
-
     monkeypatch.setenv(engines.ENV_VAR, 'ducdkb')
     with pytest.raises(ValueError, match=r"unknown engine 'ducdkb' \(from LPSPEC_ENGINE\)"):
         lps.build(ROOT / 'examples/dispatch.yaml', DISPATCH)
 
 
-def test_an_unknown_engine_names_the_ones_that_exist():
-    with pytest.raises(ValueError, match=r"unknown engine 'nope' — available: 'polars', 'duckdb'"):
-        lps.build(ROOT / 'examples/dispatch.yaml', DISPATCH, engine='nope')
-
-
-def test_an_engine_class_is_accepted_directly():
-    """A caller may hand over a class, so trying an engine needs no registry entry."""
-    from lpspec.relational.engines.duck import DuckExecutor
-
-    with lps.build(ROOT / 'examples/dispatch.yaml', DISPATCH, engine=DuckExecutor) as ex:
-        assert isinstance(ex, DuckExecutor)
-        assert ex._tables().column_count == 9
+def test_an_unknown_engine_names_the_ones_that_exist(monkeypatch):
+    monkeypatch.setenv(engines.ENV_VAR, 'nope')
+    with pytest.raises(ValueError, match=r"available: 'polars', 'duckdb'"):
+        lps.build(ROOT / 'examples/dispatch.yaml', DISPATCH)

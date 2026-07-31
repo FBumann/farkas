@@ -67,7 +67,6 @@ def build(
     sources: Mapping[str, Any],
     *,
     coords: dict[str, Any] | None = None,
-    engine: str | type[Engine] | None = None,
 ) -> Engine:
     """Build *model* on the relational engine and return the executor.
 
@@ -75,12 +74,11 @@ def build(
     optionally dimension names to index tables). One build can feed more than
     one sink: call ``ex.solve()`` and ``ex.write_lp(path)`` on the same object.
 
-    ``engine`` names which one builds it — ``'polars'`` (the default) or
-    ``'duckdb'``, which needs ``pip install "lpspec[duckdb]"``. Both accept the
-    same YAML and produce the same model, integer for integer; they differ in
-    what the *build* costs, which `bench/duckdb-spike.md` measures. Nothing
-    chooses for you and there is no fallback: an engine that cannot build a
-    model raises rather than handing it to the other one.
+    Which engine builds it is set by ``LPSPEC_ENGINE`` and is deliberately not
+    a parameter here: the engines produce the same model integer for integer,
+    so the choice cannot change the answer, only what computing it costs. A
+    knob that cannot change the answer does not belong in the call that
+    produces one — see :mod:`lpspec.relational.engines`.
 
     Raises
     ------
@@ -90,7 +88,7 @@ def build(
     """
     schema = load_schema(model)
     program = lower_program(schema)  # strict: no fallback, errors carry the reason
-    ex = resolve_engine(engine)()
+    ex = resolve_engine()()
     try:
         ex.build(program, tidy_sources(schema, dict(sources), coords))
     except BaseException:

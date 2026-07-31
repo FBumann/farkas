@@ -12,14 +12,21 @@ is a pull request here.
 Resolution is lazy. `duckdb` is an optional dependency and the import is the
 expensive part, so naming an engine you do not use costs nothing.
 
-**`LPSPEC_ENGINE` sets the default for a process**, under an explicit `engine=`
-which always wins. It exists because the only way to answer "is the other
-engine worth it for *our* models" is to run a real workload on it, and editing
-every call site to find out is a poor trade. It is a cost knob and nothing
-more: the engines build the same model integer for integer
-(`tests/test_engine_parity.py`), so this cannot change what a YAML file means —
-only what building it costs. That is what keeps it clear of hard rule 4, which
-is about Python-side state changing *meaning*.
+**`LPSPEC_ENGINE` is the only way to choose**, and `lps.build` takes no engine
+parameter. That is deliberate rather than minimal: the engines build the same
+model integer for integer (`tests/test_engine_parity.py`), so the choice cannot
+change the answer — only what computing it costs. `coords` belongs in the call
+because it decides *what model is built*; an engine decides nothing, and a knob
+that cannot change the answer does not belong in the signature that produces
+one.
+
+It also keeps the choice where it belongs. Which engine suits a machine is an
+operational fact about that machine, and committing it into the code that
+describes the math couples the two. An environment can say "run everything on
+duckdb here" without touching a line.
+
+This is not the session state hard rule 4 forbids: that rule is about
+Python-side state changing what a file *means*, and nothing here can.
 """
 
 from __future__ import annotations
@@ -39,7 +46,7 @@ ENGINES: dict[str, str] = {
 
 DEFAULT_ENGINE = 'polars'
 
-#: Overrides `DEFAULT_ENGINE` for a process; an explicit `engine=` overrides it.
+#: The only switch. Unset means `DEFAULT_ENGINE`.
 ENV_VAR = 'LPSPEC_ENGINE'
 
 #: What an engine needs installed, for an error naming the fix rather than the
@@ -47,13 +54,11 @@ ENV_VAR = 'LPSPEC_ENGINE'
 _EXTRA = {'duckdb': 'duckdb'}
 
 
-def resolve(engine: str | type[Engine] | None) -> type[Engine]:
-    """An engine name — or a class, passed straight through — as a class.
+def resolve(engine: str | None = None) -> type[Engine]:
+    """The engine class to build with: *engine*, else `LPSPEC_ENGINE`, else the default.
 
-    A class is accepted so a caller experimenting with an engine of their own
-    is not forced through this table. It is not a plugin hook: nothing
-    *discovers* such a class, so a model still cannot be built by an engine the
-    calling program did not name.
+    The argument exists for the tests and the benchmark harness, which need a
+    named engine without an environment; nothing on the public path passes it.
     """
     import importlib
 
@@ -61,8 +66,6 @@ def resolve(engine: str | type[Engine] | None) -> type[Engine]:
     if engine is None:
         engine = os.environ.get(ENV_VAR) or DEFAULT_ENGINE
         from_env = engine != DEFAULT_ENGINE
-    if not isinstance(engine, str):
-        return engine
     if engine not in ENGINES:
         known = ', '.join(repr(n) for n in ENGINES)
         # naming the *source* matters here: an unknown name in the environment

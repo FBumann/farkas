@@ -152,11 +152,11 @@ def test_the_duckdb_engine_needs_arrow_and_not_pandas(dispatch_yaml):
             "p_max": pl.DataFrame({{"generator": ["wind"], "value": [100.0]}}),
             "cost": pl.DataFrame({{"generator": ["wind"], "value": [1.0]}}),
             "load": pl.DataFrame({{"snapshot": [0], "value": [80.0]}}),
-        }}, coords={{"snapshot": range(1)}}, engine="duckdb") as ex:
+        }}, coords={{"snapshot": range(1)}}) as ex:
             ex._tables()
         print("PYARROW", "pyarrow" in sys.modules)
     """)
-    env = {k: v for k, v in os.environ.items() if k != 'LPSPEC_ENGINE'}
+    env = {**os.environ, 'LPSPEC_ENGINE': 'duckdb'}
     out = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, timeout=300, env=env)
     assert out.returncode == 0, out.stderr
     assert 'PYARROW True' in out.stdout, 'duckdb no longer needs pyarrow — narrow the extra in pyproject'
