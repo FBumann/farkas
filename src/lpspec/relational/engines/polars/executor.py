@@ -382,15 +382,23 @@ class PolarsExecutor:
     ) -> pl.LazyFrame:
         """One declaration's coordinates in label order, beside its values.
 
+        **The order is not re-established here, because it was never lost.**
+        Every path in :meth:`~lpspec.relational.engines.polars.labels.Labeller.frame`
+        hands back a label-ascending frame and two of them verify it
+        (:func:`~lpspec.relational.engines.polars.labels._in_label_order`), so
+        this reads the ordering rather than imposing it. Sorting again moved a
+        full copy of the coordinates — strings included — at the moment the
+        solver's own model is still resident, which is the worst point in the
+        process to allocate one.
+
         The slice is attached as a column rather than concatenated as a frame
         so that a length that does not match the coordinates raises instead of
-        padding with nulls — the block bookkeeping is an invariant, and the one
-        way it could go wrong is the one a silently short vector would hide.
-        :func:`_spanning` has already refused a vector that does not span the
-        model, so what is left here is the block bookkeeping alone.
+        padding with nulls — though :func:`_spanning` has already refused a
+        vector that does not span the model, so what is left here is the block
+        bookkeeping alone.
         """
         start, height = self._blocks[name]
-        return labels.sort(label).select(*dims).with_columns(values.slice(start, height))
+        return labels.select(*dims).with_columns(values.slice(start, height))
 
     def _primal(self, name: str, values: pl.Series | None) -> pl.DataFrame:
         return self._solution_frame(name, values).collect(engine='streaming')
