@@ -33,9 +33,17 @@ module cannot step over a fence by being spelled differently.
 other turns a caller's tables into the frames a plan is executed against, and
 neither belongs to the side it hands to. Drawing them inside `relational/`
 would be a lie about the fence — the engine imports nothing from the package,
-while both of these read the schema. They are also where **data enters**: it
-reaches `sources.py` from outside and goes no further up. Nothing above the
-seam has ever seen a value, which is what makes `show it` and `check it` free.
+while both of these read the schema.
+
+**Data enters below the seam, and each lane coerces its own.** It reaches
+`sources.py` for a native build and `linopy/loader.py` for the shim, and those
+are separate paths on purpose: one produces tidy polars frames, the other an
+`xr.Dataset`, and neither is a shape the other could use. The single thing
+they share is the `convex:` curvature guard, which needs values rather than a
+schema and so lives with the data (`sources.py`) where both can call it. What
+matters for the waist is the direction: data goes no further **up** than these
+two. Nothing above the seam has ever seen a value, which is what makes
+`show it` and `check it` free.
 
 ```mermaid
 flowchart TB
@@ -54,7 +62,8 @@ flowchart TB
     AST --> WALK
     AST -.->|"opt-in: lpspec.linopy"| BUILD
 
-    DATA[("your data<br/>parquet · any Arrow table")] --> SRC
+    DATA[("your data<br/>parquet · any Arrow table · pandas")] --> SRC
+    DATA -.->|"opt-in: data="| LOAD
 
     LOWER["<b>lowering.py</b> — flat<br/>AST → plan; the subset test"]
     SRC["<b>sources.py</b> — flat<br/>data → the tidy frames, by name"]
@@ -199,7 +208,7 @@ that says *no* needs nothing but the file, which is what makes it a CI verb.
 | | *will that solver take it, and how big is it* | | |
 | **run it** | stream it straight into a solver | `solve`, or `build` to drive several sinks off one build | **yes** |
 | | write an LP file for anything else | `write` | **yes** |
-| | put the same math on a `linopy.Model` | `lpspec.linopy.build` · `.extend` | **yes** |
+| | put the same math on a `linopy.Model` | `lpspec.linopy.build` · `.extend` (`data=`, its own coercion) | **yes** |
 | **read it** | values, shadow prices, the objective | `result.objective` · `.primal` · `.dual`, plus the status pair | — |
 | | bridge out to another library | `.to_pandas` · `.to_dataarray` · `.to_parquet` | — |
 | | *derived results; re-solve with new numbers, same labels* | | |
