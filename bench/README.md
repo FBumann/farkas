@@ -247,6 +247,36 @@ stack — which RSS, sensitive to machine load, is not.
 So: RSS for the comparison we publish, memray for the regressions we chase.
 `--benchmark-memory-compare-fail` is what turns the second into a gate.
 
+## The third harness: CodSpeed
+
+`bench/codspeed/` asks the regressions question — *did this change make it
+worse?* — but **unasked, on every pull request**, and answers it in heap
+allocations.
+
+```bash
+uv sync --no-default-groups --group codspeed
+uv run pytest bench/codspeed --codspeed   # locally: runs, measures nothing
+```
+
+The difference from `bench/regressions/` is not the metric, which is the same
+kind of number for the same reason. It is **who keeps the baseline**.
+`bench.yml` can only compare against a base it checks out and measures itself,
+which costs two passes and is why it waits for a `trigger:bench` label;
+[CodSpeed](https://codspeed.io) stores the number for every commit on `main`, so
+a pull request gets the comparison for one pass on a free runner.
+
+Only the `memory` instrument runs. `walltime` needs CodSpeed's metered
+bare-metal runners to say anything a shared runner's clock cannot, and
+`simulation` — their default — runs the workload under an emulator, which suits
+neither multi-threaded native code nor these rungs. The rungs are `s` rather
+than `m`: allocation-level tracking stops being cheap around 2M allocations, and
+the cost of that choice is sensitivity, not noise.
+
+**It gates nothing.** The job is `continue-on-error` and no ruleset names it —
+`bench.yml` remains the check that fails a pull request. Running it also needs a
+maintainer to connect the repository to the CodSpeed GitHub app; until then the
+workflow runs and uploads nothing.
+
 ## Adding a case
 
 Add a YAML file under `bench/models/`, a data generator and a ladder to

@@ -1,0 +1,73 @@
+name: CodSpeed
+
+# Cost, in the same terms as ci.yml and bench.yml: one billed job, ~3 minutes,
+# on a free runner, with no secret to manage. CodSpeed is free for public
+# repositories, so this is the cheapest of the three harnesses to run and the
+# only one that runs unasked.
+#
+# What it buys over bench.yml, which already gates on memory: **the baseline**.
+# bench.yml can only compare against a base it checks out and measures itself,
+# which is two passes and the reason it has to be asked for with a label. This
+# service stores the number for every commit on `main`, so a pull request gets
+# the comparison for one pass.
+#
+# `memory`, and only `memory`. `walltime` wants CodSpeed's bare-metal runners,
+# which are metered — and a free runner's clock is the noise bench.yml already
+# refuses to gate on, so paying for a machine to measure it is not what cheap
+# means. `simulation` is CodSpeed's usual default and is wrong here for a
+# different reason: it runs the workload under an emulator at a large multiple
+# of real time, and polars is multi-threaded native code — the slowdown lands on
+# the rungs and the thread count lands on the instruction count.
+#
+# Not a gate, on purpose. `continue-on-error` keeps it out of the merge
+# decision and no branch ruleset names it; bench.yml stays the thing that fails
+# a pull request. This one is a report that arrives without being asked, which
+# is worth having precisely because it is not worth blocking on.
+#
+# **Nothing is measured until a maintainer connects the repository to the
+# CodSpeed GitHub app.** Until then the job runs and uploads nothing. The wiring
+# is OIDC (`id-token: write`), so there is no token secret either way.
+
+on:
+  push:
+    branches: [main]
+  # required for a report to have somewhere to land
+  pull_request:
+  # CodSpeed dispatches this itself to backfill a baseline for existing commits
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  memory:
+    name: Memory (heap)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    continue-on-error: true
+    permissions:
+      contents: read
+      id-token: write  # OIDC auth with CodSpeed — no upload token
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          # the floor, and the only version CI tests — see ci.yml
+          python-version: "3.11"
+          enable-cache: true
+
+      # `--no-default-groups` is the cost control: `dev` resolves linopy from a
+      # git branch, and nothing measured here builds a linopy model. The
+      # codspeed group declares the parquet writer the data generator needs, so
+      # dropping the default groups costs nothing this job uses.
+      - run: uv sync --no-default-groups --group codspeed
+
+      # No data-warming step, unlike bench.yml. Generation happens once inside
+      # the test and outside the measured region — the `benchmark` fixture times
+      # the callable it is handed and nothing around it, so there is only one
+      # pass for a cache to be cold on.
+      - uses: CodSpeedHQ/action@v5
+        with:
+          mode: memory
+          run: uv run --no-sync pytest bench/codspeed --codspeed
