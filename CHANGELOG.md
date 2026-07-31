@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.37](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.36...v0.0.1-alpha.37) (2026-07-31)
+
+
+### Documentation
+
+* **architecture:** the CLI ships, and the typeset spike is a package ([#363](https://github.com/FBumann/lpspec/issues/363)) ([f0b6cf1](https://github.com/FBumann/lpspec/commit/f0b6cf1b381e6d06bdb024c3a43e57596f3d2f61))
+
 ## [0.0.1-alpha.36](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.35...v0.0.1-alpha.36) (2026-07-31)
 
 
