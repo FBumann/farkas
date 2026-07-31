@@ -17,6 +17,9 @@ the math.
 
 from __future__ import annotations
 
+import ast
+from typing import Any
+
 import polars as pl
 import pytest
 
@@ -54,35 +57,7 @@ def test_the_status_rollup_matches_linopy():
 
 
 def test_the_highs_mapping_matches_linopy():
-    """linopy builds its map inside a method, so it is read from the source.
-
-    Brittle to a linopy refactor, deliberately: this table is a copy, and a
-    copy nobody checks is a copy that rots. If linopy moves it and this stops
-    finding it, the assertion below says so rather than passing vacuously.
-    """
-    import ast
-    import inspect
-
-    solvers = pytest.importorskip('linopy.solvers')
-    tree = ast.parse(inspect.getsource(solvers))
-    # several solver classes define a CONDITION_MAP; only the HiGHS one is ours
-    highs = next((n for n in ast.walk(tree) if isinstance(n, ast.ClassDef) and n.name == 'Highs'), None)
-    assert highs is not None, 'linopy no longer has a Highs solver class — re-verify the copy by hand'
-    literals = [
-        node.value
-        for node in ast.walk(highs)
-        if isinstance(node, (ast.AnnAssign, ast.Assign))
-        and 'CONDITION_MAP' in ast.dump(node)
-        and isinstance(node.value, ast.Dict)
-    ]
-    assert literals, 'linopy no longer defines CONDITION_MAP as a dict literal — re-verify the copy by hand'
-
-    theirs = {
-        key.attr: value.attr
-        for key, value in zip(literals[0].keys, literals[0].values, strict=True)
-        if isinstance(key, ast.Attribute) and isinstance(value, ast.Attribute)
-    }
-    assert theirs == _CONDITION_OF_HIGHS_STATUS
+    assert _linopy_condition_map('Highs', ast.Attribute, 'attr') == _CONDITION_OF_HIGHS_STATUS
 
 
 def test_the_gurobi_mapping_matches_linopy_where_it_claims_to():
@@ -95,7 +70,7 @@ def test_the_gurobi_mapping_matches_linopy_where_it_claims_to():
     matches, and every declared divergence is still a divergence — so if
     linopy fixes one, this fails and the exception goes away.
     """
-    theirs = _linopy_condition_map('Gurobi')
+    theirs = _linopy_condition_map('Gurobi', ast.Constant, 'value')
     assert set(theirs) == set(_CONDITION_OF_GUROBI_STATUS), (
         'linopy and this package no longer cover the same Gurobi status codes'
     )
@@ -115,15 +90,18 @@ def test_every_gurobi_divergence_stays_inside_linopys_vocabulary():
     assert set(_CONDITION_OF_GUROBI_STATUS.values()) <= set().union(*STATUS_TO_TERMINATION_CONDITIONS.values())
 
 
-def _linopy_condition_map(solver: str) -> dict[int, str]:
+def _linopy_condition_map(solver: str, node: type[ast.expr], attribute: str) -> dict[Any, Any]:
     """linopy's ``CONDITION_MAP`` for *solver*, read out of its source.
 
-    Same arrangement as the HiGHS test above and brittle for the same reason:
-    the map is a local inside a method, so there is nothing to import. If
-    linopy moves it, the assertions below say so rather than passing
+    Each solver spells the map differently — HiGHS keys it by
+    ``HighsModelStatus`` attributes, Gurobi by integer literals — so the node
+    type and the attribute holding the value are arguments.
+
+    Brittle to a linopy refactor, deliberately: the map is a local inside a
+    method, so there is nothing to import, and a copy nobody checks is a copy
+    that rots. If linopy moves it, the assertions say so rather than passing
     vacuously.
     """
-    import ast
     import inspect
 
     solvers = pytest.importorskip('linopy.solvers')
@@ -131,16 +109,16 @@ def _linopy_condition_map(solver: str) -> dict[int, str]:
     cls = next((n for n in ast.walk(tree) if isinstance(n, ast.ClassDef) and n.name == solver), None)
     assert cls is not None, f'linopy no longer has a {solver} solver class — re-verify the copy by hand'
     literals = [
-        node.value
-        for node in ast.walk(cls)
-        if isinstance(node, (ast.AnnAssign, ast.Assign)) and 'CONDITION_MAP' in ast.dump(node)
-        if isinstance(node.value, ast.Dict)
+        n.value
+        for n in ast.walk(cls)
+        if isinstance(n, (ast.AnnAssign, ast.Assign)) and 'CONDITION_MAP' in ast.dump(n)
+        if isinstance(n.value, ast.Dict)
     ]
     assert literals, f'linopy no longer defines {solver}.CONDITION_MAP as a dict literal — re-verify by hand'
     return {
-        key.value: value.value
+        getattr(key, attribute): getattr(value, attribute)
         for key, value in zip(literals[0].keys, literals[0].values, strict=True)
-        if isinstance(key, ast.Constant) and isinstance(value, ast.Constant)
+        if isinstance(key, node) and isinstance(value, node)
     }
 
 

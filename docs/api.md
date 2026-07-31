@@ -18,7 +18,7 @@ lps.check('model.yaml')  # parse → validate → lower, no data bound
 schema = lps.load_schema('model.yaml')  # MathSchema
 
 result = lps.solve('model.yaml', sources, solver_options={'time_limit': 60})
-lps.solve('model.yaml', sources, solver_name='gurobi')  # the other solver sink
+# ...or solver_name='gurobi', the other solver sink — same model either way
 result.status, result.termination_condition, result.objective
 result.is_ok  # rolled-up verdict: not an error, abort or refusal
 result.has_primal  # narrower: are there values to read

@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 import polars as pl
 
+from lpspec.errors import LpspecError
 from lpspec.relational.status import SolveStatus
 
 if TYPE_CHECKING:
@@ -99,27 +100,35 @@ def solve_gurobi(
     :func:`~lpspec.relational.sinks.solvers.highs.solve_highs`: no primal, no
     dual. Gurobi refuses the attribute in both cases rather than handing back
     zeros, which is the one place it makes this easier than HiGHS.
+
+    Model and environment are disposed before returning, so the licence is
+    released when the solve ends rather than whenever the collector gets to
+    it. Everything read back is a numpy array taken before the dispose.
+    :func:`build_gurobi` cannot do this — its caller owns the model.
     """
-    m, x, blocks = _load(model, batch_rows, solver_options)
-    m.optimize()
-
-    status = _status_of(m)
-    if not status.is_readable:
-        return status, float('nan'), None, None
-
-    return status, m.ObjVal, _labelled('col', x.X), _duals(blocks)
+    m, x, blocks, environment = _load(model, batch_rows, solver_options)
+    try:
+        m.optimize()
+        status = _status_of(m)
+        if not status.is_readable:
+            return status, float('nan'), None, None
+        return status, m.ObjVal, _labelled('col', x.X), _duals(model.row_count, blocks)
+    finally:
+        m.dispose()
+        environment.dispose()
 
 
 def _load(
     model: ModelTables,
     batch_rows: int | None,
     solver_options: Mapping[str, Any] | None,
-) -> tuple[Any, Any, list[Any]]:
-    """The model in a ``gurobipy.Model``, with the handles to read it back.
+) -> tuple[Any, Any, list[Any], Any]:
+    """The model, the handles to read it back, and the environment to release.
 
     ``x.X`` and ``block.Pi`` are numpy arrays; ``getVars()`` / ``getConstrs()``
     would build one Python object per column and row to reach the same numbers.
-    The environment is the model's and dies with it. ``OutputFlag`` is an
+    The environment comes back because gurobipy has no ``Model.getEnv()``, and
+    whoever disposes the model has to dispose it too. ``OutputFlag`` is an
     *environment* parameter because that is what suppresses the start-up
     banner; ``solver_options`` lands after, and so can put the log back.
     """
@@ -128,7 +137,8 @@ def _load(
     import scipy.sparse
 
     batch = HANDOFF_BUDGET if batch_rows is None else batch_rows
-    m = gurobipy.Model(env=gurobipy.Env(params={'OutputFlag': 0}))
+    environment = gurobipy.Env(params={'OutputFlag': 0})
+    m = gurobipy.Model(env=environment)
     for option, value in (solver_options or {}).items():
         m.setParam(option, value)
 
@@ -157,7 +167,7 @@ def _load(
         m.ModelSense = gurobipy.GRB.MAXIMIZE
     m.ObjCon = model.objective_constant
     m.update()
-    return m, x, blocks
+    return m, x, blocks, environment
 
 
 def _gurobipy() -> Any:
@@ -193,7 +203,7 @@ def _wording(code: int) -> str:
     return names.get(code, str(code))
 
 
-def _duals(blocks: list[Any]) -> pl.DataFrame | None:
+def _duals(row_count: int, blocks: list[Any]) -> pl.DataFrame | None:
     """Shadow prices in row order, or ``None`` where the model has none.
 
     Blocks were added in ascending row ranges, so concatenating their slices
@@ -205,10 +215,17 @@ def _duals(blocks: list[Any]) -> pl.DataFrame | None:
 
     gurobipy = _gurobipy()
     try:
-        values = [block.Pi for block in blocks]
+        slices = [block.Pi for block in blocks]
     except (AttributeError, gurobipy.GurobiError):
         return None
-    return _labelled('row', np.concatenate(values) if values else np.empty(0, dtype=np.float64))
+    values = np.concatenate(slices) if slices else np.empty(0, dtype=np.float64)
+    if len(values) != row_count:
+        raise LpspecError(
+            f'the solver returned {len(values)} duals for {row_count} rows. The join that reads '
+            f'them back is positional, so a short vector would drop rows silently. This is an '
+            f'engine bug rather than a problem with the model — please report it.'
+        )
+    return _labelled('row', values)
 
 
 def _labelled(label: str, values: Any) -> pl.DataFrame:

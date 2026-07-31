@@ -21,6 +21,15 @@ from lpspec.relational import chunking
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    import numpy as np
+    import numpy.typing as npt
+
+    #: What a solver sink is handed: three float vectors and an integrality
+    #: mask, each as long as the model has columns.
+    DenseColumns = tuple[
+        npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.bool_]
+    ]
+
 
 @dataclass(frozen=True)
 class ModelTables:
@@ -64,7 +73,7 @@ class ModelTables:
         """
         return chunking.ranges(self.column_count, budget, 1.0)
 
-    def dense_columns(self, infinity: float) -> tuple[Any, Any, Any, Any]:
+    def dense_columns(self, infinity: float) -> DenseColumns:
         """``(lb, ub, cost, integral)`` as numpy vectors over the solver's index.
 
         *infinity* is the solver's own spelling of an absent bound — the one

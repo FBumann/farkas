@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING, Any
 from lpspec.language.validation import load_schema
 from lpspec.lowering import lower_program
 from lpspec.relational.engines.polars.executor import PolarsExecutor
-from lpspec.relational.sinks import writer
+from lpspec.relational.sinks import solver, writer
 from lpspec.sources import tidy_sources
 
 if TYPE_CHECKING:
@@ -115,6 +115,7 @@ def solve(
     frames back ``result.primal(...)``. Nothing has to be released, though
     ``result.close()`` drops a large model early if you want the memory back.
     """
+    solver(solver_name)  # before the build, for the reason `write` checks the suffix first
     ex = build(model, sources, **build_kwargs)
     try:
         return ex.solve(solver_options=solver_options, solver_name=solver_name)

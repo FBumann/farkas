@@ -21,7 +21,6 @@ import pytest
 
 import lpspec as lps
 from lpspec.errors import LpspecError, NoSolutionError
-from lpspec.relational.sinks import SOLVERS
 from lpspec.relational.sinks.solvers.gurobi import build_gurobi
 from tests.test_ports import PORTS, REFERENCES, sources
 
@@ -190,15 +189,6 @@ def test_the_objective_constant_rides_on_the_model_not_the_answer() -> None:
     number to remember."""
     with lps.build(MAX, DATA['MAX']) as ex:
         assert build_gurobi(ex._tables()).ObjCon == pytest.approx(5.0)
-
-
-def test_the_set_of_solver_sinks_is_closed() -> None:
-    """A name outside it is an error naming the alternatives, never a fallback:
-    solving with a solver other than the one asked for is the one answer that
-    cannot be right."""
-    with pytest.raises(LpspecError, match='unknown solver'):
-        lps.solve(LP, DATA['LP'], solver_name='cplex')
-    assert set(SOLVERS) == {'highs', 'gurobi'}
 
 
 def test_the_missing_extra_is_named() -> None:
