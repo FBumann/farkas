@@ -1,10 +1,14 @@
 """The solve outcome, and linopy as its oracle.
 
 `relational/status.py` copies linopy's status vocabulary spelling for
-spelling, and `sinks/highs.py` copies linopy's own HiGHS mapping. Copies rot.
-These tests import linopy and compare, so a divergence — ours drifting, or a
-linopy release moving — fails here instead of being discovered by a user who
-knows one vocabulary and is handed another.
+spelling, and each solver sink copies linopy's own mapping for its solver.
+Copies rot. These tests import linopy and compare, so a divergence — ours
+drifting, or a linopy release moving — fails here instead of being discovered
+by a user who knows one vocabulary and is handed another.
+
+The gurobi map diverges from linopy's in three declared places, and that is
+checked in both directions: a copy is only honest if the exceptions are as
+pinned as the agreements.
 
 The engine itself never imports linopy (docs/ARCHITECTURE.md, hard rule 2). Tests
 may, and this is the same oracle arrangement the differential tests use for
@@ -18,6 +22,7 @@ import pytest
 
 import lpspec as lps
 from lpspec.errors import NoSolutionError
+from lpspec.relational.sinks.gurobi import _CONDITION_OF_GUROBI_STATUS, _LINOPY_DIVERGENCES
 from lpspec.relational.sinks.highs import _CONDITION_OF_HIGHS_STATUS
 from lpspec.relational.status import STATUS_TO_TERMINATION_CONDITIONS, SolveStatus
 
@@ -78,6 +83,65 @@ def test_the_highs_mapping_matches_linopy():
         if isinstance(key, ast.Attribute) and isinstance(value, ast.Attribute)
     }
     assert theirs == _CONDITION_OF_HIGHS_STATUS
+
+
+def test_the_gurobi_mapping_matches_linopy_where_it_claims_to():
+    """The same copy, and the same brittleness — plus three declared exceptions.
+
+    linopy's Gurobi map contradicts Gurobi's own documented status codes in
+    three places, so copying it whole would import a wrong answer rather than
+    a shared vocabulary. Each is listed in ``_LINOPY_DIVERGENCES`` with its
+    reason, and this asserts **both** directions: everything else still
+    matches, and every declared divergence is still a divergence — so if
+    linopy fixes one, this fails and the exception goes away.
+    """
+    theirs = _linopy_condition_map('Gurobi')
+    assert set(theirs) == set(_CONDITION_OF_GUROBI_STATUS), (
+        'linopy and this package no longer cover the same Gurobi status codes'
+    )
+    for code, condition in theirs.items():
+        if code in _LINOPY_DIVERGENCES:
+            assert _CONDITION_OF_GUROBI_STATUS[code] != condition, (
+                f'linopy now agrees with us on status {code} — drop the entry from _LINOPY_DIVERGENCES'
+            )
+        else:
+            assert _CONDITION_OF_GUROBI_STATUS[code] == condition
+
+
+def test_every_gurobi_divergence_stays_inside_linopys_vocabulary():
+    """Diverging on a verdict is not licence to invent a word for it. Every
+    condition this package reports is one linopy also defines, which is what
+    keeps `status`, `is_ok` and the rollup meaningful across both."""
+    assert set(_CONDITION_OF_GUROBI_STATUS.values()) <= set().union(*STATUS_TO_TERMINATION_CONDITIONS.values())
+
+
+def _linopy_condition_map(solver: str) -> dict[int, str]:
+    """linopy's ``CONDITION_MAP`` for *solver*, read out of its source.
+
+    Same arrangement as the HiGHS test above and brittle for the same reason:
+    the map is a local inside a method, so there is nothing to import. If
+    linopy moves it, the assertions below say so rather than passing
+    vacuously.
+    """
+    import ast
+    import inspect
+
+    solvers = pytest.importorskip('linopy.solvers')
+    tree = ast.parse(inspect.getsource(solvers))
+    cls = next((n for n in ast.walk(tree) if isinstance(n, ast.ClassDef) and n.name == solver), None)
+    assert cls is not None, f'linopy no longer has a {solver} solver class — re-verify the copy by hand'
+    literals = [
+        node.value
+        for node in ast.walk(cls)
+        if isinstance(node, (ast.AnnAssign, ast.Assign)) and 'CONDITION_MAP' in ast.dump(node)
+        if isinstance(node.value, ast.Dict)
+    ]
+    assert literals, f'linopy no longer defines {solver}.CONDITION_MAP as a dict literal — re-verify by hand'
+    return {
+        key.value: value.value
+        for key, value in zip(literals[0].keys, literals[0].values, strict=True)
+        if isinstance(key, ast.Constant) and isinstance(value, ast.Constant)
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -94,14 +94,21 @@ def solve(
     model: str | Path | dict[str, Any] | MathSchema,
     sources: Mapping[str, Any],
     solver_options: Mapping[str, Any] | None = None,
+    solver_name: str = 'highs',
     **build_kwargs: Any,
 ) -> Result:
     """Build and solve in one call.
 
-    ``solver_options`` is forwarded verbatim to the solver — the same shape
-    linopy takes, e.g. ``{'time_limit': 60, 'mip_rel_gap': 0.01}``. Build
-    options stay separate, because they govern *construction* and never reach
-    the solver.
+    ``solver_name`` is which solver sink to hand the built model to —
+    ``highs``, which ships with the package, or ``gurobi``, which needs the
+    ``[gurobi]`` extra. linopy's spelling, and a decision the *caller* makes:
+    the same file solves the same model either way, so nothing in the YAML
+    names a solver.
+
+    ``solver_options`` is forwarded verbatim to it — the same shape linopy
+    takes, e.g. ``{'time_limit': 60, 'mip_rel_gap': 0.01}``, in whichever
+    solver's vocabulary was chosen. Build options stay separate, because they
+    govern *construction* and never reach the solver.
 
     The executor stays attached to the returned :class:`Result`, whose label
     frames back ``result.primal(...)``. Nothing has to be released, though
@@ -109,7 +116,7 @@ def solve(
     """
     ex = build(model, sources, **build_kwargs)
     try:
-        return ex.solve(solver_options=solver_options)
+        return ex.solve(solver_options=solver_options, solver_name=solver_name)
     except BaseException:
         ex.close()
         raise

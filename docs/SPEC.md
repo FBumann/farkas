@@ -502,7 +502,7 @@ language: nothing there changes what a file means.
 | Not here | Instead |
 |---|---|
 | time-series processing (resample, cluster, interpolate, align), file IO, units | data prep; pass a parameter |
-| solver breadth | HiGHS via `solver_direct`, Gurobi planned on the same path, LP files for everything else ([#106](https://github.com/FBumann/lpspec/issues/106)) |
+| solver breadth | HiGHS via `solver_direct` and Gurobi via the `[gurobi]` extra, both chosen with `solver_name` at the call; LP files for everything else ([#106](https://github.com/FBumann/lpspec/issues/106)) |
 | SOS and indicator constraints | planned, as a *sink capability* rather than a language question — the default solver has no such concept, `lp_file` and Gurobi do ([#23](https://github.com/FBumann/lpspec/issues/23), [ROADMAP Track 3](ROADMAP.md#track-3--capabilities-and-the-degree-line)). `piecewise:` (§4) covers SOS2's usual purpose today |
 | multi-objective | one objective — declaring a second is a load error (§2); weight them into one expression |
 | schema migrations | — |

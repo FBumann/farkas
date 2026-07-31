@@ -167,6 +167,7 @@ To see it rather than read it, `python examples/walkthrough.py` runs one small m
 pip install lpspec  # the relational engine (polars, highspy)
 pip install "lpspec[linopy]"  # adds linopy + xarray + pandas: the shim, the
                               # oracle, and to_pandas / to_dataarray
+pip install "lpspec[gurobi]"  # adds the gurobi sink: solver_name='gurobi'
 ```
 
 Not a solver wrapper, not a domain package, not a data-loading layer — bring

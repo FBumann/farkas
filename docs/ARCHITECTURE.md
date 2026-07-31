@@ -81,7 +81,7 @@ flowchart TB
         end
         ENG --> TABLES["sinks/tables.py<br/>cols · obj · rows · A"]
         TABLES --> LPS["sinks/lp_file.py<br/>(mps planned)"]
-        TABLES --> DIRECT["sinks/highs.py<br/>COO batches → HiGHS"]
+        TABLES --> DIRECT["sinks/highs.py · sinks/gurobi.py<br/>COO batches → the solver<br/>chosen by solver_name, never by the file"]
         DIRECT --> SOL["result.py<br/>label join, never dense"]
     end
 
@@ -258,7 +258,7 @@ choice load-bearing in the language's rulebook.
    consumer that binds no data must reach it without reaching a runner; `api.py`
    re-exports it so callers keep saying `lps.load_schema`.
 2. **The engine knows nothing about linopy, xarray or YAML.** `relational/` goes
-   plan → engine → highspy → solver, with linopy's semantics as a spec to match
+   plan → engine → a solver sink → solver, with linopy's semantics as a spec to match
    rather than code to share; it never sees the schema, the AST, or the eager
    builder. **The engine is a directory, not a convention:** `engines/polars/`
    is one implementation, and everything above it — `plan.py`, `sinks/`,
@@ -369,6 +369,17 @@ per sink (see "Capability is not the ceiling"); that unevenness is what
 [Track 3](ROADMAP.md#track-3--capabilities-and-the-degree-line) exists to make declared rather
 than discovered at solve time.
 
+**Two solvers, one model.** `solver_direct` (HiGHS) and `gurobi` are separate
+modules reading the same `ModelTables`, and `solver_name` at the call is the
+whole of the choice — a **caller's**, never a file's, since no YAML key names a
+solver and a model means the same thing whichever one takes it. What they share
+is the projection of `cols` and `obj` onto the solver's column index, which
+lives on `ModelTables` so the two cannot drift into loading different models;
+what they do not share is a line of hand-off code, because the currencies
+differ (HiGHS takes the three CSR arrays, gurobipy takes a matrix object). The
+second solver is also what makes Track 3's uneven capability table concrete
+rather than hypothetical.
+
 ## Module map
 
 | Module | Role |
@@ -400,8 +411,8 @@ than discovered at solve time.
 | `relational/engines/polars/executor.py` | assemble the model frames from the bound data |
 | `relational/result.py` | what a solve returned: status, objective, and the label joins that read values back |
 | `relational/engines/polars/data_validation.py` | is the bound data usable — one row per coordinate, labels that exist, single-valued coords |
-| `relational/sinks/tables.py` | what every sink reads and no more — the four frames plus the batching scalars; what an engine produces |
-| `relational/sinks/` | how a built model leaves: `lp_file`, `solver_direct` (one module each, [README](https://github.com/FBumann/lpspec/blob/main/src/lpspec/relational/sinks/README.md)) |
+| `relational/sinks/tables.py` | what every sink reads and no more — the four frames plus the batching scalars, and their projection onto the solver's column index; what an engine produces |
+| `relational/sinks/` | how a built model leaves: `lp_file`, `solver_direct`, `gurobi` (one module each, [README](https://github.com/FBumann/lpspec/blob/main/src/lpspec/relational/sinks/README.md)) |
 | `linopy/__init__.py` | opt-in shim: `build` / `extend` on a `linopy.Model` |
 | `linopy/loader.py` | data coercion to `xr.Dataset`, master coords |
 | `linopy/builder.py` | eager backend: core AST → `linopy.Model` |

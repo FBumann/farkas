@@ -5,10 +5,10 @@ No float→text→parse round trip — that is why this exists beside
 slices, in batches.
 
 **Nothing textual crosses into numpy.** A polars ``String`` column converts by
-boxing every value as a Python object, so a comparison against ``'continuous'``
-or ``'<='`` is made in polars and only its answer — a bool, or the bound it
-selects — is handed over. At 10M columns the same test costs 0.95 s across the
-boundary and 0.04 s on this side of it.
+boxing every value as a Python object, so a comparison against ``'<='`` is made
+in polars and only the bound it selects is handed over — the same rule
+:meth:`~lpspec.relational.sinks.tables.ModelTables.dense_columns` states for
+the column vectors, where it was measured.
 
 ``highspy`` is imported inside the function: it is an optional dependency, and
 importing this module must stay free for callers that only write LP files.
@@ -103,14 +103,7 @@ def build_highs(
 
     empty_i = np.empty(0, dtype=np.int32)
     empty_f = np.empty(0, dtype=np.float64)
-    count = model.column_count
-    at = model.cols['col'].to_numpy()
-    lb = _by_column(count, at, model.cols['lb'].to_numpy(), -inf)
-    ub = _by_column(count, at, model.cols['ub'].to_numpy(), inf)
-    integral = _by_column(count, at, model.cols.select(pl.col('vtype') != 'continuous').to_series().to_numpy(), False)
-    cost = _by_column(count, model.obj['col'].to_numpy(), model.obj['coeff'].to_numpy(), 0.0)
-    np.nan_to_num(lb, copy=False, neginf=-inf, posinf=inf)
-    np.nan_to_num(ub, copy=False, neginf=-inf, posinf=inf)
+    lb, ub, cost, integral = model.dense_columns(inf)
     for lo, hi in model.col_chunks(batch):
         _loaded(h, h.addCols(hi - lo, cost[lo:hi], lb[lo:hi], ub[lo:hi], 0, empty_i, empty_i, empty_f), 'columns')
         noncontinuous = np.flatnonzero(integral[lo:hi]).astype(np.int32) + np.int32(lo)
@@ -179,26 +172,6 @@ def solve_direct(
     primal = _labelled('col', model.column_count, solution.col_value)
     dual = _labelled('row', model.row_count, solution.row_dual) if solution.dual_valid else None
     return status, objective, primal, dual
-
-
-def _by_column(count: int, at: Any, values: Any, absent: Any) -> Any:
-    """*values* written at the column each one belongs to, *absent* elsewhere.
-
-    ``col`` is dense ``0..n-1`` (:class:`ModelTables`), so it *is* the position
-    a value has to end up at: lining a frame up with the solver's index is a
-    scatter, and neither the join that fills the objective's gaps nor the sort
-    that puts the bounds in order has anything to do that this does not. The
-    frame those two produced had to be collected whole before the first batch
-    could be handed over, which cost more than the model does.
-
-    A column the table somehow has no row for is left free rather than left
-    holding whatever the allocator returned.
-    """
-    import numpy as np
-
-    dense = np.full(count, absent, dtype=values.dtype)
-    dense[at] = values
-    return dense
 
 
 def _loaded(h: Any, status: Any, what: str) -> None:

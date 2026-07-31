@@ -317,15 +317,23 @@ class PolarsExecutor:
         self,
         batch_rows: int | None = None,
         solver_options: Mapping[str, Any] | None = None,
+        solver_name: str = 'highs',
     ) -> Result:
-        """Sink the built model straight into HiGHS and solve it.
+        """Sink the built model straight into a solver and solve it.
 
-        ``solver_options`` is forwarded verbatim to the solver, the way
-        linopy's is — ``{'time_limit': 60, 'mip_rel_gap': 0.01}``.
-        ``batch_rows`` is the hand-off budget in elements, and defaults to the
-        sink's own — see :data:`~lpspec.relational.sinks.highs.HANDOFF_BUDGET`.
+        ``solver_name`` picks the sink — ``highs``, which ships with the
+        package, or ``gurobi``, which needs the ``[gurobi]`` extra. Spelled
+        the way linopy spells it, and a *caller's* choice at the call: no YAML
+        file can express it, because a model means the same thing whoever
+        solves it.
+
+        ``solver_options`` is forwarded verbatim to that solver, the way
+        linopy's is — ``{'time_limit': 60, 'mip_rel_gap': 0.01}``, and so
+        named in the solver's own vocabulary. ``batch_rows`` is the hand-off
+        budget in elements, and defaults to the sink's own — see
+        :data:`~lpspec.relational.sinks.highs.HANDOFF_BUDGET`.
         """
-        status, objective, primal, dual = sinks.solve_direct(self._tables(), batch_rows, solver_options)
+        status, objective, primal, dual = sinks.solver(solver_name)(self._tables(), batch_rows, solver_options)
         return Result(
             _status=status,
             _objective=objective,
