@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.1-alpha.62](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.61...v0.0.1-alpha.62) (2026-08-01)
+
+
+### Documentation
+
+* **bench:** plot the results, and fold the tables under them ([#451](https://github.com/FBumann/lpspec/issues/451)) ([042c2ad](https://github.com/FBumann/lpspec/commit/042c2ad78ca9e0d7fa9aab350e9cb82eb6367f41))
+
 ## [0.0.1-alpha.61](https://github.com/FBumann/lpspec/compare/v0.0.1-alpha.60...v0.0.1-alpha.61) (2026-07-31)
 
 
