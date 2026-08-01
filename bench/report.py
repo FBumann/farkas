@@ -95,6 +95,32 @@ def sizes_of(case: str, rows: dict[Key, Row], sink: str = 'lp', *, density: bool
     return sorted(seen, key=lambda s: seen[s])
 
 
+#: The figures `bench.plot` writes, in the order the page reads them. Paired
+#: light/dark because mkdocs-material's toggle stamps the *host* page and an
+#: `<img>`-referenced SVG cannot see it; GitHub takes the first of the pair.
+FIGURES = (
+    ('wall', 'Wall time to a loaded solver, by model size'),
+    ('peak', 'Peak resident memory, by model size'),
+    ('cases', 'Every model in the corpus, through the highs sink'),
+    ('sinks', 'The l rung through every sink, both arms'),
+)
+
+
+def figures() -> str:
+    """The figure embeds, as markdown that renders in both places."""
+    out = []
+    for name, alt in FIGURES:
+        out.append(f'![{alt}](charts/{name}-light.svg#only-light)')
+        out.append(f'![{alt}](charts/{name}-dark.svg#only-dark)')
+        out.append('')
+    # one pointer for the four, not four for the four: these are pictures, and
+    # reading a value off one is what the interactive page is for
+    out.append(
+        '*Static, so they render anywhere. The same data with a cursor: [the chart page](benchmarks-scaling.html).*'
+    )
+    return '\n'.join(out)
+
+
 #: How each arm reaches each sink, said once so a table can name its own seam.
 _SEAM = {
     'lp': 'lpspec writes the LP file, linopy through its `lp-polars` writer.',
@@ -124,7 +150,10 @@ def table(case: str, rows: dict[Key, Row], sink: str = 'lp') -> str:
         + ['peak', 'LP']
     )
     lines = [
-        f'### {case} — {sink} sink',
+        # bold, not a heading: these live inside a collapsed <details>, and a
+        # heading in there still lands in the table of contents — twelve rail
+        # entries for tables the page has just decided are the appendix
+        f'**{case} — {sink} sink**',
         '',
         _SEAM[sink],
         '',
@@ -306,12 +335,22 @@ def main(argv: list[str] | None = None) -> int:
         )
     else:
         print('Parity gate: enforced at measurement time — every arm below built the same model.')
+    print()
+    print(figures())
     for case in sorted({c for c, _, _, _ in rows}):
-        for sink in sorted({k for c, _, k, _ in rows if c == case}):
-            if not sizes_of(case, rows, sink):
-                continue
-            print()
+        sinks = [k for k in sorted({k for c, _, k, _ in rows if c == case}) if sizes_of(case, rows, k)]
+        if not sinks:
+            continue
+        print()
+        # Collapsed, and `<details>` rather than mkdocs' `???` because these
+        # pages are read on GitHub too, where only the HTML form folds. The
+        # figures above are the reading; the numbers stay one click away
+        # because a chart nobody can check is decoration.
+        print(f'<details markdown="1">\n<summary><b>{case}</b> — every rung, every sink</summary>\n')
+        for sink in sinks:
             print(table(case, rows, sink))
+            print()
+        print('</details>')
     loop_table = marginal(loop)
     if loop_table:
         print()

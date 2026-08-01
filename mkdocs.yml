@@ -64,6 +64,11 @@ nav:
       - Language: SPEC.md
       - Python API: api.md
       - Benchmarks: benchmarks.md
+      # A source file, not a generated page: mkdocs copies it through and the
+      # nav links it like any other. It is the same data as the figures on the
+      # page above, with a cursor — which is the whole reason it is reachable
+      # from the nav rather than from one link mid-paragraph.
+      - Benchmarks (interactive): benchmarks-scaling.html
   - Design notes:
       - Architecture: ARCHITECTURE.md
       - The ceiling: design/ceiling.md

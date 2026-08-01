@@ -352,3 +352,25 @@
     box-shadow: -0.4rem 0 0 0 transparent;
   }
 }
+
+
+/* --- Benchmark figures ---------------------------------------------------
+   The charts are `<img>`-referenced SVG (docs/charts/), so they scale with
+   the column like any image. That is right on a wide screen and wrong on a
+   narrow one: a uniform downscale takes 11px axis labels to about 5px, and a
+   chart you cannot read the axes of is decoration.
+
+   So below the tablet breakpoint they stop shrinking and the figure scrolls
+   sideways instead — the wide-content rule, applied to the one kind of wide
+   content this site has. Selected on the src path rather than a wrapper class
+   so the markdown stays exactly what GitHub renders, which is the whole
+   reason these are files and not inline SVG. */
+.md-typeset p:has(> img[src*="charts/"]) {
+  overflow-x: auto;
+}
+
+@media screen and (max-width: 76.1875em) {
+  .md-typeset p:has(> img[src*="charts/"]) img {
+    max-width: none;
+  }
+}

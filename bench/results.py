@@ -77,7 +77,20 @@ def _counts(extra: dict[str, Any]) -> dict[str, Any]:
 
 
 def records(path: Path) -> Iterator[dict[str, Any]]:
-    """Every measurement in *path*, in the shape the report and the plot read."""
+    """Every measurement in *path*, in the shape the report and the plot read.
+
+    Two formats, because the harness changed and the committed results did
+    not. ``.jsonl`` is what the runner before #448 wrote — one record per
+    line, already in this shape — and it is still what `bench/results/` holds,
+    so the reader takes it verbatim. `.json` is pytest-benchmark's document,
+    which the rest of this function unpacks.
+    """
+    if path.suffix == '.jsonl':
+        for line in path.read_text().splitlines():
+            if line.strip():
+                yield json.loads(line)
+        return
+
     doc = json.loads(path.read_text())
     machine, commit = doc.get('machine_info', {}), doc.get('commit_info', {})
     yield {
