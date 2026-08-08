@@ -60,6 +60,20 @@ forwarding verbatim is the contract and translating names would mean holding an
 opinion about every option either one has. A name outside the two is an error
 listing them, never a quiet fallback to the default.
 
+**Gurobi's remote and licensing options travel the same way**, so Compute
+Server, Instant Cloud and WLS need nothing from this package:
+
+```python
+lps.solve('model.yaml', sources, solver_name='gurobi',
+          solver_options={'ComputeServer': 'srv:61000', 'ServerPassword': '…'})
+```
+
+That works because the sink puts options on the *environment* rather than the
+model. `ComputeServer`, `TokenServer` and `WLSAccessID` can only be set before
+an environment starts — `setParam` on a model refuses them — so a sink that
+forwarded them one step later would lock those users out entirely. HiGHS has no
+server mode, so this is Gurobi's to offer and ours only not to obstruct.
+
 Reading a result:
 
 | Rule | |
