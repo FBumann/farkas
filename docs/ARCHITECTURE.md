@@ -187,7 +187,7 @@ new primitive is taxed. What is planned, and why, is
 
 ### The Python surface
 
-**Sixteen names, and that is the feature.** The model is the YAML file; Python
+**Nineteen names, and the count is the feature.** The model is the YAML file; Python
 is how you *run* it — so the whole surface is the diagram above written out,
 with nothing that constructs math and nothing that reaches the plan. Names are
 `lpspec.` unless shown otherwise, and what each one *does* is
@@ -205,11 +205,30 @@ that says *no* needs nothing but the file, which is what makes it a CI verb.
 | | *will that solver take it, and how big is it* | | |
 | **run it** | stream it straight into a solver | `solve`, or `build` to drive several sinks off one build | **yes** |
 | | write an LP file for anything else | `write` | **yes** |
+| | solve it once per scenario, window or period | `solve_over` over a `EachCoordinate` / `EachWindow` axis | **yes** |
 | | put the same math on a `linopy.Model` | `lpspec.linopy.build` · `.extend` (`data=`, its own coercion) | **yes** |
 | **read it** | values, shadow prices, the objective | `result.objective` · `.primal` · `.dual`, plus the status pair | — |
 | | bridge out to another library | `.to_pandas` · `.to_dataarray` · `.to_parquet` | — |
 | | *derived results; re-solve with new numbers, same labels* | | |
 | **catch it** | tell a bad model from bad data | `LpspecError` ⊃ `LanguageError` · `DataError` · `DimensionError` · `SchemaError` · `PiecewiseExpansionError` | — |
+
+**Flat, and a namespace marks a lane rather than a topic.** `lpspec.linopy` is
+the only one, and it earns it by being a different lane — its own dependencies,
+its own oracle, its own two-verb surface with its own test. `strategy.py` is not
+a lane, so `solve_over` and its axes sit at the top level beside `solve`.
+
+That is a rule with teeth rather than a taste: the surface test exempts
+submodules (`not inspect.ismodule`), so moving names under `lpspec.something`
+moves them out from under the list a reviewer reads. **Grouping trades an
+enforced surface for a tidier one**, which is the opposite of what the count is
+for.
+
+**A return type is not a name.** `solve` returns a `Result` and `solve_over` a
+`Runs`, and neither is exported — you reach them by calling, and import them
+from their module only to write an annotation. What the objects themselves
+carry (`Result` alone has twelve readers) is documented in
+[docs/api.md](api.md) rather than counted here, which is why capability grows
+much faster than this table does.
 
 **What the data arrow carries** is [SPEC §8](SPEC.md#8-data-binding) and is not
 restated here. The one structural fact: **binding is by name at both levels** —
@@ -281,8 +300,9 @@ choice load-bearing in the language's rulebook.
    we ship and document; the contract underneath is `MathSchema`, and whether
    that seam is ever blessed is open
    ([#381](https://github.com/FBumann/lpspec/issues/381)). The Python surface is
-   the runner (`api.py`); the plan is internal. The whole of it is
-   [sixteen names](#the-python-surface), pinned by a test — so the surface grows
+   the runner (`api.py`) and the driver over it (`strategy.py`); the plan is
+   internal. The whole of it is
+   [nineteen names](#the-python-surface), pinned by a test — so the surface grows
    through a list a reviewer reads, like every other fence here.
 
 ## The relational lane
@@ -409,6 +429,7 @@ must stay off the import path of a caller who does not use it.
 | `lowering.py` | core AST → logical plan (defines the relational subset) |
 | `errors.py` | the exception hierarchy; the one module either fenced side may import |
 | `_notes.py` | attach context to an exception on the way out; no package imports, no opinions |
+| `strategy.py` | the driver above the runner: one plan per slice, folded — scenarios, rolling horizon, myopic pathways |
 | `relational/plan.py` | frozen logical-plan dataclasses — what an engine consumes |
 | `relational/frames.py` | the boundary — caller tables in, via the Arrow PyCapsule protocol |
 | `relational/engines/polars/compiler.py` | plan → lazy frames; pure, reads nothing |

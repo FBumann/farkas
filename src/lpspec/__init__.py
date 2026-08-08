@@ -28,11 +28,14 @@ from lpspec.errors import (
     SchemaError,
 )
 from lpspec.language.schema import MathSchema
+from lpspec.strategy import EachCoordinate, EachWindow, solve_over
 from lpspec.typeset import SymbolTable, to_latex, to_markdown, to_typst
 
 __all__ = [
     'DataError',
     'DimensionError',
+    'EachCoordinate',
+    'EachWindow',
     'LanguageError',
     'LpspecError',
     'MathSchema',
@@ -43,6 +46,7 @@ __all__ = [
     'check',
     'load_schema',
     'solve',
+    'solve_over',
     'to_latex',
     'to_markdown',
     'to_typst',

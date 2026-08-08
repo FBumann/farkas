@@ -287,6 +287,7 @@ def test_typesets_import_closure_needs_no_third_party_engine():
 #: reviewer reads; the fences elsewhere in this file work the same way.
 PUBLIC_API = {
     'run it': {'build', 'check', 'solve', 'write'},
+    'run it many times': {'solve_over', 'EachCoordinate', 'EachWindow'},
     'load it': {'load_schema', 'MathSchema'},
     'show it': {'to_latex', 'to_markdown', 'to_typst', 'SymbolTable'},
     'catch it': {
